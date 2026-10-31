@@ -155,3 +155,7 @@ func (t *nativeCaptionTicket) publish(ctx context.Context, transcript utterance.
 		return nil
 	})
 }
+
+// QuiesceNative cancels and joins optional caption inference without retiring
+// the selected client. A failed candidate can therefore resume the old binding.
+func (p *Pipeline) QuiesceNative(ctx context.Context) error { return p.prepareNativeForeground(ctx) }

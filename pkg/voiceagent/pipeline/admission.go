@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -25,6 +26,17 @@ type ResponseAdmission struct {
 	AgentMentionControl func(target string) bool
 }
 
+// ErrInputBindingChanged requires a fresh capture after a response-boundary
+// mode/policy replacement. Old finalized input must not inherit new controls.
+var ErrInputBindingChanged = errors.New("audio input binding changed; repeat the recording")
+
+func (p *Pipeline) validateCapturedBinding(metrics *turnMetrics) error {
+	if metrics != nil && metrics.captureBound && metrics.capturePolicy != p.Native {
+		return ErrInputBindingChanged
+	}
+	return nil
+}
+
 type responseVoices struct{ primary, fallback tts.Provider }
 type responseVoicesKey struct{}
 type responseMentionsKey struct{}
@@ -38,6 +50,9 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 		}
 		endTrace(traceStatus)
 	}()
+	if err := p.validateCapturedBinding(metrics); err != nil {
+		return ctx, ResponseAdmission{}, err
+	}
 	if err := p.commitWorkerReplies(); err != nil {
 		return ctx, ResponseAdmission{}, err
 	}
@@ -54,6 +69,9 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 		if err != nil {
 			return ctx, admitted, err
 		}
+	}
+	if err := p.validateCapturedBinding(metrics); err != nil {
+		return ctx, admitted, err
 	}
 	traceStatus = "completed"
 	return p.bindAdmission(ctx, input, admitted, metrics), admitted, nil

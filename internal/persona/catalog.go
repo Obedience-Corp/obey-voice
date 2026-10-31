@@ -1,6 +1,7 @@
 package persona
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -62,6 +63,17 @@ func (c Catalog) ResolveBinding(base *config.Config, id string) (*SessionBinding
 // unrelated unloadable profiles discovered while assembling display names.
 // The requested profile itself remains a hard failure.
 func (c Catalog) ResolveBindingWithIssues(base *config.Config, id string) (*SessionBinding, []CatalogIssue, error) {
+	return c.resolveBindingWithIssues(base, id, false)
+}
+
+// ResolveCandidateBindingWithIssues prepares an isolated native-capable snapshot.
+// It never activates a profile, writes preferences or bypasses inactivity. The
+// caller must verify resources and commit through the serialized runtime boundary.
+func (c Catalog) ResolveCandidateBindingWithIssues(base *config.Config, id string) (*SessionBinding, []CatalogIssue, error) {
+	return c.resolveBindingWithIssues(base, id, true)
+}
+
+func (c Catalog) resolveBindingWithIssues(base *config.Config, id string, candidate bool) (*SessionBinding, []CatalogIssue, error) {
 	if base == nil {
 		return nil, nil, fmt.Errorf("persona: config is nil")
 	}
@@ -72,7 +84,7 @@ func (c Catalog) ResolveBindingWithIssues(base *config.Config, id string) (*Sess
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve persona %q: %w", id, &ProfileLoadError{ID: id, Err: err})
 	}
-	if err := RequireEnabled(p); err != nil {
+	if err := RequireEnabled(p); err != nil && (!candidate || !errors.Is(err, ErrNativeAudioUnavailable)) {
 		return nil, nil, fmt.Errorf("resolve persona %q: %w", id, &ProfileLoadError{ID: id, Err: err})
 	}
 	snap := base.Clone()
@@ -81,9 +93,12 @@ func (c Catalog) ResolveBindingWithIssues(base *config.Config, id string) (*Sess
 		return nil, issues, err
 	}
 	snap.PersonaDisplayNames = displayNames(profiles)
-	Apply(snap, p)
+	snap, effective, err := ResolveAudioConfig(snap, p)
+	if err != nil {
+		return nil, issues, err
+	}
 	if err := config.BindPersonaDirectory(snap, p.ID, p.StartingDirectory); err != nil {
 		return nil, issues, err
 	}
-	return newBinding(p.ID, p.DisplayName, p.TTS, *snap), issues, nil
+	return newBinding(p.ID, p.DisplayName, p.TTS, *snap, effective), issues, nil
 }

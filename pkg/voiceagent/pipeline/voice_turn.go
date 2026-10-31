@@ -52,6 +52,8 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	if isContinuation {
 		text = continuation.admission.Request
 	} else {
+		metrics.captureBound = true
+		metrics.capturePolicy = p.Native
 		turn.to(TurnListening)
 		text, err = p.transcribeTurn(ctx, metrics, turn)
 	}
@@ -116,10 +118,16 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		ctx = p.bindAdmission(ctx, "", admission, metrics)
 		speakerID = ""
 	} else if nativeConversation {
-		if p.AdmitAudio != nil {
+		err = p.validateCapturedBinding(metrics)
+		if err == nil && p.AdmitAudio != nil {
 			admission, err = p.AdmitAudio(ctx, metrics.input.Clone())
 		}
-		ctx = p.bindAdmission(ctx, text, admission, metrics)
+		if err == nil {
+			err = p.validateCapturedBinding(metrics)
+		}
+		if err == nil {
+			ctx = p.bindAdmission(ctx, text, admission, metrics)
+		}
 	} else {
 		ctx, admission, err = p.admitInput(ctx, text, false, metrics)
 		if err != nil {

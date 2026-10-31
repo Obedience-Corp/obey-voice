@@ -260,6 +260,9 @@ type Pipeline struct {
 	// boundary. It is wired from config.vad_pre_roll_ms.
 	CapturePreRoll            time.Duration
 	captureMu                 sync.Mutex
+	captureBoundary           *PreparedInputReplacement
+	captureStarting           *captureStartup
+	captureCancel             context.CancelFunc
 	captureSession            stt.Session
 	captureGeneration         uint64
 	captureToken              stt.PauseToken

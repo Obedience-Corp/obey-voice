@@ -27,6 +27,9 @@ func (p *Pipeline) trackMetrics(m *turnMetrics) func() {
 }
 
 type turnMetrics struct {
+	captureBound  bool
+	capturePolicy *NativePolicy
+
 	captionEligible  bool
 	retentionWritten bool
 	inputPolicy      *NativePolicy

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -111,6 +112,9 @@ func (p *Pipeline) ClearConversation() error {
 	if p == nil {
 		return fmt.Errorf("pipeline: nil pipeline")
 	}
+	if err := p.QuiesceNative(context.Background()); err != nil {
+		return fmt.Errorf("stop captions before clearing conversation: %w", err)
+	}
 	if p.EndDiscussion != nil {
 		p.EndDiscussion("superseded")
 	}
@@ -135,6 +139,11 @@ func (p *Pipeline) ClearConversation() error {
 	return err
 }
 func (p *Pipeline) CloseWork() error {
+	if p != nil {
+		if err := p.QuiesceNative(context.Background()); err != nil {
+			return fmt.Errorf("stop captions before closing conversation: %w", err)
+		}
+	}
 	if p != nil {
 		p.closeCompletionCapture()
 		if p.Agency != nil {

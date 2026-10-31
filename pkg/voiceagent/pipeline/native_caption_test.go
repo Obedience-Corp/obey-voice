@@ -295,3 +295,49 @@ func TestListeningAloneDoesNotCancelOptionalCaption(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestClearAndCloseJoinOptionalCaptionBeforeConversationMutation(t *testing.T) {
+	for _, clear := range []bool{true, false} {
+		t.Run(map[bool]string{true: "clear", false: "close"}[clear], func(t *testing.T) {
+			f := newCaptionFixture(t)
+			if _, err := f.pipeline.RunTurn(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-f.started:
+			case <-time.After(time.Second):
+				t.Fatal("caption did not start")
+			}
+			var err error
+			if clear {
+				err = f.pipeline.ClearConversation()
+			} else {
+				err = f.pipeline.CloseWork()
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-f.stopped:
+			case <-time.After(time.Second):
+				t.Fatal("conversation returned before caption producer stopped")
+			}
+			update := <-f.updates
+			if update.Transcript.State != utterance.Unavailable {
+				t.Fatal(update)
+			}
+			if clear && len(f.responder.History()) != 0 {
+				t.Fatal("clear retained canonical turns")
+			}
+			close(f.release)
+			if err := f.pipeline.Native.Scheduler.CancelCaption(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case late := <-f.updates:
+				t.Fatal("late caption materialized after lifecycle boundary", late)
+			default:
+			}
+		})
+	}
+}
