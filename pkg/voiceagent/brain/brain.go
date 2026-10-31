@@ -728,10 +728,9 @@ const fallbackResponse = "Hmm, I lost my train of thought for a second. What wer
 // question — "Hmm, good question" jumped straight to "good question".
 //
 // strippedFillers are still removed. These are dead-air stalls (umm, uhh),
-// not sounds. ahh / mmm / heh used to live here; they are moans, assent,
-// smirks — the thing a voice agent is actually saying — and stripping them
-// left Veronica (and anyone moaning, humming, or laughing in prose) silent
-// on those beats while the transcript still showed the words (2026-08-28).
+// not sounds. ahh / mmm / heh used to live here; they express recognition,
+// thought, or amusement. Stripping them removed spoken content while the
+// transcript still showed the words.
 // They are ordinary speakable content now, not a filler tier: a turn that is
 // only "Ahh." must still be spoken, not replaced by the recovery line.
 //

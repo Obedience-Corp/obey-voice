@@ -80,8 +80,8 @@ Every artifact records machine, CPU, OS, samantha commit, worktree cleanliness,
 persona, brain provider, **brain model**, and TTS provider.
 
 Speech can now run on another computer (`tts_place`), so the envelope also
-records **where** it ran (`tts_place`, and `tts_worker` — host and port, never
-the token — when that is `lan`) and the configured **tier** when the engine is
+records **where** it ran (`tts_place`, and a synthetic `tts_worker` label
+when that is `lan`; the local hostname and token are not shared) and the configured **tier** when the engine is
 qwen. Each *run* additionally carries its own `metrics.TTSPlace` and
 `metrics.TTSWorkerStreaming`, because a sweep can measure several engines into
 one file and the envelope has room for only one answer.
@@ -385,3 +385,29 @@ exactly the injected amount (+487 ms, +554 ms, +495 ms), the gated median went
 
 This is worth re-running after any change to the benchmark itself, because the
 failure mode is silent: a gate that stopped comparing anything still passes.
+
+## Sharing artifacts
+
+B1–B1f historical artifacts carry `privacy_redaction`: raw generated replies,
+spoken text, nonempty diagnostics and tool arguments have been withheld, and local
+paths replaced. Measurements and character counters still describe the original
+run. Text-level reproduction is no longer available from these redacted records;
+run a new private benchmark to investigate raw text. This limits independent
+verification of qualitative conclusions in the historical reports.
+
+`scripts/brain_bench` and `scripts/bench.sh` now filter saved benchmark JSON through
+`internal/benchprivacy`. The shell benchmark requires Go as well as jq. The filter
+preserves JSON numeric lexemes, removes raw output fields, and substitutes local
+home/workspace paths and speech-worker addresses. Future shell benchmark artifacts
+also withhold both recognized and reference transcripts from recorded corpora;
+their precomputed scores remain. A standalone filter is available:
+
+```sh
+go run ./scripts/bench_redact < private-benchmark.json > shared-benchmark.json
+```
+
+The filter is deliberately narrow: it is not a secret scanner, arbitrary-prose
+anonymizer, media review or rights check. Console diagnostics can remain private;
+review new artifacts before sharing them. Other benchmark generators still require
+manual review. The t3b transcript and reference voice clips have unresolved rights;
+see [public release gates](../public-release-checklist.md).

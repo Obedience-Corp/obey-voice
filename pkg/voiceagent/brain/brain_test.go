@@ -110,7 +110,7 @@ func TestFillerOnlyReplyFallsBackToRecoveryLine(t *testing.T) {
 	}
 }
 
-// Ahh / mmm / heh used to be stripped fillers. A reply that is only a moan is
+// Ahh / mmm / heh used to be stripped fillers. A reply that is only a vocalization is
 // still a reply — it must reach TTS, not the recovery line.
 func TestVocalizationOnlyReplyIsSpoken(t *testing.T) {
 	for _, in := range []string{"Ahh.", "Ahhh", "Mmm.", "Heh.", "Ahh, mmm."} {
@@ -120,7 +120,7 @@ func TestVocalizationOnlyReplyIsSpoken(t *testing.T) {
 				t.Fatalf("cleanForVoice(%q) emptied a vocalization", in)
 			}
 			if !hasSpeakableContent(cleaned) {
-				t.Errorf("cleanForVoice(%q) = %q was treated as empty; a moan is content", in, cleaned)
+				t.Errorf("cleanForVoice(%q) = %q was treated as empty; a vocalization is content", in, cleaned)
 			}
 			if got := spokenOrFallback(cleaned); got != cleaned {
 				t.Errorf("spokenOrFallback(%q) = %q, want the vocalization spoken", in, got)
@@ -196,13 +196,13 @@ func TestCleanForVoice(t *testing.T) {
 		{"mid-sentence umm", "It was, umm, complicated", "It was, complicated"},
 		{"uppercase filler", "UMM, sure", "sure"},
 		{"uhh stripped", "Uhh I forgot", "I forgot"},
-		// Vocalizations are speech, not dead air. Stripping them ate moans,
+		// Vocalizations are speech, not dead air. Stripping them removed recognition,
 		// hums, and smirks before TTS ever saw them.
-		{"ahh moan kept", "Ahh, that's it", "Ahh, that's it"},
+		{"ahh recognition kept", "Ahh, I see", "Ahh, I see"},
 		{"elongated ahhh kept", "Ahhh yes", "Ahhh yes"},
-		{"mmm kept", "Mmm, don't stop", "Mmm, don't stop"},
+		{"mmm kept", "Mmm, let me think", "Mmm, let me think"},
 		{"heh smirk kept", "Heh, you wish", "Heh, you wish"},
-		{"moan-only reply kept", "Ahh.", "Ahh."},
+		{"vocalization-only reply kept", "Ahh.", "Ahh."},
 		// The stripped tier must not reach inside a voiced one: the "mmm" in
 		// "Hmmm" is not a word of its own.
 		{"mmm inside hmmm not stripped", "Hmmm.", "Hmmm."},

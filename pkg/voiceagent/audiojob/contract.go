@@ -69,9 +69,10 @@ type Request struct {
 
 // Config is deliberately independent of the assistant config and credentials.
 type Config struct {
-	Schema      string  `json:"schema"`
-	Runtime     Runtime `json:"runtime"`
-	StorageRoot string  `json:"storage_root"`
+	Schema      string         `json:"schema"`
+	Runtime     Runtime        `json:"runtime"`
+	StorageRoot string         `json:"storage_root"`
+	Managed     *ManagedConfig `json:"managed,omitempty"`
 }
 type Window struct {
 	StartSample int64 `json:"start_sample"`
@@ -85,20 +86,23 @@ type Output struct {
 	SampleCount int64  `json:"sample_count"`
 }
 type Manifest struct {
-	Protocol       string   `json:"protocol"`
-	JobID          string   `json:"job_id"`
-	Task           string   `json:"task"`
-	Source         Source   `json:"source"`
-	Input          Input    `json:"input"`
-	Runtime        Runtime  `json:"runtime"`
-	RuntimeVersion string   `json:"runtime_version"`
-	ModelDigest    string   `json:"model_digest"`
-	Transport      string   `json:"transport"`
-	ScriptSHA256   string   `json:"script_sha256"`
-	Language       string   `json:"language"`
-	DurationPolicy string   `json:"duration_policy"`
-	SourceWindows  []Window `json:"source_windows"`
-	Output         Output   `json:"output"`
+	Protocol        string    `json:"protocol"`
+	JobID           string    `json:"job_id"`
+	Task            string    `json:"task"`
+	Source          Source    `json:"source"`
+	Input           Input     `json:"input"`
+	Runtime         Runtime   `json:"runtime"`
+	RuntimeVersion  string    `json:"runtime_version"`
+	ModelDigest     string    `json:"model_digest"`
+	Transport       string    `json:"transport"`
+	ScriptSHA256    string    `json:"script_sha256"`
+	Language        string    `json:"language"`
+	DurationPolicy  string    `json:"duration_policy"`
+	SourceWindows   []Window  `json:"source_windows"`
+	Output          Output    `json:"output"`
+	ProjectorDigest string    `json:"projector_digest,omitempty"`
+	RuntimeDigest   string    `json:"runtime_digest,omitempty"`
+	Sampling        *Sampling `json:"sampling,omitempty"`
 }
 
 // Capability distinguishes transport support and installed assets from a task's
@@ -135,6 +139,15 @@ func HashValid(s string) bool {
 func (c Config) Validate() error {
 	if c.Schema != ConfigSchema || !filepath.IsAbs(c.StorageRoot) {
 		return fmt.Errorf("audio config requires %s and absolute storage_root", ConfigSchema)
+	}
+	if c.Runtime.Provider == "llama.cpp" {
+		if c.Managed == nil || c.Runtime.Endpoint != "" || c.Runtime.Model != ManagedModel || (c.Runtime.Voice != "female" && c.Runtime.Voice != "male") {
+			return fmt.Errorf("managed audio requires an explicit llama.cpp pack, empty endpoint, lfm3-audio-2b model and female or male voice")
+		}
+		return c.Managed.Validate()
+	}
+	if c.Managed != nil {
+		return fmt.Errorf("managed config cannot select an external runtime")
 	}
 	if c.Runtime.Provider != "ollama" || strings.TrimSpace(c.Runtime.Model) == "" {
 		return fmt.Errorf("audio config requires explicit ollama model")
@@ -175,6 +188,9 @@ func (r Request) Validate(c Config) error {
 	}
 	if strings.TrimSpace(r.Script) == "" || len(r.Script) > 256<<10 || r.Language != "en" || r.TargetLanguage != "" {
 		return fmt.Errorf("narration requires an approved English script of at most 256 KiB")
+	}
+	if c.Managed != nil && len(r.Script) > 1024 {
+		return fmt.Errorf("managed narration accepts at most 1024 UTF-8 bytes; select a shorter script")
 	}
 	if r.DurationPolicy != "preserve_picture" {
 		return fmt.Errorf("only explicit preserve_picture duration policy is supported")

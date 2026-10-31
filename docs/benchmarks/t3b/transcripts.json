@@ -1,5 +1,6 @@
 {
-  "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav",
+  "privacy_redaction": "Local fixture paths replaced with synthetic paths; original measurements and transcript text retained. Rights review remains pending.",
+  "fixture": "/home/demo/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav",
   "stt_provider": "parakeet",
   "stt_mode": "offline",
   "transcripts": [

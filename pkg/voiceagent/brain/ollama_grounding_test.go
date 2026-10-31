@@ -22,12 +22,12 @@ func TestLiveRoutingDoesNotSpeakUnexecutedPromises(t *testing.T) {
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Error(err)
 				}
-				if calls == 2 && !strings.Contains(req.Messages[len(req.Messages)-1].Content, missingRouteInstruction) {
-					t.Error("retry lost routing instruction")
+				if calls == 2 && (len(req.Format) == 0 || len(req.Tools) != 0) {
+					t.Error("retry lost constrained route schema")
 				}
 				msg := api.Message{Role: "assistant", Content: "I searched and attached a dog image."}
 				if recoverRoute && calls == 2 {
-					msg.ToolCalls = []api.ToolCall{{Function: api.ToolCallFunction{Name: "route", Arguments: mustArgs(map[string]any{"kind": "spawn"})}}}
+					msg.Content = `{"kind":"spawn"}`
 				}
 				if err := json.NewEncoder(w).Encode(api.ChatResponse{Message: msg, Done: true}); err != nil {
 					t.Error(err)

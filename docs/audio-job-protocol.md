@@ -58,3 +58,48 @@ must reject unknown major versions and transports. `preserve_picture` never
 stretches audio: any duration mismatch is reported through exact sample counts
 and requires explicit timeline review. Apply must reject an unsupported mismatch
 rather than silently retime picture.
+
+## Editor-owned llama.cpp runtime
+
+The additive `managed` config selects a finite editor-owned runtime. Existing
+Ollama configs keep their behavior. With `runtime.provider: "llama.cpp"`, endpoint
+must be empty, model must be `lfm3-audio-2b`, and voice must be `female` or `male`.
+The worker chooses a private loopback port and ephemeral authentication token;
+these are not project identity and are never used to find an existing server.
+
+```json
+{
+  "schema": "obey-voice.audio-config/v1",
+  "runtime": {"provider":"llama.cpp","endpoint":"","model":"lfm3-audio-2b","voice":"female"},
+  "storage_root":"/absolute/private/jobs",
+  "managed": {
+    "executable":{"path":"/absolute/pack/llama-server","sha256":"<64 lowercase hex>"},
+    "model":{"path":"/absolute/pack/model.gguf","sha256":"<64 lowercase hex>"},
+    "projector":{"path":"/absolute/pack/projector.gguf","sha256":"<64 lowercase hex>"},
+    "version":"b11960-8642541b2"
+  }
+}
+```
+
+The editor verifies the complete installed pack inventory, including libraries,
+before invoking the bundled worker. The worker independently hashes these three
+regular files, checks the pinned runtime version, starts offline with an isolated
+environment, and verifies the loaded alias and audio-output capability. No model
+is downloaded. Each job owns one server; cancellation and worker exit reap it.
+It inherits the worker's process group, so the editor's final group kill also
+reaches the server. An existing Ollama service is neither reconfigured nor killed.
+
+Narration uses the pinned runtime's `/tts` endpoint with explicit English text,
+voice, float32 PCM, seed 42, repetition penalty 1.05 and a generation ceiling of
+8192 acoustic frames. Managed narration currently accepts at most 1024 UTF-8
+bytes; larger scripts fail before starting the runtime. The byte count is a task
+limit, not a claim that the resulting speech preserves every word. Output sample
+bounds and timeout still apply, and generated speech requires review. This path
+never interprets narration as recording-preserving voice conversion.
+
+Managed manifests add `projector_digest`, `runtime_digest` and `sampling` (seed,
+max_audio_frames, repeat_penalty). Runtime/model identity stays equal to the
+request. Support, successful installation and independent quality qualification
+remain separate; this extension does not qualify voice conversion, dubbing,
+alignment, or narration quality. The owning runtime protocol is documented in
+[the pinned server README](https://github.com/ggml-org/llama.cpp/blob/8642541b2/tools/server/README.md#post-tts-generate-speech-audio-from-text).

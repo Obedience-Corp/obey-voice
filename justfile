@@ -115,6 +115,7 @@ demo-launcher-notice: build
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p demos/frames
+    go test -c -o bin/demo-terminal.test ./cmd/obey-voice/cmd
     env -u NO_COLOR -u CLICOLOR \
         CLICOLOR_FORCE=1 FORCE_COLOR=1 \
         TERM=xterm-256color COLORTERM=truecolor \
@@ -128,6 +129,7 @@ demo-workers: build
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p demos/frames
+    go test -c -o bin/demo-terminal.test ./cmd/obey-voice/cmd
     env -u NO_COLOR -u CLICOLOR \
         CLICOLOR_FORCE=1 FORCE_COLOR=1 \
         TERM=xterm-256color COLORTERM=truecolor \
@@ -319,9 +321,10 @@ _optimize-demo-gif path:
     #!/usr/bin/env bash
     set -euo pipefail
     gif="{{path}}"
-    palette="$(mktemp /tmp/obey-voice-demo-palette.XXXXXX.png)"
-    optimized="$(mktemp /tmp/obey-voice-demo-output.XXXXXX.gif)"
-    trap 'rm -f "$palette" "$optimized"' EXIT
+    demo_tmp="$(mktemp -d /tmp/obey-voice-demo.XXXXXX)"
+    palette="$demo_tmp/palette.png"
+    optimized="$demo_tmp/output.gif"
+    trap 'rm -rf "$demo_tmp"' EXIT
     # Optional compact pass for README weight — prefer full palette.
     ffmpeg -y -loglevel error -i "$gif" \
         -vf "fps=20,scale=1000:-1:flags=lanczos,palettegen=max_colors=256:stats_mode=full" \
@@ -330,8 +333,6 @@ _optimize-demo-gif path:
         -lavfi "fps=20,scale=1000:-1:flags=lanczos,paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
         "$optimized"
     mv "$optimized" "$gif"
-    trap - EXIT
-    rm -f "$palette"
     ls -lh "$gif"
 
 # Build, sign, install to $GOBIN, then download the default STT/TTS/VAD stack.

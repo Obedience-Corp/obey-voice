@@ -20,8 +20,8 @@ func TestSplitVocalizations(t *testing.T) {
 	}{
 		{"Hello there.", []vocalPart{{text: "Hello there."}}},
 		{"[moan]", []vocalPart{{sound: vocalMoan}}},
-		{"[moan] that's it, baby.", []vocalPart{{sound: vocalMoan}, {text: "that's it, baby."}}},
-		{"Come here. [gasp] Don't stop.", []vocalPart{{text: "Come here."}, {sound: vocalGasp}, {text: "Don't stop."}}},
+		{"[moan] the build passed.", []vocalPart{{sound: vocalMoan}, {text: "the build passed."}}},
+		{"Look outside. [gasp] It's snowing.", []vocalPart{{text: "Look outside."}, {sound: vocalGasp}, {text: "It's snowing."}}},
 		{"[laugh] [moan] more", []vocalPart{{sound: vocalLaugh}, {sound: vocalMoan}, {text: "more"}}},
 		{"[AHH] yes", []vocalPart{{sound: vocalAhh}, {text: "yes"}}},
 		{"", nil},
@@ -41,7 +41,7 @@ func TestSplitVocalizations(t *testing.T) {
 }
 
 func TestStripVocalTags(t *testing.T) {
-	if got := stripVocalTags("[moan] that's it, baby."); got != "that's it, baby." {
+	if got := stripVocalTags("[moan] the build passed."); got != "the build passed." {
 		t.Errorf("stripVocalTags = %q", got)
 	}
 	if got := stripVocalTags("[moan]"); got != "" {
@@ -53,17 +53,17 @@ func TestStripVocalTags(t *testing.T) {
 }
 
 func TestExpandVocalTagsUsesHumanOnomatopoeia(t *testing.T) {
-	got := expandVocalTags("[laugh] that's it, baby.", nil)
+	got := expandVocalTags("[laugh] the build passed.", nil)
 	if strings.Contains(strings.ToLower(got), "[laugh]") {
 		t.Errorf("markup leaked into TTS text: %q", got)
 	}
-	if !strings.Contains(got, "that's it, baby.") {
+	if !strings.Contains(got, "the build passed.") {
 		t.Errorf("speech dropped: %q", got)
 	}
 	if expandVocalTags("[laugh]", nil) != vocalPhrases[vocalLaugh][0] {
 		t.Errorf("tag-only laugh = %q", expandVocalTags("[laugh]", nil))
 	}
-	if got := expandVocalTags("[moan] that's it, baby.", nil); got != "that's it, baby." {
+	if got := expandVocalTags("[moan] the build passed.", nil); got != "the build passed." {
 		t.Errorf("moan has no working spelling and must strip, got %q", got)
 	}
 	if got := expandVocalTags("[moan]", nil); got != "" {
@@ -83,7 +83,7 @@ func TestRunTurnMoanTagDoesNotSendMarkupToTTS(t *testing.T) {
 	defer player.Close()
 	p := &Pipeline{
 		STT:    &fakeSTT{text: "hello"},
-		Brain:  &fakeBrain{chunks: []string{"[laugh] that's it, baby."}},
+		Brain:  &fakeBrain{chunks: []string{"[laugh] the build passed."}},
 		TTS:    ttsProvider,
 		Player: player,
 		Events: events.NewBus(),
@@ -98,7 +98,7 @@ func TestRunTurnMoanTagDoesNotSendMarkupToTTS(t *testing.T) {
 	if strings.Contains(strings.ToLower(joined), "[laugh]") {
 		t.Errorf("TTS received markup: %v", texts)
 	}
-	if !strings.Contains(joined, "that's it, baby.") {
+	if !strings.Contains(joined, "the build passed.") {
 		t.Errorf("TTS missed the speech: %v", texts)
 	}
 	found := false
@@ -112,7 +112,7 @@ func TestRunTurnMoanTagDoesNotSendMarkupToTTS(t *testing.T) {
 		t.Errorf("TTS should receive a laugh onomatopoeia in the same take, got %v", texts)
 	}
 	if len(texts) != 1 {
-		t.Errorf("want one TTS take so the laugh is in her voice with the sentence, got %v", texts)
+		t.Errorf("want one TTS take so the laugh is in the selected voice with the sentence, got %v", texts)
 	}
 }
 
@@ -122,7 +122,7 @@ func TestRunTurnMoanTagIsStrippedNotSpoken(t *testing.T) {
 	defer player.Close()
 	p := &Pipeline{
 		STT:    &fakeSTT{text: "hello"},
-		Brain:  &fakeBrain{chunks: []string{"[moan] that's it, baby."}},
+		Brain:  &fakeBrain{chunks: []string{"[moan] the build passed."}},
 		TTS:    ttsProvider,
 		Player: player,
 		Events: events.NewBus(),
@@ -136,7 +136,7 @@ func TestRunTurnMoanTagIsStrippedNotSpoken(t *testing.T) {
 			t.Errorf("moan spelling leaked to TTS (%q) in %q", bad, joined)
 		}
 	}
-	if !strings.Contains(joined, "that's it, baby.") {
+	if !strings.Contains(joined, "the build passed.") {
 		t.Errorf("TTS missed the speech: %v", ttsProvider.Texts())
 	}
 }
@@ -289,7 +289,7 @@ func TestRunTurnStripsVocalTagsWhenEngineCannotRenderThem(t *testing.T) {
 	defer player.Close()
 	p := &Pipeline{
 		STT:    &fakeSTT{text: "hello"},
-		Brain:  &fakeBrain{chunks: []string{"[sigh] that's it, baby."}},
+		Brain:  &fakeBrain{chunks: []string{"[sigh] the build passed."}},
 		TTS:    ttsProvider,
 		Player: player,
 		Events: events.NewBus(),
@@ -304,7 +304,7 @@ func TestRunTurnStripsVocalTagsWhenEngineCannotRenderThem(t *testing.T) {
 	if strings.Contains(strings.ToLower(joined), "sigh") || strings.Contains(joined, "Hahh") || strings.Contains(joined, "Haaah") {
 		t.Errorf("unsupported engine received vocalization: %v", texts)
 	}
-	if !strings.Contains(joined, "that's it, baby.") {
+	if !strings.Contains(joined, "the build passed.") {
 		t.Errorf("TTS missed the speech: %v", texts)
 	}
 }

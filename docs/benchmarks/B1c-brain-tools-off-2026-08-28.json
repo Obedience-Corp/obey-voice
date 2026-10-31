@@ -1,4 +1,5 @@
 {
+  "privacy_redaction": "Paths and raw reply/spoken/error/tool-argument strings redacted for sharing; measurements describe the original run. Text-level reproduction requires a new private run. Not a secret scan or rights clearance.",
   "id": "B1",
   "work_item": "WI-a981e4",
   "title": "Conversational brain model A/B through the real obey-voice brain seam",
@@ -13,7 +14,7 @@
     "seam": "brain.NewOllama(cfg).ThinkStream(ctx, input, StreamOptions{VoiceMode:true, ToolsEnabled:...})",
     "stop_between": false,
     "turn_timeout": "3m0s",
-    "workdir": "/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab"
+    "workdir": "/home/demo/[redacted-path]"
   },
   "provenance": {
     "branch": "bench/brain-latency-ab",
@@ -34,7 +35,7 @@
     "persona_brain_model": "qwen3.8:latest",
     "persona_brain_provider": "ollama",
     "persona_measured": "obey",
-    "source": "/Users/lancerogers/.obey/agents/voice/festival-voice/config.yaml"
+    "source": "/home/demo/[redacted-path]"
   },
   "effective_request_options": {
     "agent_name": "Obey",
@@ -317,7 +318,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 9,
-              "reply": "Canberra."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P2",
@@ -334,7 +335,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 171,
-              "reply": "I help you navigate and execute work across your campaign projects and festivals, handling everything from finding the next task to committing code with full traceability."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P3",
@@ -351,7 +352,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 265,
-              "reply": "A vector database stores data as numerical lists called vectors, letting you search by similarity instead of exact matches. Think of it like finding the closest neighbors in a high-dimensional space, which is how AI systems match semantic meaning in text or images."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P4",
@@ -368,7 +369,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 376,
-              "reply": "I'd start with the pull request, then your email, then the slides. The pull request is the only one with a hard time cost if it blocks a teammate, and it's a clean focus block to clear out of the way. Email is short and breaks up deep work, so it's a nice reset in the middle. Slides last because they're the most iterative and you'll be freshest thinking when you build them."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P5",
@@ -385,7 +386,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 233,
-              "reply": "Local wins if you want zero latency and offline privacy, but honestly cloud models are still much more natural and conversational. For voice specifically, I'd go cloud unless your use case is strictly offline or super high frequency."
+              "reply": "[redacted raw text]"
             }
           ]
         },
@@ -450,7 +451,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 73,
-              "reply": "Canberra, not Sydney or Melbourne, which is the answer most people guess."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P2",
@@ -467,7 +468,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 137,
-              "reply": "I can measure, reason about, and act on what is actually running on your machine, and I will tell you when a number is too weak to trust."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P3",
@@ -484,7 +485,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 340,
-              "reply": "A vector database stores numerical representations of data, often called embeddings, and finds similar items by comparing those numbers. Instead of matching keywords, it answers questions like find me the five notes most semantically close to this one. That makes it useful for search, recommendations, and memory in language model systems."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P4",
@@ -501,7 +502,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 471,
-              "reply": "Email first, because it is the one you can do in small slices and any thread that surfaces a blocker for the other two will need time to breathe before your meeting. Then the pull request, since it is bounded, cognitively deep, and the most likely to take longer than you expect. Slides last, because they are the most forgiving to draft with deadline pressure and they are the artifact where your meeting is actually happening, so freshness matters more than perfection."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P5",
@@ -518,7 +519,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 271,
-              "reply": "For voice, local is the right call. The latency of a round trip to a datacenter adds to every single pause, and you have already measured that local models clear the targets. Cloud buys you bigger weights, which you could get from a local mixture of experts model anyway."
+              "reply": "[redacted raw text]"
             }
           ]
         }

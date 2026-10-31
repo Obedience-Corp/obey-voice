@@ -320,3 +320,8 @@ audio-jobs:
 [no-cd]
 native-audio:
     go test -race ./pkg/voiceagent/utterance/... ./pkg/voiceagent/chatmedia/... ./pkg/voiceagent/stt/... ./pkg/voiceagent/brain/... ./pkg/voiceagent/nativeaudio/... ./pkg/voiceagent/pipeline/... ./pkg/voiceagent/session/... ./internal/persona/... ./internal/tui/... ./internal/transcript/...
+
+# Quiet finite-runtime lifecycle proof using explicit installed local assets.
+[no-cd]
+managed-audio-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
+    python3 docs/audio-jobs/probe/managed_runtime.py --worker "{{WORKER}}" --config "{{CONFIG}}" --request "{{REQUEST}}" --output "{{OUTPUT}}" --sandbox-profile "{{PROFILE}}"

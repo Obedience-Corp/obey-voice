@@ -89,7 +89,7 @@ printf 'partial\n' >"$models/.extract-9f2a/model.onnx"
 printf 'old\n' >"$models/kokoro-v0.19/model.onnx"
 printf 'old\n' >"$models/kokoro-v0.19/voices.bin"
 
-canonicalCache='/Users/lance/.cache/obey-voice'
+canonicalCache='/home/demo/.cache/obey-voice'
 "$bin" models clean --unused --dry-run --json |
 	sed -e "s#$HOME/.cache/obey-voice#$canonicalCache#g" >"$here/models-clean-dry-run.json"
 

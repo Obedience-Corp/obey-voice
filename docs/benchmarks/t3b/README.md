@@ -16,6 +16,13 @@ set, and every one calls the shipped code (`meeting.AttributeTranscript`,
 | `attributed.json` | Step-2 output: `AttributeTranscript` over both timelines |
 | `shift.json` | Step-3 output: 41-point ±2 s timestamp-shift sweep, incl. per-row `disagreements` ({id, sherpa, sortformer}) |
 
+## Publication status
+
+Local fixture paths are synthetic replacements. Transcript text, timing and
+speaker evidence remain original. Source and redistribution rights are unverified;
+retain privately until the [release gates](../../public-release-checklist.md) are
+resolved. Path redaction does not turn meeting content into synthetic data.
+
 ## Regenerate
 
 Steps 2–3 need only this directory (deterministic; outputs reproduce

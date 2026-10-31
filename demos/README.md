@@ -370,3 +370,12 @@ obey-voice meeting analyze tests/fixtures/meetings/product-marketing-meeting-90s
 `just speakerflow` auto-fetches the fixture if missing and, when `vhs` is on
 PATH, re-records `demos/meeting-speakers.gif`. Set `SPEAKERFLOW_SKIP_VHS=1` to
 skip the GIF step (useful in CI).
+
+## Isolated worker and notice recordings
+
+`just demo-workers` and `just demo-launcher-notice` compile a test-only terminal
+entry point that runs the real text-mode launcher with an explicit disposable
+config directory. These tapes do not change `HOME`, read personal persona files,
+or acquire microphone/playback devices. The launcher notices use synthetic paths,
+meeting names and campaign receipts. Other legacy tapes still need an isolation
+and provenance review before use in public-release evidence.

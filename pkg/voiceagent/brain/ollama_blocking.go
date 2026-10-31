@@ -146,7 +146,11 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		var response api.Message
 		var doneReason string
 		var responseComplete bool
-		err := o.chat(ctx, req, func(resp api.ChatResponse) error {
+		chat := o.chat
+		if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && !imageResultRetry {
+			chat = o.chatRouteRecovery
+		}
+		err := chat(ctx, req, func(resp api.ChatResponse) error {
 			responseComplete = responseComplete || resp.Done
 			response = resp.Message
 			doneReason = resp.DoneReason
@@ -193,7 +197,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			}
 			routeRetried = true
 			imageResultRetry = missingImageResult
-			skillCtx += "\n" + missingRouteInstruction
+			if missingImageResult {
+				skillCtx += "\n" + missingRouteInstruction
+			}
 			continue
 		}
 		// Tool calls — execute and loop (skills stack on full CLI tools).

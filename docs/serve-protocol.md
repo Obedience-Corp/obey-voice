@@ -80,7 +80,7 @@ output moves to stderr. The first line is `ready`, written once the listener is
 bound:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true,"shared_persona_session_snapshot":true,"response_id_dedupe":true}}
+{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/home/demo/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true,"shared_persona_session_snapshot":true,"response_id_dedupe":true}}
 ```
 
 | Field | Meaning |
@@ -438,7 +438,7 @@ GET /v1/meetings?limit=200&since=2026-08-01T00:00:00Z
 ```
 
 ```json
-{"meetings_dir":"/Users/lance/.obey/agents/voice/obey-voice/meetings",
+{"meetings_dir":"/home/demo/.obey/agents/voice/obey-voice/meetings",
  "count":42,"truncated":false,
  "meetings":[
    {"id":"weekly-sync-20260816-101500.meeting",
