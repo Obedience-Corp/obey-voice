@@ -47,6 +47,9 @@ type DesktopEnrollment struct {
 	Processing bool    `json:"processing"`
 }
 type DesktopState struct {
+	AudioMode        string                   `json:"audio_mode,omitempty"`
+	AudioControls    string                   `json:"audio_controls,omitempty"`
+	AudioTranscript  string                   `json:"audio_transcript,omitempty"`
 	AttachmentError  string                   `json:"attachment_error"`
 	Attachments      []desktopMedia           `json:"attachments,omitempty"`
 	AttachmentBusy   bool                     `json:"attachment_busy"`
@@ -67,6 +70,7 @@ type DesktopState struct {
 	Status           string                   `json:"status"`
 	Error            bool                     `json:"error"`
 	Mic              bool                     `json:"mic"`
+	OutputAvailable  bool                     `json:"output_available"`
 	VoiceAvailable   bool                     `json:"voice_available"`
 	Muted            bool                     `json:"muted"`
 	Busy             bool                     `json:"busy"`
@@ -297,13 +301,14 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m desktopModel) state() DesktopState {
 	c := m.app.conversation
 	state := DesktopState{SessionID: m.rt.SessionID, Name: c.agentName, Status: ansi.Strip(c.status), Error: c.statusErr, Mic: c.voiceEnabled,
-		VoiceAvailable: m.rt.Voice, Muted: c.outputMuted, Busy: c.turnState != turnIdle, Recording: c.recordMode(), Thinking: c.streamingThink,
+		VoiceAvailable: m.rt.Voice, OutputAvailable: m.rt.Output, Muted: c.outputMuted || !m.rt.Output, Busy: c.turnState != turnIdle, Recording: c.recordMode(), Thinking: c.streamingThink,
 		Response: c.streamingAgent, InputLevel: c.inputLevel, OutputLevel: c.outputLevel, Workers: m.rt.Pipeline.Workers(), WorkersEnabled: m.rt.Pipeline.WorkersEnabled()}
 	if m.rt.SessionCfg != nil && m.rt.SessionCfg.GroupParticipationEnabled && m.rt.Participation != nil {
 		settings := m.rt.Participation()
 		state.Participation = &settings
 	}
 	state.BrainProvider, state.BrainModel = c.activeBrain()
+	state.AudioMode, state.AudioControls, state.AudioTranscript = c.selection.AudioMode, c.selection.AudioControls, c.selection.AudioTranscript
 	if m.rt.SessionCfg != nil {
 		state.WorkDir, state.WorkDirSource = m.rt.SessionCfg.WorkDir, m.rt.SessionCfg.WorkDirSource
 	}

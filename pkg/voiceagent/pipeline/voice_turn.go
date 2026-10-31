@@ -18,6 +18,11 @@ import (
 func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	p.incActiveTurn()
 	defer p.decActiveTurn()
+	if p.BeforeCapture != nil {
+		if err := p.BeforeCapture(ctx); err != nil {
+			return "", fmt.Errorf("prepare capture binding: %w", err)
+		}
+	}
 	conversation := p.Native != nil && p.Native.Controls == "conversation"
 	input, err := p.runVoiceWithContinuations(ctx)
 	if conversation {

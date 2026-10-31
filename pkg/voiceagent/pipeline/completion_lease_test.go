@@ -192,3 +192,25 @@ func TestVoiceCompletionUsesAcknowledgedPausedCapturePermit(t *testing.T) {
 		t.Fatal("acknowledged paused capture did not grant a completion lease")
 	}
 }
+
+func TestNativeInputCompletionWaitsForCaptureYieldBeforeInference(t *testing.T) {
+	p, c, scope := newCompletionLeasePipeline(t, false)
+	p.Input = &fixtureNativeInput{}
+	if !p.HasCaptureProvider() || !p.completionNeedsVoice() {
+		t.Fatal("native finalized input was treated as text-only")
+	}
+	if p.BackgroundCaptureReady() {
+		t.Fatal("Native input bypassed passive capture ownership")
+	}
+	called := false
+	if err := p.withCompletionLease(t.Context(), func(context.Context, work.CompletionLease, []work.ResultView) error { called = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("completion inferred before Native input yielded its reader")
+	}
+	pending := c.Pending(scope)
+	if len(pending) != 1 || pending[0].State != work.Pending {
+		t.Fatal("deferred completion lost pending work", pending)
+	}
+}

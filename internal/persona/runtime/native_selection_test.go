@@ -242,3 +242,21 @@ func TestNativeStartupRejectsSameSessionStaleEpochBeforeAuthorizationOrPersisten
 	}
 	f.selector.Close()
 }
+
+func TestSilentNativeSelectionDoesNotConstructOrInstallSpeech(t *testing.T) {
+	f := newNativeSelectorFixture(t)
+	f.selector.opts.Native.Silent = true
+	f.pipeline.TTS = nil
+	f.selector.opts.NewVoice = func(context.Context, *config.Config) (*voiceagent.TTSSet, error) {
+		t.Fatal("silent selection constructed Standard speech")
+		return nil, nil
+	}
+	for _, id := range []string{"native", "standard", "native"} {
+		if _, err := f.selector.Select(t.Context(), id, "fixture"); err != nil {
+			t.Fatal(err)
+		}
+		if f.pipeline.HasTTS() {
+			t.Fatalf("silent %s selection installed speech", id)
+		}
+	}
+}

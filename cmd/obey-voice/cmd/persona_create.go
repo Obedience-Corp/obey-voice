@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -47,7 +48,18 @@ func usePersona(id string) (*config.Config, error) {
 		return nil, err
 	}
 	if err := persona.Use(cfg, id); err != nil {
-		return nil, err
+		if !errors.Is(err, persona.ErrNativeAudioUnavailable) {
+			return nil, err
+		}
+		if err := persona.UseExperimentalNative(cfg, id); err != nil {
+			return nil, err
+		}
+		p, err := persona.Load(id)
+		if err != nil {
+			return nil, err
+		}
+		selected, _, err := persona.ResolveAudioConfig(cfg, p)
+		return selected, err
 	}
 	return cfg, nil
 }

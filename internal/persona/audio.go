@@ -21,9 +21,9 @@ const (
 	DefaultAudioModel         = "lfm3-audio:2b"
 )
 
-// ErrNativeAudioUnavailable fences saved native drafts until production input
-// and transport bindings exist. Resolving a candidate is not activation.
-var ErrNativeAudioUnavailable = errors.New("native audio activation is not available yet")
+// ErrNativeAudioUnavailable fences hosts that have not opted into native input
+// and transport integration. Resolving a candidate is not activation.
+var ErrNativeAudioUnavailable = errors.New("native audio requires an audio-aware conversation host")
 
 // Audio is an optional persona override. Omission preserves the Standard stack;
 // inactive native settings may remain saved in a Standard profile.

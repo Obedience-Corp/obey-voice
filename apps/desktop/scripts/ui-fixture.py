@@ -60,7 +60,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/v1/audio/speech':
                 self.send_response(200); self.send_header('Content-Type', 'application/octet-stream'); self.end_headers(); self.wfile.write(b'\x00\x00\x01\x00'); return
             if self.path == '/api/chat':
-                self.respond({'model': 'lfm3-audio:2b', 'message': {'role': 'assistant', 'content': '15'}, 'done': True}); return
+                self.respond({'model': 'lfm3-audio:2b', 'message': {'role': 'assistant', 'content': 'Native fixture response.' if request.get('stream') else '15'}, 'done': True, 'done_reason': 'stop'}); return
         if args.images:
             with (fixture_root / 'image-requests.jsonl').open('a') as log:
                 log.write(json.dumps(request) + '\n')

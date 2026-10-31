@@ -46,10 +46,20 @@ impl VoiceApp {
                             ui.label("Inactive");
                         }
                     });
-                    ui.label(
-                        RichText::new(format!("{} · {} · {}", p.id, p.provider, p.voice))
-                            .color(muted(ui)),
-                    );
+                    let details = if native {
+                        let model = p.audio["model"]
+                            .as_str()
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or("lfm3-audio:2b");
+                        let voice = p.audio["voice"]
+                            .as_str()
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or("model default voice");
+                        format!("{} · {} · {}", p.id, model, voice)
+                    } else {
+                        format!("{} · {} · {}", p.id, p.provider, p.voice)
+                    };
+                    ui.label(RichText::new(details).color(muted(ui)));
                     if native {
                         ui.label("Native audio · experimental");
                     }

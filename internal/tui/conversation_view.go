@@ -255,6 +255,9 @@ func (m conversationModel) View() string {
 	// Put the active brain before speech details and navigation so it remains
 	// visible when the header has to truncate on a smaller terminal.
 	left := headerStyle.Render(m.agentName)
+	if m.selection.AudioMode == persona.AudioNative {
+		left += "  " + chipMutedStyle.Render("Native audio · experimental")
+	}
 	if badge := m.brainBadgeLabel(); badge != "" {
 		left += "  " + chipMutedStyle.Render(badge)
 	}

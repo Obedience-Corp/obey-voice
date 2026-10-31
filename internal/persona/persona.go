@@ -76,7 +76,7 @@ func RequireEnabled(p *Profile) error {
 		return fmt.Errorf("persona %q is inactive; run 'persona enable %s': %w", p.ID, p.ID, ErrInactive)
 	}
 	if p.Audio != nil && p.Audio.Mode == AudioNative {
-		return fmt.Errorf("persona %q: %w; select Standard mode until native input and transport are available", p.ID, ErrNativeAudioUnavailable)
+		return fmt.Errorf("persona %q: %w; use a native-audio-aware conversation host or select Standard mode", p.ID, ErrNativeAudioUnavailable)
 	}
 	return nil
 }

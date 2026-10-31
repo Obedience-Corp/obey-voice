@@ -33,3 +33,17 @@ func TestDesktopBrainSnapshotFollowsActiveSelection(t *testing.T) {
 	m.app.conversation.handleEvent(events.PersonaSelection{PersonaID: "santa", Revision: 3, BrainProvider: "claude"})
 	check("claude", "")
 }
+
+func TestDesktopAudioModeTracksPublishedSelectionRatherThanDraftSettings(t *testing.T) {
+	m := desktopModel{app: App{conversation: newConversation("Obey")}, rt: fakeRuntime()}
+	m.app.conversation.cfg = &config.Config{TTSProvider: config.OpenAISpeechProviderName}
+	if m.state().AudioMode != "" {
+		t.Fatal("speech provider alone implied Native mode")
+	}
+	m.app.conversation.handleEvent(events.PersonaSelection{PersonaID: "native", Revision: 2, AudioMode: "native", AudioControls: "conversation", AudioTranscript: "off"})
+	m.app.conversation.handleEvent(events.PersonaSelection{PersonaID: "standard", Revision: 1, AudioMode: "standard"})
+	state := m.state()
+	if state.AudioMode != "native" || state.AudioControls != "conversation" || state.AudioTranscript != "off" {
+		t.Fatal("late selection relabeled active audio mode", state.AudioMode)
+	}
+}

@@ -9,6 +9,15 @@ import (
 
 var ErrAudioMediaOwner = errors.New("recording belongs to another conversation media owner; start a new context explicitly")
 
+// BindAudioMedia installs the host-owned recording store before restored
+// canonical history becomes live. Call at the serialized lifecycle boundary.
+func (p *Pipeline) BindAudioMedia(media *chatmedia.AudioSession) error {
+	if media == nil {
+		return ErrAudioMediaOwner
+	}
+	return p.rememberAudioMedia(media)
+}
+
 // Media remains conversation-owned across native/Standard persona changes.
 // Remembering the owner prevents a new native binding from silently losing
 // canonical recording context by selecting a different in-memory store.

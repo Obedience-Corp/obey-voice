@@ -21,6 +21,7 @@ var ErrNativeUnqualified = errors.New("native activation requires verified input
 // predicate. Nil hooks preserve guarded Standard paths.
 type NativeSelectionHooks struct {
 	TextOnly     bool
+	Silent       bool
 	Prepare      func(context.Context, *config.Config, persona.Audio, events.PersonaSelection, func(context.Context, func() error) error) (*voiceagent.NativeCandidate, error)
 	Authorize    func(context.Context, *persona.SessionBinding, *voiceagent.NativeCandidate) error
 	PrepareInput func(context.Context, *config.Config, *voiceagent.NativeCandidate) (pipeline.InputBinding, func(), error)

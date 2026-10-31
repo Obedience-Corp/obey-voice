@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
@@ -339,7 +340,11 @@ func (m *personasModel) selectCurrent() tea.Cmd {
 	if use == nil {
 		use = persona.Use
 	}
-	if err := use(m.cfg, p.ID); err != nil {
+	err := use(m.cfg, p.ID)
+	if errors.Is(err, persona.ErrNativeAudioUnavailable) {
+		err = persona.UseExperimentalNative(m.cfg, p.ID)
+	}
+	if err != nil {
 		m.message = fmt.Sprintf("Failed to switch persona: %v", err)
 		return nil
 	}

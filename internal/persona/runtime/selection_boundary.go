@@ -184,7 +184,9 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 					return err
 				}
 				nextBrain = native.Brain
-				voice = native.Voice
+				if !s.opts.Native.Silent {
+					voice = native.Voice
+				}
 			} else {
 				nextBrain, err = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewBrain(ctx, cfg) }, closeBrain)
 			}
@@ -235,7 +237,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			} else if err := projection.ImportHistory(turns); err != nil {
 				return fmt.Errorf("project conversation: %w", err)
 			}
-			if s.opts.Voices != nil && native == nil {
+			if s.opts.Voices != nil && native == nil && (s.opts.Native == nil || !s.opts.Native.Silent) {
 				voice, err = prepareResource(ctx, func() (*voiceagent.TTSSet, error) { return s.opts.NewVoice(ctx, cfg) }, func(v *voiceagent.TTSSet) { v.Close() })
 				if err != nil {
 					return fmt.Errorf("prepare persona voice: %w", err)

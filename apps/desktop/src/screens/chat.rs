@@ -27,6 +27,9 @@ impl VoiceApp {
         }
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(&self.state.name).strong().color(accent(ui)));
+            if self.state.audio_mode == "native" {
+                ui.label("Native audio · experimental").on_hover_text(format!("{} controls · transcription {}. Responses can be inaccurate or claim actions that did not occur.", self.state.audio_controls, self.state.audio_transcript));
+            }
             if let Some(label) = self.state.brain_label() {
                 ui.label(label).on_hover_text(
                     "Active persona's brain. Default means the provider chooses its model.",
@@ -55,11 +58,16 @@ impl VoiceApp {
                 self.action("mic", "", !self.state.mic);
             }
             if ui
-                .button(if self.state.muted {
-                    "Unmute voice"
-                } else {
-                    "Mute voice"
-                })
+                .add_enabled(
+                    self.state.output_available,
+                    egui::Button::new(if !self.state.output_available {
+                        "Spoken replies off"
+                    } else if self.state.muted {
+                        "Unmute voice"
+                    } else {
+                        "Mute voice"
+                    }),
+                )
                 .clicked()
             {
                 self.action("audio", "", self.state.muted);

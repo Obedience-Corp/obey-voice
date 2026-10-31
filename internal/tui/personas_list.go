@@ -44,6 +44,13 @@ func resolvePersonaListStack(defaults *config.Config, p *persona.Profile) person
 	if defaults != nil {
 		effective = defaults.Clone()
 	}
+	if p.Audio != nil && p.Audio.Mode == persona.AudioNative {
+		selected, mode, err := persona.ResolveAudioConfig(effective, p)
+		if err != nil {
+			return personaListStack{provider: "Native unavailable", note: err.Error()}
+		}
+		return personaListStack{provider: selected.BrainProvider, model: mode.Model, voice: mode.Voice, providerSource: "Native persona", modelSource: "Native persona", note: "Native audio · experimental"}
+	}
 	persona.Apply(effective, p)
 	s := personaListStack{
 		provider:       strings.TrimSpace(effective.BrainProvider),
