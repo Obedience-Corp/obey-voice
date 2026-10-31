@@ -338,3 +338,9 @@ native-persona-proof FIXTURES RECEIPT COVERAGE:
 [no-cd]
 native-persona-negative-proof RECEIPT:
     OBEY_NATIVE_NEGATIVE_RECEIPT="{{RECEIPT}}" go test -count=1 -timeout 2m ./pkg/voiceagent -run '^TestLiveNativeProviderNegativePaths$' -v
+
+# Pinned installed Ollama/LFM3 context geometry and hard rejection. Synthetic
+# WAVs only; no installs, daemon changes, config or audio devices.
+[no-cd]
+native-context-contract-proof RECEIPT:
+    python3 docs/native-audio/probe/context_contract.py "{{RECEIPT}}"

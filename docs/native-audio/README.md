@@ -5,8 +5,7 @@ persona integration. The generic binding API remains guarded for unaware hosts.
 [Frontdoor verification](frontdoor.md) covers actual startup/default selection,
 restore/projection, native UI and the numeric-integrity correction.
 [Prepared bindings](activation.md) describes the transaction machinery. Existing
-Standard personas retain their providers and saved settings. Original replay/retry controls are delivered in [recording review](recording-review.md). Broader
-acceptance/quality and exact runtime context accounting remain open.
+Standard personas retain their providers and saved settings. Original replay/retry controls are delivered in [recording review](recording-review.md). Current A01–A25 software evidence is mapped in the [acceptance audit](acceptance-audit.md). Physical-device/model quality qualifications remain separate. The reviewed runtime now has a [pinned context contract](context-contract.md); other identities retain estimated admission.
 
 The implementation shares the existing capture/VAD/endpoint/completion owner,
 with a decoder-free `utterance.Provider`. Native input and image attachments have
@@ -85,17 +84,31 @@ and both raw/canonical hashes are documented there.
   specifies hop 160 and encoder stride 8. Neither a text-only estimate nor one
   text/audio token difference qualifies exact audio history accounting.
 
-The context-budget discrepancy remains an open no-omission/resource-safety
-investigation. A20 specifically covers unavailable text/image projection: typed
-rejections now retain the previous binding; product Retry/New context actions
-remain to be integrated. A24 covers typed/local/completion native speech and
-scheduling, not model accuracy. A06 now has two distinct real production-path
-fixture responses in the ordinary-agent proof. Native selection/startup rollback, restart/replay/deletion,
-UI activation, fresh whole-project Standard checks and broader quality/physical
-listener gates remain explicit. No complete A01–A25 pass is claimed.
+The earlier context observation is explained for the pinned MLX path: it uses the
+model-level hard limit, expands complete audio first, and rejects oversized input.
+Actual boundary and mixed-input probes plus source/tokenizer hashes are in the
+[context contract](context-contract.md). The client retains its smaller 32K cap;
+unknown model/runtime identities do not inherit that proof.
+
+A20 projection failures retain the prior binding, and [actual desktop switching](controls-switching.md)
+verifies explicit transcription repair, Standard response, Native reactivation and
+six-turn restart with unchanged global choices. Lifecycle deletion/replay and
+startup rollback are delivered with owning negative tests. A24 selected typed/local/
+completion speech and scheduler/worker isolation are in [delivery verification](completion-delivery.md).
+The later full unit run passed 5,540 tests in 86 packages; historical failures above
+remain disclosed. Physical devices, representative listener quality and editor task
+qualification are not inferred from these software fixtures.
 
 Original recording replay and explicit transcript retry: [controls and evidence](recording-review.md).
 
 Typed/local/worker speech and Native recorded completion context: [delivery verification](completion-delivery.md).
 
 Actual invalid-voice and cancellation milestones: [local provider negatives](provider-negatives.md).
+
+Standard spoken controls and reversible Native/Standard selection: [native UI and product-host evidence](controls-switching.md).
+
+Pinned runtime accounting proof (already installed model, fresh absolute output):
+
+```sh
+just test native-context-contract-proof /tmp/native-context-contract-new.json
+```

@@ -11,13 +11,18 @@ import (
 
 const nativeContextCeiling = 32768
 
-// nativeMessagesBudgetError is conservative admission, not tokenizer accounting.
-// Text/tool UTF-8 bytes receive one unit each (rather than Standard's /4).
-// Audio receives one unit per 10ms frame plus64 per recording, deliberately
-// above observed LFM3 prefix/stride counts. This estimate cannot establish that
-// a runtime honors num_ctx; the reproducible runtime discrepancy remains open.
-// Native evidence is never automatically trimmed to satisfy this allowance.
+// nativeMessagesBudgetError uses the audited profile only for its exact checked
+// runtime/model identity. Other identities retain an explicitly labeled estimate:
+// UTF-8/tool JSON bytes, 128 units/message and 100 audio frames/second plus 64.
+// Neither path automatically trims evidence or expands the 32K client ceiling.
 func (o *OllamaBrain) nativeMessagesBudgetError(messages []api.Message, tools api.Tools) error {
+	if o.nativeContextIdentity.pinnedLFM3() {
+		allowance, err := pinnedLFM3ContextBound(messages, tools)
+		if err != nil {
+			return err
+		}
+		return o.nativeAdmissionError(allowance)
+	}
 	allowance := int64(0)
 	for _, message := range messages {
 		allowance += int64(len(message.Content)) + 128
@@ -37,6 +42,10 @@ func (o *OllamaBrain) nativeMessagesBudgetError(messages []api.Message, tools ap
 		data, _ := json.Marshal(tools)
 		allowance += int64(len(data))
 	}
+	return o.nativeAdmissionError(allowance)
+}
+
+func (o *OllamaBrain) nativeAdmissionError(allowance int64) error {
 	budget := o.effectiveNumCtx()
 	if budget <= 0 {
 		budget = nativeContextCeiling
