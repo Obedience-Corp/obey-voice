@@ -12,6 +12,7 @@ import (
 )
 
 type boundarySession struct {
+	closeErr     error
 	closeStarted chan struct{}
 	release      chan struct{}
 	once         sync.Once
@@ -29,7 +30,7 @@ func (s *boundarySession) Close() error {
 		<-s.release
 	}
 	s.closed.Store(true)
-	return nil
+	return s.closeErr
 }
 
 type boundaryProvider struct {
@@ -163,5 +164,17 @@ func TestPreparedInputCancellationKeepsLateStartingReaderFenced(t *testing.T) {
 		default:
 			time.Sleep(time.Millisecond)
 		}
+	}
+}
+
+func TestPreparedInputCloseFailureLatchesActionableAdmissionError(t *testing.T) {
+	cause := errors.New("fixture reader could not stop")
+	old := idleBoundaryProvider()
+	p := &Pipeline{STT: old, captureSession: &boundarySession{closeErr: cause}}
+	if _, err := p.PrepareInputReplacement(t.Context(), InputBinding{STT: idleBoundaryProvider()}); !errors.Is(err, ErrCaptureTeardown) || !errors.Is(err, cause) {
+		t.Fatal(err)
+	}
+	if _, _, err := p.startCaptureSession(t.Context()); !errors.Is(err, ErrCaptureTeardown) {
+		t.Fatal("retry lost actionable failure", err)
 	}
 }

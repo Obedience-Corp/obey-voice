@@ -1,9 +1,9 @@
 # Guarded native audio integration (WI-43b072)
 
 Native persona activation remains disabled by `persona.RequireEnabled`. This
-checkpoint adds tested input, history, delivery and caption components; runtime
-setup, transactional selection, persona controls and qualification remain follow-up
-work. Existing personas use their Standard providers and saved settings.
+checkpoint adds tested input, history, delivery and caption components. The
+[activation continuation](activation.md) adds guarded setup/transaction machinery;
+production startup, persona controls and qualification remain follow-up work. Existing personas use their Standard providers and saved settings.
 
 The implementation shares the existing capture/VAD/endpoint/completion owner,
 with a decoder-free `utterance.Provider`. Native input and image attachments have

@@ -76,8 +76,14 @@ func TestNativeCandidatePreparesOnlySelectedResourcesAndRetiresWithoutMediaLoss(
 	if _, err := candidate.InputFactory(nil, nil); err == nil {
 		t.Fatal("input accepted missing capture/VAD")
 	}
+	if err := candidate.ValidatePrepared(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if err := candidate.Close(); err != nil {
 		t.Fatal(err)
+	}
+	if err := candidate.ValidatePrepared(t.Context()); err == nil {
+		t.Fatal("retired candidate remained prepared")
 	}
 	if err := candidate.Close(); err != nil {
 		t.Fatal(err)

@@ -37,16 +37,17 @@ type NativeCandidateOptions struct {
 // Call Close on failed preparation, replacement or shutdown, after quiescing the
 // input consumer. Its Voice borrows the candidate's speech lifetime.
 type NativeCandidate struct {
-	Brain       *brain.OllamaBrain
-	Voice       *TTSSet
-	Policy      *pipeline.NativePolicy
-	Setup       nativeaudio.SetupResult
-	cfg         *config.Config
-	cancel      context.CancelFunc
-	closeSpeech func()
-	closed      atomic.Bool
-	once        sync.Once
-	closeErr    error
+	Brain        brain.Provider
+	Voice        *TTSSet
+	Policy       *pipeline.NativePolicy
+	Setup        nativeaudio.SetupResult
+	cfg          *config.Config
+	cancel       context.CancelFunc
+	closeSpeech  func()
+	closed       atomic.Bool
+	brainAdopted atomic.Bool
+	once         sync.Once
+	closeErr     error
 }
 
 func PrepareNativeCandidate(ctx context.Context, cfg *config.Config, opts NativeCandidateOptions) (*NativeCandidate, error) {
@@ -148,9 +149,30 @@ func (n *NativeCandidate) Close() error {
 		if n.closeSpeech != nil {
 			n.closeSpeech()
 		}
-		if n.Brain != nil {
-			n.closeErr = errors.Join(n.closeErr, n.Brain.Close())
+		if n.Brain != nil && !n.brainAdopted.Load() {
+			n.closeErr = errors.Join(n.closeErr, brain.CloseProvider(n.Brain))
 		}
 	})
 	return n.closeErr
+}
+
+// TransferBrainOwnership is called only after durable pipeline publication.
+// The host must then close the pipeline's current/retired brains, as for a
+// Standard replacement. Candidate retirement still owns selected HTTP/speech.
+func (n *NativeCandidate) TransferBrainOwnership() {
+	if n != nil {
+		n.brainAdopted.Store(true)
+	}
+}
+
+// ValidatePrepared checks the lifetime/resource fence immediately before the
+// host persists selection. It performs no new inference or capability probes.
+func (n *NativeCandidate) ValidatePrepared(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if n == nil || n.closed.Load() || n.Brain == nil || n.Voice == nil || n.Voice.Primary == nil || !n.Voice.Primary.Available() || n.Policy == nil || n.Policy.Lifetime == nil || !n.Setup.ProtocolReady {
+		return errors.New("native candidate is no longer prepared")
+	}
+	return n.Policy.Lifetime.Err()
 }

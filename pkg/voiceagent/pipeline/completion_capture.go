@@ -99,9 +99,13 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 	adopted := false
 	p.captureMu.Lock()
 	if p.captureBoundary != nil || p.captureStarting != nil || (p.captureSession != nil && !p.captureYielded) {
+		err := ErrInputTransition
+		if p.captureBoundary != nil {
+			err = p.captureBoundary.transitionError()
+		}
 		p.captureMu.Unlock()
 		cancelStart()
-		return nil, 0, ErrInputTransition
+		return nil, 0, err
 	}
 	p.captureStarting = startup
 	session, token, generation := p.captureSession, p.captureToken, p.captureGeneration
