@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "code_checkpoint": "906b3236",
+  "fixture": "actual prepared candidate and ordinary agent with deterministic loopback HTTP, synthetic source PCM and software output",
+  "production_path": [
+    "PrepareNativeCandidate",
+    "NativeCandidate.NewAgent",
+    "Agent.SendText typed",
+    "Agent.SendText local admission",
+    "Pipeline.RunBackgroundTurn"
+  ],
+  "selected_model": "selected",
+  "selected_voice": "female",
+  "speech_requests": [
+    "Ready.",
+    "Typed answer.",
+    "Local fixture acknowledgement.",
+    "Completed fixture work."
+  ],
+  "asr_requests": 0,
+  "max_active_http_bodies": 1,
+  "speech_samples_received": 12,
+  "sink": "stream_client software drain",
+  "physical_audibility_claim": false,
+  "completion_disposition": "held, not communicated without an audible receipt",
+  "completion_recording": {
+    "count": 1,
+    "source": "three synthetic PCM16 samples at16k",
+    "byte_identical": true,
+    "canonical_history_unchanged_by_private_projection": true,
+    "working_history_unchanged": true,
+    "ordinary_projection_map_unchanged": true,
+    "truncate": false,
+    "shift": false,
+    "tools": false,
+    "private_excerpt_contract": "existing up to six turns"
+  },
+  "worker_settings": {
+    "provider": "ollama",
+    "model": "independent-worker",
+    "host": "separate fixture endpoint, never substituted for selected foreground model",
+    "unchanged": true
+  },
+  "red_regression": {
+    "test": "TestNativeCompletionProjectsExactRecordingWithoutMutatingConversation",
+    "failure": "completion omitted or changed retained recording 0",
+    "log": "/tmp/wi-43b072-sol/delivery-completion-red.log"
+  },
+  "negative_tests": [
+    "missing disabled/pending/unavailable original refuses before HTTP",
+    "Ready transcript preserves typed instruction and actual recording words",
+    "unsupported image refuses before HTTP",
+    "estimated context pressure refuses before HTTP",
+    "same hash with conflicting sample count rejects",
+    "historical roles cannot gain system/tool authority"
+  ],
+  "checks": {
+    "full_unit": "5540/5540,86packages,331.53s; before quoted-history-only follow-up",
+    "native_race": "pass; TUI81.826s,brain45.469s",
+    "final_brain_factory_race": "pass44.703s/10.264s after follow-up",
+    "changed_code_lint": "0issues",
+    "voiceflow": "pass2.825s",
+    "software_crackle": "pass",
+    "build": "pass60.74s"
+  },
+  "limits": [
+    "not real model inference or listening qualification",
+    "not proof runtime honors num_ctx",
+    "software sink does not prove acoustic timing",
+    "private completion excerpt retains its existing six-turn bound"
+  ]
+}
