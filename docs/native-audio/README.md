@@ -93,3 +93,5 @@ scheduling, not model accuracy. A06 now has two distinct real production-path
 fixture responses in the ordinary-agent proof. Native selection/startup rollback, restart/replay/deletion,
 UI activation, fresh whole-project Standard checks and broader quality/physical
 listener gates remain explicit. No complete A01–A25 pass is claimed.
+
+Original recording replay and explicit transcript retry: [controls and evidence](recording-review.md).

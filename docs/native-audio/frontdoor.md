@@ -6,7 +6,7 @@ Startup checks the selected runtime/model/voice before capture. Native skips ext
 
 Restoration verifies retained media in its session namespace. Native receives exact retained WAV bytes, while Standard requires an actual Ready recording transcript in addition to typed accompaniment. Unsupported audio/image projections fail before model construction or initial persistence. Missing context does not rewrite the saved session. Native Clear refreshes scope before the next capture policy snapshot. Caption producers join/materialize before publication leases retire; repeated cleanup remains safe.
 
-The active Native badge follows published runtime selection, not a saved draft or speech-provider name. Input availability includes finalized Native providers, including passive completion ownership; pending worker speech waits for a capture yield. Replay and explicit transcription-retry controls remain a subsequent UI slice and are not implied by restoration.
+The active Native badge follows published runtime selection, not a saved draft or speech-provider name. Input availability includes finalized Native providers, including passive completion ownership; pending worker speech waits for a capture yield. The following [recording-review slice](recording-review.md) adds original replay and explicit transcription retry; restoration alone did not prove those controls.
 
 Context admission remains the [documented estimate](context-admission.md). It preserves complete working evidence and refuses pressure before dispatch; the runtime accounting/no-omission discrepancy is still open. Known model inaccuracy and unperformed-action claims remain experimental limitations. No general quality qualification is asserted.
 
