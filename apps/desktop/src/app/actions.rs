@@ -214,24 +214,23 @@ impl VoiceApp {
     }
     pub fn save_persona(&mut self) {
         self.stop_persona_preview();
+        self.stop_persona_audio_check();
         self.persona_form.save_error.clear();
         let f = &self.persona_form;
         if f.id.is_empty() {
-            self.cli(
-                vec![
-                    "persona".into(),
-                    "create".into(),
-                    f.name.clone(),
-                    "--prompt".into(),
-                    f.prompt.clone(),
-                    "--starting-directory".into(),
-                    f.starting_directory.clone(),
-                    "--no-activate".into(),
-                    "--json".into(),
-                ],
-                Purpose::Mutation("Persona created".into()),
-                false,
-            );
+            let mut args = vec![
+                "persona".into(),
+                "create".into(),
+                f.name.clone(),
+                "--prompt".into(),
+                f.prompt.clone(),
+                "--starting-directory".into(),
+                f.starting_directory.clone(),
+                "--no-activate".into(),
+                "--json".into(),
+            ];
+            f.audio.append_flags(&mut args);
+            self.cli(args, Purpose::Mutation("Persona created".into()), false);
             return;
         }
         let mut args = vec![
@@ -252,6 +251,7 @@ impl VoiceApp {
             f.tier.clone(),
             "--json".into(),
         ];
+        f.audio.append_flags(&mut args);
         if f.starting_directory != f.original_directory {
             args.extend(["--starting-directory".into(), f.starting_directory.clone()]);
         }

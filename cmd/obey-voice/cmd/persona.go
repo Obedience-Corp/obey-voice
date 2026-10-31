@@ -66,21 +66,23 @@ func personaListCmd() *cobra.Command {
 			}
 			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 				type row struct {
-					StartingDirectory string `json:"starting_directory"`
-					ID                string `json:"id"`
-					DisplayName       string `json:"display_name"`
-					Provider          string `json:"provider,omitempty"`
-					Voice             string `json:"voice,omitempty"`
-					Prompt            string `json:"prompt"`
-					Builtin           bool   `json:"builtin"`
-					Active            bool   `json:"active"`
-					Inactive          bool   `json:"inactive"`
-					Path              string `json:"path"`
+					Audio             *persona.Audio `json:"audio,omitempty"`
+					StartingDirectory string         `json:"starting_directory"`
+					ID                string         `json:"id"`
+					DisplayName       string         `json:"display_name"`
+					Provider          string         `json:"provider,omitempty"`
+					Voice             string         `json:"voice,omitempty"`
+					Prompt            string         `json:"prompt"`
+					Builtin           bool           `json:"builtin"`
+					Active            bool           `json:"active"`
+					Inactive          bool           `json:"inactive"`
+					Path              string         `json:"path"`
 				}
 				active := persona.ActiveID(cfg)
 				out := make([]row, 0, len(list))
 				for _, p := range list {
 					out = append(out, row{
+						Audio:             p.Audio,
 						StartingDirectory: p.StartingDirectory,
 						ID:                p.ID,
 						DisplayName:       p.DisplayName,

@@ -150,6 +150,7 @@ pub struct Session {
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Persona {
+    pub audio: Value,
     pub id: String,
     pub display_name: String,
     pub provider: String,
@@ -178,6 +179,11 @@ pub struct KeySpec {
 }
 #[derive(Default)]
 pub struct PersonaForm {
+    pub audio: crate::persona_audio::AudioDraft,
+    pub audio_check: Option<u64>,
+    pub audio_checked_draft: Option<crate::persona_audio::AudioDraft>,
+    pub audio_notice: String,
+    pub audio_error: bool,
     pub preview_persona: String,
     pub preview_request: Option<u64>,
     pub preview_notice: String,
@@ -207,6 +213,7 @@ pub enum Purpose {
     Personas,
     PersonaLoad,
     PersonaPreview,
+    PersonaAudioCheck,
     PersonaDirectories,
     PersonaBrowse,
     SettingsSchema,

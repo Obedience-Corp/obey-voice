@@ -5,6 +5,7 @@ mod dialogs;
 mod home;
 mod library;
 mod meeting;
+mod persona_audio;
 mod persona_directory;
 mod persona_editor;
 mod personas;

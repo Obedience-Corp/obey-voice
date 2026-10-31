@@ -32,6 +32,7 @@ func personaAudioCheckCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("json", false, "Emit setup status and runtime identity")
+	addPersonaAudioFlags(cmd)
 	return cmd
 }
 
@@ -46,9 +47,13 @@ func checkPersonaAudio(cmd *cobra.Command, id string) (*nativeaudio.SetupResult,
 	}
 	// Check an inactive native draft without modifying its saved mode or settings.
 	draft := *p
+	merged, _, err := mergePersonaAudio(cmd, p.Audio)
+	if err != nil {
+		return nil, err
+	}
 	audio := persona.Audio{Mode: persona.AudioNative}
-	if p.Audio != nil {
-		audio = *p.Audio
+	if merged != nil {
+		audio = *merged
 		audio.Mode = persona.AudioNative
 	}
 	draft.Audio = &audio
@@ -63,7 +68,7 @@ func checkPersonaAudio(cmd *cobra.Command, id string) (*nativeaudio.SetupResult,
 	defer client.Close()
 	requirements := nativeaudio.Requirements{
 		ASR:   effective.Controls == persona.AudioControlsStandard || effective.Transcript == persona.AudioTranscriptRequired,
-		Tools: effective.Controls == persona.AudioControlsStandard,
+		Tools: candidate.VoiceToolsEnabled && effective.Controls == persona.AudioControlsStandard,
 	}
 	_, closeSpeech, result, err := nativeaudio.NewSupportCache().Prepare(cmd.Context(), client, candidate, requirements)
 	if err != nil {

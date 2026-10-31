@@ -22,6 +22,9 @@ const personasCreateLabel = "+ Create new persona…"
 // personasModel is the main-menu screen for listing, switching, creating, and
 // editing voice agent personas (including system prompts).
 type personasModel struct {
+	audioDraft       personaAudioDraft
+	audioSetupCancel context.CancelFunc
+	audioSetupSeq    uint64
 	// returnScreen keeps Esc/q tied to the screen that opened the manager.
 	returnScreen screen
 	cfg          *config.Config
@@ -229,6 +232,9 @@ func (m personasModel) visibleRows() int {
 
 func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 	switch msg := msg.(type) {
+	case personaAudioSetupMsg:
+		m.receiveAudioSetup(msg)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resizeForm()
