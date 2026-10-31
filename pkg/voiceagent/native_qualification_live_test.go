@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/http/httptrace"
 	"net/url"
 	"os"
@@ -280,4 +281,45 @@ func (b *negativeTraceBody) Close() error {
 	err := b.ReadCloser.Close()
 	b.once.Do(b.closed)
 	return err
+}
+
+func TestNegativeTraceCountsWrittenRequestsAndOwnedBodyClose(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "fixture body") }))
+	defer server.Close()
+	transport := &negativeTraceTransport{base: &http.Transport{}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport}
+	canceled, stop := context.WithCancel(t.Context())
+	stop()
+	request, err := http.NewRequestWithContext(canceled, http.MethodGet, server.URL+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response, err := client.Do(request); err == nil || response != nil || transport.total.Load() != 0 {
+		t.Fatal("canceled request counted as written", response, err)
+	}
+	request, err = http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if transport.total.Load() != 1 || transport.active.Load() != 1 || transport.count("/") != 1 {
+		t.Fatal(transport.snapshot())
+	}
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if transport.active.Load() != 0 || transport.maximum.Load() != 1 {
+		t.Fatal("body lease miscounted", transport.snapshot())
+	}
 }

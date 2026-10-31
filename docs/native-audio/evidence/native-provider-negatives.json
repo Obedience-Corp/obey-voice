@@ -1,0 +1,111 @@
+{
+  "cases": {
+    "after_first_pcm": {
+      "authorized_playback_samples": 0,
+      "buffered_samples_drained_after_cancel": 0,
+      "canceled": true,
+      "error": "openai-speech: canceled: context canceled",
+      "first_pcm_samples": 1440,
+      "milestone_observed": true,
+      "producer_join_ms": 0,
+      "queued_batches_at_cancel": 0
+    },
+    "cancel_before_http": {
+      "canceled": true,
+      "http_requests": 0
+    },
+    "cancel_chat_delta": {
+      "authorized_pcm": 0,
+      "canceled": true,
+      "elapsed_ms": 226,
+      "error": "brain: context canceled",
+      "response_deltas": 1,
+      "speech_requests": 0
+    },
+    "cancel_written_asr_request": {
+      "canceled": true,
+      "elapsed_ms": 1,
+      "error": "native transcription request: Post \"http://localhost:11434/v1/audio/transcriptions\": context canceled",
+      "milestone": "HTTP request written; no claim GPU inference began",
+      "request_written": true
+    },
+    "full_output_queue": {
+      "authorized_playback_samples": 0,
+      "buffered_samples_drained_after_cancel": 20640,
+      "canceled": true,
+      "error": "openai-speech: canceled: context canceled",
+      "first_pcm_samples": 0,
+      "milestone_observed": true,
+      "producer_join_ms": 0,
+      "queued_batches_at_cancel": 8
+    },
+    "invalid_voice": {
+      "classified_input": true,
+      "elapsed_ms": 2,
+      "error": "openai-speech: unsupported_input: 400 Bad Request: voice \"wi43b072-invalid-voice\" is not supported; use female or male, optionally followed by a language such as female-british-english or male-french (languages: american-english, arabic, british-english, chinese, danish, dutch, english, finnish, french, german, greek, hebrew, italian, japanese, korean, polish, portuguese, spanish, swedish, turkish)",
+      "samples": 0,
+      "speech_requests": 1
+    }
+  },
+  "http_trace": {
+    "active_bodies": 0,
+    "maximum_bodies": 1,
+    "paths": {
+      "/api/chat": 1,
+      "/v1/audio/speech": 3,
+      "/v1/audio/transcriptions": 1,
+      "/v1/models": 1
+    },
+    "requests": 6
+  },
+  "passed": true,
+  "runtime": {
+    "endpoint": "http://localhost:11434",
+    "runtime_version": "0.40.12",
+    "model": "lfm3-audio:2b",
+    "digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+    "capabilities": [
+      "audio",
+      "completion",
+      "speech",
+      "tools"
+    ]
+  },
+  "schema": 1,
+  "scope": "actual selected local providers, software-only cancellation and invalid voice; not listening quality",
+  "setup": {
+    "metadata": {
+      "endpoint": "http://localhost:11434",
+      "runtime_version": "0.40.12",
+      "model": "lfm3-audio:2b",
+      "digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+      "capabilities": [
+        "audio",
+        "completion",
+        "speech",
+        "tools"
+      ]
+    },
+    "voice": "female",
+    "requirements": {
+      "asr": false,
+      "tools": false
+    },
+    "protocol_ready": true,
+    "quality_qualified": false,
+    "known_combination": false,
+    "checked_at": "2026-10-31T05:27:07.604626Z",
+    "quiet_chat_text": "15",
+    "quiet_speech_samples": 19111
+  },
+  "proof": {
+    "code_commit": "bcd4e1dd",
+    "elapsed_seconds": 7.85,
+    "source_fixture_sha256": "fdc8158aebc935a488991d208fc19130a0d8f612cf7e58c36c13474e9b4fb5cb",
+    "source_provenance": "pkg/voiceagent/nativeaudio/assets/README.md",
+    "sink": "software drain; no microphone or audible playback",
+    "cleanup": "all owned providers/HTTP bodies closed; shared daemon untouched",
+    "scope_limit": "ASR request-written boundary, no assertion GPU recognition began; speech raw drains paired with existing pipeline fence tests",
+    "later_changes": "added isolated middleware accounting unit test only; no live-path behavior change"
+  }
+}
