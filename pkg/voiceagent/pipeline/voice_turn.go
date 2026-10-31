@@ -52,6 +52,8 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	if isContinuation {
 		text = continuation.admission.Request
 	} else {
+		metrics.captureBound = true
+		metrics.capturePolicy = p.Native
 		turn.to(TurnListening)
 		text, err = p.transcribeTurn(ctx, metrics, turn)
 	}
