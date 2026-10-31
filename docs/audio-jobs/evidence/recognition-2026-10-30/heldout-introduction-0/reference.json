@@ -1,0 +1,42 @@
+[
+  {
+    "text": "Uh",
+    "start_us": 4380000,
+    "end_us": 4980000
+  },
+  {
+    "text": "Dave",
+    "start_us": 4980000,
+    "end_us": 5210000
+  },
+  {
+    "text": "Cochrane",
+    "start_us": 5210000,
+    "end_us": 5770000
+  },
+  {
+    "text": "User",
+    "start_us": 9240000,
+    "end_us": 9590000
+  },
+  {
+    "text": "Interface",
+    "start_us": 9590000,
+    "end_us": 9940000
+  },
+  {
+    "text": "Defin",
+    "start_us": 9940000,
+    "end_us": 10310000
+  },
+  {
+    "text": "Designer",
+    "start_us": 10310000,
+    "end_us": 10690000
+  },
+  {
+    "text": "yes",
+    "start_us": 10690000,
+    "end_us": 11060000
+  }
+]

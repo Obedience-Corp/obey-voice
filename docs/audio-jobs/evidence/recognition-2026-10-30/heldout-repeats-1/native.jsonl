@@ -1,0 +1,4 @@
+{"protocol":"obey-audio-job/v2","job_id":"heldout-repeats-1","seq":0,"type":"accepted"}
+{"protocol":"obey-audio-job/v2","job_id":"heldout-repeats-1","seq":1,"type":"progress","stage":"audio_analysis"}
+{"protocol":"obey-audio-job/v2","job_id":"heldout-repeats-1","seq":2,"type":"artifact","manifest_path":"/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/heldout-repeats/1/artifact/manifest.json"}
+{"protocol":"obey-audio-job/v2","job_id":"heldout-repeats-1","seq":3,"type":"completed"}

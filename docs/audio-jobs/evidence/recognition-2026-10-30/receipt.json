@@ -1,0 +1,14 @@
+{
+  "base_revision": "cf842c67316e0a57fb1383c7f8766256d3e28947",
+  "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "ffmpeg_version": "ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+  "script_sha256": "32b9fc80b4bbad2960ba09149eda2e22a79fdced6c3102c39d1ad3dbae7f74b6",
+  "reference_script_sha256": "344d522d76800acfec6fafbe63981f3e7ec1e8351e5937897bcd1f116b58873d",
+  "sandbox_profile": "(version 1)\n(allow default)\n(deny network*)\n(allow network-inbound (local ip \"localhost:*\"))\n(allow network-outbound (remote ip \"localhost:*\"))\n(allow network-bind (local ip \"localhost:*\"))\n",
+  "windows": 13,
+  "device_input": false,
+  "device_output": false,
+  "downloads": false,
+  "raw_audio_in_repository": false
+}

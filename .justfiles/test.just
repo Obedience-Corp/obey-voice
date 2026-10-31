@@ -325,3 +325,9 @@ native-audio:
 [no-cd]
 managed-audio-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
     python3 docs/audio-jobs/probe/managed_runtime.py --worker "{{WORKER}}" --config "{{CONFIG}}" --request "{{REQUEST}}" --output "{{OUTPUT}}" --sandbox-profile "{{PROFILE}}"
+
+# Identical licensed recording windows; text recognition only, no devices/downloads.
+[no-cd]
+audio-recognition WORKER SPEECH_CONFIG AUDIO_CONFIG AUDIO_DIR ANNOTATIONS OUTPUT PROFILE:
+    python3 -m unittest discover -s scripts -p 'test_compare_audio_recognition.py'
+    python3 scripts/compare-audio-recognition.py --worker "{{WORKER}}" --speech-config "{{SPEECH_CONFIG}}" --audio-config "{{AUDIO_CONFIG}}" --audio-dir "{{AUDIO_DIR}}" --annotations "{{ANNOTATIONS}}" --output "{{OUTPUT}}" --sandbox-profile "{{PROFILE}}"
