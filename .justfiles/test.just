@@ -332,3 +332,16 @@ managed-audio-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
 native-persona-proof FIXTURES RECEIPT COVERAGE:
     OBEY_NATIVE_AGENT_FIXTURE_DIR="{{FIXTURES}}" OBEY_NATIVE_AGENT_RECEIPT="{{RECEIPT}}" go test -count=1 -timeout 4m -covermode=atomic -coverpkg=./pkg/voiceagent/stt/...,./pkg/voiceagent/tts/...,./pkg/voiceagent/phonon/... -coverprofile="{{COVERAGE}}" ./internal/persona/runtime -run '^TestLiveNativeOrdinaryAgentAndHistory$' -v
     go run ./docs/native-audio/probe/factory-coverage --profile "{{COVERAGE}}" --receipt "{{RECEIPT}}" --out "{{RECEIPT}}.factories.json"
+
+# Identical licensed recording windows; text recognition only, no devices/downloads.
+[no-cd]
+audio-recognition WORKER SPEECH_CONFIG AUDIO_CONFIG AUDIO_DIR ANNOTATIONS OUTPUT PROFILE:
+    python3 -m unittest discover -s scripts -p 'test_compare_audio_recognition.py'
+    python3 scripts/compare-audio-recognition.py --worker "{{WORKER}}" --speech-config "{{SPEECH_CONFIG}}" --audio-config "{{AUDIO_CONFIG}}" --audio-dir "{{AUDIO_DIR}}" --annotations "{{ANNOTATIONS}}" --output "{{OUTPUT}}" --sandbox-profile "{{PROFILE}}"
+
+# Explicit installed reference environment/models; geometry is not qualification.
+[no-cd]
+audio-alignment PYTHON PROVIDER MODEL COMPARISON OUTPUT PROFILE:
+    "{{PYTHON}}" -m unittest discover -s scripts -p 'test_ctc_path.py'
+    "{{PYTHON}}" -m unittest discover -s scripts -p 'test_alignment_metrics.py'
+    sandbox-exec -f "{{PROFILE}}" "{{PYTHON}}" docs/audio-jobs/probe/compare_alignment.py --provider "{{PROVIDER}}" --model "{{MODEL}}" --comparison "{{COMPARISON}}" --output "{{OUTPUT}}"

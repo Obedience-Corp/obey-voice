@@ -28,6 +28,9 @@ type Process struct {
 // Start uses an explicit backend and a private loopback port. offline is true
 // for conversation startup; only explicit setup may download model assets.
 func Start(ctx context.Context, o Options, offline bool) (*Process, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("start native Phonon: %w", err)
+	}
 	if err := Validate(o); err != nil {
 		return nil, err
 	}

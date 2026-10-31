@@ -1,0 +1,407 @@
+[
+  {
+    "text": "to",
+    "start_us": 640000,
+    "end_us": 740000
+  },
+  {
+    "text": "a",
+    "start_us": 740000,
+    "end_us": 770000
+  },
+  {
+    "text": "much",
+    "start_us": 770000,
+    "end_us": 940000
+  },
+  {
+    "text": "greater",
+    "start_us": 940000,
+    "end_us": 1230000
+  },
+  {
+    "text": "extent",
+    "start_us": 1230000,
+    "end_us": 1670000
+  },
+  {
+    "text": "and",
+    "start_us": 1670000,
+    "end_us": 1760000
+  },
+  {
+    "text": "you",
+    "start_us": 1760000,
+    "end_us": 1840000
+  },
+  {
+    "text": "can",
+    "start_us": 1840000,
+    "end_us": 1950000
+  },
+  {
+    "text": "have",
+    "start_us": 1950000,
+    "end_us": 2560000
+  },
+  {
+    "text": "one",
+    "start_us": 2560000,
+    "end_us": 2990000
+  },
+  {
+    "text": "uh",
+    "start_us": 2990000,
+    "end_us": 3030000
+  },
+  {
+    "text": "you",
+    "start_us": 3030000,
+    "end_us": 3290000
+  },
+  {
+    "text": "know",
+    "start_us": 3290000,
+    "end_us": 3420000
+  },
+  {
+    "text": "one",
+    "start_us": 3420000,
+    "end_us": 3700000
+  },
+  {
+    "text": "macro",
+    "start_us": 3700000,
+    "end_us": 4080000
+  },
+  {
+    "text": "to",
+    "start_us": 4080000,
+    "end_us": 4620000
+  },
+  {
+    "text": "turn",
+    "start_us": 4620000,
+    "end_us": 4860000
+  },
+  {
+    "text": "the",
+    "start_us": 4860000,
+    "end_us": 5330000
+  },
+  {
+    "text": "uh",
+    "start_us": 5330000,
+    "end_us": 5830000
+  },
+  {
+    "text": "you",
+    "start_us": 5830000,
+    "end_us": 6120000
+  },
+  {
+    "text": "know",
+    "start_us": 6120000,
+    "end_us": 6510000
+  },
+  {
+    "text": "turn",
+    "start_us": 6510000,
+    "end_us": 6740000
+  },
+  {
+    "text": "the",
+    "start_us": 6740000,
+    "end_us": 6840000
+  },
+  {
+    "text": "T_V_",
+    "start_us": 6840000,
+    "end_us": 7350000
+  },
+  {
+    "text": "to",
+    "start_us": 7350000,
+    "end_us": 7510000
+  },
+  {
+    "text": "the",
+    "start_us": 7510000,
+    "end_us": 7600000
+  },
+  {
+    "text": "right",
+    "start_us": 7600000,
+    "end_us": 7870000
+  },
+  {
+    "text": "channel",
+    "start_us": 7870000,
+    "end_us": 8330000
+  },
+  {
+    "text": "get",
+    "start_us": 8330000,
+    "end_us": 8530000
+  },
+  {
+    "text": "the",
+    "start_us": 8530000,
+    "end_us": 9180000
+  },
+  {
+    "text": "uh",
+    "start_us": 9180000,
+    "end_us": 9260000
+  },
+  {
+    "text": "re",
+    "start_us": 9260000,
+    "end_us": 9500000
+  },
+  {
+    "text": "uh",
+    "start_us": 9500000,
+    "end_us": 9560000
+  },
+  {
+    "text": "rewind",
+    "start_us": 9560000,
+    "end_us": 10180000
+  },
+  {
+    "text": "the",
+    "start_us": 10180000,
+    "end_us": 10250000
+  },
+  {
+    "text": "tape",
+    "start_us": 10250000,
+    "end_us": 10540000
+  },
+  {
+    "text": "in",
+    "start_us": 10540000,
+    "end_us": 10630000
+  },
+  {
+    "text": "the",
+    "start_us": 10630000,
+    "end_us": 10710000
+  },
+  {
+    "text": "V_C_R_",
+    "start_us": 10710000,
+    "end_us": 11330000
+  },
+  {
+    "text": "and",
+    "start_us": 11330000,
+    "end_us": 11450000
+  },
+  {
+    "text": "get",
+    "start_us": 11450000,
+    "end_us": 11610000
+  },
+  {
+    "text": "it",
+    "start_us": 11610000,
+    "end_us": 11850000
+  },
+  {
+    "text": "to",
+    "start_us": 11850000,
+    "end_us": 11940000
+  },
+  {
+    "text": "play",
+    "start_us": 11940000,
+    "end_us": 12160000
+  },
+  {
+    "text": "once",
+    "start_us": 12160000,
+    "end_us": 12410000
+  },
+  {
+    "text": "it's",
+    "start_us": 12410000,
+    "end_us": 12550000
+  },
+  {
+    "text": "rewound",
+    "start_us": 12550000,
+    "end_us": 12960000
+  },
+  {
+    "text": "for",
+    "start_us": 12960000,
+    "end_us": 13070000
+  },
+  {
+    "text": "instance",
+    "start_us": 13070000,
+    "end_us": 14710000
+  },
+  {
+    "text": "Um",
+    "start_us": 14710000,
+    "end_us": 16640000
+  },
+  {
+    "text": "b",
+    "start_us": 16640000,
+    "end_us": 17810000
+  },
+  {
+    "text": "it",
+    "start_us": 17810000,
+    "end_us": 18020000
+  },
+  {
+    "text": "occurs",
+    "start_us": 18020000,
+    "end_us": 18260000
+  },
+  {
+    "text": "to",
+    "start_us": 18260000,
+    "end_us": 18340000
+  },
+  {
+    "text": "me",
+    "start_us": 18340000,
+    "end_us": 18410000
+  },
+  {
+    "text": "there",
+    "start_us": 18410000,
+    "end_us": 18510000
+  },
+  {
+    "text": "might",
+    "start_us": 18510000,
+    "end_us": 18660000
+  },
+  {
+    "text": "be",
+    "start_us": 18660000,
+    "end_us": 18750000
+  },
+  {
+    "text": "a",
+    "start_us": 18750000,
+    "end_us": 18830000
+  },
+  {
+    "text": "niche",
+    "start_us": 18830000,
+    "end_us": 19240000
+  },
+  {
+    "text": "for",
+    "start_us": 19240000,
+    "end_us": 19720000
+  },
+  {
+    "text": "uh",
+    "start_us": 19720000,
+    "end_us": 20880000
+  },
+  {
+    "text": "for",
+    "start_us": 20880000,
+    "end_us": 21040000
+  },
+  {
+    "text": "a",
+    "start_us": 21040000,
+    "end_us": 21150000
+  },
+  {
+    "text": "remote",
+    "start_us": 21150000,
+    "end_us": 21790000
+  },
+  {
+    "text": "that",
+    "start_us": 21790000,
+    "end_us": 23350000
+  },
+  {
+    "text": "aimed",
+    "start_us": 23350000,
+    "end_us": 23680000
+  },
+  {
+    "text": "towards",
+    "start_us": 23680000,
+    "end_us": 24180000
+  },
+  {
+    "text": "some",
+    "start_us": 24180000,
+    "end_us": 24490000
+  },
+  {
+    "text": "of",
+    "start_us": 24490000,
+    "end_us": 24940000
+  },
+  {
+    "text": "that",
+    "start_us": 24940000,
+    "end_us": 25860000
+  },
+  {
+    "text": "sort",
+    "start_us": 25860000,
+    "end_us": 26210000
+  },
+  {
+    "text": "of",
+    "start_us": 26210000,
+    "end_us": 26290000
+  },
+  {
+    "text": "functionality",
+    "start_us": 26290000,
+    "end_us": 27060000
+  },
+  {
+    "text": "but",
+    "start_us": 27060000,
+    "end_us": 27200000
+  },
+  {
+    "text": "using",
+    "start_us": 27200000,
+    "end_us": 27530000
+  },
+  {
+    "text": "a",
+    "start_us": 27530000,
+    "end_us": 27770000
+  },
+  {
+    "text": "just",
+    "start_us": 27770000,
+    "end_us": 27970000
+  },
+  {
+    "text": "conventional",
+    "start_us": 27970000,
+    "end_us": 28560000
+  },
+  {
+    "text": "push",
+    "start_us": 28560000,
+    "end_us": 28850000
+  },
+  {
+    "text": "button",
+    "start_us": 28850000,
+    "end_us": 29120000
+  }
+]

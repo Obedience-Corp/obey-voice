@@ -14,6 +14,7 @@ import (
 )
 
 const Protocol = "obey-audio-job/v1"
+const TextProtocol = "obey-audio-job/v2"
 const ConfigSchema = "obey-voice.audio-config/v1"
 
 type Source struct {
@@ -60,6 +61,7 @@ type Request struct {
 	Input          Input   `json:"input"`
 	Runtime        Runtime `json:"runtime"`
 	Script         string  `json:"script"`
+	Instruction    string  `json:"instruction,omitempty"`
 	Language       string  `json:"language"`
 	TargetLanguage string  `json:"target_language,omitempty"`
 	DurationPolicy string  `json:"duration_policy"`
@@ -79,40 +81,50 @@ type Window struct {
 	EndSample   int64 `json:"end_sample"`
 }
 type Output struct {
+	Kind        string `json:"kind,omitempty"`
+	Bytes       int64  `json:"bytes,omitempty"`
 	Path        string `json:"path"`
 	SHA256      string `json:"sha256"`
-	SampleRate  int    `json:"sample_rate_hz"`
-	Channels    int    `json:"channels"`
-	SampleCount int64  `json:"sample_count"`
+	SampleRate  int    `json:"sample_rate_hz,omitempty"`
+	Channels    int    `json:"channels,omitempty"`
+	SampleCount int64  `json:"sample_count,omitempty"`
 }
 type Manifest struct {
-	Protocol        string    `json:"protocol"`
-	JobID           string    `json:"job_id"`
-	Task            string    `json:"task"`
-	Source          Source    `json:"source"`
-	Input           Input     `json:"input"`
-	Runtime         Runtime   `json:"runtime"`
-	RuntimeVersion  string    `json:"runtime_version"`
-	ModelDigest     string    `json:"model_digest"`
-	Transport       string    `json:"transport"`
-	ScriptSHA256    string    `json:"script_sha256"`
-	Language        string    `json:"language"`
-	DurationPolicy  string    `json:"duration_policy"`
-	SourceWindows   []Window  `json:"source_windows"`
-	Output          Output    `json:"output"`
-	ProjectorDigest string    `json:"projector_digest,omitempty"`
-	RuntimeDigest   string    `json:"runtime_digest,omitempty"`
-	Sampling        *Sampling `json:"sampling,omitempty"`
+	Protocol          string        `json:"protocol"`
+	JobID             string        `json:"job_id"`
+	Task              string        `json:"task"`
+	Source            Source        `json:"source"`
+	Input             Input         `json:"input"`
+	Runtime           Runtime       `json:"runtime"`
+	RuntimeVersion    string        `json:"runtime_version"`
+	ModelDigest       string        `json:"model_digest"`
+	Transport         string        `json:"transport"`
+	ScriptSHA256      string        `json:"script_sha256"`
+	Language          string        `json:"language"`
+	DurationPolicy    string        `json:"duration_policy"`
+	SourceWindows     []Window      `json:"source_windows"`
+	Output            Output        `json:"output"`
+	ProjectorDigest   string        `json:"projector_digest,omitempty"`
+	RuntimeDigest     string        `json:"runtime_digest,omitempty"`
+	Sampling          *Sampling     `json:"sampling,omitempty"`
+	InstructionSHA256 string        `json:"instruction_sha256,omitempty"`
+	PromptSHA256      string        `json:"prompt_sha256,omitempty"`
+	ChunkPolicy       string        `json:"chunk_policy,omitempty"`
+	TextSampling      *TextSampling `json:"text_sampling,omitempty"`
 }
 
 // Capability distinguishes transport support and installed assets from a task's
 // independent quality qualification. Ready is never inferred from model names.
 type Capability struct {
-	Task      string `json:"task"`
-	Supported bool   `json:"supported"`
-	Installed bool   `json:"installed"`
-	Qualified bool   `json:"qualified"`
-	Reason    string `json:"reason"`
+	Task         string   `json:"task"`
+	Supported    bool     `json:"supported"`
+	Installed    bool     `json:"installed"`
+	Qualified    bool     `json:"qualified"`
+	Reason       string   `json:"reason"`
+	Protocol     string   `json:"protocol,omitempty"`
+	Languages    []string `json:"languages,omitempty"`
+	Voices       []string `json:"voices,omitempty"`
+	OutputFormat string   `json:"output_format,omitempty"`
 }
 
 func Decode(r io.Reader, out any) error {
@@ -166,7 +178,7 @@ func (r Request) Validate(c Config) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
-	if r.Protocol != Protocol || r.JobID == "" || strings.ContainsAny(r.JobID, "/\\\x00") || r.JobID == "." || r.JobID == ".." {
+	if (r.Protocol != Protocol && r.Protocol != TextProtocol) || r.JobID == "" || strings.ContainsAny(r.JobID, "/\\\x00") || r.JobID == "." || r.JobID == ".." {
 		return fmt.Errorf("invalid protocol or job_id")
 	}
 	if r.Runtime != c.Runtime {
@@ -183,14 +195,20 @@ func (r Request) Validate(c Config) error {
 	default:
 		return fmt.Errorf("unknown input channel role")
 	}
-	if r.Task != "narration" {
-		return fmt.Errorf("task %q is unavailable: conversion, dubbing and alignment require independent runtime and quality qualification", r.Task)
-	}
-	if strings.TrimSpace(r.Script) == "" || len(r.Script) > 256<<10 || r.Language != "en" || r.TargetLanguage != "" {
-		return fmt.Errorf("narration requires an approved English script of at most 256 KiB")
-	}
-	if c.Managed != nil && len(r.Script) > 1024 {
-		return fmt.Errorf("managed narration accepts at most 1024 UTF-8 bytes; select a shorter script")
+	if r.Protocol == TextProtocol {
+		if err := r.validateTextTask(c); err != nil {
+			return err
+		}
+	} else {
+		if r.Task != "narration" {
+			return fmt.Errorf("task %q is unavailable in v1; conversion, dubbing and alignment require independent qualification", r.Task)
+		}
+		if strings.TrimSpace(r.Script) == "" || len(r.Script) > 256<<10 || r.Language != "en" || r.TargetLanguage != "" || r.Instruction != "" {
+			return fmt.Errorf("narration requires an approved English script of at most 256 KiB and no separate instruction")
+		}
+		if c.Managed != nil && len(r.Script) > 1024 {
+			return fmt.Errorf("managed narration accepts at most 1024 UTF-8 bytes; select a shorter script")
+		}
 	}
 	if r.DurationPolicy != "preserve_picture" {
 		return fmt.Errorf("only explicit preserve_picture duration policy is supported")

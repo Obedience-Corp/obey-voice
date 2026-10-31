@@ -27,6 +27,7 @@ type ManagedRuntime struct {
 	err                    error // published by closing done
 	logs                   *managedLog
 	once                   sync.Once
+	audioInput, textOutput bool
 }
 
 func StartManaged(ctx context.Context, c Config) (*ManagedRuntime, Provenance, error) {
@@ -84,7 +85,7 @@ func StartManaged(ctx context.Context, c Config) (*ManagedRuntime, Provenance, e
 	p.cmd = exec.CommandContext(ctx, c.Managed.Executable.Path,
 		"--model", c.Managed.Model.Path, "--mmproj", c.Managed.Projector.Path,
 		"--alias", ManagedModel, "--host", "127.0.0.1", "--port", strconv.Itoa(port),
-		"--api-key", p.token, "--offline", "--no-webui", "--parallel", "1", "--ctx-size", "8192")
+		"--api-key", p.token, "--offline", "--no-webui", "--parallel", "1", "--ctx-size", strconv.Itoa(ManagedContextTokens))
 	p.cmd.Env, p.cmd.Dir = managedEnvironment(scratch), scratch
 	p.cmd.Stdout, p.cmd.Stderr = p.logs, p.logs
 	p.cmd.WaitDelay = time.Second
@@ -148,6 +149,7 @@ func (p *ManagedRuntime) probe(ctx context.Context) (bool, error) {
 		Data []struct {
 			ID           string `json:"id"`
 			Architecture struct {
+				Input  []string `json:"input_modalities"`
 				Output []string `json:"output_modalities"`
 			} `json:"architecture"`
 		} `json:"data"`
@@ -156,6 +158,16 @@ func (p *ManagedRuntime) probe(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("owned audio model metadata: %w", err)
 	}
 	if len(doc.Data) == 1 && doc.Data[0].ID == ManagedModel {
+		for _, input := range doc.Data[0].Architecture.Input {
+			if input == "audio" {
+				p.audioInput = true
+			}
+		}
+		for _, output := range doc.Data[0].Architecture.Output {
+			if output == "text" {
+				p.textOutput = true
+			}
+		}
 		for _, output := range doc.Data[0].Architecture.Output {
 			if output == "audio" {
 				return true, nil

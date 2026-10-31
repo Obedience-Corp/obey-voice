@@ -103,3 +103,68 @@ request. Support, successful installation and independent quality qualification
 remain separate; this extension does not qualify voice conversion, dubbing,
 alignment, or narration quality. The owning runtime protocol is documented in
 [the pinned server README](https://github.com/ggml-org/llama.cpp/blob/8642541b2/tools/server/README.md#post-tts-generate-speech-audio-from-text).
+
+## Audio-input text artifacts (v2 extension)
+
+The same finite command accepts `obey-audio-job/v2` for `transcription` and
+`understanding`. V1 narration requests/manifests and transcript v1/v2 clients
+remain unchanged. V2 is explicit because its output is JSON rather than WAV;
+a v1-only consumer must reject it. This first v2 route uses the managed pack,
+not an assistant or external server. It inherits the v1 source/config identity,
+private storage, cancellation, event ordering and atomic publication rules.
+
+A v2 request keeps the v1 source/input/runtime/limits envelope, uses English,
+an empty `script`, no target language and `duration_policy: "preserve_picture"`.
+`understanding` requires an explicit `instruction` of at most 1024 UTF-8 bytes;
+`transcription` requires an empty instruction and uses the fixed versioned ASR
+prompt. Recording content is data. Neither task advertises or executes tools.
+
+Example task fields within the existing envelope:
+
+```json
+{"protocol":"obey-audio-job/v2","task":"understanding",
+ "instruction":"Describe the sounds and spoken topics in this recording.",
+ "script":"","language":"en","duration_policy":"preserve_picture"}
+```
+
+Each job covers the full input with 30-second windows and two seconds of
+overlap (`fixed-30s-overlap-2s/v1`). The final window ends at the exact input
+sample count; windows carry absolute source sample offsets and the SHA-256 of
+the actual WAV sent to the model. No inference history or persona context
+compaction is used. Overlap is retained as reviewable context, not silently
+deduplicated into invented word timings. Output limits and the whole-job
+deadline bound work; failure in any window publishes no artifact.
+
+The runtime receives WAV data directly through `/v1/chat/completions` and
+returns bounded text. Token-count preflight must show that the complete audio
+window and reserved output fit the owned context. A length-limited, tool-call,
+malformed, empty or incomplete response is a failure, not a successful finding.
+The request and manifest bind the instruction/prompt hash, pinned chunk policy,
+model/projector/runtime digests and text sampling settings.
+
+The v2 manifest records `transport: "audio_to_text"`. Its `output` has
+`kind: "json"`, `path: "findings.json"`, SHA-256 and byte count; it has no audio
+sample geometry. `findings.json` uses `obey-audio-findings/v1`, with the task and
+ordered windows containing source start/end samples, input-window SHA-256 and
+model text. Window ranges mean audio coverage, not measured claim locations or
+word alignment. Findings are unqualified drafts for explicit review; ASR gaps,
+no-speech prose and empty text never establish silence or authorize cuts.
+
+Compatibility: a v1 narration still produces its unchanged WAV/manifest pair;
+a v2 text task produces findings/manifest and cannot enter the audio-take import
+path. Conversion, dubbing and measured alignment remain unavailable until their
+own transport and quality gates pass. The editor must validate this new major
+version explicitly before displaying or saving findings.
+
+`obey-voice transcribe audio-capabilities --audio-config /absolute/config.json
+--json` verifies the selected managed assets, starts the owned runtime, reads
+its modalities and emits `obey-audio-capabilities/v1`. The document pins the
+runtime/model/projector digests, input format, voices/languages, task protocols,
+script/instruction limits and chunk policy. Every task has separate supported,
+installed and qualified fields plus a reason. This metadata check performs no
+inference and qualifies no task; each actual text job also checks the token-count
+route and complete generation response. No download or assistant initialization
+occurs, and the owned server is reaped on exit or cancellation.
+`installed` describes the verified selected pack, including when a particular
+task remains unsupported; it never implies that an aligner or conversion
+implementation is available.

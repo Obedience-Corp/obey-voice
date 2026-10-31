@@ -1,0 +1,57 @@
+[
+  {
+    "text": "push",
+    "start_us": 560000,
+    "end_us": 850000
+  },
+  {
+    "text": "button",
+    "start_us": 850000,
+    "end_us": 1120000
+  },
+  {
+    "text": "design",
+    "start_us": 1120000,
+    "end_us": 2400000
+  },
+  {
+    "text": "And",
+    "start_us": 2400000,
+    "end_us": 3370000
+  },
+  {
+    "text": "therefore",
+    "start_us": 3370000,
+    "end_us": 3790000
+  },
+  {
+    "text": "putting",
+    "start_us": 3790000,
+    "end_us": 4110000
+  },
+  {
+    "text": "it",
+    "start_us": 4110000,
+    "end_us": 4230000
+  },
+  {
+    "text": "into",
+    "start_us": 4230000,
+    "end_us": 4540000
+  },
+  {
+    "text": "a",
+    "start_us": 4540000,
+    "end_us": 4990000
+  },
+  {
+    "text": "um",
+    "start_us": 4990000,
+    "end_us": 5670000
+  },
+  {
+    "text": "well",
+    "start_us": 5670000,
+    "end_us": 5920000
+  }
+]

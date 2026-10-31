@@ -1,0 +1,55 @@
+{
+  "protocol": "obey-audio-job/v2",
+  "job_id": "meaningful-like-pauses-1",
+  "task": "transcription",
+  "source": {
+    "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+    "clip_id": "ES2002a",
+    "range_id": "meaningful-like-pauses-1",
+    "project_revision": "ami-diagnostic-v1"
+  },
+  "input": {
+    "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/meaningful-like-pauses/1/input.wav",
+    "sha256": "ecaf622c395ce3d316e4861fa139eea4a1fbfb395c655095780e9d95aa0a89ae",
+    "sample_count": 480000,
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "channel_role": "microphone",
+    "source_origin_samples": 5248000
+  },
+  "runtime": {
+    "provider": "llama.cpp",
+    "endpoint": "",
+    "model": "lfm3-audio-2b",
+    "voice": "female"
+  },
+  "runtime_version": "b11960-8642541b2",
+  "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+  "transport": "audio_to_text",
+  "script_sha256": "",
+  "language": "en",
+  "duration_policy": "preserve_picture",
+  "source_windows": [
+    {
+      "start_sample": 5248000,
+      "end_sample": 5728000
+    }
+  ],
+  "output": {
+    "kind": "json",
+    "bytes": 473,
+    "path": "findings.json",
+    "sha256": "a11d18e1f10cd707efda112814ffe92760c56f210a0ff319573cef254de13e33"
+  },
+  "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+  "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+  "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+  "chunk_policy": "fixed-30s-overlap-2s/v1",
+  "text_sampling": {
+    "seed": 42,
+    "temperature": 0,
+    "max_tokens": 1024,
+    "context_tokens": 8192
+  }
+}
