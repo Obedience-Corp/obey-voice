@@ -9,6 +9,8 @@ import argparse
 import hashlib
 import json
 import pathlib
+import os
+import signal
 import subprocess
 import time
 import wave
@@ -48,7 +50,16 @@ def main():
         request_path.write_text(json.dumps(request, ensure_ascii=False, indent=2) + "\n")
         start = time.monotonic()
         with (root / (name + "-events.jsonl")).open("w") as events, (root / (name + "-stderr.log")).open("w") as errors:
-            process = subprocess.run([str(worker), "transcribe", "audio-job", "--audio-config", str(config_path), "--request", str(request_path), "--jsonl"], stdout=events, stderr=errors, timeout=200, check=True)
+            command = [str(worker), "transcribe", "audio-job", "--audio-config", str(config_path), "--request", str(request_path), "--jsonl"]
+            process = subprocess.Popen(command, stdout=events, stderr=errors, start_new_session=True)
+            try:
+                code = process.wait(timeout=200)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                raise
+            if code != 0:
+                raise subprocess.CalledProcessError(code, command)
         elapsed = time.monotonic() - start
         events = [json.loads(line) for line in (root / (name + "-events.jsonl")).read_text().splitlines()]
         assert [event["type"] for event in events] == ["accepted", "progress", "artifact", "completed"]
@@ -86,7 +97,7 @@ def main():
     reverse = dict(source, language="es", target_language="en", source=dict(source["source"], media_sha256=speech["output"]["sha256"], clip_id="generated-spanish-transport-fixture", range_id="full-generated-speech"), input=dict(source["input"], path=str(converted), sha256=sha(converted), sample_count=count, source_origin_samples=0, channel_role="speech"))
     back, _ = run(reverse, "es-en-translation")
     dub(reverse, back, "en-dubbing")
-    assert not list(root.glob(".audio-*")), "owned runtime or artifact stage was not cleaned"
+    assert not list(root.glob(".audio-*")) and not list(root.glob("*.lock")), "owned runtime or artifact stage was not cleaned"
     report = {"schema": "wi-43b072.dubbing-transport-proof/v1", "worker_sha256": sha(worker), "review": "fixture-only approval of model draft, not human linguistic qualification", "input_kind": "licensed human English recording; reverse path uses generated Spanish", "qualified": False, "device_playback": False, "jobs": receipts}
     (root / "receipt.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps({"receipt": str(root / "receipt.json"), "jobs": len(receipts)}))
