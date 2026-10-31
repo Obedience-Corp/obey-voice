@@ -18,14 +18,24 @@ import (
 func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	p.incActiveTurn()
 	defer p.decActiveTurn()
-	return p.runVoiceWithContinuations(ctx)
+	conversation := p.Native != nil && p.Native.Controls == "conversation"
+	input, err := p.runVoiceWithContinuations(ctx)
+	if conversation {
+		return "", err
+	} // Never execute host post-turn spoken controls.
+	return input, err
 }
 
 func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	p.incActiveTurn()
 	defer p.decActiveTurn()
 	p.bindBrainInfo()
+	if err := p.prepareNativeForeground(ctx); err != nil {
+		return "", err
+	}
 	metrics := newTurnMetrics()
+	defer p.releaseUncommittedInput(metrics)
+	defer p.scheduleNativeCaption(metrics)
 	defer p.trackMetrics(metrics)()
 	turn := p.newTurnConductor(metrics, ctx)
 	ctx = events.WithTrace(ctx, metrics.trace)
@@ -60,13 +70,14 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		}
 		return "", err
 	}
-	if !isContinuation && text == "" {
+	if !isContinuation && text == "" && metrics.input == nil {
 		turn.finish(TurnTimedOut)
 		return "", nil
 	}
+	nativeConversation := metrics.input != nil && p.Native != nil && p.Native.Controls == "conversation"
 	// Name summon (D5). Ahead of the backchannel on purpose: speech meant for
 	// someone else in the room must not even get an "mm-hm" back.
-	if !isContinuation && p.AddressGate != nil {
+	if !isContinuation && !nativeConversation && p.AddressGate != nil {
 		if reason := p.AddressGate(text); reason != "" {
 			p.emit(events.Info{Message: reason})
 			turn.finish(TurnTimedOut)
@@ -89,11 +100,11 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		}
 	}
 	if !isContinuation {
-		p.emitResponse(metrics, events.UserInput{Text: text, Speaker: speakerID})
+		p.emitResponse(metrics, events.UserInput{Text: text, Speaker: speakerID, Utterance: metrics.input.Clone()})
 	}
 	original := text
 	var pendingDecision *decisionTurn
-	if !p.GroupParticipationEnabled {
+	if !p.GroupParticipationEnabled && !nativeConversation {
 		pendingDecision = p.startWorkDecision(ctx, text, decision.VoiceWork, isContinuation)
 	}
 	defer func() { pendingDecision.close() }()
@@ -102,12 +113,21 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		admission = continuation.admission
 		ctx = p.bindAdmission(ctx, "", admission, metrics)
 		speakerID = ""
+	} else if nativeConversation {
+		if p.AdmitAudio != nil {
+			admission, err = p.AdmitAudio(ctx, metrics.input.Clone())
+		}
+		ctx = p.bindAdmission(ctx, text, admission, metrics)
 	} else {
 		ctx, admission, err = p.admitInput(ctx, text, false, metrics)
 		if err != nil {
 			turn.finish(TurnFailed)
 			return original, wrapAdmissionError(err)
 		}
+	}
+	if err != nil {
+		turn.finish(TurnFailed)
+		return original, wrapAdmissionError(err)
 	}
 	if admission.Skip {
 		turn.finish(TurnYielded)
@@ -118,7 +138,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		ctx, stop = discussion.Bind(ctx, admission.Discussion.State)
 		defer stop()
 	}
-	if p.GroupParticipationEnabled && admission.Discussion == nil {
+	if p.GroupParticipationEnabled && admission.Discussion == nil && !nativeConversation {
 		pendingDecision = p.startWorkDecision(ctx, text, decision.VoiceWork, isContinuation)
 	}
 	if !isContinuation && admission.LocalReply != "" {
@@ -144,11 +164,11 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 
 	// Layer 1 — deterministic phrase and work-intent routing before the live
 	// brain runs, so tool work never occupies the talking context window.
-	if kind, source, ok := classifyTurn(text, p.routeContext()); !isContinuation && admission.Discussion == nil && ok && routeKindSkipsBrain(kind) {
+	if kind, source, ok := classifyTurn(text, p.routeContext()); !isContinuation && !nativeConversation && admission.Discussion == nil && ok && routeKindSkipsBrain(kind) {
 		return original, p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
 	}
 
-	if admission.Discussion == nil && p.takeWorkDecision(ctx, pendingDecision, text, metrics) {
+	if !nativeConversation && admission.Discussion == nil && p.takeWorkDecision(ctx, pendingDecision, text, metrics) {
 		return original, p.completeRoutedTurn(ctx, turn, metrics, text, RouteSpawn, "decision")
 	}
 
@@ -174,8 +194,10 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 
 	// Peer replies and group discussions have tools disabled; their prose
 	// cannot become a fresh user work request through promise repair.
-	repair := &promiseRepairState{enabled: !isContinuation && admission.Discussion == nil && p.failedRouteRepairEnabled()}
+	repair := &promiseRepairState{enabled: !nativeConversation && !isContinuation && admission.Discussion == nil && p.failedRouteRepairEnabled()}
 	streamOpts := brain.StreamOptions{
+		Utterance:         metrics.input,
+		AudioRetained:     metrics.audioRetained,
 		Discussion:        admission.Discussion,
 		WorkerTiers:       p.workerTierAvailability(),
 		WorkerFacts:       p.workerFacts(),
@@ -184,7 +206,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		AgentContinuation: isContinuation,
 		VoiceMode:         true,
 		Speaker:           speakerID,
-		ToolsEnabled:      admission.Discussion == nil && !isContinuation && (p.VoiceToolsEnabled || p.workerTierAvailability() != nil),
+		ToolsEnabled:      !nativeConversation && admission.Discussion == nil && !isContinuation && (p.VoiceToolsEnabled || p.workerTierAvailability() != nil),
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
 		OnToolEnd:         p.toolEndHook(ctx),
@@ -202,7 +224,11 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 
 	metrics.modelRequest = time.Now()
 	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)
-	brainStream, err := p.Brain.ThinkStream(requestCtx, text, streamOpts)
+	modelInput := text
+	if metrics.input != nil {
+		modelInput = ""
+	}
+	brainStream, err := p.Brain.ThinkStream(requestCtx, modelInput, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -286,7 +312,7 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 		}
 		endTrace(status, boundary)
 	}()
-	if p.STT == nil {
+	if p.STT == nil && p.Input == nil {
 		return "", errors.New("STT provider is not configured")
 	}
 
@@ -304,6 +330,11 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 		case event, ok := <-session.Events():
 			if !ok {
 				return "", nil
+			}
+
+			if finalized, ok := event.(stt.FinalizedInput); ok {
+				metrics.sttFinal = time.Now()
+				return p.resolveNativeInput(ctx, finalized.Input, metrics)
 			}
 
 			// InputLevel is droppable UI meter data; handle before the typed

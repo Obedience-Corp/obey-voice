@@ -14,6 +14,8 @@ import (
 	"net/textproto"
 	"net/url"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
@@ -23,9 +25,10 @@ import (
 const MaxTranscriptBytes = 256 << 10
 
 type Client struct {
-	base  url.URL
-	model string
-	http  *http.Client
+	base   url.URL
+	model  string
+	http   *http.Client
+	cancel context.CancelFunc
 }
 
 func NewClient(endpoint, model string) (*Client, error) {
@@ -38,15 +41,18 @@ func NewClient(endpoint, model string) (*Client, error) {
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
+	scope, cancel := context.WithCancel(context.Background())
 	selected := &selectedTransport{
+		scope:  scope,
 		base:   transport,
 		scheme: base.Scheme,
 		host:   base.Host,
 		prefix: strings.TrimRight(base.Path, "/"),
 	}
 	return &Client{
-		base:  *base,
-		model: model,
+		base:   *base,
+		model:  model,
+		cancel: cancel,
 		http: &http.Client{
 			Transport: selected,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -61,8 +67,9 @@ func (c *Client) endpoint(route string) string {
 	target.RawPath = ""
 	return target.String()
 }
+func (c *Client) Model() string            { return c.model }
 func (c *Client) HTTPClient() *http.Client { return c.http }
-func (c *Client) Close()                   { c.http.CloseIdleConnections() }
+func (c *Client) Close()                   { c.cancel(); c.http.CloseIdleConnections() }
 
 // Transcribe uses only the selected model's transcription route. A missing,
 // empty or failed response never becomes an invented transcript or fallback.
@@ -70,6 +77,8 @@ func (c *Client) Transcribe(ctx context.Context, ref utterance.AudioRef, resolve
 	if err := ctx.Err(); err != nil {
 		return utterance.Transcript{}, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	if resolver == nil {
 		return utterance.Transcript{}, utterance.ErrAudioUnavailable
 	}
@@ -121,6 +130,9 @@ func (c *Client) Transcribe(ctx context.Context, ref utterance.AudioRef, resolve
 	}
 	if response.StatusCode != http.StatusOK {
 		return utterance.Transcript{}, fmt.Errorf("native transcription HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(payload)))
+	}
+	if !utf8.Valid(payload) {
+		return utterance.Transcript{}, errors.New("native transcription is not valid UTF-8")
 	}
 	var result struct {
 		Text string `json:"text"`

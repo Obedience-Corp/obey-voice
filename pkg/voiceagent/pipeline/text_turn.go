@@ -28,6 +28,9 @@ func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, r
 
 // RunTurnTextMode runs a turn with text input instead of mic.
 func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
+	if err := p.prepareNativeForeground(ctx); err != nil {
+		return err
+	}
 	if err := p.ValidateImages(ctx, chatmedia.Input(ctx)); err != nil {
 		return err
 	}
@@ -195,7 +198,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	if ordinary != nil {
 		stream = ordinary.wrap(stream)
 	}
-	response, route, err := p.collectTextStream(brainCtx, stream, metrics)
+	response, route, err := p.collectTextStream(brainCtx, brainCancel, stream, metrics)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)

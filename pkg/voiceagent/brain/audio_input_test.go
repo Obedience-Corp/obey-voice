@@ -133,3 +133,50 @@ func TestReadyTranscriptProjectsWhenAudioIsUnavailable(t *testing.T) {
 		t.Fatal(calls)
 	}
 }
+
+func TestAccompanyingTypedTextCannotReplaceUnavailableRecording(t *testing.T) {
+	media := chatmedia.NewAudioSession()
+	ref, err := media.ImportSamples(t.Context(), []float32{0.1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	media.Close()
+	input := &utterance.Finalized{ID: "u4", Audio: &ref, Transcript: utterance.Transcript{State: utterance.Disabled}}
+	brain := repetitionBrain(t, func(w http.ResponseWriter, r *http.Request) { t.Error("dispatched after losing recording") })
+	brain.ClearHistory()
+	brain.SetAudioResolver(media)
+	brain.LoadHistory([]Turn{{Role: "user", Content: "Describe this recording", TypedInput: "Describe this recording", Utterance: input}})
+	if _, err := brain.ThinkFull(t.Context(), "Continue", StreamOptions{}); !errors.Is(err, ErrAudioProjection) {
+		t.Fatal(err)
+	}
+}
+
+func TestAudioOnlyHistoryIsNotSilentlyTrimmed(t *testing.T) {
+	media := chatmedia.NewAudioSession()
+	defer media.Close()
+	ref, err := media.ImportSamples(t.Context(), []float32{0.1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := &utterance.Finalized{ID: "budget-audio", Audio: &ref, Transcript: utterance.Transcript{State: utterance.Pending}}
+	brain := repetitionBrain(t, func(w http.ResponseWriter, r *http.Request) { t.Error("dispatched after required audio eviction") })
+	brain.ClearHistory()
+	brain.SetAudioResolver(media)
+	brain.cfg.MaxHistory = 1
+	brain.LoadHistory([]Turn{{Role: "user", Utterance: input}, {Role: "assistant", Content: "answer"}, {Role: "user", Content: "next"}})
+	before := len(brain.working)
+	brain.trimHistory()
+	if len(brain.working) != before {
+		t.Fatal("silently evicted audio-only turn")
+	}
+	if _, err := brain.ThinkFull(t.Context(), "Continue", StreamOptions{}); !errors.Is(err, ErrAudioProjection) {
+		t.Fatal(err)
+	}
+	view := brain.ContextHistory()
+	if view[0].Utterance == nil {
+		t.Fatal("context view lost audio evidence")
+	}
+	if err := ValidateTextProjection(view); !errors.Is(err, ErrAudioProjection) {
+		t.Fatal("text compaction lost audio", err)
+	}
+}

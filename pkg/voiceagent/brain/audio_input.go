@@ -80,6 +80,20 @@ func (o *OllamaBrain) prepareAudioHistory(ctx context.Context, opts StreamOption
 			return err
 		}
 	}
+	o.audioProjectionBlocked = false
+	if o.cfg != nil {
+		high, low := o.cfg.MaxHistory*2, o.cfg.MaxHistory
+		if o.cfg.ContinuityArchiveEnabled {
+			high = min(high, 12)
+			low = min(low, 10)
+		}
+		if len(o.history) > high {
+			start := historyWindowStart(o.history, low)
+			if err := ValidateTextProjection(o.effectiveTurns(o.working[:min(start, len(o.working))])); err != nil {
+				return err
+			}
+		}
+	}
 	projection := make(map[string][]byte)
 	used := 0
 	load := func(input *utterance.Finalized) ([]byte, error) {
@@ -101,6 +115,7 @@ func (o *OllamaBrain) prepareAudioHistory(ctx context.Context, opts StreamOption
 		return data, nil
 	}
 	for i, turn := range o.working {
+		turn = o.effectiveTurn(turn)
 		if turn.Role != "user" || turn.Utterance == nil {
 			continue
 		}
@@ -109,14 +124,12 @@ func (o *OllamaBrain) prepareAudioHistory(ctx context.Context, opts StreamOption
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if turn.Content == "" && turn.Utterance.Transcript.State != utterance.Ready {
+			if turn.Utterance.Transcript.State != utterance.Ready {
 				return fmt.Errorf("utterance %s: %w", turn.Utterance.ID, ErrAudioProjection)
 			}
 			if i < len(o.history) {
 				o.history[i].Images = nil
-				if o.history[i].Content == "" {
-					o.history[i].Content = turn.Utterance.Transcript.Text
-				}
+				o.history[i].Content = encodeOllamaUser(turn.Speaker, audioTranscriptProjection(turn))
 			}
 			continue
 		}
@@ -133,5 +146,25 @@ func (o *OllamaBrain) prepareAudioHistory(ctx context.Context, opts StreamOption
 		}
 	}
 	o.audioProjection = projection
+	return nil
+}
+
+func audioTranscriptProjection(turn Turn) string {
+	transcript := turn.Utterance.Transcript.Text
+	if turn.TypedInput == "" {
+		return transcript
+	}
+	return "Typed instruction:\n" + turn.TypedInput + "\nTranscript of the attached recording:\n" + transcript
+}
+
+// ValidateTextProjection rejects any recording that cannot be represented by
+// an actual ready transcript. Existing summary-only working views pass because
+// their canonical recording evidence is not being silently reprojected here.
+func ValidateTextProjection(turns []Turn) error {
+	for _, turn := range turns {
+		if turn.Utterance != nil && turn.Utterance.Transcript.State != utterance.Ready {
+			return ErrAudioProjection
+		}
+	}
 	return nil
 }

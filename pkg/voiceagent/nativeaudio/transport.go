@@ -1,6 +1,7 @@
 package nativeaudio
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -70,6 +71,7 @@ func (b *scheduledBody) Close() error {
 // selectedTransport binds SDK and speech-adapter use of this client to its
 // approved endpoint. A mismatched candidate cannot send audio to another host.
 type selectedTransport struct {
+	scope                context.Context
 	base                 *http.Transport
 	scheme, host, prefix string
 }
@@ -81,6 +83,22 @@ func (t *selectedTransport) RoundTrip(request *http.Request) (*http.Response, er
 	if t.prefix != "" && request.URL.Path != t.prefix && !strings.HasPrefix(request.URL.Path, t.prefix+"/") {
 		return nil, errors.New("native request escaped selected endpoint prefix")
 	}
-	return t.base.RoundTrip(request)
+	if err := t.scope.Err(); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(request.Context())
+	stop := context.AfterFunc(t.scope, cancel)
+	response, err := t.base.RoundTrip(request.Clone(ctx))
+	cleanup := func() { stop(); cancel() }
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	if response.Body == nil {
+		cleanup()
+		return response, nil
+	}
+	response.Body = &scheduledBody{ReadCloser: response.Body, release: cleanup}
+	return response, nil
 }
 func (t *selectedTransport) CloseIdleConnections() { t.base.CloseIdleConnections() }

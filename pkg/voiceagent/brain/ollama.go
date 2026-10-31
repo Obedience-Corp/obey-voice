@@ -23,14 +23,16 @@ import (
 
 // OllamaBrain implements Provider using the Ollama API with tool calling.
 type OllamaBrain struct {
-	audioResolver       utterance.Resolver
-	audioProjection     map[string][]byte
-	retiredDelegations  sync.WaitGroup
-	backgroundDelivered string
-	delegation          *delegation.Runtime
-	delegationBorrowed  bool
-	client              *api.Client
-	continuityMu        sync.Mutex
+	inputTranscripts       sync.Map
+	audioResolver          utterance.Resolver
+	audioProjection        map[string][]byte
+	audioProjectionBlocked bool
+	retiredDelegations     sync.WaitGroup
+	backgroundDelivered    string
+	delegation             *delegation.Runtime
+	delegationBorrowed     bool
+	client                 *api.Client
+	continuityMu           sync.Mutex
 	// continuitySink receives this instance's continuity events (integrity.go).
 	continuitySink func(events.Event)
 	infoMu         sync.Mutex

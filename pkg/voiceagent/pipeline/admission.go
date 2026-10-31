@@ -146,7 +146,8 @@ func (p *Pipeline) completeLocalReply(ctx context.Context, input, reply string, 
 	if identity := metrics.responseIdentity(); identity != nil {
 		response.PersonaID, response.PersonaDisplayName, response.PromptHash, response.ResponseID = identity.PersonaID, identity.PersonaDisplayName, identity.PromptHash, identity.ResponseID
 	}
-	additions := []brain.Turn{{Role: "user", Content: input, Speaker: p.currentSpeakerID(), At: now}, response}
+	user := brain.Turn{Role: "user", Content: input, Speaker: p.currentSpeakerID(), At: now, Utterance: metrics.input.Clone(), AudioRetained: metrics.audioRetained}
+	additions := []brain.Turn{user, response}
 	if continuity, ok := p.Brain.(brain.ContinuityTransferProvider); ok {
 		if err := appendContinuityHistory(continuity, additions); err != nil {
 			return err

@@ -56,7 +56,7 @@ func compactTail(before []brain.Turn) []brain.Turn {
 		if t.Role != "tool" {
 			paired = len(t.ToolCalls) > 0
 		}
-		if strings.TrimSpace(t.Content) == "" && len(t.ToolCalls) == 0 {
+		if strings.TrimSpace(t.Content) == "" && len(t.ToolCalls) == 0 && t.Utterance == nil {
 			continue
 		}
 		tail = append(tail, t)
@@ -120,6 +120,13 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 		}
 		stage(terminal)
 	}()
+	working := history
+	if view, ok := p.Brain.(brain.ContextHistoryProvider); ok {
+		working = view.ContextHistory()
+	}
+	if err := brain.ValidateTextProjection(working); err != nil {
+		return err
+	}
 	before := append([]brain.Turn(nil), history...)
 	tailSource := before
 	if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {

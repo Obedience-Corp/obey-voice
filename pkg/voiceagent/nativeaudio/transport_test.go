@@ -138,3 +138,38 @@ func TestSharedClientRejectsWrongOriginAndInheritedAuthentication(t *testing.T) 
 		t.Fatal("rejected request reached a server")
 	}
 }
+
+func TestRetiringClientCancelsAndJoinsActiveHTTPBody(t *testing.T) {
+	started, stopped := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		close(started)
+		<-r.Context().Done()
+		close(stopped)
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, "chosen-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.http.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	client.Close()
+	if _, err := io.ReadAll(response.Body); err == nil {
+		t.Fatal("retired body remained readable")
+	}
+	_ = response.Body.Close()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("retired HTTP producer still running")
+	}
+	if next, err := client.http.Get(server.URL); err == nil {
+		_ = next.Body.Close()
+		t.Fatal("retired client dispatched")
+	}
+}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
@@ -21,6 +22,8 @@ const (
 // text apart so Ctrl+K / /think can rebuild the bubble without touching
 // clipboard yank or model history.
 type chatItem struct {
+	inputTyped  string
+	input       *utterance.Finalized
 	attachments []chatmedia.Ref
 	kind        chatItemKind
 	name        string

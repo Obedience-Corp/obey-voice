@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"sync/atomic"
 	"time"
 
@@ -247,6 +248,8 @@ type activityEntry struct {
 
 // plainChatTurn is a clipboard-friendly transcript line without bubble styling.
 type plainChatTurn struct {
+	inputTyped  string
+	input       *utterance.Finalized
 	attachments []chatmedia.Ref
 	role        string // "user" or "assistant"
 	text        string

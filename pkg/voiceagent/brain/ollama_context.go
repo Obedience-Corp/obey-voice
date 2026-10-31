@@ -60,6 +60,10 @@ func (o *OllamaBrain) dropOldestBeforeLastUser(skillCtx string, limit int) bool 
 		if start <= 0 || start >= len(o.history) || start > lastUser {
 			break
 		}
+		if ValidateTextProjection(o.effectiveTurns(o.working[:min(start, len(o.working))])) != nil {
+			o.audioProjectionBlocked = true
+			break
+		}
 		o.archiveMessages(o.history[:start])
 		o.history = append([]api.Message(nil), o.history[start:]...)
 		if start < len(o.working) {

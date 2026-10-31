@@ -58,7 +58,7 @@ func (p *NativeCapture) Start(ctx context.Context) (utterance.Session, error) {
 	p.mu.Unlock()
 	sessionCtx, cancel := context.WithCancel(ctx)
 	base := &sherpaSession{cancel: cancel, events: make(chan Event, 8), done: make(chan struct{}), pause: newPauseController("native"), playback: true}
-	session := &nativeSession{sherpaSession: base, events: make(chan utterance.Event, 8), bridgeDone: make(chan struct{}), media: p.media}
+	session := &nativeSession{sherpaSession: base, events: make(chan utterance.Event, 8), bridgeDone: make(chan struct{}), media: p.media, completions: make(chan YieldedForCompletion, 1)}
 	policy := endpoint.FromConfig(&p.cfg, p.finite)
 	if policy.MaxUtterance <= 0 || policy.MaxUtterance > audio.SamplesDuration(utterance.MaxSamples) {
 		policy.MaxUtterance = audio.SamplesDuration(utterance.MaxSamples)
@@ -101,12 +101,14 @@ func (nativeFinalized) sttEvent() string { return "native_finalized" }
 
 type nativeSession struct {
 	*sherpaSession
-	events     chan utterance.Event
-	bridgeDone chan struct{}
-	media      *chatmedia.AudioSession
+	events      chan utterance.Event
+	bridgeDone  chan struct{}
+	media       *chatmedia.AudioSession
+	completions chan YieldedForCompletion
 }
 
-func (s *nativeSession) Events() <-chan utterance.Event { return s.events }
+func (s *nativeSession) CompletionEvents() <-chan YieldedForCompletion { return s.completions }
+func (s *nativeSession) Events() <-chan utterance.Event                { return s.events }
 func (s *nativeSession) Close() error {
 	err := s.sherpaSession.Close()
 	<-s.bridgeDone
@@ -120,10 +122,19 @@ func (s *nativeSession) Close() error {
 func (s *nativeSession) bridge(ctx context.Context) {
 	defer close(s.bridgeDone)
 	defer close(s.events)
+	if s.completions != nil {
+		defer close(s.completions)
+	}
 	for event := range s.sherpaSession.events {
 		var next utterance.Event
 		var release func()
 		switch e := event.(type) {
+		case YieldedForCompletion:
+			select {
+			case s.completions <- e:
+			case <-ctx.Done():
+			}
+			continue
 		case nativeFinalized:
 			next = utterance.Event{Kind: utterance.FinalizedEvent, Input: e.input}
 			release = e.release

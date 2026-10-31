@@ -180,3 +180,17 @@ type Event struct {
 	Input   *Finalized
 	Err     error
 }
+
+// Clone detaches mutable reference/span fields at asynchronous boundaries.
+func (f *Finalized) Clone() *Finalized {
+	if f == nil {
+		return nil
+	}
+	out := *f
+	if f.Audio != nil {
+		ref := *f.Audio
+		out.Audio = &ref
+	}
+	out.Spans = append([]Span(nil), f.Spans...)
+	return &out
+}

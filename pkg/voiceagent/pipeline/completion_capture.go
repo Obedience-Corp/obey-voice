@@ -129,7 +129,19 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 		// still cancels and joins on all ordinary return and shutdown paths.
 		startCtx = context.WithoutCancel(ctx)
 	}
-	session, err := p.STT.Start(startCtx)
+	var err error
+	if p.Input != nil {
+		if p.Native == nil || p.Native.Media == nil {
+			return nil, 0, errors.New("native input has no prepared media binding")
+		}
+		owner, startErr := p.Input.Start(startCtx)
+		err = startErr
+		if err == nil {
+			session = stt.AdaptNativeSession(startCtx, owner, p.Native.Media.Release)
+		}
+	} else {
+		session, err = p.STT.Start(startCtx)
+	}
 	if err != nil {
 		return nil, 0, err
 	}
