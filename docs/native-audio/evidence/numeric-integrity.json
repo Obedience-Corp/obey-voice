@@ -1,0 +1,71 @@
+{
+  "scope": "Actual native-aware plain CLI; Samantha production prompt; same question/runtime/model before and after; text-only/no-voice; no proxy or prompt replacement",
+  "before": {
+    "source_head": "1a6914dafdaf8070b8b284ce59a7f4fd12b5ac35",
+    "binary_sha256": "fad9ea6c2dec0ff6c3d6bffd09745317a2cd08c62572765ce5de5685187c32a7",
+    "runtime_version": "0.40.12",
+    "model": "lfm3-audio:2b",
+    "model_digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+    "input": "What is seven plus eight? Reply with only the number.",
+    "actual_persona": "Samantha",
+    "continuity_integrity": "default enabled",
+    "continuity_recovery_max": "default2",
+    "input_mode": "text-only",
+    "output_mode": "no-voice; quiet setup software drain",
+    "exit_code": 0,
+    "elapsed_seconds": 6.593,
+    "timed_out": false,
+    "continuation_exhausted": false,
+    "source_equivalent_production_commit": "96ffc3ac",
+    "source_diff_sha256": "af0dbd1e2867c8270c65cc72097baaa9481bbbed0ea304bfe32c32749038eb64",
+    "truncation_events": 2,
+    "turns": [
+      {
+        "role": "user",
+        "content": "What is seven plus eight? Reply with only the number."
+      },
+      {
+        "role": "assistant",
+        "content": "[incomplete response] 15"
+      },
+      {
+        "role": "assistant",
+        "content": "[incomplete response] 15\n\n\n15"
+      },
+      {
+        "role": "assistant",
+        "content": "[Host conversation context: the current responder is Samantha. Give only Samantha's next reply in this existing group chat. Do not write another participant's lines or repeat speaker labels.]\n\nThe user asked for the sum of 7 and 8, and the assistant replied with the number 15. The conversation is now complete, and the user's latest request has been fulfilled. No further action is needed.\n\n\n[Host conversation context: the current responder is Samantha. Give only Samantha's next reply in this existing group chat. Do not write another participant's lines or repeat speaker labels.]\n\n15"
+      }
+    ]
+  },
+  "after": {
+    "source_head": "03e9445c02f6df7928ff43e63b26ea211ce71a25",
+    "binary_sha256": "53fe98eb96878e192ab0cf37942d9d888b8c75f9644831df441222ec93f67794",
+    "runtime_version": "0.40.12",
+    "model": "lfm3-audio:2b",
+    "model_digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+    "input": "What is seven plus eight? Reply with only the number.",
+    "actual_persona": "Samantha",
+    "continuity_integrity": "default enabled",
+    "continuity_recovery_max": "default2",
+    "input_mode": "text-only",
+    "output_mode": "no-voice; quiet setup software drain",
+    "exit_code": 0,
+    "elapsed_seconds": 5.082,
+    "timed_out": false,
+    "continuation_exhausted": false,
+    "source_clean": true,
+    "truncation_events": 0,
+    "turns": [
+      {
+        "role": "user",
+        "content": "What is seven plus eight? Reply with only the number."
+      },
+      {
+        "role": "assistant",
+        "content": "15"
+      }
+    ]
+  },
+  "limits": "One controlled typed question; supports completion-integrity behavior, not general accuracy, listening quality or recorded-input qualification."
+}

@@ -1,9 +1,12 @@
-# Guarded native audio integration (WI-43b072)
+# Experimental native audio integration (WI-43b072)
 
-Native persona activation remains disabled by `persona.RequireEnabled`. This
-checkpoint adds tested input, history, delivery and caption components. The
-[activation continuation](activation.md) adds guarded setup/transaction machinery;
-production startup, persona controls and qualification remain follow-up work. Existing personas use their Standard providers and saved settings.
+Native-aware CLI, terminal and desktop conversations now opt into the prepared
+persona integration. The generic binding API remains guarded for unaware hosts.
+[Frontdoor verification](frontdoor.md) covers actual startup/default selection,
+restore/projection, native UI and the numeric-integrity correction.
+[Prepared bindings](activation.md) describes the transaction machinery. Existing
+Standard personas retain their providers and saved settings. Replay UX, broader
+acceptance/quality and exact runtime context accounting remain open.
 
 The implementation shares the existing capture/VAD/endpoint/completion owner,
 with a decoder-free `utterance.Provider`. Native input and image attachments have
@@ -32,8 +35,8 @@ audio. Audio-only context cannot be silently evicted or compacted as blank text.
 - `just test unit`, `just test voiceflow`, `just build`: whole-project gates.
 - `OBEY_NATIVE_AUDIO_FIXTURE="$PWD/pkg/voiceagent/nativeaudio/assets/setup.wav" go test ./pkg/voiceagent/nativeaudio -run '^TestLiveNativeProductionAdapters$' -count=1 -v`: explicitly selected installed local Ollama model, isolated temporary config and software drain. This checks adapters/scheduler, not complete profile activation or model quality. It does not install a model.
 
-The committed checkpoint was tested from an exact archive, excluding ongoing
-candidate setup work. Native race suites, build, voiceflow and audio-crackle pass.
+The historical foundation checkpoint was tested from an exact archive, excluding
+then-ongoing candidate setup work. Current host checks are in [frontdoor.md](frontdoor.md). Native race suites, build, voiceflow and audio-crackle pass.
 The first whole-unit run reported 5,457/5,459 passing: the scene dependency guard
 failed and the TUI dashboard reported one unnamed failure. Raw TUI reruns pass;
 the initial failure is retained rather than described as a clean full-unit run.
@@ -41,7 +44,7 @@ The confirmed scene regression was repaired by moving the shared WAV metadata
 reader into a dependency-free package, preserving the existing audio API. Scene,
 audio and chatmedia race suites then pass, as does changed-code lint.
 
-Full local lint remains failing on unchanged errcheck findings in
+That foundation full-local-lint run reported unchanged errcheck findings in
 `job/table_test.go:670` and `tts/qwen/native_session.go:220,223` (also present in
 main). The review correction separately passed the full pipeline race suite and
 changed-code lint. These results do not qualify activation or model quality.
@@ -54,7 +57,7 @@ python3 docs/native-audio/evidence/context_accounting_probe.py --output /tmp/nat
 
 The [ordinary agent proof](ordinary-agent-proof.md) now covers two actual recorded
 inputs through constructor, selector/history and software speech, with verified
-zero forbidden-factory execution. Production UI integration remains separate.
+zero forbidden-factory execution. Current production UI integration evidence is separate in [frontdoor.md](frontdoor.md).
 
 ## Evidence and open gates
 
