@@ -30,6 +30,10 @@ func TestNativeAudioWireAndCanonicalTranscriptRemainDistinct(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Error(err)
 		}
+		if req.Truncate == nil || *req.Truncate || req.Shift == nil || *req.Shift {
+			t.Error("native false truncation/shift flags were omitted from actual JSON")
+		}
+
 		found := false
 		for _, message := range req.Messages {
 			if message.Role == "user" && len(message.Images) > 0 {

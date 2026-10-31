@@ -30,6 +30,11 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 		Think:     o.resolvedThink(),
 		Options:   o.requestOptions(),
 	}
+	if o.audioResolver != nil {
+		truncate, shift := false, false
+		req.Truncate = &truncate
+		req.Shift = &shift
+	}
 	return req
 }
 
