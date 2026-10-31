@@ -7,6 +7,7 @@ package transcript
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -36,9 +37,11 @@ const Version = 2
 // record is the flat wire form for every line. Zero fields are omitted, so
 // each type carries only its own keys.
 type record struct {
-	OmittedType       string `json:"omitted_type,omitempty"`
-	SizeEstimateKind  string `json:"size_estimate_kind,omitempty"`
-	SizeEstimateBytes int64  `json:"size_estimate_bytes,omitempty"`
+	Utterance         *utterance.Finalized           `json:"utterance,omitempty"`
+	InputTranscript   *events.InputTranscriptUpdated `json:"input_transcript,omitempty"`
+	OmittedType       string                         `json:"omitted_type,omitempty"`
+	SizeEstimateKind  string                         `json:"size_estimate_kind,omitempty"`
+	SizeEstimateBytes int64                          `json:"size_estimate_bytes,omitempty"`
 	size              int64
 	TraceSchema       string                      `json:"trace_schema,omitempty"`
 	ClockOrigin       string                      `json:"clock_origin,omitempty"`

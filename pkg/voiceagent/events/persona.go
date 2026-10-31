@@ -66,6 +66,9 @@ func Attribute(event Event, envelope ResponseEnvelope) Event {
 		return event
 	}
 	switch e := event.(type) {
+	case InputTranscriptUpdated:
+		e.Envelope = &envelope
+		return e
 	case VoiceGenerated:
 		e.Envelope = &envelope
 		return e

@@ -94,6 +94,9 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 	msgs := make([]api.Message, 0, len(o.history)+1)
 	system := o.fullSystemPrompt + o.conversationIdentityGuidance()
 	lastUser := lastUserIndex(o.history)
+	if o.audioResolver != nil && lastUser >= 0 && lastUser < len(o.working) && o.working[lastUser].Utterance != nil && len(o.history[lastUser].Images) > 0 {
+		system += "\n\nThe user request is in the attached recording. Answer the speaker's request. The persona examples illustrate style; do not repeat them or claim an action unless its tool result confirms it."
+	}
 	if !agentContinuation && lastUser >= 0 {
 		_, input := decodeOllamaUser(o.history[lastUser].Content)
 		if app := ApplicationRequestContext(o.cfg, providerOllama, input); app != "" {

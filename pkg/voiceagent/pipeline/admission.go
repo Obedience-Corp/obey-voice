@@ -98,6 +98,16 @@ func (m *turnMetrics) responseIdentity() *brain.TurnIdentity {
 }
 
 func (p *Pipeline) emitResponse(metrics *turnMetrics, event events.Event) {
+	if _, ready := event.(events.ResponseReady); ready && metrics != nil {
+		ctx := context.Background()
+		if metrics.inputPolicy != nil && metrics.inputPolicy.Lifetime != nil {
+			ctx = metrics.inputPolicy.Lifetime
+		}
+		if err := p.persistCanonicalNativeInput(ctx, metrics); err != nil {
+			metrics.degraded = true
+			p.emit(events.Error{Stage: "session_audio", Message: err.Error()})
+		}
+	}
 	event = p.replyMediaEvent(metrics, event)
 	if metrics != nil {
 		event = events.Attribute(event, metrics.response)
@@ -146,7 +156,8 @@ func (p *Pipeline) completeLocalReply(ctx context.Context, input, reply string, 
 	if identity := metrics.responseIdentity(); identity != nil {
 		response.PersonaID, response.PersonaDisplayName, response.PromptHash, response.ResponseID = identity.PersonaID, identity.PersonaDisplayName, identity.PromptHash, identity.ResponseID
 	}
-	additions := []brain.Turn{{Role: "user", Content: input, Speaker: p.currentSpeakerID(), At: now}, response}
+	user := brain.Turn{Role: "user", Content: input, Speaker: p.currentSpeakerID(), At: now, Utterance: metrics.input.Clone(), AudioRetained: metrics.audioRetained}
+	additions := []brain.Turn{user, response}
 	if continuity, ok := p.Brain.(brain.ContinuityTransferProvider); ok {
 		if err := appendContinuityHistory(continuity, additions); err != nil {
 			return err

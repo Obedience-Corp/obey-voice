@@ -19,6 +19,9 @@ import (
 // and re-requests until the model produces a text response.
 func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	ctx = opts.workerBudget().Context(ctx)
+	if err := o.prepareAudioHistory(ctx, opts); err != nil {
+		return nil, err
+	}
 	if err := o.prepareImageHistory(ctx, opts.Attachments); err != nil {
 		return nil, err
 	}

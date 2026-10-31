@@ -112,7 +112,7 @@ func TestLegacyUpgradeAndFutureWriteRejection(t *testing.T) {
 	if err := store.Save(s, s.Turns); err != nil {
 		t.Fatal(err)
 	}
-	if s.FormatVersion != CurrentFormatVersion || s.Turns[0].Role != "assistant" || s.Turns[0].PersonaID != "" {
+	if s.FormatVersion != StandardFormatVersion || s.Turns[0].Role != "assistant" || s.Turns[0].PersonaID != "" {
 		t.Fatalf("bad migration: %+v", s)
 	}
 	future := New("ollama", "fixture")
@@ -266,7 +266,7 @@ func TestSuccessfulSessionWritesPublishSerializedCandidate(t *testing.T) {
 		}
 		memoryJSON, _ := json.Marshal(s)
 		diskJSON, _ := json.Marshal(disk)
-		if !bytes.Equal(memoryJSON, diskJSON) || s.Summary != "new summary" || s.FormatVersion != CurrentFormatVersion {
+		if !bytes.Equal(memoryJSON, diskJSON) || s.Summary != "new summary" || s.FormatVersion != StandardFormatVersion {
 			t.Fatalf("selection=%t memory=%s disk=%s", selection, memoryJSON, diskJSON)
 		}
 	}

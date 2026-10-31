@@ -57,6 +57,7 @@ func (w *Writer) AttachAll(bus *events.Bus) func() {
 	}
 	unsub := []func(){
 		events.SubscribeDetachable(bus, func(e events.UserInput) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.InputTranscriptUpdated) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.ResponseDelta) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.ResponseReady) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.ToolCallStarted) { w.Handle(e) }),
@@ -99,39 +100,40 @@ func (w *Writer) AttachAll(bus *events.Bus) func() {
 // recordedEventTypes is the durable/harness set Attach subscribes to.
 // AttachAll uses the same names so AudioLevel ticks skip encodeEvent.
 var recordedEventTypes = map[string]bool{
-	"pipeline_trace":         true,
-	"user_input":             true,
-	"response_delta":         true,
-	"response_ready":         true,
-	"tool_call_started":      true,
-	"tool_call_finished":     true,
-	"work_state_changed":     true,
-	"worker.usage":           true,
-	"worker.limit_reached":   true,
-	"worker.charge":          true,
-	"route.decided":          true,
-	"decision.evaluated":     true,
-	"work_delivery":          true,
-	"job_queued":             true,
-	"job_started":            true,
-	"job_finished":           true,
-	"job_failed":             true,
-	"job_aborted":            true,
-	"error":                  true,
-	"info":                   true,
-	"speech_diagnostic":      true,
-	"stt_phase":              true,
-	"thinking_started":       true,
-	"speaking_started":       true,
-	"speaking_complete":      true,
-	"speaking_interrupted":   true,
-	"turn_interrupted":       true,
-	"turn_metrics":           true,
-	"voice_gate_stripped":    true,
-	"token_usage":            true,
-	"session_warning":        true,
-	"conversation_compacted": true,
-	"conversation_cleared":   true,
+	"pipeline_trace":           true,
+	"input_transcript_updated": true,
+	"user_input":               true,
+	"response_delta":           true,
+	"response_ready":           true,
+	"tool_call_started":        true,
+	"tool_call_finished":       true,
+	"work_state_changed":       true,
+	"worker.usage":             true,
+	"worker.limit_reached":     true,
+	"worker.charge":            true,
+	"route.decided":            true,
+	"decision.evaluated":       true,
+	"work_delivery":            true,
+	"job_queued":               true,
+	"job_started":              true,
+	"job_finished":             true,
+	"job_failed":               true,
+	"job_aborted":              true,
+	"error":                    true,
+	"info":                     true,
+	"speech_diagnostic":        true,
+	"stt_phase":                true,
+	"thinking_started":         true,
+	"speaking_started":         true,
+	"speaking_complete":        true,
+	"speaking_interrupted":     true,
+	"turn_interrupted":         true,
+	"turn_metrics":             true,
+	"voice_gate_stripped":      true,
+	"token_usage":              true,
+	"session_warning":          true,
+	"conversation_compacted":   true,
+	"conversation_cleared":     true,
 }
 
 func encodeEvent(e events.Event) (record, bool) {
@@ -139,7 +141,9 @@ func encodeEvent(e events.Event) (record, bool) {
 	case events.PipelineTrace:
 		return record{Type: "trace_span", Span: &x.Span}, true
 	case events.UserInput:
-		return record{Type: "user", Text: x.Text}, true
+		return record{Type: "user", Text: x.Text, Utterance: x.Utterance.Clone()}, true
+	case events.InputTranscriptUpdated:
+		return record{Type: "input_transcript", InputTranscript: &x}, true
 	case events.ResponseDelta:
 		return record{Type: "agent_delta", Text: x.Text}, true
 	case events.ResponseReady:

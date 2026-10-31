@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
@@ -134,8 +135,22 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		if label == "" {
 			label = m.currentLiveSpeakerLabel()
 		}
-		m.rememberUser(e.Text, m.displaySpeakerLabel(label))
-		m.appendTranscript(renderSpeakerUserTurn(m.displaySpeakerLabel(label), e.Text))
+		display := utterance.DisplayText(e.Text, e.Utterance)
+		if e.TypedInput != "" {
+			display = utterance.DisplayAudioInput(e.TypedInput, e.Utterance)
+		}
+		m.rememberUser(display, m.displaySpeakerLabel(label))
+		m.appendTranscript(renderSpeakerUserTurn(m.displaySpeakerLabel(label), display))
+		if e.Utterance != nil {
+			m.items[len(m.items)-1].inputTyped = e.TypedInput
+			m.items[len(m.items)-1].input = e.Utterance.Clone()
+			m.items[len(m.items)-1].name = m.displaySpeakerLabel(label)
+			m.plainTurns[len(m.plainTurns)-1].inputTyped = e.TypedInput
+			m.plainTurns[len(m.plainTurns)-1].input = e.Utterance.Clone()
+		}
+
+	case events.InputTranscriptUpdated:
+		m.updateInputTranscript(e)
 
 	case events.ThinkingStarted:
 		// Start a fresh streaming buffer; a prior turn's leftover (e.g. after an

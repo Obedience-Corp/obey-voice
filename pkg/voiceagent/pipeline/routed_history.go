@@ -32,7 +32,7 @@ func (p *Pipeline) appendRoutedHistory(metrics *turnMetrics, request, reply stri
 		}
 	}
 	if !alreadyAppended {
-		input := brain.Turn{Role: "user", Content: metrics.originalInput, Speaker: p.currentSpeakerID(), At: now}
+		input := brain.Turn{Role: "user", Content: metrics.originalInput, Speaker: p.currentSpeakerID(), At: now, Utterance: metrics.input.Clone(), AudioRetained: metrics.audioRetained}
 		if request != input.Content {
 			input.RoutedInput = request
 		}
