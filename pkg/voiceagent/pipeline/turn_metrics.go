@@ -1,6 +1,8 @@
 package pipeline
 
 import (
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -25,8 +27,17 @@ func (p *Pipeline) trackMetrics(m *turnMetrics) func() {
 }
 
 type turnMetrics struct {
-	mediaReply *events.ResponseReady
-	trace      events.TraceContext
+	captureBound  bool
+	capturePolicy *NativePolicy
+
+	captionEligible  bool
+	retentionWritten bool
+	inputPolicy      *NativePolicy
+	inputOwner       *chatmedia.AudioSession
+	audioRetained    bool
+	input            *utterance.Finalized
+	mediaReply       *events.ResponseReady
+	trace            events.TraceContext
 	// Host-routed turns may never call the brain. Retain their input boundary
 	// and intended reply independently of whether audio output is enabled.
 	originalInput      string

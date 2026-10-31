@@ -1,0 +1,15 @@
+Some weights of Wav2Vec2ForCTC were not initialized from the model checkpoint at /private/tmp/wi-43b072-supervisor-fixtures/ctc-aligner-model and are newly initialized: ['wav2vec2.masked_spec_embed']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+initial-filler 0 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+quiet-filler 0 {'oracle': 'measured', 'parakeet': 'no_transcript', 'native': 'failed'}
+meaningful-like-pauses 0 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+meaningful-like-pauses 1 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+meaningful-like-pauses 2 {'oracle': 'no_transcript', 'parakeet': 'no_transcript', 'native': 'measured'}
+later-background 0 {'oracle': 'no_transcript', 'parakeet': 'measured', 'native': 'failed'}
+later-background 1 {'oracle': 'no_transcript', 'parakeet': 'no_transcript', 'native': 'measured'}
+later-background 2 {'oracle': 'no_transcript', 'parakeet': 'measured', 'native': 'failed'}
+later-background 3 {'oracle': 'no_transcript', 'parakeet': 'no_transcript', 'native': 'measured'}
+heldout-introduction 0 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+heldout-repeats 0 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+heldout-repeats 1 {'oracle': 'failed', 'parakeet': 'measured', 'native': 'measured'}
+heldout-repeats 2 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}

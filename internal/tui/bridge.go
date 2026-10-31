@@ -101,7 +101,7 @@ func isDurableBridgeMsg(msg tea.Msg) bool {
 		return false
 	}
 	switch be.event.(type) {
-	case events.UserInput, events.ResponseReady, events.PersonaSelection, events.ConversationCleared, events.Error,
+	case events.UserInput, events.InputTranscriptUpdated, events.ResponseReady, events.PersonaSelection, events.ConversationCleared, events.Error,
 		events.ContinuityBudget, events.CompactionProgress,
 		events.ToolCallStarted, events.ToolCallFinished,
 		events.JobQueued, events.JobStarted, events.JobFinished, events.JobFailed, events.JobAborted:

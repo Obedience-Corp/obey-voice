@@ -44,6 +44,7 @@ type SelectionOptions struct {
 	NewBrain    func(context.Context, *config.Config) (brain.Provider, error)
 	NewWorker   func(context.Context, *config.Config) (brain.Provider, error)
 	NewVoice    func(context.Context, *config.Config) (*voiceagent.TTSSet, error)
+	Native      *NativeSelectionHooks
 }
 
 // Selector replaces response resources at the host's serialized boundary. It
@@ -58,6 +59,11 @@ type Selector struct {
 	participation       discussion.Settings
 	opts                SelectionOptions
 	transitionMu        sync.Mutex // joins publication before host resource cleanup
+	publicationMu       sync.RWMutex
+	publicationClosed   bool
+	bindingToken        string
+	nativeCandidate     *voiceagent.NativeCandidate
+	inputCleanup        func()
 	closed              bool
 	mu                  sync.RWMutex // protects read-only snapshots; never held during I/O
 	selected            events.PersonaSelection
@@ -79,6 +85,13 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	}
 	if _, _, err := SelectionFlowInfo(); err != nil {
 		return nil, err
+	}
+	if opts.Native != nil && (opts.Native.Prepare == nil || opts.Native.PrepareInput == nil) {
+		return nil, errors.New("native selection requires candidate and input preparation hooks")
+	}
+	if opts.Native != nil {
+		nativeHooks := *opts.Native
+		opts.Native = &nativeHooks
 	}
 	opts.Base = opts.Base.Clone()
 	opts.Base.WorkDir = opts.Initial.Config().WorkDir
@@ -108,7 +121,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		return nil, err
 	}
 	opts.Pipeline.GroupParticipationEnabled = opts.Base.GroupParticipationEnabled
-	s := &Selector{opts: opts, binding: opts.Initial, participation: settings}
+	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text()}
 	hash := freezer.FreezePersonaPrompt()
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	if err := opts.Persist(opts.Pipeline.Brain.History(), s.selected); err != nil {
@@ -139,10 +152,16 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 	responseCfg := cfg.Clone()
 	responseCfg.VoiceWorkers = nil
 	// Only the digest is exposed; credential-bearing config is never logged.
+	effectiveAudio := b.AudioConfig()
+	// Saved inactive native settings do not change a Standard response binding.
+	if effectiveAudio.Mode == persona.AudioStandard {
+		effectiveAudio = persona.Audio{Mode: persona.AudioStandard}
+	}
 	encoded, _ := json.Marshal(struct {
 		Config *config.Config
 		Prompt string
-	}{responseCfg, hash})
+		Audio  persona.Audio
+	}{responseCfg, hash, effectiveAudio})
 	digest := sha256.Sum256(encoded)
 	scope := s.opts.Pipeline.ConversationScope()
 	return events.PersonaSelection{
@@ -151,6 +170,7 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 		PersonaID: b.PersonaID, DisplayName: b.DisplayName, PromptHash: hash, BindingHash: hex.EncodeToString(digest[:]),
 		Generation: generation, BrainProvider: b.BrainProvider, BrainModel: b.BrainModel,
 		VoiceProvider: cfg.TTSProvider, Voice: config.TTSVoiceFor(cfg, cfg.TTSProvider), Reason: reason,
+		AudioMode: effectiveAudio.Mode, AudioControls: effectiveAudio.Controls, AudioTranscript: effectiveAudio.Transcript, AudioRetained: effectiveAudio.RetainAudio,
 	}
 }
 
@@ -266,6 +286,9 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 			s.opts.Base.WorkDir, s.opts.Base.WorkDirSource = choice.Dir, choice.Source
 		}
 	}
+	s.publicationMu.Lock()
+	s.bindingToken = rand.Text()
+	s.publicationMu.Unlock()
 	s.generation++
 	s.opts.SessionID = sessionID
 	s.opts.UseDefaults = false
@@ -293,6 +316,18 @@ func (s *Selector) Close() {
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	s.closed = true
+	s.publicationMu.Lock()
+	s.publicationClosed = true
+	s.bindingToken = ""
+	s.publicationMu.Unlock()
+	if s.nativeCandidate != nil {
+		_ = s.nativeCandidate.Close()
+		s.nativeCandidate = nil
+	}
+	if s.inputCleanup != nil {
+		s.inputCleanup()
+		s.inputCleanup = nil
+	}
 }
 
 func closeBrain(b brain.Provider) {

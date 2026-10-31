@@ -9,6 +9,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -259,8 +260,19 @@ func (m *conversationModel) seedTranscript(turns []brain.Turn) {
 	for _, t := range turns {
 		switch t.Role {
 		case "user":
-			m.rememberUser(t.Content, m.displaySpeakerLabel(t.Speaker))
-			m.appendTranscript(renderSpeakerUserTurn(m.displaySpeakerLabel(t.Speaker), t.Content))
+			display := utterance.DisplayText(t.Content, t.Utterance)
+			if t.TypedInput != "" {
+				display = utterance.DisplayAudioInput(t.TypedInput, t.Utterance)
+			}
+			m.rememberUser(display, m.displaySpeakerLabel(t.Speaker))
+			m.appendTranscript(renderSpeakerUserTurn(m.displaySpeakerLabel(t.Speaker), display))
+			if t.Utterance != nil {
+				m.items[len(m.items)-1].inputTyped = t.TypedInput
+				m.items[len(m.items)-1].input = t.Utterance.Clone()
+				m.items[len(m.items)-1].name = m.displaySpeakerLabel(t.Speaker)
+				m.plainTurns[len(m.plainTurns)-1].inputTyped = t.TypedInput
+				m.plainTurns[len(m.plainTurns)-1].input = t.Utterance.Clone()
+			}
 			if len(t.Attachments) > 0 {
 				m.items[len(m.items)-1].attachments = t.Attachments
 				if len(m.plainTurns) > 0 {

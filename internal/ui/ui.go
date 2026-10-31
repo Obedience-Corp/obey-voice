@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"io"
 	"os"
 	"strings"
@@ -224,7 +225,7 @@ func (u *UI) onTranscriptPartial(e events.TranscriptPartial) {
 }
 
 func (u *UI) onUserInput(e events.UserInput) {
-	u.record(userStyle.Render("You:") + " " + e.Text)
+	u.record(userStyle.Render("You:") + " " + utterance.DisplayText(e.Text, e.Utterance))
 }
 
 func (u *UI) onThinkingStarted(_ events.ThinkingStarted) {

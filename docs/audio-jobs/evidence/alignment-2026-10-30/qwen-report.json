@@ -1,0 +1,7043 @@
+{
+  "schema": "obey-voice.alignment-comparison/v1",
+  "provider": "qwen",
+  "model": {
+    "model": "Qwen/Qwen3-ForcedAligner-0.6B",
+    "revision": "c7cbfc2048c462b0d63a45797104fc9db3ad62b7",
+    "files": [
+      {
+        "path": "README.md",
+        "bytes": 57456,
+        "sha256": "5058416891bc47a2051557765997e8c42f8eb78a0e33c3e775bd17d4b0ba4d50"
+      },
+      {
+        "path": "chat_template.json",
+        "bytes": 1161,
+        "sha256": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff"
+      },
+      {
+        "path": "config.json",
+        "bytes": 5982,
+        "sha256": "d616c65d46c4b90bdc651b0a0963ea932732241140f337f9bb6b0335a9c8ef09"
+      },
+      {
+        "path": "generation_config.json",
+        "bytes": 115,
+        "sha256": "948d089b23bca1d214e768d59c4438365665f52ec6d33678f4062206b3fbbb8c"
+      },
+      {
+        "path": "merges.txt",
+        "bytes": 1671853,
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+      },
+      {
+        "path": "model.safetensors",
+        "bytes": 1835544544,
+        "sha256": "47831d0e82f96b20e9034dba01a075ee06436654719f6a68289e49f1b65ce0e7"
+      },
+      {
+        "path": "preprocessor_config.json",
+        "bytes": 330,
+        "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "bytes": 12666,
+        "sha256": "3ab80063f8511deb9566e6ad438d17b7a6277fcffd52d92854112f19d36bd81c"
+      },
+      {
+        "path": "vocab.json",
+        "bytes": 2776833,
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      }
+    ]
+  },
+  "packages": {
+    "torch": "2.15.0",
+    "transformers": "4.57.6",
+    "qwen-asr": "0.0.6",
+    "numpy": "2.5.4"
+  },
+  "comparison_sha256": "7f20c31a39df542c9ba1bb37a4a5ec519d9954ef7270016f93f379eb896d60a9",
+  "probe_sha256": "af243a565953718bc9768f4b3aa4909ab4df8a621491351d46d6e750aa9129e0",
+  "ctc_path_sha256": "0033b4cfca9b84a9c301cc402c530d403e0d7484a655342f8959178aa6a66b39",
+  "platform": "macOS-26.5-arm64-arm-64bit",
+  "device": "cpu",
+  "dtype": "float32",
+  "model_load_s": 5.328521833987907,
+  "timing_validity": "unqualified",
+  "batch_qualified": false,
+  "limits": [
+    "Manual channel-A text is an oracle diagnostic, not recognizer output.",
+    "Wrong/missing ASR words remain wrong/missing after alignment.",
+    "Only matches within one second contribute edge metrics; unmatched counts remain explicit.",
+    "Overlapping windows and quiet variants are correlated, not independent population samples.",
+    "Other-speaker cross-talk is not represented by channel-A annotations.",
+    "Log probabilities are not calibrated word confidence.",
+    "Per-stage elapsed time is not a controlled cold/warm resource benchmark."
+  ],
+  "windows": [
+    {
+      "case": "initial-filler",
+      "index": 0,
+      "input_sha256": "d620c7237cebd353f6c0d54b6b8f176233e46f0fedec0a09c7bcdb9a1ca976de",
+      "reference_sha256": "070ab5bf3b74b1a92e8b3b01fbc5e031b9d63e31af812070917aab5bc1f73393",
+      "source_start_sample": 2080000,
+      "source_end_sample": 2560000,
+      "results": {
+        "oracle": {
+          "status": "measured",
+          "supplied_text": "Um I just got the project announcement about what the project is Designing a remote control That's about it didn't get anything else Did you get the same thing",
+          "words": [
+            {
+              "text": "Um",
+              "start_us": 2560000,
+              "end_us": 3120000
+            },
+            {
+              "text": "I",
+              "start_us": 3200000,
+              "end_us": 3280000
+            },
+            {
+              "text": "just",
+              "start_us": 3280000,
+              "end_us": 3520000
+            },
+            {
+              "text": "got",
+              "start_us": 3520000,
+              "end_us": 3680000
+            },
+            {
+              "text": "the",
+              "start_us": 3840000,
+              "end_us": 3840000
+            },
+            {
+              "text": "project",
+              "start_us": 3840000,
+              "end_us": 4240000
+            },
+            {
+              "text": "announcement",
+              "start_us": 4240000,
+              "end_us": 4800000
+            },
+            {
+              "text": "about",
+              "start_us": 5040000,
+              "end_us": 5120000
+            },
+            {
+              "text": "what",
+              "start_us": 5200000,
+              "end_us": 5280000
+            },
+            {
+              "text": "the",
+              "start_us": 5280000,
+              "end_us": 5360000
+            },
+            {
+              "text": "project",
+              "start_us": 5440000,
+              "end_us": 5760000
+            },
+            {
+              "text": "is",
+              "start_us": 6800000,
+              "end_us": 6880000
+            },
+            {
+              "text": "Designing",
+              "start_us": 6880000,
+              "end_us": 7280000
+            },
+            {
+              "text": "a",
+              "start_us": 7360000,
+              "end_us": 7360000
+            },
+            {
+              "text": "remote",
+              "start_us": 7520000,
+              "end_us": 7680000
+            },
+            {
+              "text": "control",
+              "start_us": 7680000,
+              "end_us": 8080000
+            },
+            {
+              "text": "That's",
+              "start_us": 8160000,
+              "end_us": 8320000
+            },
+            {
+              "text": "about",
+              "start_us": 8400000,
+              "end_us": 8560000
+            },
+            {
+              "text": "it",
+              "start_us": 9600000,
+              "end_us": 9600000
+            },
+            {
+              "text": "didn't",
+              "start_us": 9600000,
+              "end_us": 9920000
+            },
+            {
+              "text": "get",
+              "start_us": 9920000,
+              "end_us": 9920000
+            },
+            {
+              "text": "anything",
+              "start_us": 9920000,
+              "end_us": 10080000
+            },
+            {
+              "text": "else",
+              "start_us": 10160000,
+              "end_us": 10320000
+            },
+            {
+              "text": "Did",
+              "start_us": 10800000,
+              "end_us": 11040000
+            },
+            {
+              "text": "you",
+              "start_us": 11040000,
+              "end_us": 11040000
+            },
+            {
+              "text": "get",
+              "start_us": 11040000,
+              "end_us": 11040000
+            },
+            {
+              "text": "the",
+              "start_us": 11200000,
+              "end_us": 11520000
+            },
+            {
+              "text": "same",
+              "start_us": 11520000,
+              "end_us": 11520000
+            },
+            {
+              "text": "thing",
+              "start_us": 11520000,
+              "end_us": 12000000
+            }
+          ],
+          "metrics": {
+            "reference_words": 29,
+            "returned_words": 29,
+            "matched_words_within_one_second": 28,
+            "word_edits_with_one_second_match_gate": 1,
+            "all_matched_edge_error": {
+              "n": 56,
+              "median_ms": 60.0,
+              "p95_ms": 450.0
+            },
+            "matched_filler_edge_error": {
+              "n": 2,
+              "median_ms": 55.0,
+              "p95_ms": 100.0
+            },
+            "invalid_edge_indices": [
+              4,
+              13,
+              18,
+              20,
+              24,
+              25,
+              27
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0204970840131864
+        },
+        "parakeet": {
+          "status": "measured",
+          "supplied_text": "Um I just got the project announcement. Is that designing a remote control? That's about it. Did we get anything else? I think so we're gonna have like um",
+          "words": [
+            {
+              "text": "Um",
+              "start_us": 2560000,
+              "end_us": 3120000
+            },
+            {
+              "text": "I",
+              "start_us": 3200000,
+              "end_us": 3280000
+            },
+            {
+              "text": "just",
+              "start_us": 3280000,
+              "end_us": 3520000
+            },
+            {
+              "text": "got",
+              "start_us": 3520000,
+              "end_us": 3680000
+            },
+            {
+              "text": "the",
+              "start_us": 3840000,
+              "end_us": 3840000
+            },
+            {
+              "text": "project",
+              "start_us": 3840000,
+              "end_us": 4240000
+            },
+            {
+              "text": "announcement",
+              "start_us": 4240000,
+              "end_us": 4800000
+            },
+            {
+              "text": "Is",
+              "start_us": 5600000,
+              "end_us": 5600000
+            },
+            {
+              "text": "that",
+              "start_us": 5600000,
+              "end_us": 5760000
+            },
+            {
+              "text": "designing",
+              "start_us": 6800000,
+              "end_us": 7280000
+            },
+            {
+              "text": "a",
+              "start_us": 7360000,
+              "end_us": 7360000
+            },
+            {
+              "text": "remote",
+              "start_us": 7520000,
+              "end_us": 7680000
+            },
+            {
+              "text": "control",
+              "start_us": 7680000,
+              "end_us": 8080000
+            },
+            {
+              "text": "That's",
+              "start_us": 8160000,
+              "end_us": 8320000
+            },
+            {
+              "text": "about",
+              "start_us": 8400000,
+              "end_us": 8560000
+            },
+            {
+              "text": "it",
+              "start_us": 9600000,
+              "end_us": 9600000
+            },
+            {
+              "text": "Did",
+              "start_us": 9760000,
+              "end_us": 9760000
+            },
+            {
+              "text": "we",
+              "start_us": 9760000,
+              "end_us": 9760000
+            },
+            {
+              "text": "get",
+              "start_us": 9760000,
+              "end_us": 9760000
+            },
+            {
+              "text": "anything",
+              "start_us": 9840000,
+              "end_us": 10080000
+            },
+            {
+              "text": "else",
+              "start_us": 10160000,
+              "end_us": 10320000
+            },
+            {
+              "text": "I",
+              "start_us": 10320000,
+              "end_us": 11440000
+            },
+            {
+              "text": "think",
+              "start_us": 11440000,
+              "end_us": 12000000
+            },
+            {
+              "text": "so",
+              "start_us": 12000000,
+              "end_us": 12000000
+            },
+            {
+              "text": "we're",
+              "start_us": 14640000,
+              "end_us": 14720000
+            },
+            {
+              "text": "gonna",
+              "start_us": 14720000,
+              "end_us": 14880000
+            },
+            {
+              "text": "have",
+              "start_us": 14880000,
+              "end_us": 14960000
+            },
+            {
+              "text": "like",
+              "start_us": 14960000,
+              "end_us": 15120000
+            },
+            {
+              "text": "um",
+              "start_us": 15600000,
+              "end_us": 15680000
+            }
+          ],
+          "metrics": {
+            "reference_words": 29,
+            "returned_words": 29,
+            "matched_words_within_one_second": 16,
+            "word_edits_with_one_second_match_gate": 16,
+            "all_matched_edge_error": {
+              "n": 32,
+              "median_ms": 40.0,
+              "p95_ms": 210.0
+            },
+            "matched_filler_edge_error": {
+              "n": 2,
+              "median_ms": 55.0,
+              "p95_ms": 100.0
+            },
+            "invalid_edge_indices": [
+              4,
+              7,
+              10,
+              15,
+              16,
+              17,
+              18,
+              23
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.943288000067696
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "I just got the project announcement, but what the project is about? Designing a remote control. That's about it. Engaging yours. Did you get the same thing? So we're going to have an individual workshop and then we're going to be talking about it. We'll repeat the process three times. And we're going to try to feel like we're there.",
+          "words": [
+            {
+              "text": "I",
+              "start_us": 2560000,
+              "end_us": 2560000
+            },
+            {
+              "text": "just",
+              "start_us": 3280000,
+              "end_us": 3520000
+            },
+            {
+              "text": "got",
+              "start_us": 3520000,
+              "end_us": 3680000
+            },
+            {
+              "text": "the",
+              "start_us": 3840000,
+              "end_us": 3840000
+            },
+            {
+              "text": "project",
+              "start_us": 3840000,
+              "end_us": 4240000
+            },
+            {
+              "text": "announcement",
+              "start_us": 4240000,
+              "end_us": 4800000
+            },
+            {
+              "text": "but",
+              "start_us": 5040000,
+              "end_us": 5120000
+            },
+            {
+              "text": "what",
+              "start_us": 5200000,
+              "end_us": 5280000
+            },
+            {
+              "text": "the",
+              "start_us": 5280000,
+              "end_us": 5360000
+            },
+            {
+              "text": "project",
+              "start_us": 5440000,
+              "end_us": 5760000
+            },
+            {
+              "text": "is",
+              "start_us": 6800000,
+              "end_us": 6880000
+            },
+            {
+              "text": "about",
+              "start_us": 6960000,
+              "end_us": 6960000
+            },
+            {
+              "text": "Designing",
+              "start_us": 7280000,
+              "end_us": 7280000
+            },
+            {
+              "text": "a",
+              "start_us": 7360000,
+              "end_us": 7360000
+            },
+            {
+              "text": "remote",
+              "start_us": 7520000,
+              "end_us": 7680000
+            },
+            {
+              "text": "control",
+              "start_us": 7680000,
+              "end_us": 8080000
+            },
+            {
+              "text": "That's",
+              "start_us": 8160000,
+              "end_us": 8320000
+            },
+            {
+              "text": "about",
+              "start_us": 8400000,
+              "end_us": 8560000
+            },
+            {
+              "text": "it",
+              "start_us": 9600000,
+              "end_us": 9600000
+            },
+            {
+              "text": "Engaging",
+              "start_us": 9600000,
+              "end_us": 10080000
+            },
+            {
+              "text": "yours",
+              "start_us": 10160000,
+              "end_us": 10240000
+            },
+            {
+              "text": "Did",
+              "start_us": 10800000,
+              "end_us": 11040000
+            },
+            {
+              "text": "you",
+              "start_us": 11040000,
+              "end_us": 11040000
+            },
+            {
+              "text": "get",
+              "start_us": 11040000,
+              "end_us": 11040000
+            },
+            {
+              "text": "the",
+              "start_us": 11040000,
+              "end_us": 11520000
+            },
+            {
+              "text": "same",
+              "start_us": 11520000,
+              "end_us": 11520000
+            },
+            {
+              "text": "thing",
+              "start_us": 11520000,
+              "end_us": 12000000
+            },
+            {
+              "text": "So",
+              "start_us": 14480000,
+              "end_us": 14560000
+            },
+            {
+              "text": "we're",
+              "start_us": 14640000,
+              "end_us": 14720000
+            },
+            {
+              "text": "going",
+              "start_us": 14720000,
+              "end_us": 14800000
+            },
+            {
+              "text": "to",
+              "start_us": 14800000,
+              "end_us": 14880000
+            },
+            {
+              "text": "have",
+              "start_us": 14880000,
+              "end_us": 14880000
+            },
+            {
+              "text": "an",
+              "start_us": 14880000,
+              "end_us": 15040000
+            },
+            {
+              "text": "individual",
+              "start_us": 15520000,
+              "end_us": 16000000
+            },
+            {
+              "text": "workshop",
+              "start_us": 16000000,
+              "end_us": 16160000
+            },
+            {
+              "text": "and",
+              "start_us": 16160000,
+              "end_us": 18480000
+            },
+            {
+              "text": "then",
+              "start_us": 19040000,
+              "end_us": 19040000
+            },
+            {
+              "text": "we're",
+              "start_us": 19040000,
+              "end_us": 19040000
+            },
+            {
+              "text": "going",
+              "start_us": 19040000,
+              "end_us": 19040000
+            },
+            {
+              "text": "to",
+              "start_us": 19040000,
+              "end_us": 19040000
+            },
+            {
+              "text": "be",
+              "start_us": 19040000,
+              "end_us": 19120000
+            },
+            {
+              "text": "talking",
+              "start_us": 19840000,
+              "end_us": 20000000
+            },
+            {
+              "text": "about",
+              "start_us": 20760000,
+              "end_us": 21520000
+            },
+            {
+              "text": "it",
+              "start_us": 22280000,
+              "end_us": 23040000
+            },
+            {
+              "text": "We'll",
+              "start_us": 23156000,
+              "end_us": 23273000
+            },
+            {
+              "text": "repeat",
+              "start_us": 23390000,
+              "end_us": 23507000
+            },
+            {
+              "text": "the",
+              "start_us": 23624000,
+              "end_us": 23741000
+            },
+            {
+              "text": "process",
+              "start_us": 23858000,
+              "end_us": 23975000
+            },
+            {
+              "text": "three",
+              "start_us": 24092000,
+              "end_us": 24209000
+            },
+            {
+              "text": "times",
+              "start_us": 24326000,
+              "end_us": 24443000
+            },
+            {
+              "text": "And",
+              "start_us": 24560000,
+              "end_us": 24640000
+            },
+            {
+              "text": "we're",
+              "start_us": 24640000,
+              "end_us": 24800000
+            },
+            {
+              "text": "going",
+              "start_us": 24800000,
+              "end_us": 25280000
+            },
+            {
+              "text": "to",
+              "start_us": 25280000,
+              "end_us": 25400000
+            },
+            {
+              "text": "try",
+              "start_us": 25520000,
+              "end_us": 25640000
+            },
+            {
+              "text": "to",
+              "start_us": 25760000,
+              "end_us": 25840000
+            },
+            {
+              "text": "feel",
+              "start_us": 25840000,
+              "end_us": 26240000
+            },
+            {
+              "text": "like",
+              "start_us": 26240000,
+              "end_us": 26400000
+            },
+            {
+              "text": "we're",
+              "start_us": 26480000,
+              "end_us": 26560000
+            },
+            {
+              "text": "there",
+              "start_us": 26560000,
+              "end_us": 26640000
+            }
+          ],
+          "metrics": {
+            "reference_words": 29,
+            "returned_words": 60,
+            "matched_words_within_one_second": 22,
+            "word_edits_with_one_second_match_gate": 41,
+            "all_matched_edge_error": {
+              "n": 44,
+              "median_ms": 70.0,
+              "p95_ms": 630.0
+            },
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              0,
+              3,
+              11,
+              12,
+              13,
+              18,
+              22,
+              23,
+              25,
+              31,
+              36,
+              37,
+              38,
+              39
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0195895000360906
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "quiet-filler",
+      "index": 0,
+      "input_sha256": "b678a9f41cbfc3fbb3573f26f8cf9bc2564d0e655766d8396161d154e699a3bc",
+      "reference_sha256": "070ab5bf3b74b1a92e8b3b01fbc5e031b9d63e31af812070917aab5bc1f73393",
+      "source_start_sample": 2080000,
+      "source_end_sample": 2560000,
+      "results": {
+        "oracle": {
+          "status": "measured",
+          "supplied_text": "Um I just got the project announcement about what the project is Designing a remote control That's about it didn't get anything else Did you get the same thing",
+          "words": [
+            {
+              "text": "Um",
+              "start_us": 2560000,
+              "end_us": 2880000
+            },
+            {
+              "text": "I",
+              "start_us": 3200000,
+              "end_us": 3280000
+            },
+            {
+              "text": "just",
+              "start_us": 3280000,
+              "end_us": 3520000
+            },
+            {
+              "text": "got",
+              "start_us": 3520000,
+              "end_us": 3680000
+            },
+            {
+              "text": "the",
+              "start_us": 3760000,
+              "end_us": 3840000
+            },
+            {
+              "text": "project",
+              "start_us": 4000000,
+              "end_us": 4320000
+            },
+            {
+              "text": "announcement",
+              "start_us": 4320000,
+              "end_us": 4800000
+            },
+            {
+              "text": "about",
+              "start_us": 4960000,
+              "end_us": 5200000
+            },
+            {
+              "text": "what",
+              "start_us": 5200000,
+              "end_us": 5360000
+            },
+            {
+              "text": "the",
+              "start_us": 5360000,
+              "end_us": 5360000
+            },
+            {
+              "text": "project",
+              "start_us": 5520000,
+              "end_us": 5760000
+            },
+            {
+              "text": "is",
+              "start_us": 6800000,
+              "end_us": 6880000
+            },
+            {
+              "text": "Designing",
+              "start_us": 6880000,
+              "end_us": 7200000
+            },
+            {
+              "text": "a",
+              "start_us": 7280000,
+              "end_us": 7280000
+            },
+            {
+              "text": "remote",
+              "start_us": 7440000,
+              "end_us": 7680000
+            },
+            {
+              "text": "control",
+              "start_us": 7680000,
+              "end_us": 8080000
+            },
+            {
+              "text": "That's",
+              "start_us": 8160000,
+              "end_us": 8240000
+            },
+            {
+              "text": "about",
+              "start_us": 8400000,
+              "end_us": 8480000
+            },
+            {
+              "text": "it",
+              "start_us": 8480000,
+              "end_us": 8640000
+            },
+            {
+              "text": "didn't",
+              "start_us": 8640000,
+              "end_us": 9280000
+            },
+            {
+              "text": "get",
+              "start_us": 9760000,
+              "end_us": 9920000
+            },
+            {
+              "text": "anything",
+              "start_us": 9920000,
+              "end_us": 10080000
+            },
+            {
+              "text": "else",
+              "start_us": 10160000,
+              "end_us": 10240000
+            },
+            {
+              "text": "Did",
+              "start_us": 10800000,
+              "end_us": 11040000
+            },
+            {
+              "text": "you",
+              "start_us": 11040000,
+              "end_us": 11040000
+            },
+            {
+              "text": "get",
+              "start_us": 11040000,
+              "end_us": 11040000
+            },
+            {
+              "text": "the",
+              "start_us": 11200000,
+              "end_us": 11280000
+            },
+            {
+              "text": "same",
+              "start_us": 11280000,
+              "end_us": 11520000
+            },
+            {
+              "text": "thing",
+              "start_us": 11520000,
+              "end_us": 11520000
+            }
+          ],
+          "metrics": {
+            "reference_words": 29,
+            "returned_words": 29,
+            "matched_words_within_one_second": 29,
+            "word_edits_with_one_second_match_gate": 0,
+            "all_matched_edge_error": {
+              "n": 58,
+              "median_ms": 80.0,
+              "p95_ms": 510.0
+            },
+            "matched_filler_edge_error": {
+              "n": 2,
+              "median_ms": 175.0,
+              "p95_ms": 340.0
+            },
+            "invalid_edge_indices": [
+              9,
+              13,
+              24,
+              25,
+              28
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.9936297920066863
+        },
+        "parakeet": {
+          "status": "no_transcript",
+          "words": []
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "I just got the project announcement about what the project is about, designing a remote control, that's about it, and getting yours. Did you get something? So we're going to have like 10 people working on this project. We'll be talking three times, two times. And I think we're going to get pilot trials for this.",
+          "words": [
+            {
+              "text": "I",
+              "start_us": 0,
+              "end_us": 0
+            },
+            {
+              "text": "just",
+              "start_us": 3280000,
+              "end_us": 3520000
+            },
+            {
+              "text": "got",
+              "start_us": 3520000,
+              "end_us": 3680000
+            },
+            {
+              "text": "the",
+              "start_us": 3760000,
+              "end_us": 3840000
+            },
+            {
+              "text": "project",
+              "start_us": 4000000,
+              "end_us": 4320000
+            },
+            {
+              "text": "announcement",
+              "start_us": 4320000,
+              "end_us": 4800000
+            },
+            {
+              "text": "about",
+              "start_us": 4960000,
+              "end_us": 5200000
+            },
+            {
+              "text": "what",
+              "start_us": 5200000,
+              "end_us": 5360000
+            },
+            {
+              "text": "the",
+              "start_us": 5360000,
+              "end_us": 5360000
+            },
+            {
+              "text": "project",
+              "start_us": 5520000,
+              "end_us": 5760000
+            },
+            {
+              "text": "is",
+              "start_us": 6800000,
+              "end_us": 6880000
+            },
+            {
+              "text": "about",
+              "start_us": 6880000,
+              "end_us": 6880000
+            },
+            {
+              "text": "designing",
+              "start_us": 7200000,
+              "end_us": 7200000
+            },
+            {
+              "text": "a",
+              "start_us": 7280000,
+              "end_us": 7280000
+            },
+            {
+              "text": "remote",
+              "start_us": 7440000,
+              "end_us": 7680000
+            },
+            {
+              "text": "control",
+              "start_us": 7680000,
+              "end_us": 8080000
+            },
+            {
+              "text": "that's",
+              "start_us": 8160000,
+              "end_us": 8160000
+            },
+            {
+              "text": "about",
+              "start_us": 8400000,
+              "end_us": 8480000
+            },
+            {
+              "text": "it",
+              "start_us": 8480000,
+              "end_us": 8640000
+            },
+            {
+              "text": "and",
+              "start_us": 8640000,
+              "end_us": 9280000
+            },
+            {
+              "text": "getting",
+              "start_us": 9760000,
+              "end_us": 9920000
+            },
+            {
+              "text": "yours",
+              "start_us": 9920000,
+              "end_us": 9920000
+            },
+            {
+              "text": "Did",
+              "start_us": 9920000,
+              "end_us": 9920000
+            },
+            {
+              "text": "you",
+              "start_us": 9920000,
+              "end_us": 11040000
+            },
+            {
+              "text": "get",
+              "start_us": 11040000,
+              "end_us": 11200000
+            },
+            {
+              "text": "something",
+              "start_us": 11200000,
+              "end_us": 11200000
+            },
+            {
+              "text": "So",
+              "start_us": 11200000,
+              "end_us": 11520000
+            },
+            {
+              "text": "we're",
+              "start_us": 11520000,
+              "end_us": 11520000
+            },
+            {
+              "text": "going",
+              "start_us": 11520000,
+              "end_us": 11520000
+            },
+            {
+              "text": "to",
+              "start_us": 11920000,
+              "end_us": 12000000
+            },
+            {
+              "text": "have",
+              "start_us": 12800000,
+              "end_us": 12960000
+            },
+            {
+              "text": "like",
+              "start_us": 12960000,
+              "end_us": 14480000
+            },
+            {
+              "text": "10",
+              "start_us": 14480000,
+              "end_us": 14720000
+            },
+            {
+              "text": "people",
+              "start_us": 14720000,
+              "end_us": 14880000
+            },
+            {
+              "text": "working",
+              "start_us": 14880000,
+              "end_us": 14880000
+            },
+            {
+              "text": "on",
+              "start_us": 15040000,
+              "end_us": 15120000
+            },
+            {
+              "text": "this",
+              "start_us": 15600000,
+              "end_us": 15680000
+            },
+            {
+              "text": "project",
+              "start_us": 15680000,
+              "end_us": 15680000
+            },
+            {
+              "text": "We'll",
+              "start_us": 15680000,
+              "end_us": 15680000
+            },
+            {
+              "text": "be",
+              "start_us": 15680000,
+              "end_us": 15680000
+            },
+            {
+              "text": "talking",
+              "start_us": 15680000,
+              "end_us": 15680000
+            },
+            {
+              "text": "three",
+              "start_us": 15680000,
+              "end_us": 15680000
+            },
+            {
+              "text": "times",
+              "start_us": 15840000,
+              "end_us": 15840000
+            },
+            {
+              "text": "two",
+              "start_us": 16240000,
+              "end_us": 16240000
+            },
+            {
+              "text": "times",
+              "start_us": 16480000,
+              "end_us": 18560000
+            },
+            {
+              "text": "And",
+              "start_us": 18560000,
+              "end_us": 18560000
+            },
+            {
+              "text": "I",
+              "start_us": 18560000,
+              "end_us": 18560000
+            },
+            {
+              "text": "think",
+              "start_us": 18560000,
+              "end_us": 18560000
+            },
+            {
+              "text": "we're",
+              "start_us": 18560000,
+              "end_us": 18560000
+            },
+            {
+              "text": "going",
+              "start_us": 18560000,
+              "end_us": 18560000
+            },
+            {
+              "text": "to",
+              "start_us": 18560000,
+              "end_us": 18560000
+            },
+            {
+              "text": "get",
+              "start_us": 18656000,
+              "end_us": 18752000
+            },
+            {
+              "text": "pilot",
+              "start_us": 18848000,
+              "end_us": 18944000
+            },
+            {
+              "text": "trials",
+              "start_us": 19040000,
+              "end_us": 19840000
+            },
+            {
+              "text": "for",
+              "start_us": 19840000,
+              "end_us": 19840000
+            },
+            {
+              "text": "this",
+              "start_us": 19840000,
+              "end_us": 19840000
+            }
+          ],
+          "metrics": {
+            "reference_words": 29,
+            "returned_words": 56,
+            "matched_words_within_one_second": 20,
+            "word_edits_with_one_second_match_gate": 38,
+            "all_matched_edge_error": {
+              "n": 40,
+              "median_ms": 75.0,
+              "p95_ms": 850.0
+            },
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              0,
+              8,
+              11,
+              12,
+              13,
+              16,
+              21,
+              22,
+              25,
+              27,
+              28,
+              34,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              54,
+              55
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0181738750543445
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "meaningful-like-pauses",
+      "index": 0,
+      "input_sha256": "3a7eb0ba9055c3b493c5b59aa0f19fd0987b243eefde1b3b7a6c1b813989a15b",
+      "reference_sha256": "638adbc8222de4da6135c7c099f2dd9a3ce3685e216573e3d8570e7ed7d3af0a",
+      "source_start_sample": 4800000,
+      "source_end_sample": 5280000,
+      "results": {
+        "oracle": {
+          "status": "measured",
+          "supplied_text": "Can't draw Um Yeah Um well anyway I don't know it's just the first animal I can think off the top of my head Um Yes Big reason is 'cause I'm allergic to most animals Allergic to animal fur so",
+          "words": [
+            {
+              "text": "Can't",
+              "start_us": 9600000,
+              "end_us": 9600000
+            },
+            {
+              "text": "draw",
+              "start_us": 9600000,
+              "end_us": 9840000
+            },
+            {
+              "text": "Um",
+              "start_us": 12160000,
+              "end_us": 12160000
+            },
+            {
+              "text": "Yeah",
+              "start_us": 13120000,
+              "end_us": 13280000
+            },
+            {
+              "text": "Um",
+              "start_us": 18640000,
+              "end_us": 19040000
+            },
+            {
+              "text": "well",
+              "start_us": 20080000,
+              "end_us": 20240000
+            },
+            {
+              "text": "anyway",
+              "start_us": 20240000,
+              "end_us": 20400000
+            },
+            {
+              "text": "I",
+              "start_us": 21600000,
+              "end_us": 21680000
+            },
+            {
+              "text": "don't",
+              "start_us": 21680000,
+              "end_us": 21840000
+            },
+            {
+              "text": "know",
+              "start_us": 21840000,
+              "end_us": 21920000
+            },
+            {
+              "text": "it's",
+              "start_us": 21920000,
+              "end_us": 22000000
+            },
+            {
+              "text": "just",
+              "start_us": 22000000,
+              "end_us": 22240000
+            },
+            {
+              "text": "the",
+              "start_us": 22240000,
+              "end_us": 22240000
+            },
+            {
+              "text": "first",
+              "start_us": 22240000,
+              "end_us": 22480000
+            },
+            {
+              "text": "animal",
+              "start_us": 22480000,
+              "end_us": 22640000
+            },
+            {
+              "text": "I",
+              "start_us": 22640000,
+              "end_us": 22720000
+            },
+            {
+              "text": "can",
+              "start_us": 22720000,
+              "end_us": 22880000
+            },
+            {
+              "text": "think",
+              "start_us": 22880000,
+              "end_us": 23040000
+            },
+            {
+              "text": "off",
+              "start_us": 23040000,
+              "end_us": 23200000
+            },
+            {
+              "text": "the",
+              "start_us": 23200000,
+              "end_us": 23280000
+            },
+            {
+              "text": "top",
+              "start_us": 23280000,
+              "end_us": 23440000
+            },
+            {
+              "text": "of",
+              "start_us": 23440000,
+              "end_us": 23600000
+            },
+            {
+              "text": "my",
+              "start_us": 23600000,
+              "end_us": 23680000
+            },
+            {
+              "text": "head",
+              "start_us": 23680000,
+              "end_us": 23920000
+            },
+            {
+              "text": "Um",
+              "start_us": 24160000,
+              "end_us": 24480000
+            },
+            {
+              "text": "Yes",
+              "start_us": 25040000,
+              "end_us": 25120000
+            },
+            {
+              "text": "Big",
+              "start_us": 25440000,
+              "end_us": 25600000
+            },
+            {
+              "text": "reason",
+              "start_us": 25600000,
+              "end_us": 25920000
+            },
+            {
+              "text": "is",
+              "start_us": 25920000,
+              "end_us": 26080000
+            },
+            {
+              "text": "'cause",
+              "start_us": 26160000,
+              "end_us": 26320000
+            },
+            {
+              "text": "I'm",
+              "start_us": 26320000,
+              "end_us": 26400000
+            },
+            {
+              "text": "allergic",
+              "start_us": 26400000,
+              "end_us": 26800000
+            },
+            {
+              "text": "to",
+              "start_us": 26800000,
+              "end_us": 26880000
+            },
+            {
+              "text": "most",
+              "start_us": 26880000,
+              "end_us": 27120000
+            },
+            {
+              "text": "animals",
+              "start_us": 27120000,
+              "end_us": 27440000
+            },
+            {
+              "text": "Allergic",
+              "start_us": 27920000,
+              "end_us": 28160000
+            },
+            {
+              "text": "to",
+              "start_us": 28240000,
+              "end_us": 28240000
+            },
+            {
+              "text": "animal",
+              "start_us": 28240000,
+              "end_us": 28560000
+            },
+            {
+              "text": "fur",
+              "start_us": 28560000,
+              "end_us": 28640000
+            },
+            {
+              "text": "so",
+              "start_us": 28880000,
+              "end_us": 29040000
+            }
+          ],
+          "metrics": {
+            "reference_words": 40,
+            "returned_words": 40,
+            "matched_words_within_one_second": 40,
+            "word_edits_with_one_second_match_gate": 0,
+            "all_matched_edge_error": {
+              "n": 80,
+              "median_ms": 30.0,
+              "p95_ms": 570.0
+            },
+            "matched_filler_edge_error": {
+              "n": 6,
+              "median_ms": 310.0,
+              "p95_ms": 990.0
+            },
+            "invalid_edge_indices": [
+              0,
+              2,
+              12,
+              36
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0103499999968335
+        },
+        "parakeet": {
+          "status": "measured",
+          "supplied_text": "Yeah. Um well am I I don't know, it's just the first animal I can think of off the top of my head. Um guess big reason is 'cause I'm allergic to most animals. Allergic to animal first, so um",
+          "words": [
+            {
+              "text": "Yeah",
+              "start_us": 13120000,
+              "end_us": 13280000
+            },
+            {
+              "text": "Um",
+              "start_us": 18640000,
+              "end_us": 19040000
+            },
+            {
+              "text": "well",
+              "start_us": 20080000,
+              "end_us": 20240000
+            },
+            {
+              "text": "am",
+              "start_us": 20240000,
+              "end_us": 21600000
+            },
+            {
+              "text": "I",
+              "start_us": 21600000,
+              "end_us": 21680000
+            },
+            {
+              "text": "I",
+              "start_us": 21680000,
+              "end_us": 21680000
+            },
+            {
+              "text": "don't",
+              "start_us": 21680000,
+              "end_us": 21840000
+            },
+            {
+              "text": "know",
+              "start_us": 21840000,
+              "end_us": 21920000
+            },
+            {
+              "text": "it's",
+              "start_us": 21920000,
+              "end_us": 22000000
+            },
+            {
+              "text": "just",
+              "start_us": 22000000,
+              "end_us": 22240000
+            },
+            {
+              "text": "the",
+              "start_us": 22240000,
+              "end_us": 22240000
+            },
+            {
+              "text": "first",
+              "start_us": 22240000,
+              "end_us": 22480000
+            },
+            {
+              "text": "animal",
+              "start_us": 22480000,
+              "end_us": 22640000
+            },
+            {
+              "text": "I",
+              "start_us": 22640000,
+              "end_us": 22720000
+            },
+            {
+              "text": "can",
+              "start_us": 22720000,
+              "end_us": 22880000
+            },
+            {
+              "text": "think",
+              "start_us": 22880000,
+              "end_us": 23040000
+            },
+            {
+              "text": "of",
+              "start_us": 23040000,
+              "end_us": 23200000
+            },
+            {
+              "text": "off",
+              "start_us": 23200000,
+              "end_us": 23200000
+            },
+            {
+              "text": "the",
+              "start_us": 23200000,
+              "end_us": 23280000
+            },
+            {
+              "text": "top",
+              "start_us": 23280000,
+              "end_us": 23440000
+            },
+            {
+              "text": "of",
+              "start_us": 23440000,
+              "end_us": 23600000
+            },
+            {
+              "text": "my",
+              "start_us": 23600000,
+              "end_us": 23680000
+            },
+            {
+              "text": "head",
+              "start_us": 23680000,
+              "end_us": 23920000
+            },
+            {
+              "text": "Um",
+              "start_us": 24160000,
+              "end_us": 24480000
+            },
+            {
+              "text": "guess",
+              "start_us": 25040000,
+              "end_us": 25120000
+            },
+            {
+              "text": "big",
+              "start_us": 25440000,
+              "end_us": 25600000
+            },
+            {
+              "text": "reason",
+              "start_us": 25600000,
+              "end_us": 25920000
+            },
+            {
+              "text": "is",
+              "start_us": 25920000,
+              "end_us": 26080000
+            },
+            {
+              "text": "'cause",
+              "start_us": 26160000,
+              "end_us": 26320000
+            },
+            {
+              "text": "I'm",
+              "start_us": 26320000,
+              "end_us": 26400000
+            },
+            {
+              "text": "allergic",
+              "start_us": 26400000,
+              "end_us": 26800000
+            },
+            {
+              "text": "to",
+              "start_us": 26800000,
+              "end_us": 26880000
+            },
+            {
+              "text": "most",
+              "start_us": 26880000,
+              "end_us": 27120000
+            },
+            {
+              "text": "animals",
+              "start_us": 27120000,
+              "end_us": 27440000
+            },
+            {
+              "text": "Allergic",
+              "start_us": 27920000,
+              "end_us": 28160000
+            },
+            {
+              "text": "to",
+              "start_us": 28240000,
+              "end_us": 28320000
+            },
+            {
+              "text": "animal",
+              "start_us": 28320000,
+              "end_us": 28560000
+            },
+            {
+              "text": "first",
+              "start_us": 28560000,
+              "end_us": 28800000
+            },
+            {
+              "text": "so",
+              "start_us": 28880000,
+              "end_us": 29040000
+            },
+            {
+              "text": "um",
+              "start_us": 29680000,
+              "end_us": 29920000
+            }
+          ],
+          "metrics": {
+            "reference_words": 40,
+            "returned_words": 40,
+            "matched_words_within_one_second": 34,
+            "word_edits_with_one_second_match_gate": 9,
+            "all_matched_edge_error": {
+              "n": 68,
+              "median_ms": 30.0,
+              "p95_ms": 420.0
+            },
+            "matched_filler_edge_error": {
+              "n": 4,
+              "median_ms": 290.0,
+              "p95_ms": 990.0
+            },
+            "invalid_edge_indices": [
+              5,
+              10,
+              17
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0325409999350086
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "I don't know, mine isn't noticeable in this spot. It's impressionist. Can't draw. Yeah? Well, I don't know, it's just the first animal I can think of off the top of my head. Yes, big reason is because I'm allergic to most animals. Allergic to animal fur, so.",
+          "words": [
+            {
+              "text": "I",
+              "start_us": 9520000,
+              "end_us": 9520000
+            },
+            {
+              "text": "don't",
+              "start_us": 9600000,
+              "end_us": 19040000
+            },
+            {
+              "text": "know",
+              "start_us": 20080000,
+              "end_us": 20240000
+            },
+            {
+              "text": "mine",
+              "start_us": 20240000,
+              "end_us": 20400000
+            },
+            {
+              "text": "isn't",
+              "start_us": 20451000,
+              "end_us": 20502000
+            },
+            {
+              "text": "noticeable",
+              "start_us": 20553000,
+              "end_us": 20604000
+            },
+            {
+              "text": "in",
+              "start_us": 20656000,
+              "end_us": 20707000
+            },
+            {
+              "text": "this",
+              "start_us": 20758000,
+              "end_us": 20809000
+            },
+            {
+              "text": "spot",
+              "start_us": 20860000,
+              "end_us": 20912000
+            },
+            {
+              "text": "It's",
+              "start_us": 20963000,
+              "end_us": 21014000
+            },
+            {
+              "text": "impressionist",
+              "start_us": 21065000,
+              "end_us": 21116000
+            },
+            {
+              "text": "Can't",
+              "start_us": 21168000,
+              "end_us": 21219000
+            },
+            {
+              "text": "draw",
+              "start_us": 21270000,
+              "end_us": 21321000
+            },
+            {
+              "text": "Yeah",
+              "start_us": 21372000,
+              "end_us": 21424000
+            },
+            {
+              "text": "Well",
+              "start_us": 21475000,
+              "end_us": 21526000
+            },
+            {
+              "text": "I",
+              "start_us": 21577000,
+              "end_us": 21628000
+            },
+            {
+              "text": "don't",
+              "start_us": 21680000,
+              "end_us": 21840000
+            },
+            {
+              "text": "know",
+              "start_us": 21840000,
+              "end_us": 21920000
+            },
+            {
+              "text": "it's",
+              "start_us": 21920000,
+              "end_us": 21920000
+            },
+            {
+              "text": "just",
+              "start_us": 22000000,
+              "end_us": 22240000
+            },
+            {
+              "text": "the",
+              "start_us": 22240000,
+              "end_us": 22240000
+            },
+            {
+              "text": "first",
+              "start_us": 22240000,
+              "end_us": 22480000
+            },
+            {
+              "text": "animal",
+              "start_us": 22480000,
+              "end_us": 22640000
+            },
+            {
+              "text": "I",
+              "start_us": 22640000,
+              "end_us": 22720000
+            },
+            {
+              "text": "can",
+              "start_us": 22720000,
+              "end_us": 22880000
+            },
+            {
+              "text": "think",
+              "start_us": 22880000,
+              "end_us": 23040000
+            },
+            {
+              "text": "of",
+              "start_us": 23040000,
+              "end_us": 23200000
+            },
+            {
+              "text": "off",
+              "start_us": 23200000,
+              "end_us": 23200000
+            },
+            {
+              "text": "the",
+              "start_us": 23200000,
+              "end_us": 23280000
+            },
+            {
+              "text": "top",
+              "start_us": 23280000,
+              "end_us": 23440000
+            },
+            {
+              "text": "of",
+              "start_us": 23440000,
+              "end_us": 23600000
+            },
+            {
+              "text": "my",
+              "start_us": 23600000,
+              "end_us": 23680000
+            },
+            {
+              "text": "head",
+              "start_us": 23680000,
+              "end_us": 23920000
+            },
+            {
+              "text": "Yes",
+              "start_us": 25040000,
+              "end_us": 25120000
+            },
+            {
+              "text": "big",
+              "start_us": 25440000,
+              "end_us": 25600000
+            },
+            {
+              "text": "reason",
+              "start_us": 25600000,
+              "end_us": 25920000
+            },
+            {
+              "text": "is",
+              "start_us": 25920000,
+              "end_us": 26080000
+            },
+            {
+              "text": "because",
+              "start_us": 26160000,
+              "end_us": 26320000
+            },
+            {
+              "text": "I'm",
+              "start_us": 26320000,
+              "end_us": 26400000
+            },
+            {
+              "text": "allergic",
+              "start_us": 26400000,
+              "end_us": 26800000
+            },
+            {
+              "text": "to",
+              "start_us": 26800000,
+              "end_us": 26880000
+            },
+            {
+              "text": "most",
+              "start_us": 26880000,
+              "end_us": 27120000
+            },
+            {
+              "text": "animals",
+              "start_us": 27120000,
+              "end_us": 27440000
+            },
+            {
+              "text": "Allergic",
+              "start_us": 27920000,
+              "end_us": 28160000
+            },
+            {
+              "text": "to",
+              "start_us": 28240000,
+              "end_us": 28240000
+            },
+            {
+              "text": "animal",
+              "start_us": 28240000,
+              "end_us": 28560000
+            },
+            {
+              "text": "fur",
+              "start_us": 28640000,
+              "end_us": 28640000
+            },
+            {
+              "text": "so",
+              "start_us": 28880000,
+              "end_us": 29040000
+            }
+          ],
+          "metrics": {
+            "reference_words": 40,
+            "returned_words": 48,
+            "matched_words_within_one_second": 31,
+            "word_edits_with_one_second_match_gate": 18,
+            "all_matched_edge_error": {
+              "n": 62,
+              "median_ms": 26.0,
+              "p95_ms": 190.0
+            },
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              0,
+              18,
+              20,
+              27,
+              44,
+              46
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0778392909560353
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "meaningful-like-pauses",
+      "index": 1,
+      "input_sha256": "ecaf622c395ce3d316e4861fa139eea4a1fbfb395c655095780e9d95aa0a89ae",
+      "reference_sha256": "0e69b89cdb734ebd969a9e80f2b2b1b8e3a935259d5e5bd5b4a31781c21b70a2",
+      "source_start_sample": 5248000,
+      "source_end_sample": 5728000,
+      "results": {
+        "oracle": {
+          "status": "measured",
+          "supplied_text": "to animal fur so um fish was a natural choice Um yeah and I kind of like whales They come in and go eat everything in sight And they're quite harmless and mild and interesting Tail's a bit big I think",
+          "words": [
+            {
+              "text": "to",
+              "start_us": 0,
+              "end_us": 80000
+            },
+            {
+              "text": "animal",
+              "start_us": 240000,
+              "end_us": 560000
+            },
+            {
+              "text": "fur",
+              "start_us": 560000,
+              "end_us": 640000
+            },
+            {
+              "text": "so",
+              "start_us": 880000,
+              "end_us": 1120000
+            },
+            {
+              "text": "um",
+              "start_us": 1680000,
+              "end_us": 1920000
+            },
+            {
+              "text": "fish",
+              "start_us": 2160000,
+              "end_us": 2400000
+            },
+            {
+              "text": "was",
+              "start_us": 2400000,
+              "end_us": 2480000
+            },
+            {
+              "text": "a",
+              "start_us": 2480000,
+              "end_us": 2560000
+            },
+            {
+              "text": "natural",
+              "start_us": 2560000,
+              "end_us": 2880000
+            },
+            {
+              "text": "choice",
+              "start_us": 2880000,
+              "end_us": 3120000
+            },
+            {
+              "text": "Um",
+              "start_us": 4080000,
+              "end_us": 4640000
+            },
+            {
+              "text": "yeah",
+              "start_us": 4800000,
+              "end_us": 5040000
+            },
+            {
+              "text": "and",
+              "start_us": 5120000,
+              "end_us": 5200000
+            },
+            {
+              "text": "I",
+              "start_us": 5200000,
+              "end_us": 5280000
+            },
+            {
+              "text": "kind",
+              "start_us": 5280000,
+              "end_us": 5440000
+            },
+            {
+              "text": "of",
+              "start_us": 5440000,
+              "end_us": 5520000
+            },
+            {
+              "text": "like",
+              "start_us": 5520000,
+              "end_us": 5680000
+            },
+            {
+              "text": "whales",
+              "start_us": 5680000,
+              "end_us": 6160000
+            },
+            {
+              "text": "They",
+              "start_us": 6320000,
+              "end_us": 6400000
+            },
+            {
+              "text": "come",
+              "start_us": 6400000,
+              "end_us": 6560000
+            },
+            {
+              "text": "in",
+              "start_us": 6560000,
+              "end_us": 6720000
+            },
+            {
+              "text": "and",
+              "start_us": 6720000,
+              "end_us": 6800000
+            },
+            {
+              "text": "go",
+              "start_us": 6800000,
+              "end_us": 6880000
+            },
+            {
+              "text": "eat",
+              "start_us": 7840000,
+              "end_us": 7920000
+            },
+            {
+              "text": "everything",
+              "start_us": 7920000,
+              "end_us": 8240000
+            },
+            {
+              "text": "in",
+              "start_us": 8240000,
+              "end_us": 8320000
+            },
+            {
+              "text": "sight",
+              "start_us": 8320000,
+              "end_us": 8640000
+            },
+            {
+              "text": "And",
+              "start_us": 9280000,
+              "end_us": 9280000
+            },
+            {
+              "text": "they're",
+              "start_us": 10240000,
+              "end_us": 10400000
+            },
+            {
+              "text": "quite",
+              "start_us": 10400000,
+              "end_us": 10640000
+            },
+            {
+              "text": "harmless",
+              "start_us": 10880000,
+              "end_us": 11280000
+            },
+            {
+              "text": "and",
+              "start_us": 11280000,
+              "end_us": 11360000
+            },
+            {
+              "text": "mild",
+              "start_us": 11360000,
+              "end_us": 11760000
+            },
+            {
+              "text": "and",
+              "start_us": 11760000,
+              "end_us": 12000000
+            },
+            {
+              "text": "interesting",
+              "start_us": 12960000,
+              "end_us": 13360000
+            },
+            {
+              "text": "Tail's",
+              "start_us": 25920000,
+              "end_us": 26160000
+            },
+            {
+              "text": "a",
+              "start_us": 26160000,
+              "end_us": 26240000
+            },
+            {
+              "text": "bit",
+              "start_us": 26240000,
+              "end_us": 26320000
+            },
+            {
+              "text": "big",
+              "start_us": 26400000,
+              "end_us": 26560000
+            },
+            {
+              "text": "I",
+              "start_us": 26560000,
+              "end_us": 26640000
+            },
+            {
+              "text": "think",
+              "start_us": 26640000,
+              "end_us": 26800000
+            }
+          ],
+          "metrics": {
+            "reference_words": 41,
+            "returned_words": 41,
+            "matched_words_within_one_second": 41,
+            "word_edits_with_one_second_match_gate": 0,
+            "all_matched_edge_error": {
+              "n": 82,
+              "median_ms": 30.0,
+              "p95_ms": 890.0
+            },
+            "matched_filler_edge_error": {
+              "n": 4,
+              "median_ms": 125.0,
+              "p95_ms": 230.0
+            },
+            "invalid_edge_indices": [
+              27
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0387238329276443
+        },
+        "parakeet": {
+          "status": "measured",
+          "supplied_text": "To animal fur, so fish was a natural choice. And I kind of like whales. They come in and go eat everything in sight. They're quite harmless and mild and interesting. Tails a bit bigger, I think.",
+          "words": [
+            {
+              "text": "To",
+              "start_us": 80000,
+              "end_us": 80000
+            },
+            {
+              "text": "animal",
+              "start_us": 240000,
+              "end_us": 560000
+            },
+            {
+              "text": "fur",
+              "start_us": 560000,
+              "end_us": 720000
+            },
+            {
+              "text": "so",
+              "start_us": 880000,
+              "end_us": 1120000
+            },
+            {
+              "text": "fish",
+              "start_us": 2160000,
+              "end_us": 2400000
+            },
+            {
+              "text": "was",
+              "start_us": 2400000,
+              "end_us": 2480000
+            },
+            {
+              "text": "a",
+              "start_us": 2480000,
+              "end_us": 2560000
+            },
+            {
+              "text": "natural",
+              "start_us": 2560000,
+              "end_us": 2880000
+            },
+            {
+              "text": "choice",
+              "start_us": 2880000,
+              "end_us": 3120000
+            },
+            {
+              "text": "And",
+              "start_us": 4080000,
+              "end_us": 4640000
+            },
+            {
+              "text": "I",
+              "start_us": 4800000,
+              "end_us": 5040000
+            },
+            {
+              "text": "kind",
+              "start_us": 5280000,
+              "end_us": 5440000
+            },
+            {
+              "text": "of",
+              "start_us": 5440000,
+              "end_us": 5520000
+            },
+            {
+              "text": "like",
+              "start_us": 5520000,
+              "end_us": 5680000
+            },
+            {
+              "text": "whales",
+              "start_us": 5680000,
+              "end_us": 6160000
+            },
+            {
+              "text": "They",
+              "start_us": 6320000,
+              "end_us": 6400000
+            },
+            {
+              "text": "come",
+              "start_us": 6400000,
+              "end_us": 6560000
+            },
+            {
+              "text": "in",
+              "start_us": 6560000,
+              "end_us": 6800000
+            },
+            {
+              "text": "and",
+              "start_us": 6800000,
+              "end_us": 6800000
+            },
+            {
+              "text": "go",
+              "start_us": 6800000,
+              "end_us": 6880000
+            },
+            {
+              "text": "eat",
+              "start_us": 7840000,
+              "end_us": 7920000
+            },
+            {
+              "text": "everything",
+              "start_us": 7920000,
+              "end_us": 8240000
+            },
+            {
+              "text": "in",
+              "start_us": 8240000,
+              "end_us": 8320000
+            },
+            {
+              "text": "sight",
+              "start_us": 8320000,
+              "end_us": 8640000
+            },
+            {
+              "text": "They're",
+              "start_us": 10240000,
+              "end_us": 10400000
+            },
+            {
+              "text": "quite",
+              "start_us": 10400000,
+              "end_us": 10640000
+            },
+            {
+              "text": "harmless",
+              "start_us": 10880000,
+              "end_us": 11280000
+            },
+            {
+              "text": "and",
+              "start_us": 11280000,
+              "end_us": 11360000
+            },
+            {
+              "text": "mild",
+              "start_us": 11360000,
+              "end_us": 11760000
+            },
+            {
+              "text": "and",
+              "start_us": 11760000,
+              "end_us": 12000000
+            },
+            {
+              "text": "interesting",
+              "start_us": 12960000,
+              "end_us": 13360000
+            },
+            {
+              "text": "Tails",
+              "start_us": 25920000,
+              "end_us": 26160000
+            },
+            {
+              "text": "a",
+              "start_us": 26160000,
+              "end_us": 26240000
+            },
+            {
+              "text": "bit",
+              "start_us": 26240000,
+              "end_us": 26320000
+            },
+            {
+              "text": "bigger",
+              "start_us": 26400000,
+              "end_us": 26560000
+            },
+            {
+              "text": "I",
+              "start_us": 26560000,
+              "end_us": 26640000
+            },
+            {
+              "text": "think",
+              "start_us": 26640000,
+              "end_us": 26800000
+            }
+          ],
+          "metrics": {
+            "reference_words": 41,
+            "returned_words": 37,
+            "matched_words_within_one_second": 34,
+            "word_edits_with_one_second_match_gate": 7,
+            "all_matched_edge_error": {
+              "n": 68,
+              "median_ms": 30.0,
+              "p95_ms": 490.0
+            },
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              0,
+              18
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0034599580103531
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "magic animal for us, so fish was a natural choice. And I kind of like whales. They come in and go, eat everything in sight. And they're quite harmless and mild and interesting. Tail is a bit big, I think.",
+          "words": [
+            {
+              "text": "magic",
+              "start_us": 0,
+              "end_us": 160000
+            },
+            {
+              "text": "animal",
+              "start_us": 240000,
+              "end_us": 560000
+            },
+            {
+              "text": "for",
+              "start_us": 560000,
+              "end_us": 720000
+            },
+            {
+              "text": "us",
+              "start_us": 720000,
+              "end_us": 800000
+            },
+            {
+              "text": "so",
+              "start_us": 880000,
+              "end_us": 1040000
+            },
+            {
+              "text": "fish",
+              "start_us": 2160000,
+              "end_us": 2320000
+            },
+            {
+              "text": "was",
+              "start_us": 2400000,
+              "end_us": 2480000
+            },
+            {
+              "text": "a",
+              "start_us": 2480000,
+              "end_us": 2560000
+            },
+            {
+              "text": "natural",
+              "start_us": 2560000,
+              "end_us": 2880000
+            },
+            {
+              "text": "choice",
+              "start_us": 2880000,
+              "end_us": 3120000
+            },
+            {
+              "text": "And",
+              "start_us": 4080000,
+              "end_us": 4640000
+            },
+            {
+              "text": "I",
+              "start_us": 4880000,
+              "end_us": 5040000
+            },
+            {
+              "text": "kind",
+              "start_us": 5280000,
+              "end_us": 5440000
+            },
+            {
+              "text": "of",
+              "start_us": 5440000,
+              "end_us": 5520000
+            },
+            {
+              "text": "like",
+              "start_us": 5520000,
+              "end_us": 5680000
+            },
+            {
+              "text": "whales",
+              "start_us": 5680000,
+              "end_us": 6160000
+            },
+            {
+              "text": "They",
+              "start_us": 6320000,
+              "end_us": 6400000
+            },
+            {
+              "text": "come",
+              "start_us": 6400000,
+              "end_us": 6560000
+            },
+            {
+              "text": "in",
+              "start_us": 6560000,
+              "end_us": 6800000
+            },
+            {
+              "text": "and",
+              "start_us": 6800000,
+              "end_us": 6800000
+            },
+            {
+              "text": "go",
+              "start_us": 6800000,
+              "end_us": 6880000
+            },
+            {
+              "text": "eat",
+              "start_us": 7840000,
+              "end_us": 7920000
+            },
+            {
+              "text": "everything",
+              "start_us": 7920000,
+              "end_us": 8240000
+            },
+            {
+              "text": "in",
+              "start_us": 8240000,
+              "end_us": 8320000
+            },
+            {
+              "text": "sight",
+              "start_us": 8320000,
+              "end_us": 8640000
+            },
+            {
+              "text": "And",
+              "start_us": 9280000,
+              "end_us": 9280000
+            },
+            {
+              "text": "they're",
+              "start_us": 10240000,
+              "end_us": 10400000
+            },
+            {
+              "text": "quite",
+              "start_us": 10400000,
+              "end_us": 10640000
+            },
+            {
+              "text": "harmless",
+              "start_us": 10880000,
+              "end_us": 11280000
+            },
+            {
+              "text": "and",
+              "start_us": 11280000,
+              "end_us": 11360000
+            },
+            {
+              "text": "mild",
+              "start_us": 11360000,
+              "end_us": 11760000
+            },
+            {
+              "text": "and",
+              "start_us": 11760000,
+              "end_us": 12000000
+            },
+            {
+              "text": "interesting",
+              "start_us": 12960000,
+              "end_us": 13360000
+            },
+            {
+              "text": "Tail",
+              "start_us": 25920000,
+              "end_us": 26080000
+            },
+            {
+              "text": "is",
+              "start_us": 26080000,
+              "end_us": 26160000
+            },
+            {
+              "text": "a",
+              "start_us": 26160000,
+              "end_us": 26240000
+            },
+            {
+              "text": "bit",
+              "start_us": 26240000,
+              "end_us": 26320000
+            },
+            {
+              "text": "big",
+              "start_us": 26400000,
+              "end_us": 26560000
+            },
+            {
+              "text": "I",
+              "start_us": 26560000,
+              "end_us": 26640000
+            },
+            {
+              "text": "think",
+              "start_us": 26640000,
+              "end_us": 26800000
+            }
+          ],
+          "metrics": {
+            "reference_words": 41,
+            "returned_words": 40,
+            "matched_words_within_one_second": 33,
+            "word_edits_with_one_second_match_gate": 9,
+            "all_matched_edge_error": {
+              "n": 66,
+              "median_ms": 30.0,
+              "p95_ms": 920.0
+            },
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              19,
+              25
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.9897240420104936
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "meaningful-like-pauses",
+      "index": 2,
+      "input_sha256": "c0b0db3fde08407b72b47b4b33589031f9807b371db233be9514a32da613f313",
+      "reference_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "source_start_sample": 5696000,
+      "source_end_sample": 5760000,
+      "results": {
+        "oracle": {
+          "status": "no_transcript",
+          "words": []
+        },
+        "parakeet": {
+          "status": "no_transcript",
+          "words": []
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "So this way, so that's done.",
+          "words": [
+            {
+              "text": "So",
+              "start_us": 0,
+              "end_us": 80000
+            },
+            {
+              "text": "this",
+              "start_us": 160000,
+              "end_us": 320000
+            },
+            {
+              "text": "way",
+              "start_us": 320000,
+              "end_us": 560000
+            },
+            {
+              "text": "so",
+              "start_us": 1600000,
+              "end_us": 1600000
+            },
+            {
+              "text": "that's",
+              "start_us": 1600000,
+              "end_us": 1760000
+            },
+            {
+              "text": "done",
+              "start_us": 1920000,
+              "end_us": 2000000
+            }
+          ],
+          "metrics": {
+            "reference_words": 0,
+            "returned_words": 6,
+            "matched_words_within_one_second": 0,
+            "word_edits_with_one_second_match_gate": 6,
+            "all_matched_edge_error": null,
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              3
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.13927233300637454
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "later-background",
+      "index": 0,
+      "input_sha256": "17f02dfd26549c43c11f1ac37b23220bee6ec0465514edde74460a7443a7f9cf",
+      "reference_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "source_start_sample": 9600000,
+      "source_end_sample": 10080000,
+      "results": {
+        "oracle": {
+          "status": "no_transcript",
+          "words": []
+        },
+        "parakeet": {
+          "status": "measured",
+          "supplied_text": "And I think we've got to use",
+          "words": [
+            {
+              "text": "And",
+              "start_us": 0,
+              "end_us": 0
+            },
+            {
+              "text": "I",
+              "start_us": 0,
+              "end_us": 0
+            },
+            {
+              "text": "think",
+              "start_us": 0,
+              "end_us": 0
+            },
+            {
+              "text": "we've",
+              "start_us": 1760000,
+              "end_us": 2080000
+            },
+            {
+              "text": "got",
+              "start_us": 2080000,
+              "end_us": 2240000
+            },
+            {
+              "text": "to",
+              "start_us": 2240000,
+              "end_us": 2240000
+            },
+            {
+              "text": "use",
+              "start_us": 2240000,
+              "end_us": 2240000
+            }
+          ],
+          "metrics": {
+            "reference_words": 0,
+            "returned_words": 7,
+            "matched_words_within_one_second": 0,
+            "word_edits_with_one_second_match_gate": 7,
+            "all_matched_edge_error": null,
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              0,
+              1,
+              2,
+              5,
+              6
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.9445859160041437
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "Like, how much money people have to spend on things? Or just like, basic product with it positioned at the 25 euro remote control marketing thing to get in running?",
+          "words": [
+            {
+              "text": "Like",
+              "start_us": 480000,
+              "end_us": 640000
+            },
+            {
+              "text": "how",
+              "start_us": 1120000,
+              "end_us": 1200000
+            },
+            {
+              "text": "much",
+              "start_us": 1280000,
+              "end_us": 1440000
+            },
+            {
+              "text": "money",
+              "start_us": 1760000,
+              "end_us": 1920000
+            },
+            {
+              "text": "people",
+              "start_us": 1920000,
+              "end_us": 2160000
+            },
+            {
+              "text": "have",
+              "start_us": 2160000,
+              "end_us": 2320000
+            },
+            {
+              "text": "to",
+              "start_us": 2320000,
+              "end_us": 2320000
+            },
+            {
+              "text": "spend",
+              "start_us": 2320000,
+              "end_us": 2640000
+            },
+            {
+              "text": "on",
+              "start_us": 2640000,
+              "end_us": 2800000
+            },
+            {
+              "text": "things",
+              "start_us": 2880000,
+              "end_us": 2960000
+            },
+            {
+              "text": "Or",
+              "start_us": 2960000,
+              "end_us": 3040000
+            },
+            {
+              "text": "just",
+              "start_us": 3120000,
+              "end_us": 3200000
+            },
+            {
+              "text": "like",
+              "start_us": 3200000,
+              "end_us": 3360000
+            },
+            {
+              "text": "basic",
+              "start_us": 4160000,
+              "end_us": 4400000
+            },
+            {
+              "text": "product",
+              "start_us": 4480000,
+              "end_us": 4800000
+            },
+            {
+              "text": "with",
+              "start_us": 4880000,
+              "end_us": 5040000
+            },
+            {
+              "text": "it",
+              "start_us": 5040000,
+              "end_us": 5040000
+            },
+            {
+              "text": "positioned",
+              "start_us": 5280000,
+              "end_us": 5280000
+            },
+            {
+              "text": "at",
+              "start_us": 5600000,
+              "end_us": 5600000
+            },
+            {
+              "text": "the",
+              "start_us": 5600000,
+              "end_us": 5600000
+            },
+            {
+              "text": "25",
+              "start_us": 8080000,
+              "end_us": 8080000
+            },
+            {
+              "text": "euro",
+              "start_us": 8240000,
+              "end_us": 8400000
+            },
+            {
+              "text": "remote",
+              "start_us": 8400000,
+              "end_us": 8400000
+            },
+            {
+              "text": "control",
+              "start_us": 8400000,
+              "end_us": 8800000
+            },
+            {
+              "text": "marketing",
+              "start_us": 8800000,
+              "end_us": 22880000
+            },
+            {
+              "text": "thing",
+              "start_us": 22944000,
+              "end_us": 23008000
+            },
+            {
+              "text": "to",
+              "start_us": 23072000,
+              "end_us": 23136000
+            },
+            {
+              "text": "get",
+              "start_us": 23200000,
+              "end_us": 23520000
+            },
+            {
+              "text": "in",
+              "start_us": 23520000,
+              "end_us": 23520000
+            },
+            {
+              "text": "running",
+              "start_us": 23520000,
+              "end_us": 23520000
+            }
+          ],
+          "metrics": {
+            "reference_words": 0,
+            "returned_words": 30,
+            "matched_words_within_one_second": 0,
+            "word_edits_with_one_second_match_gate": 30,
+            "all_matched_edge_error": null,
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              6,
+              16,
+              17,
+              18,
+              19,
+              20,
+              22,
+              28,
+              29
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.9573541668942198
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "later-background",
+      "index": 1,
+      "input_sha256": "34343ab9d0d2c206ea458f2e3639f1c575f39d4de3bc2dbeaad9f029c34fa0e7",
+      "reference_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "source_start_sample": 10048000,
+      "source_end_sample": 10528000,
+      "results": {
+        "oracle": {
+          "status": "no_transcript",
+          "words": []
+        },
+        "parakeet": {
+          "status": "no_transcript",
+          "words": []
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "By the way, I'm making some kind of assumptions, though.",
+          "words": [
+            {
+              "text": "By",
+              "start_us": 12320000,
+              "end_us": 12480000
+            },
+            {
+              "text": "the",
+              "start_us": 12480000,
+              "end_us": 12480000
+            },
+            {
+              "text": "way",
+              "start_us": 12480000,
+              "end_us": 12480000
+            },
+            {
+              "text": "I'm",
+              "start_us": 12480000,
+              "end_us": 12480000
+            },
+            {
+              "text": "making",
+              "start_us": 12480000,
+              "end_us": 12480000
+            },
+            {
+              "text": "some",
+              "start_us": 12480000,
+              "end_us": 12480000
+            },
+            {
+              "text": "kind",
+              "start_us": 12640000,
+              "end_us": 12640000
+            },
+            {
+              "text": "of",
+              "start_us": 12720000,
+              "end_us": 12720000
+            },
+            {
+              "text": "assumptions",
+              "start_us": 12720000,
+              "end_us": 12720000
+            },
+            {
+              "text": "though",
+              "start_us": 12720000,
+              "end_us": 12720000
+            }
+          ],
+          "metrics": {
+            "reference_words": 0,
+            "returned_words": 10,
+            "matched_words_within_one_second": 0,
+            "word_edits_with_one_second_match_gate": 10,
+            "all_matched_edge_error": null,
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.9485245000105351
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "later-background",
+      "index": 2,
+      "input_sha256": "82d9bc0ceeb02abee2a8a6801e203044b540a7428bd50bfd649527a6aed909d1",
+      "reference_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "source_start_sample": 10496000,
+      "source_end_sample": 10976000,
+      "results": {
+        "oracle": {
+          "status": "no_transcript",
+          "words": []
+        },
+        "parakeet": {
+          "status": "measured",
+          "supplied_text": "Yeah yeah, we can choose that which we find. Um",
+          "words": [
+            {
+              "text": "Yeah",
+              "start_us": 0,
+              "end_us": 0
+            },
+            {
+              "text": "yeah",
+              "start_us": 0,
+              "end_us": 0
+            },
+            {
+              "text": "we",
+              "start_us": 1600000,
+              "end_us": 1600000
+            },
+            {
+              "text": "can",
+              "start_us": 1600000,
+              "end_us": 1600000
+            },
+            {
+              "text": "choose",
+              "start_us": 1600000,
+              "end_us": 1600000
+            },
+            {
+              "text": "that",
+              "start_us": 1600000,
+              "end_us": 1600000
+            },
+            {
+              "text": "which",
+              "start_us": 1600000,
+              "end_us": 1760000
+            },
+            {
+              "text": "we",
+              "start_us": 1920000,
+              "end_us": 1920000
+            },
+            {
+              "text": "find",
+              "start_us": 1920000,
+              "end_us": 2000000
+            },
+            {
+              "text": "Um",
+              "start_us": 2240000,
+              "end_us": 2320000
+            }
+          ],
+          "metrics": {
+            "reference_words": 0,
+            "returned_words": 10,
+            "matched_words_within_one_second": 0,
+            "word_edits_with_one_second_match_gate": 10,
+            "all_matched_edge_error": null,
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              7
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.9527908749878407
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "making some kind of assumptions about what information we're giving here. The term trendy probably means something other than just basic. Yeah. And other than just standard. So I'm wondering right away, selling 25 euros, is that certain? Is it going to be a premium product? Yeah, yeah, like how much does, you know, a real control cost? With 25 euros, I mean, that's worth it.",
+          "words": [
+            {
+              "text": "making",
+              "start_us": 0,
+              "end_us": 160000
+            },
+            {
+              "text": "some",
+              "start_us": 320000,
+              "end_us": 320000
+            },
+            {
+              "text": "kind",
+              "start_us": 720000,
+              "end_us": 800000
+            },
+            {
+              "text": "of",
+              "start_us": 800000,
+              "end_us": 1200000
+            },
+            {
+              "text": "assumptions",
+              "start_us": 1200000,
+              "end_us": 1680000
+            },
+            {
+              "text": "about",
+              "start_us": 1920000,
+              "end_us": 2000000
+            },
+            {
+              "text": "what",
+              "start_us": 2240000,
+              "end_us": 2320000
+            },
+            {
+              "text": "information",
+              "start_us": 3360000,
+              "end_us": 3360000
+            },
+            {
+              "text": "we're",
+              "start_us": 3760000,
+              "end_us": 3840000
+            },
+            {
+              "text": "giving",
+              "start_us": 3840000,
+              "end_us": 4000000
+            },
+            {
+              "text": "here",
+              "start_us": 4960000,
+              "end_us": 4960000
+            },
+            {
+              "text": "The",
+              "start_us": 4960000,
+              "end_us": 4960000
+            },
+            {
+              "text": "term",
+              "start_us": 6400000,
+              "end_us": 6560000
+            },
+            {
+              "text": "trendy",
+              "start_us": 6560000,
+              "end_us": 6880000
+            },
+            {
+              "text": "probably",
+              "start_us": 6880000,
+              "end_us": 7200000
+            },
+            {
+              "text": "means",
+              "start_us": 7200000,
+              "end_us": 7280000
+            },
+            {
+              "text": "something",
+              "start_us": 7280000,
+              "end_us": 7520000
+            },
+            {
+              "text": "other",
+              "start_us": 8160000,
+              "end_us": 8480000
+            },
+            {
+              "text": "than",
+              "start_us": 8480000,
+              "end_us": 8480000
+            },
+            {
+              "text": "just",
+              "start_us": 8640000,
+              "end_us": 8800000
+            },
+            {
+              "text": "basic",
+              "start_us": 8800000,
+              "end_us": 9120000
+            },
+            {
+              "text": "Yeah",
+              "start_us": 9440000,
+              "end_us": 9680000
+            },
+            {
+              "text": "And",
+              "start_us": 9680000,
+              "end_us": 9680000
+            },
+            {
+              "text": "other",
+              "start_us": 10900000,
+              "end_us": 12120000
+            },
+            {
+              "text": "than",
+              "start_us": 13340000,
+              "end_us": 14560000
+            },
+            {
+              "text": "just",
+              "start_us": 14600000,
+              "end_us": 14640000
+            },
+            {
+              "text": "standard",
+              "start_us": 14680000,
+              "end_us": 14720000
+            },
+            {
+              "text": "So",
+              "start_us": 14720000,
+              "end_us": 15440000
+            },
+            {
+              "text": "I'm",
+              "start_us": 15440000,
+              "end_us": 15520000
+            },
+            {
+              "text": "wondering",
+              "start_us": 15520000,
+              "end_us": 15680000
+            },
+            {
+              "text": "right",
+              "start_us": 15680000,
+              "end_us": 15680000
+            },
+            {
+              "text": "away",
+              "start_us": 15680000,
+              "end_us": 15840000
+            },
+            {
+              "text": "selling",
+              "start_us": 16380000,
+              "end_us": 16920000
+            },
+            {
+              "text": "25",
+              "start_us": 17460000,
+              "end_us": 18000000
+            },
+            {
+              "text": "euros",
+              "start_us": 18000000,
+              "end_us": 18000000
+            },
+            {
+              "text": "is",
+              "start_us": 18000000,
+              "end_us": 18000000
+            },
+            {
+              "text": "that",
+              "start_us": 18000000,
+              "end_us": 18000000
+            },
+            {
+              "text": "certain",
+              "start_us": 18000000,
+              "end_us": 18000000
+            },
+            {
+              "text": "Is",
+              "start_us": 19200000,
+              "end_us": 19200000
+            },
+            {
+              "text": "it",
+              "start_us": 19840000,
+              "end_us": 19840000
+            },
+            {
+              "text": "going",
+              "start_us": 19840000,
+              "end_us": 20000000
+            },
+            {
+              "text": "to",
+              "start_us": 20000000,
+              "end_us": 20000000
+            },
+            {
+              "text": "be",
+              "start_us": 21200000,
+              "end_us": 21280000
+            },
+            {
+              "text": "a",
+              "start_us": 21280000,
+              "end_us": 21360000
+            },
+            {
+              "text": "premium",
+              "start_us": 21440000,
+              "end_us": 21520000
+            },
+            {
+              "text": "product",
+              "start_us": 21600000,
+              "end_us": 21680000
+            },
+            {
+              "text": "Yeah",
+              "start_us": 21760000,
+              "end_us": 21840000
+            },
+            {
+              "text": "yeah",
+              "start_us": 21840000,
+              "end_us": 21840000
+            },
+            {
+              "text": "like",
+              "start_us": 21840000,
+              "end_us": 21920000
+            },
+            {
+              "text": "how",
+              "start_us": 22000000,
+              "end_us": 22080000
+            },
+            {
+              "text": "much",
+              "start_us": 22160000,
+              "end_us": 22240000
+            },
+            {
+              "text": "does",
+              "start_us": 22240000,
+              "end_us": 22400000
+            },
+            {
+              "text": "you",
+              "start_us": 22400000,
+              "end_us": 22480000
+            },
+            {
+              "text": "know",
+              "start_us": 22700000,
+              "end_us": 22920000
+            },
+            {
+              "text": "a",
+              "start_us": 23140000,
+              "end_us": 23360000
+            },
+            {
+              "text": "real",
+              "start_us": 23360000,
+              "end_us": 23360000
+            },
+            {
+              "text": "control",
+              "start_us": 23360000,
+              "end_us": 23680000
+            },
+            {
+              "text": "cost",
+              "start_us": 23840000,
+              "end_us": 25920000
+            },
+            {
+              "text": "With",
+              "start_us": 25920000,
+              "end_us": 25920000
+            },
+            {
+              "text": "25",
+              "start_us": 25920000,
+              "end_us": 26080000
+            },
+            {
+              "text": "euros",
+              "start_us": 26400000,
+              "end_us": 26720000
+            },
+            {
+              "text": "I",
+              "start_us": 26720000,
+              "end_us": 26720000
+            },
+            {
+              "text": "mean",
+              "start_us": 26720000,
+              "end_us": 26880000
+            },
+            {
+              "text": "that's",
+              "start_us": 26880000,
+              "end_us": 26960000
+            },
+            {
+              "text": "worth",
+              "start_us": 26960000,
+              "end_us": 28160000
+            },
+            {
+              "text": "it",
+              "start_us": 28160000,
+              "end_us": 28160000
+            }
+          ],
+          "metrics": {
+            "reference_words": 0,
+            "returned_words": 66,
+            "matched_words_within_one_second": 0,
+            "word_edits_with_one_second_match_gate": 66,
+            "all_matched_edge_error": null,
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              1,
+              7,
+              10,
+              11,
+              18,
+              22,
+              30,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              41,
+              47,
+              55,
+              58,
+              61,
+              65
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0448156669735909
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "later-background",
+      "index": 3,
+      "input_sha256": "745ea828de76d7c9049a20d4e5c7486779ae5c294e16105cdf73ce69b1fc13da",
+      "reference_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "source_start_sample": 10944000,
+      "source_end_sample": 11040000,
+      "results": {
+        "oracle": {
+          "status": "no_transcript",
+          "words": []
+        },
+        "parakeet": {
+          "status": "no_transcript",
+          "words": []
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "That's one thing. It sometimes you can, or no, it is not to say.",
+          "words": [
+            {
+              "text": "That's",
+              "start_us": 960000,
+              "end_us": 1040000
+            },
+            {
+              "text": "one",
+              "start_us": 1200000,
+              "end_us": 1280000
+            },
+            {
+              "text": "thing",
+              "start_us": 2000000,
+              "end_us": 2080000
+            },
+            {
+              "text": "It",
+              "start_us": 2080000,
+              "end_us": 2160000
+            },
+            {
+              "text": "sometimes",
+              "start_us": 2400000,
+              "end_us": 2400000
+            },
+            {
+              "text": "you",
+              "start_us": 2720000,
+              "end_us": 2880000
+            },
+            {
+              "text": "can",
+              "start_us": 2880000,
+              "end_us": 2880000
+            },
+            {
+              "text": "or",
+              "start_us": 2880000,
+              "end_us": 2880000
+            },
+            {
+              "text": "no",
+              "start_us": 2880000,
+              "end_us": 2880000
+            },
+            {
+              "text": "it",
+              "start_us": 2880000,
+              "end_us": 2880000
+            },
+            {
+              "text": "is",
+              "start_us": 2880000,
+              "end_us": 2880000
+            },
+            {
+              "text": "not",
+              "start_us": 3360000,
+              "end_us": 3520000
+            },
+            {
+              "text": "to",
+              "start_us": 3520000,
+              "end_us": 4000000
+            },
+            {
+              "text": "say",
+              "start_us": 4000000,
+              "end_us": 4000000
+            }
+          ],
+          "metrics": {
+            "reference_words": 0,
+            "returned_words": 14,
+            "matched_words_within_one_second": 0,
+            "word_edits_with_one_second_match_gate": 14,
+            "all_matched_edge_error": null,
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              4,
+              6,
+              7,
+              8,
+              9,
+              10,
+              13
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.17011966602876782
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "heldout-introduction",
+      "index": 0,
+      "input_sha256": "5d01ec995eb6b6b14c73b1c8c5b66596b26700131f1f8e0ab31b25a5ac33058b",
+      "reference_sha256": "5b02cb7372c53e6e0c6a38c89f9545d87758bc8fb90def20f9c42b1b8d142c41",
+      "source_start_sample": 720000,
+      "source_end_sample": 960000,
+      "results": {
+        "oracle": {
+          "status": "measured",
+          "supplied_text": "Uh Dave Cochrane User Interface Defin Designer yes",
+          "words": [
+            {
+              "text": "Uh",
+              "start_us": 4400000,
+              "end_us": 4480000
+            },
+            {
+              "text": "Dave",
+              "start_us": 4960000,
+              "end_us": 5200000
+            },
+            {
+              "text": "Cochrane",
+              "start_us": 5200000,
+              "end_us": 5680000
+            },
+            {
+              "text": "User",
+              "start_us": 9280000,
+              "end_us": 9520000
+            },
+            {
+              "text": "Interface",
+              "start_us": 9600000,
+              "end_us": 9760000
+            },
+            {
+              "text": "Defin",
+              "start_us": 9920000,
+              "end_us": 10480000
+            },
+            {
+              "text": "Designer",
+              "start_us": 10480000,
+              "end_us": 10480000
+            },
+            {
+              "text": "yes",
+              "start_us": 10640000,
+              "end_us": 11040000
+            }
+          ],
+          "metrics": {
+            "reference_words": 8,
+            "returned_words": 8,
+            "matched_words_within_one_second": 8,
+            "word_edits_with_one_second_match_gate": 0,
+            "all_matched_edge_error": {
+              "n": 16,
+              "median_ms": 45.0,
+              "p95_ms": 500.0
+            },
+            "matched_filler_edge_error": {
+              "n": 2,
+              "median_ms": 260.0,
+              "p95_ms": 500.0
+            },
+            "invalid_edge_indices": [
+              6
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.3508392079966143
+        },
+        "parakeet": {
+          "status": "measured",
+          "supplied_text": "Uh Dave Cochran User Interface Define Designer, yes.",
+          "words": [
+            {
+              "text": "Uh",
+              "start_us": 4400000,
+              "end_us": 4480000
+            },
+            {
+              "text": "Dave",
+              "start_us": 4960000,
+              "end_us": 5200000
+            },
+            {
+              "text": "Cochran",
+              "start_us": 5200000,
+              "end_us": 5440000
+            },
+            {
+              "text": "User",
+              "start_us": 9280000,
+              "end_us": 9520000
+            },
+            {
+              "text": "Interface",
+              "start_us": 9600000,
+              "end_us": 9760000
+            },
+            {
+              "text": "Define",
+              "start_us": 10000000,
+              "end_us": 10480000
+            },
+            {
+              "text": "Designer",
+              "start_us": 10480000,
+              "end_us": 10560000
+            },
+            {
+              "text": "yes",
+              "start_us": 10640000,
+              "end_us": 10800000
+            }
+          ],
+          "metrics": {
+            "reference_words": 8,
+            "returned_words": 8,
+            "matched_words_within_one_second": 6,
+            "word_edits_with_one_second_match_gate": 2,
+            "all_matched_edge_error": {
+              "n": 12,
+              "median_ms": 60.0,
+              "p95_ms": 500.0
+            },
+            "matched_filler_edge_error": {
+              "n": 2,
+              "median_ms": 260.0,
+              "p95_ms": 500.0
+            },
+            "invalid_edge_indices": [],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": true,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.33088791696354747
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "Dave Cochran. User interface designer, yes.",
+          "words": [
+            {
+              "text": "Dave",
+              "start_us": 4960000,
+              "end_us": 5200000
+            },
+            {
+              "text": "Cochran",
+              "start_us": 5200000,
+              "end_us": 5440000
+            },
+            {
+              "text": "User",
+              "start_us": 9280000,
+              "end_us": 9520000
+            },
+            {
+              "text": "interface",
+              "start_us": 9600000,
+              "end_us": 9920000
+            },
+            {
+              "text": "designer",
+              "start_us": 9920000,
+              "end_us": 10240000
+            },
+            {
+              "text": "yes",
+              "start_us": 10640000,
+              "end_us": 11040000
+            }
+          ],
+          "metrics": {
+            "reference_words": 8,
+            "returned_words": 6,
+            "matched_words_within_one_second": 5,
+            "word_edits_with_one_second_match_gate": 3,
+            "all_matched_edge_error": {
+              "n": 10,
+              "median_ms": 30.0,
+              "p95_ms": 450.0
+            },
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": true,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.33404104108922184
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "heldout-repeats",
+      "index": 0,
+      "input_sha256": "b0d320e07958c9ca1bad468a7e75d98616320e3b8f63d20edf94b94a7cf7b93d",
+      "reference_sha256": "1a025da6c25a317f91b6b0a88ffdfb339c97fc28df4b1833c2f1c8fc3794a9e8",
+      "source_start_sample": 11968000,
+      "source_end_sample": 12448000,
+      "results": {
+        "oracle": {
+          "status": "measured",
+          "supplied_text": "remotes that can be uh programmed in m much more sophisticated ways than sort of conventional models so you get the sort of you get um you you can redesign the interface to your own needs you can programme in macros and you get a much greater degree um um I mean you get in these sort of three in one five in one whatevers but you can get integration between the different uh the the the diff the different things that it's designed to control to a much greater extent and you can",
+          "words": [
+            {
+              "text": "remotes",
+              "start_us": 320000,
+              "end_us": 1040000
+            },
+            {
+              "text": "that",
+              "start_us": 1440000,
+              "end_us": 1520000
+            },
+            {
+              "text": "can",
+              "start_us": 1520000,
+              "end_us": 1680000
+            },
+            {
+              "text": "be",
+              "start_us": 1680000,
+              "end_us": 2000000
+            },
+            {
+              "text": "uh",
+              "start_us": 2160000,
+              "end_us": 2320000
+            },
+            {
+              "text": "programmed",
+              "start_us": 2400000,
+              "end_us": 2880000
+            },
+            {
+              "text": "in",
+              "start_us": 2880000,
+              "end_us": 3040000
+            },
+            {
+              "text": "m",
+              "start_us": 4080000,
+              "end_us": 4320000
+            },
+            {
+              "text": "much",
+              "start_us": 4320000,
+              "end_us": 4400000
+            },
+            {
+              "text": "more",
+              "start_us": 4480000,
+              "end_us": 4560000
+            },
+            {
+              "text": "sophisticated",
+              "start_us": 4560000,
+              "end_us": 5120000
+            },
+            {
+              "text": "ways",
+              "start_us": 5120000,
+              "end_us": 5440000
+            },
+            {
+              "text": "than",
+              "start_us": 5600000,
+              "end_us": 5760000
+            },
+            {
+              "text": "sort",
+              "start_us": 5760000,
+              "end_us": 5760000
+            },
+            {
+              "text": "of",
+              "start_us": 5760000,
+              "end_us": 5760000
+            },
+            {
+              "text": "conventional",
+              "start_us": 5840000,
+              "end_us": 6480000
+            },
+            {
+              "text": "models",
+              "start_us": 6480000,
+              "end_us": 6720000
+            },
+            {
+              "text": "so",
+              "start_us": 6720000,
+              "end_us": 6800000
+            },
+            {
+              "text": "you",
+              "start_us": 6800000,
+              "end_us": 6960000
+            },
+            {
+              "text": "get",
+              "start_us": 6960000,
+              "end_us": 7200000
+            },
+            {
+              "text": "the",
+              "start_us": 7200000,
+              "end_us": 7280000
+            },
+            {
+              "text": "sort",
+              "start_us": 7280000,
+              "end_us": 7440000
+            },
+            {
+              "text": "of",
+              "start_us": 7440000,
+              "end_us": 7520000
+            },
+            {
+              "text": "you",
+              "start_us": 8000000,
+              "end_us": 8080000
+            },
+            {
+              "text": "get",
+              "start_us": 8080000,
+              "end_us": 8400000
+            },
+            {
+              "text": "um",
+              "start_us": 8640000,
+              "end_us": 8960000
+            },
+            {
+              "text": "you",
+              "start_us": 9840000,
+              "end_us": 9920000
+            },
+            {
+              "text": "you",
+              "start_us": 9920000,
+              "end_us": 10720000
+            },
+            {
+              "text": "can",
+              "start_us": 10720000,
+              "end_us": 11120000
+            },
+            {
+              "text": "redesign",
+              "start_us": 11440000,
+              "end_us": 12080000
+            },
+            {
+              "text": "the",
+              "start_us": 12080000,
+              "end_us": 12160000
+            },
+            {
+              "text": "interface",
+              "start_us": 12160000,
+              "end_us": 12800000
+            },
+            {
+              "text": "to",
+              "start_us": 12880000,
+              "end_us": 12960000
+            },
+            {
+              "text": "your",
+              "start_us": 12960000,
+              "end_us": 13200000
+            },
+            {
+              "text": "own",
+              "start_us": 13200000,
+              "end_us": 13440000
+            },
+            {
+              "text": "needs",
+              "start_us": 13440000,
+              "end_us": 13760000
+            },
+            {
+              "text": "you",
+              "start_us": 14080000,
+              "end_us": 14160000
+            },
+            {
+              "text": "can",
+              "start_us": 14160000,
+              "end_us": 14400000
+            },
+            {
+              "text": "programme",
+              "start_us": 14400000,
+              "end_us": 14880000
+            },
+            {
+              "text": "in",
+              "start_us": 14880000,
+              "end_us": 14960000
+            },
+            {
+              "text": "macros",
+              "start_us": 15040000,
+              "end_us": 15840000
+            },
+            {
+              "text": "and",
+              "start_us": 16400000,
+              "end_us": 16800000
+            },
+            {
+              "text": "you",
+              "start_us": 16800000,
+              "end_us": 16880000
+            },
+            {
+              "text": "get",
+              "start_us": 16880000,
+              "end_us": 17040000
+            },
+            {
+              "text": "a",
+              "start_us": 17040000,
+              "end_us": 17120000
+            },
+            {
+              "text": "much",
+              "start_us": 17280000,
+              "end_us": 17520000
+            },
+            {
+              "text": "greater",
+              "start_us": 17520000,
+              "end_us": 17760000
+            },
+            {
+              "text": "degree",
+              "start_us": 17760000,
+              "end_us": 18080000
+            },
+            {
+              "text": "um",
+              "start_us": 18240000,
+              "end_us": 18400000
+            },
+            {
+              "text": "um",
+              "start_us": 18400000,
+              "end_us": 18400000
+            },
+            {
+              "text": "I",
+              "start_us": 18400000,
+              "end_us": 18400000
+            },
+            {
+              "text": "mean",
+              "start_us": 18720000,
+              "end_us": 18800000
+            },
+            {
+              "text": "you",
+              "start_us": 18800000,
+              "end_us": 18880000
+            },
+            {
+              "text": "get",
+              "start_us": 18880000,
+              "end_us": 19040000
+            },
+            {
+              "text": "in",
+              "start_us": 19120000,
+              "end_us": 19440000
+            },
+            {
+              "text": "these",
+              "start_us": 19440000,
+              "end_us": 19600000
+            },
+            {
+              "text": "sort",
+              "start_us": 19600000,
+              "end_us": 19840000
+            },
+            {
+              "text": "of",
+              "start_us": 19840000,
+              "end_us": 19840000
+            },
+            {
+              "text": "three",
+              "start_us": 20400000,
+              "end_us": 20560000
+            },
+            {
+              "text": "in",
+              "start_us": 20560000,
+              "end_us": 20640000
+            },
+            {
+              "text": "one",
+              "start_us": 20640000,
+              "end_us": 20800000
+            },
+            {
+              "text": "five",
+              "start_us": 20800000,
+              "end_us": 21040000
+            },
+            {
+              "text": "in",
+              "start_us": 21120000,
+              "end_us": 21200000
+            },
+            {
+              "text": "one",
+              "start_us": 21200000,
+              "end_us": 21280000
+            },
+            {
+              "text": "whatevers",
+              "start_us": 21440000,
+              "end_us": 21680000
+            },
+            {
+              "text": "but",
+              "start_us": 22000000,
+              "end_us": 22080000
+            },
+            {
+              "text": "you",
+              "start_us": 22080000,
+              "end_us": 22160000
+            },
+            {
+              "text": "can",
+              "start_us": 22160000,
+              "end_us": 22240000
+            },
+            {
+              "text": "get",
+              "start_us": 22240000,
+              "end_us": 22480000
+            },
+            {
+              "text": "integration",
+              "start_us": 22560000,
+              "end_us": 23120000
+            },
+            {
+              "text": "between",
+              "start_us": 23120000,
+              "end_us": 23440000
+            },
+            {
+              "text": "the",
+              "start_us": 23440000,
+              "end_us": 23520000
+            },
+            {
+              "text": "different",
+              "start_us": 23600000,
+              "end_us": 23920000
+            },
+            {
+              "text": "uh",
+              "start_us": 24160000,
+              "end_us": 25680000
+            },
+            {
+              "text": "the",
+              "start_us": 25680000,
+              "end_us": 25680000
+            },
+            {
+              "text": "the",
+              "start_us": 25760000,
+              "end_us": 26400000
+            },
+            {
+              "text": "the",
+              "start_us": 26400000,
+              "end_us": 26480000
+            },
+            {
+              "text": "diff",
+              "start_us": 26480000,
+              "end_us": 26640000
+            },
+            {
+              "text": "the",
+              "start_us": 26640000,
+              "end_us": 26720000
+            },
+            {
+              "text": "different",
+              "start_us": 26720000,
+              "end_us": 26800000
+            },
+            {
+              "text": "things",
+              "start_us": 26800000,
+              "end_us": 26960000
+            },
+            {
+              "text": "that",
+              "start_us": 27040000,
+              "end_us": 27040000
+            },
+            {
+              "text": "it's",
+              "start_us": 27040000,
+              "end_us": 27200000
+            },
+            {
+              "text": "designed",
+              "start_us": 27200000,
+              "end_us": 27600000
+            },
+            {
+              "text": "to",
+              "start_us": 27600000,
+              "end_us": 27680000
+            },
+            {
+              "text": "control",
+              "start_us": 27680000,
+              "end_us": 28320000
+            },
+            {
+              "text": "to",
+              "start_us": 28720000,
+              "end_us": 28800000
+            },
+            {
+              "text": "a",
+              "start_us": 28800000,
+              "end_us": 28800000
+            },
+            {
+              "text": "much",
+              "start_us": 28800000,
+              "end_us": 28960000
+            },
+            {
+              "text": "greater",
+              "start_us": 28960000,
+              "end_us": 29200000
+            },
+            {
+              "text": "extent",
+              "start_us": 29200000,
+              "end_us": 29680000
+            },
+            {
+              "text": "and",
+              "start_us": 29680000,
+              "end_us": 29760000
+            },
+            {
+              "text": "you",
+              "start_us": 29760000,
+              "end_us": 29840000
+            },
+            {
+              "text": "can",
+              "start_us": 29840000,
+              "end_us": 29920000
+            }
+          ],
+          "metrics": {
+            "reference_words": 94,
+            "returned_words": 94,
+            "matched_words_within_one_second": 94,
+            "word_edits_with_one_second_match_gate": 0,
+            "all_matched_edge_error": {
+              "n": 188,
+              "median_ms": 30.0,
+              "p95_ms": 320.0
+            },
+            "matched_filler_edge_error": {
+              "n": 10,
+              "median_ms": 115.0,
+              "p95_ms": 830.0
+            },
+            "invalid_edge_indices": [
+              13,
+              14,
+              49,
+              50,
+              57,
+              74,
+              81,
+              87
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.1001207090448588
+        },
+        "parakeet": {
+          "status": "measured",
+          "supplied_text": "remotes that can be uh programmed in much more sophisticated ways than sort of conventional models. So you get the sort of you get um you you you can redesign the interface to your own needs, you can program in macros and you get a a much greater degree I mean you get the these sort of three and one, five and one, whatever, but you can get integration between the different uh the the the the the different things that it's designed to control to a much greater extent and you can",
+          "words": [
+            {
+              "text": "remotes",
+              "start_us": 320000,
+              "end_us": 1040000
+            },
+            {
+              "text": "that",
+              "start_us": 1440000,
+              "end_us": 1520000
+            },
+            {
+              "text": "can",
+              "start_us": 1520000,
+              "end_us": 1680000
+            },
+            {
+              "text": "be",
+              "start_us": 1680000,
+              "end_us": 2000000
+            },
+            {
+              "text": "uh",
+              "start_us": 2160000,
+              "end_us": 2320000
+            },
+            {
+              "text": "programmed",
+              "start_us": 2400000,
+              "end_us": 2880000
+            },
+            {
+              "text": "in",
+              "start_us": 2880000,
+              "end_us": 3040000
+            },
+            {
+              "text": "much",
+              "start_us": 4080000,
+              "end_us": 4400000
+            },
+            {
+              "text": "more",
+              "start_us": 4480000,
+              "end_us": 4560000
+            },
+            {
+              "text": "sophisticated",
+              "start_us": 4560000,
+              "end_us": 5120000
+            },
+            {
+              "text": "ways",
+              "start_us": 5120000,
+              "end_us": 5440000
+            },
+            {
+              "text": "than",
+              "start_us": 5600000,
+              "end_us": 5760000
+            },
+            {
+              "text": "sort",
+              "start_us": 5760000,
+              "end_us": 5760000
+            },
+            {
+              "text": "of",
+              "start_us": 5760000,
+              "end_us": 5760000
+            },
+            {
+              "text": "conventional",
+              "start_us": 5840000,
+              "end_us": 6480000
+            },
+            {
+              "text": "models",
+              "start_us": 6480000,
+              "end_us": 6720000
+            },
+            {
+              "text": "So",
+              "start_us": 6720000,
+              "end_us": 6800000
+            },
+            {
+              "text": "you",
+              "start_us": 6800000,
+              "end_us": 6960000
+            },
+            {
+              "text": "get",
+              "start_us": 6960000,
+              "end_us": 7200000
+            },
+            {
+              "text": "the",
+              "start_us": 7200000,
+              "end_us": 7280000
+            },
+            {
+              "text": "sort",
+              "start_us": 7280000,
+              "end_us": 7440000
+            },
+            {
+              "text": "of",
+              "start_us": 7440000,
+              "end_us": 7520000
+            },
+            {
+              "text": "you",
+              "start_us": 8000000,
+              "end_us": 8080000
+            },
+            {
+              "text": "get",
+              "start_us": 8080000,
+              "end_us": 8400000
+            },
+            {
+              "text": "um",
+              "start_us": 8640000,
+              "end_us": 8960000
+            },
+            {
+              "text": "you",
+              "start_us": 9840000,
+              "end_us": 9920000
+            },
+            {
+              "text": "you",
+              "start_us": 9920000,
+              "end_us": 10720000
+            },
+            {
+              "text": "you",
+              "start_us": 10720000,
+              "end_us": 10720000
+            },
+            {
+              "text": "can",
+              "start_us": 10720000,
+              "end_us": 11120000
+            },
+            {
+              "text": "redesign",
+              "start_us": 11440000,
+              "end_us": 12080000
+            },
+            {
+              "text": "the",
+              "start_us": 12080000,
+              "end_us": 12160000
+            },
+            {
+              "text": "interface",
+              "start_us": 12160000,
+              "end_us": 12800000
+            },
+            {
+              "text": "to",
+              "start_us": 12880000,
+              "end_us": 12960000
+            },
+            {
+              "text": "your",
+              "start_us": 12960000,
+              "end_us": 13200000
+            },
+            {
+              "text": "own",
+              "start_us": 13200000,
+              "end_us": 13440000
+            },
+            {
+              "text": "needs",
+              "start_us": 13440000,
+              "end_us": 13760000
+            },
+            {
+              "text": "you",
+              "start_us": 14080000,
+              "end_us": 14160000
+            },
+            {
+              "text": "can",
+              "start_us": 14160000,
+              "end_us": 14400000
+            },
+            {
+              "text": "program",
+              "start_us": 14400000,
+              "end_us": 14880000
+            },
+            {
+              "text": "in",
+              "start_us": 14880000,
+              "end_us": 15040000
+            },
+            {
+              "text": "macros",
+              "start_us": 15040000,
+              "end_us": 15840000
+            },
+            {
+              "text": "and",
+              "start_us": 16400000,
+              "end_us": 16800000
+            },
+            {
+              "text": "you",
+              "start_us": 16800000,
+              "end_us": 16880000
+            },
+            {
+              "text": "get",
+              "start_us": 16880000,
+              "end_us": 17040000
+            },
+            {
+              "text": "a",
+              "start_us": 17040000,
+              "end_us": 17120000
+            },
+            {
+              "text": "a",
+              "start_us": 17280000,
+              "end_us": 17280000
+            },
+            {
+              "text": "much",
+              "start_us": 17280000,
+              "end_us": 17520000
+            },
+            {
+              "text": "greater",
+              "start_us": 17520000,
+              "end_us": 17760000
+            },
+            {
+              "text": "degree",
+              "start_us": 17760000,
+              "end_us": 18080000
+            },
+            {
+              "text": "I",
+              "start_us": 18240000,
+              "end_us": 18320000
+            },
+            {
+              "text": "mean",
+              "start_us": 18720000,
+              "end_us": 18800000
+            },
+            {
+              "text": "you",
+              "start_us": 18800000,
+              "end_us": 18880000
+            },
+            {
+              "text": "get",
+              "start_us": 18880000,
+              "end_us": 19040000
+            },
+            {
+              "text": "the",
+              "start_us": 19040000,
+              "end_us": 19200000
+            },
+            {
+              "text": "these",
+              "start_us": 19440000,
+              "end_us": 19600000
+            },
+            {
+              "text": "sort",
+              "start_us": 19600000,
+              "end_us": 19840000
+            },
+            {
+              "text": "of",
+              "start_us": 19840000,
+              "end_us": 19840000
+            },
+            {
+              "text": "three",
+              "start_us": 20400000,
+              "end_us": 20560000
+            },
+            {
+              "text": "and",
+              "start_us": 20560000,
+              "end_us": 20640000
+            },
+            {
+              "text": "one",
+              "start_us": 20640000,
+              "end_us": 20800000
+            },
+            {
+              "text": "five",
+              "start_us": 20800000,
+              "end_us": 21040000
+            },
+            {
+              "text": "and",
+              "start_us": 21120000,
+              "end_us": 21200000
+            },
+            {
+              "text": "one",
+              "start_us": 21200000,
+              "end_us": 21280000
+            },
+            {
+              "text": "whatever",
+              "start_us": 21280000,
+              "end_us": 21600000
+            },
+            {
+              "text": "but",
+              "start_us": 21600000,
+              "end_us": 22080000
+            },
+            {
+              "text": "you",
+              "start_us": 22080000,
+              "end_us": 22160000
+            },
+            {
+              "text": "can",
+              "start_us": 22160000,
+              "end_us": 22240000
+            },
+            {
+              "text": "get",
+              "start_us": 22240000,
+              "end_us": 22480000
+            },
+            {
+              "text": "integration",
+              "start_us": 22560000,
+              "end_us": 23200000
+            },
+            {
+              "text": "between",
+              "start_us": 23200000,
+              "end_us": 23520000
+            },
+            {
+              "text": "the",
+              "start_us": 23520000,
+              "end_us": 23520000
+            },
+            {
+              "text": "different",
+              "start_us": 23600000,
+              "end_us": 23920000
+            },
+            {
+              "text": "uh",
+              "start_us": 24160000,
+              "end_us": 25680000
+            },
+            {
+              "text": "the",
+              "start_us": 25680000,
+              "end_us": 25680000
+            },
+            {
+              "text": "the",
+              "start_us": 25760000,
+              "end_us": 26400000
+            },
+            {
+              "text": "the",
+              "start_us": 26400000,
+              "end_us": 26480000
+            },
+            {
+              "text": "the",
+              "start_us": 26480000,
+              "end_us": 26480000
+            },
+            {
+              "text": "the",
+              "start_us": 26480000,
+              "end_us": 26480000
+            },
+            {
+              "text": "different",
+              "start_us": 26480000,
+              "end_us": 26800000
+            },
+            {
+              "text": "things",
+              "start_us": 26800000,
+              "end_us": 26960000
+            },
+            {
+              "text": "that",
+              "start_us": 27040000,
+              "end_us": 27040000
+            },
+            {
+              "text": "it's",
+              "start_us": 27040000,
+              "end_us": 27200000
+            },
+            {
+              "text": "designed",
+              "start_us": 27200000,
+              "end_us": 27600000
+            },
+            {
+              "text": "to",
+              "start_us": 27600000,
+              "end_us": 27680000
+            },
+            {
+              "text": "control",
+              "start_us": 27680000,
+              "end_us": 28320000
+            },
+            {
+              "text": "to",
+              "start_us": 28720000,
+              "end_us": 28800000
+            },
+            {
+              "text": "a",
+              "start_us": 28800000,
+              "end_us": 28800000
+            },
+            {
+              "text": "much",
+              "start_us": 28800000,
+              "end_us": 28960000
+            },
+            {
+              "text": "greater",
+              "start_us": 28960000,
+              "end_us": 29200000
+            },
+            {
+              "text": "extent",
+              "start_us": 29200000,
+              "end_us": 29680000
+            },
+            {
+              "text": "and",
+              "start_us": 29680000,
+              "end_us": 29760000
+            },
+            {
+              "text": "you",
+              "start_us": 29760000,
+              "end_us": 29840000
+            },
+            {
+              "text": "can",
+              "start_us": 29840000,
+              "end_us": 29920000
+            }
+          ],
+          "metrics": {
+            "reference_words": 94,
+            "returned_words": 93,
+            "matched_words_within_one_second": 85,
+            "word_edits_with_one_second_match_gate": 11,
+            "all_matched_edge_error": {
+              "n": 170,
+              "median_ms": 30.0,
+              "p95_ms": 400.0
+            },
+            "matched_filler_edge_error": {
+              "n": 6,
+              "median_ms": 45.0,
+              "p95_ms": 830.0
+            },
+            "invalid_edge_indices": [
+              12,
+              13,
+              27,
+              45,
+              56,
+              70,
+              73,
+              76,
+              77,
+              80,
+              86
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0987287500174716
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "D remotes that can be programmed in much more sophisticated ways than sort of convention and what else. So you get the sort of, you get, um, you, you, you can redesign the interface to your own needs. You can program in macros and you get a much greater degree. I mean, you get these sort of three in one, five in one, whatever it is, but you can get integration between the different, uh, the, the, the different things that is designed to control to a much greater extent.",
+          "words": [
+            {
+              "text": "D",
+              "start_us": 160000,
+              "end_us": 320000
+            },
+            {
+              "text": "remotes",
+              "start_us": 320000,
+              "end_us": 1040000
+            },
+            {
+              "text": "that",
+              "start_us": 1440000,
+              "end_us": 1600000
+            },
+            {
+              "text": "can",
+              "start_us": 1600000,
+              "end_us": 1680000
+            },
+            {
+              "text": "be",
+              "start_us": 1680000,
+              "end_us": 2000000
+            },
+            {
+              "text": "programmed",
+              "start_us": 2400000,
+              "end_us": 2880000
+            },
+            {
+              "text": "in",
+              "start_us": 2880000,
+              "end_us": 3120000
+            },
+            {
+              "text": "much",
+              "start_us": 4080000,
+              "end_us": 4400000
+            },
+            {
+              "text": "more",
+              "start_us": 4480000,
+              "end_us": 4560000
+            },
+            {
+              "text": "sophisticated",
+              "start_us": 4560000,
+              "end_us": 5120000
+            },
+            {
+              "text": "ways",
+              "start_us": 5120000,
+              "end_us": 5440000
+            },
+            {
+              "text": "than",
+              "start_us": 5600000,
+              "end_us": 5760000
+            },
+            {
+              "text": "sort",
+              "start_us": 5760000,
+              "end_us": 5760000
+            },
+            {
+              "text": "of",
+              "start_us": 5760000,
+              "end_us": 5760000
+            },
+            {
+              "text": "convention",
+              "start_us": 5840000,
+              "end_us": 6400000
+            },
+            {
+              "text": "and",
+              "start_us": 6400000,
+              "end_us": 6480000
+            },
+            {
+              "text": "what",
+              "start_us": 6560000,
+              "end_us": 6640000
+            },
+            {
+              "text": "else",
+              "start_us": 6640000,
+              "end_us": 6800000
+            },
+            {
+              "text": "So",
+              "start_us": 6800000,
+              "end_us": 6800000
+            },
+            {
+              "text": "you",
+              "start_us": 6800000,
+              "end_us": 6960000
+            },
+            {
+              "text": "get",
+              "start_us": 6960000,
+              "end_us": 7200000
+            },
+            {
+              "text": "the",
+              "start_us": 7200000,
+              "end_us": 7280000
+            },
+            {
+              "text": "sort",
+              "start_us": 7280000,
+              "end_us": 7440000
+            },
+            {
+              "text": "of",
+              "start_us": 7440000,
+              "end_us": 7520000
+            },
+            {
+              "text": "you",
+              "start_us": 8000000,
+              "end_us": 8080000
+            },
+            {
+              "text": "get",
+              "start_us": 8080000,
+              "end_us": 8400000
+            },
+            {
+              "text": "um",
+              "start_us": 8640000,
+              "end_us": 8960000
+            },
+            {
+              "text": "you",
+              "start_us": 9840000,
+              "end_us": 9920000
+            },
+            {
+              "text": "you",
+              "start_us": 9920000,
+              "end_us": 10720000
+            },
+            {
+              "text": "you",
+              "start_us": 10720000,
+              "end_us": 10720000
+            },
+            {
+              "text": "can",
+              "start_us": 10720000,
+              "end_us": 11120000
+            },
+            {
+              "text": "redesign",
+              "start_us": 11440000,
+              "end_us": 12080000
+            },
+            {
+              "text": "the",
+              "start_us": 12080000,
+              "end_us": 12160000
+            },
+            {
+              "text": "interface",
+              "start_us": 12160000,
+              "end_us": 12800000
+            },
+            {
+              "text": "to",
+              "start_us": 12880000,
+              "end_us": 12960000
+            },
+            {
+              "text": "your",
+              "start_us": 12960000,
+              "end_us": 13200000
+            },
+            {
+              "text": "own",
+              "start_us": 13200000,
+              "end_us": 13440000
+            },
+            {
+              "text": "needs",
+              "start_us": 13440000,
+              "end_us": 13760000
+            },
+            {
+              "text": "You",
+              "start_us": 14080000,
+              "end_us": 14160000
+            },
+            {
+              "text": "can",
+              "start_us": 14160000,
+              "end_us": 14400000
+            },
+            {
+              "text": "program",
+              "start_us": 14400000,
+              "end_us": 14880000
+            },
+            {
+              "text": "in",
+              "start_us": 14880000,
+              "end_us": 15040000
+            },
+            {
+              "text": "macros",
+              "start_us": 15040000,
+              "end_us": 15840000
+            },
+            {
+              "text": "and",
+              "start_us": 16400000,
+              "end_us": 16800000
+            },
+            {
+              "text": "you",
+              "start_us": 16800000,
+              "end_us": 16880000
+            },
+            {
+              "text": "get",
+              "start_us": 16880000,
+              "end_us": 17040000
+            },
+            {
+              "text": "a",
+              "start_us": 17040000,
+              "end_us": 17120000
+            },
+            {
+              "text": "much",
+              "start_us": 17280000,
+              "end_us": 17520000
+            },
+            {
+              "text": "greater",
+              "start_us": 17520000,
+              "end_us": 17760000
+            },
+            {
+              "text": "degree",
+              "start_us": 17760000,
+              "end_us": 18080000
+            },
+            {
+              "text": "I",
+              "start_us": 18240000,
+              "end_us": 18320000
+            },
+            {
+              "text": "mean",
+              "start_us": 18720000,
+              "end_us": 18800000
+            },
+            {
+              "text": "you",
+              "start_us": 18800000,
+              "end_us": 18880000
+            },
+            {
+              "text": "get",
+              "start_us": 18880000,
+              "end_us": 19040000
+            },
+            {
+              "text": "these",
+              "start_us": 19040000,
+              "end_us": 19600000
+            },
+            {
+              "text": "sort",
+              "start_us": 19600000,
+              "end_us": 19840000
+            },
+            {
+              "text": "of",
+              "start_us": 19840000,
+              "end_us": 19840000
+            },
+            {
+              "text": "three",
+              "start_us": 20400000,
+              "end_us": 20560000
+            },
+            {
+              "text": "in",
+              "start_us": 20560000,
+              "end_us": 20640000
+            },
+            {
+              "text": "one",
+              "start_us": 20640000,
+              "end_us": 20800000
+            },
+            {
+              "text": "five",
+              "start_us": 20800000,
+              "end_us": 21040000
+            },
+            {
+              "text": "in",
+              "start_us": 21120000,
+              "end_us": 21200000
+            },
+            {
+              "text": "one",
+              "start_us": 21200000,
+              "end_us": 21280000
+            },
+            {
+              "text": "whatever",
+              "start_us": 21280000,
+              "end_us": 21600000
+            },
+            {
+              "text": "it",
+              "start_us": 21600000,
+              "end_us": 21680000
+            },
+            {
+              "text": "is",
+              "start_us": 21680000,
+              "end_us": 21680000
+            },
+            {
+              "text": "but",
+              "start_us": 22000000,
+              "end_us": 22080000
+            },
+            {
+              "text": "you",
+              "start_us": 22080000,
+              "end_us": 22160000
+            },
+            {
+              "text": "can",
+              "start_us": 22160000,
+              "end_us": 22240000
+            },
+            {
+              "text": "get",
+              "start_us": 22240000,
+              "end_us": 22480000
+            },
+            {
+              "text": "integration",
+              "start_us": 22560000,
+              "end_us": 23200000
+            },
+            {
+              "text": "between",
+              "start_us": 23200000,
+              "end_us": 23520000
+            },
+            {
+              "text": "the",
+              "start_us": 23520000,
+              "end_us": 23520000
+            },
+            {
+              "text": "different",
+              "start_us": 23600000,
+              "end_us": 23920000
+            },
+            {
+              "text": "uh",
+              "start_us": 24160000,
+              "end_us": 25680000
+            },
+            {
+              "text": "the",
+              "start_us": 25680000,
+              "end_us": 25680000
+            },
+            {
+              "text": "the",
+              "start_us": 25760000,
+              "end_us": 26400000
+            },
+            {
+              "text": "the",
+              "start_us": 26400000,
+              "end_us": 26480000
+            },
+            {
+              "text": "different",
+              "start_us": 26480000,
+              "end_us": 26800000
+            },
+            {
+              "text": "things",
+              "start_us": 26800000,
+              "end_us": 26960000
+            },
+            {
+              "text": "that",
+              "start_us": 27040000,
+              "end_us": 27040000
+            },
+            {
+              "text": "is",
+              "start_us": 27040000,
+              "end_us": 27200000
+            },
+            {
+              "text": "designed",
+              "start_us": 27200000,
+              "end_us": 27600000
+            },
+            {
+              "text": "to",
+              "start_us": 27600000,
+              "end_us": 27680000
+            },
+            {
+              "text": "control",
+              "start_us": 27680000,
+              "end_us": 28320000
+            },
+            {
+              "text": "to",
+              "start_us": 28720000,
+              "end_us": 28800000
+            },
+            {
+              "text": "a",
+              "start_us": 28800000,
+              "end_us": 28800000
+            },
+            {
+              "text": "much",
+              "start_us": 28800000,
+              "end_us": 28960000
+            },
+            {
+              "text": "greater",
+              "start_us": 28960000,
+              "end_us": 29200000
+            },
+            {
+              "text": "extent",
+              "start_us": 29200000,
+              "end_us": 29680000
+            }
+          ],
+          "metrics": {
+            "reference_words": 94,
+            "returned_words": 90,
+            "matched_words_within_one_second": 79,
+            "word_edits_with_one_second_match_gate": 21,
+            "all_matched_edge_error": {
+              "n": 158,
+              "median_ms": 40.0,
+              "p95_ms": 420.0
+            },
+            "matched_filler_edge_error": {
+              "n": 4,
+              "median_ms": 180.0,
+              "p95_ms": 830.0
+            },
+            "invalid_edge_indices": [
+              12,
+              13,
+              18,
+              29,
+              56,
+              65,
+              72,
+              75,
+              80,
+              86
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.1081144589697942
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "heldout-repeats",
+      "index": 1,
+      "input_sha256": "5376a420a12f03b44c4c463e7c3cd9516248019d031c7996116680d72a0b6557",
+      "reference_sha256": "4ac0a8ee02dd85d36421bf3c55e26484e1a29805e465df41f1cf0b22bf67d9f4",
+      "source_start_sample": 12416000,
+      "source_end_sample": 12896000,
+      "results": {
+        "oracle": {
+          "status": "measured",
+          "supplied_text": "to a much greater extent and you can have one uh you know one macro to turn the uh you know turn the T_V_ to the right channel get the uh re uh rewind the tape in the V_C_R_ and get it to play once it's rewound for instance Um b it occurs to me there might be a niche for uh for a remote that aimed towards some of that sort of functionality but using a just conventional push button",
+          "words": [
+            {
+              "text": "to",
+              "start_us": 0,
+              "end_us": 800000
+            },
+            {
+              "text": "a",
+              "start_us": 800000,
+              "end_us": 800000
+            },
+            {
+              "text": "much",
+              "start_us": 800000,
+              "end_us": 960000
+            },
+            {
+              "text": "greater",
+              "start_us": 960000,
+              "end_us": 1120000
+            },
+            {
+              "text": "extent",
+              "start_us": 1200000,
+              "end_us": 1680000
+            },
+            {
+              "text": "and",
+              "start_us": 1680000,
+              "end_us": 1760000
+            },
+            {
+              "text": "you",
+              "start_us": 1760000,
+              "end_us": 1840000
+            },
+            {
+              "text": "can",
+              "start_us": 1840000,
+              "end_us": 1920000
+            },
+            {
+              "text": "have",
+              "start_us": 2000000,
+              "end_us": 2160000
+            },
+            {
+              "text": "one",
+              "start_us": 2560000,
+              "end_us": 2880000
+            },
+            {
+              "text": "uh",
+              "start_us": 2880000,
+              "end_us": 3040000
+            },
+            {
+              "text": "you",
+              "start_us": 3040000,
+              "end_us": 3360000
+            },
+            {
+              "text": "know",
+              "start_us": 3360000,
+              "end_us": 3360000
+            },
+            {
+              "text": "one",
+              "start_us": 3440000,
+              "end_us": 3600000
+            },
+            {
+              "text": "macro",
+              "start_us": 3600000,
+              "end_us": 4080000
+            },
+            {
+              "text": "to",
+              "start_us": 4160000,
+              "end_us": 4400000
+            },
+            {
+              "text": "turn",
+              "start_us": 4640000,
+              "end_us": 4880000
+            },
+            {
+              "text": "the",
+              "start_us": 4880000,
+              "end_us": 4960000
+            },
+            {
+              "text": "uh",
+              "start_us": 5120000,
+              "end_us": 5200000
+            },
+            {
+              "text": "you",
+              "start_us": 5840000,
+              "end_us": 6000000
+            },
+            {
+              "text": "know",
+              "start_us": 6160000,
+              "end_us": 6240000
+            },
+            {
+              "text": "turn",
+              "start_us": 6560000,
+              "end_us": 6720000
+            },
+            {
+              "text": "the",
+              "start_us": 6720000,
+              "end_us": 6800000
+            },
+            {
+              "text": "TV",
+              "start_us": 6880000,
+              "end_us": 7360000
+            },
+            {
+              "text": "to",
+              "start_us": 7360000,
+              "end_us": 7520000
+            },
+            {
+              "text": "the",
+              "start_us": 7520000,
+              "end_us": 7600000
+            },
+            {
+              "text": "right",
+              "start_us": 7600000,
+              "end_us": 7840000
+            },
+            {
+              "text": "channel",
+              "start_us": 7920000,
+              "end_us": 8320000
+            },
+            {
+              "text": "get",
+              "start_us": 8320000,
+              "end_us": 8480000
+            },
+            {
+              "text": "the",
+              "start_us": 8560000,
+              "end_us": 8800000
+            },
+            {
+              "text": "uh",
+              "start_us": 8800000,
+              "end_us": 8800000
+            },
+            {
+              "text": "re",
+              "start_us": 9280000,
+              "end_us": 9440000
+            },
+            {
+              "text": "uh",
+              "start_us": 9440000,
+              "end_us": 9520000
+            },
+            {
+              "text": "rewind",
+              "start_us": 9680000,
+              "end_us": 10160000
+            },
+            {
+              "text": "the",
+              "start_us": 10160000,
+              "end_us": 10240000
+            },
+            {
+              "text": "tape",
+              "start_us": 10320000,
+              "end_us": 10560000
+            },
+            {
+              "text": "in",
+              "start_us": 10560000,
+              "end_us": 10640000
+            },
+            {
+              "text": "the",
+              "start_us": 10640000,
+              "end_us": 10880000
+            },
+            {
+              "text": "VCR",
+              "start_us": 10880000,
+              "end_us": 11360000
+            },
+            {
+              "text": "and",
+              "start_us": 11360000,
+              "end_us": 11440000
+            },
+            {
+              "text": "get",
+              "start_us": 11440000,
+              "end_us": 11600000
+            },
+            {
+              "text": "it",
+              "start_us": 11680000,
+              "end_us": 11760000
+            },
+            {
+              "text": "to",
+              "start_us": 11840000,
+              "end_us": 11840000
+            },
+            {
+              "text": "play",
+              "start_us": 12000000,
+              "end_us": 12160000
+            },
+            {
+              "text": "once",
+              "start_us": 12160000,
+              "end_us": 12400000
+            },
+            {
+              "text": "it's",
+              "start_us": 12400000,
+              "end_us": 12560000
+            },
+            {
+              "text": "rewound",
+              "start_us": 12560000,
+              "end_us": 12960000
+            },
+            {
+              "text": "for",
+              "start_us": 12960000,
+              "end_us": 13120000
+            },
+            {
+              "text": "instance",
+              "start_us": 13120000,
+              "end_us": 13680000
+            },
+            {
+              "text": "Um",
+              "start_us": 14720000,
+              "end_us": 15280000
+            },
+            {
+              "text": "b",
+              "start_us": 16640000,
+              "end_us": 18000000
+            },
+            {
+              "text": "it",
+              "start_us": 18000000,
+              "end_us": 18080000
+            },
+            {
+              "text": "occurs",
+              "start_us": 18080000,
+              "end_us": 18320000
+            },
+            {
+              "text": "to",
+              "start_us": 18320000,
+              "end_us": 18320000
+            },
+            {
+              "text": "me",
+              "start_us": 18400000,
+              "end_us": 18400000
+            },
+            {
+              "text": "there",
+              "start_us": 18400000,
+              "end_us": 18560000
+            },
+            {
+              "text": "might",
+              "start_us": 18560000,
+              "end_us": 18640000
+            },
+            {
+              "text": "be",
+              "start_us": 18640000,
+              "end_us": 18800000
+            },
+            {
+              "text": "a",
+              "start_us": 18800000,
+              "end_us": 18800000
+            },
+            {
+              "text": "niche",
+              "start_us": 18800000,
+              "end_us": 19200000
+            },
+            {
+              "text": "for",
+              "start_us": 19360000,
+              "end_us": 19680000
+            },
+            {
+              "text": "uh",
+              "start_us": 19840000,
+              "end_us": 19840000
+            },
+            {
+              "text": "for",
+              "start_us": 20960000,
+              "end_us": 21120000
+            },
+            {
+              "text": "a",
+              "start_us": 21120000,
+              "end_us": 21120000
+            },
+            {
+              "text": "remote",
+              "start_us": 21120000,
+              "end_us": 21600000
+            },
+            {
+              "text": "that",
+              "start_us": 21840000,
+              "end_us": 22000000
+            },
+            {
+              "text": "aimed",
+              "start_us": 23360000,
+              "end_us": 23680000
+            },
+            {
+              "text": "towards",
+              "start_us": 23680000,
+              "end_us": 24160000
+            },
+            {
+              "text": "some",
+              "start_us": 24160000,
+              "end_us": 24480000
+            },
+            {
+              "text": "of",
+              "start_us": 24480000,
+              "end_us": 24640000
+            },
+            {
+              "text": "that",
+              "start_us": 24960000,
+              "end_us": 25280000
+            },
+            {
+              "text": "sort",
+              "start_us": 25920000,
+              "end_us": 26240000
+            },
+            {
+              "text": "of",
+              "start_us": 26240000,
+              "end_us": 26320000
+            },
+            {
+              "text": "functionality",
+              "start_us": 26400000,
+              "end_us": 27040000
+            },
+            {
+              "text": "but",
+              "start_us": 27040000,
+              "end_us": 27200000
+            },
+            {
+              "text": "using",
+              "start_us": 27200000,
+              "end_us": 27600000
+            },
+            {
+              "text": "a",
+              "start_us": 27600000,
+              "end_us": 27600000
+            },
+            {
+              "text": "just",
+              "start_us": 27840000,
+              "end_us": 27920000
+            },
+            {
+              "text": "conventional",
+              "start_us": 28000000,
+              "end_us": 28560000
+            },
+            {
+              "text": "push",
+              "start_us": 28640000,
+              "end_us": 28800000
+            },
+            {
+              "text": "button",
+              "start_us": 28880000,
+              "end_us": 29120000
+            }
+          ],
+          "metrics": {
+            "reference_words": 81,
+            "returned_words": 81,
+            "matched_words_within_one_second": 79,
+            "word_edits_with_one_second_match_gate": 2,
+            "all_matched_edge_error": {
+              "n": 158,
+              "median_ms": 30.0,
+              "p95_ms": 460.0
+            },
+            "matched_filler_edge_error": {
+              "n": 12,
+              "median_ms": 165.0,
+              "p95_ms": 1360.0
+            },
+            "invalid_edge_indices": [
+              1,
+              12,
+              30,
+              42,
+              53,
+              54,
+              58,
+              61,
+              63,
+              76
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": false,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.1048375410027802
+        },
+        "parakeet": {
+          "status": "measured",
+          "supplied_text": "To a much greater extent, and you can have one macro to turn the turn the TV to the right channel, get the re rewind the tape in the VCR and get it to play once it's rewound, for instance. It occurs to me there might be a niche for. for uh for a remote that aimed towards some of that sort of functionality but using a just conventional push button design.",
+          "words": [
+            {
+              "text": "To",
+              "start_us": 0,
+              "end_us": 0
+            },
+            {
+              "text": "a",
+              "start_us": 80000,
+              "end_us": 80000
+            },
+            {
+              "text": "much",
+              "start_us": 800000,
+              "end_us": 960000
+            },
+            {
+              "text": "greater",
+              "start_us": 960000,
+              "end_us": 1200000
+            },
+            {
+              "text": "extent",
+              "start_us": 1200000,
+              "end_us": 1680000
+            },
+            {
+              "text": "and",
+              "start_us": 1680000,
+              "end_us": 1760000
+            },
+            {
+              "text": "you",
+              "start_us": 1760000,
+              "end_us": 1840000
+            },
+            {
+              "text": "can",
+              "start_us": 1840000,
+              "end_us": 2000000
+            },
+            {
+              "text": "have",
+              "start_us": 2000000,
+              "end_us": 2160000
+            },
+            {
+              "text": "one",
+              "start_us": 2560000,
+              "end_us": 2880000
+            },
+            {
+              "text": "macro",
+              "start_us": 2880000,
+              "end_us": 3360000
+            },
+            {
+              "text": "to",
+              "start_us": 3360000,
+              "end_us": 4400000
+            },
+            {
+              "text": "turn",
+              "start_us": 4640000,
+              "end_us": 4880000
+            },
+            {
+              "text": "the",
+              "start_us": 4880000,
+              "end_us": 4880000
+            },
+            {
+              "text": "turn",
+              "start_us": 4880000,
+              "end_us": 4880000
+            },
+            {
+              "text": "the",
+              "start_us": 4880000,
+              "end_us": 4960000
+            },
+            {
+              "text": "TV",
+              "start_us": 6880000,
+              "end_us": 7360000
+            },
+            {
+              "text": "to",
+              "start_us": 7360000,
+              "end_us": 7360000
+            },
+            {
+              "text": "the",
+              "start_us": 7520000,
+              "end_us": 7600000
+            },
+            {
+              "text": "right",
+              "start_us": 7600000,
+              "end_us": 7840000
+            },
+            {
+              "text": "channel",
+              "start_us": 7920000,
+              "end_us": 8320000
+            },
+            {
+              "text": "get",
+              "start_us": 8320000,
+              "end_us": 8480000
+            },
+            {
+              "text": "the",
+              "start_us": 8560000,
+              "end_us": 8880000
+            },
+            {
+              "text": "re",
+              "start_us": 9280000,
+              "end_us": 9440000
+            },
+            {
+              "text": "rewind",
+              "start_us": 9680000,
+              "end_us": 10160000
+            },
+            {
+              "text": "the",
+              "start_us": 10160000,
+              "end_us": 10240000
+            },
+            {
+              "text": "tape",
+              "start_us": 10320000,
+              "end_us": 10560000
+            },
+            {
+              "text": "in",
+              "start_us": 10560000,
+              "end_us": 10640000
+            },
+            {
+              "text": "the",
+              "start_us": 10640000,
+              "end_us": 10720000
+            },
+            {
+              "text": "VCR",
+              "start_us": 10880000,
+              "end_us": 11360000
+            },
+            {
+              "text": "and",
+              "start_us": 11360000,
+              "end_us": 11440000
+            },
+            {
+              "text": "get",
+              "start_us": 11440000,
+              "end_us": 11600000
+            },
+            {
+              "text": "it",
+              "start_us": 11600000,
+              "end_us": 11760000
+            },
+            {
+              "text": "to",
+              "start_us": 11840000,
+              "end_us": 11840000
+            },
+            {
+              "text": "play",
+              "start_us": 12000000,
+              "end_us": 12160000
+            },
+            {
+              "text": "once",
+              "start_us": 12160000,
+              "end_us": 12400000
+            },
+            {
+              "text": "it's",
+              "start_us": 12400000,
+              "end_us": 12560000
+            },
+            {
+              "text": "rewound",
+              "start_us": 12560000,
+              "end_us": 12960000
+            },
+            {
+              "text": "for",
+              "start_us": 12960000,
+              "end_us": 13120000
+            },
+            {
+              "text": "instance",
+              "start_us": 13120000,
+              "end_us": 13680000
+            },
+            {
+              "text": "It",
+              "start_us": 14960000,
+              "end_us": 15040000
+            },
+            {
+              "text": "occurs",
+              "start_us": 17920000,
+              "end_us": 18320000
+            },
+            {
+              "text": "to",
+              "start_us": 18320000,
+              "end_us": 18320000
+            },
+            {
+              "text": "me",
+              "start_us": 18400000,
+              "end_us": 18400000
+            },
+            {
+              "text": "there",
+              "start_us": 18400000,
+              "end_us": 18560000
+            },
+            {
+              "text": "might",
+              "start_us": 18560000,
+              "end_us": 18640000
+            },
+            {
+              "text": "be",
+              "start_us": 18640000,
+              "end_us": 18800000
+            },
+            {
+              "text": "a",
+              "start_us": 18800000,
+              "end_us": 18800000
+            },
+            {
+              "text": "niche",
+              "start_us": 18800000,
+              "end_us": 19200000
+            },
+            {
+              "text": "for",
+              "start_us": 19360000,
+              "end_us": 19680000
+            },
+            {
+              "text": "for",
+              "start_us": 20960000,
+              "end_us": 21120000
+            },
+            {
+              "text": "uh",
+              "start_us": 21120000,
+              "end_us": 21120000
+            },
+            {
+              "text": "for",
+              "start_us": 21120000,
+              "end_us": 21600000
+            },
+            {
+              "text": "a",
+              "start_us": 21600000,
+              "end_us": 21600000
+            },
+            {
+              "text": "remote",
+              "start_us": 21600000,
+              "end_us": 21600000
+            },
+            {
+              "text": "that",
+              "start_us": 21840000,
+              "end_us": 22000000
+            },
+            {
+              "text": "aimed",
+              "start_us": 23360000,
+              "end_us": 23680000
+            },
+            {
+              "text": "towards",
+              "start_us": 23680000,
+              "end_us": 24160000
+            },
+            {
+              "text": "some",
+              "start_us": 24160000,
+              "end_us": 24480000
+            },
+            {
+              "text": "of",
+              "start_us": 24480000,
+              "end_us": 24640000
+            },
+            {
+              "text": "that",
+              "start_us": 24960000,
+              "end_us": 25280000
+            },
+            {
+              "text": "sort",
+              "start_us": 25920000,
+              "end_us": 26240000
+            },
+            {
+              "text": "of",
+              "start_us": 26240000,
+              "end_us": 26320000
+            },
+            {
+              "text": "functionality",
+              "start_us": 26400000,
+              "end_us": 27040000
+            },
+            {
+              "text": "but",
+              "start_us": 27040000,
+              "end_us": 27200000
+            },
+            {
+              "text": "using",
+              "start_us": 27200000,
+              "end_us": 27600000
+            },
+            {
+              "text": "a",
+              "start_us": 27600000,
+              "end_us": 27600000
+            },
+            {
+              "text": "just",
+              "start_us": 27840000,
+              "end_us": 27920000
+            },
+            {
+              "text": "conventional",
+              "start_us": 28000000,
+              "end_us": 28560000
+            },
+            {
+              "text": "push",
+              "start_us": 28640000,
+              "end_us": 28800000
+            },
+            {
+              "text": "button",
+              "start_us": 28880000,
+              "end_us": 29120000
+            },
+            {
+              "text": "design",
+              "start_us": 29200000,
+              "end_us": 29760000
+            }
+          ],
+          "metrics": {
+            "reference_words": 81,
+            "returned_words": 72,
+            "matched_words_within_one_second": 64,
+            "word_edits_with_one_second_match_gate": 19,
+            "all_matched_edge_error": {
+              "n": 128,
+              "median_ms": 30.0,
+              "p95_ms": 720.0
+            },
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              0,
+              1,
+              13,
+              14,
+              17,
+              33,
+              42,
+              43,
+              47,
+              51,
+              53,
+              54,
+              66
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0662782919825986
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "To a much greater extent, you can have one macro to turn the TV to the right channel, rewind the tape in the VCR and get it to play once it's rewound, for instance. It occurs to me there might be a niche for a remote that aimed towards some of that sort of functionality, but using a just conventional push button design.",
+          "words": [
+            {
+              "text": "To",
+              "start_us": 0,
+              "end_us": 0
+            },
+            {
+              "text": "a",
+              "start_us": 80000,
+              "end_us": 80000
+            },
+            {
+              "text": "much",
+              "start_us": 800000,
+              "end_us": 960000
+            },
+            {
+              "text": "greater",
+              "start_us": 960000,
+              "end_us": 1200000
+            },
+            {
+              "text": "extent",
+              "start_us": 1200000,
+              "end_us": 1680000
+            },
+            {
+              "text": "you",
+              "start_us": 1680000,
+              "end_us": 1840000
+            },
+            {
+              "text": "can",
+              "start_us": 1840000,
+              "end_us": 2000000
+            },
+            {
+              "text": "have",
+              "start_us": 2000000,
+              "end_us": 2160000
+            },
+            {
+              "text": "one",
+              "start_us": 2560000,
+              "end_us": 2880000
+            },
+            {
+              "text": "macro",
+              "start_us": 2880000,
+              "end_us": 3360000
+            },
+            {
+              "text": "to",
+              "start_us": 3360000,
+              "end_us": 3360000
+            },
+            {
+              "text": "turn",
+              "start_us": 4640000,
+              "end_us": 4880000
+            },
+            {
+              "text": "the",
+              "start_us": 4880000,
+              "end_us": 4960000
+            },
+            {
+              "text": "TV",
+              "start_us": 4960000,
+              "end_us": 4960000
+            },
+            {
+              "text": "to",
+              "start_us": 5040000,
+              "end_us": 5040000
+            },
+            {
+              "text": "the",
+              "start_us": 6560000,
+              "end_us": 6560000
+            },
+            {
+              "text": "right",
+              "start_us": 7600000,
+              "end_us": 7840000
+            },
+            {
+              "text": "channel",
+              "start_us": 7840000,
+              "end_us": 8320000
+            },
+            {
+              "text": "rewind",
+              "start_us": 8320000,
+              "end_us": 8560000
+            },
+            {
+              "text": "the",
+              "start_us": 8560000,
+              "end_us": 8880000
+            },
+            {
+              "text": "tape",
+              "start_us": 8880000,
+              "end_us": 10560000
+            },
+            {
+              "text": "in",
+              "start_us": 10560000,
+              "end_us": 10560000
+            },
+            {
+              "text": "the",
+              "start_us": 10640000,
+              "end_us": 10800000
+            },
+            {
+              "text": "VCR",
+              "start_us": 10960000,
+              "end_us": 11120000
+            },
+            {
+              "text": "and",
+              "start_us": 11280000,
+              "end_us": 11440000
+            },
+            {
+              "text": "get",
+              "start_us": 11440000,
+              "end_us": 11600000
+            },
+            {
+              "text": "it",
+              "start_us": 11600000,
+              "end_us": 11760000
+            },
+            {
+              "text": "to",
+              "start_us": 11840000,
+              "end_us": 11840000
+            },
+            {
+              "text": "play",
+              "start_us": 12000000,
+              "end_us": 12160000
+            },
+            {
+              "text": "once",
+              "start_us": 12160000,
+              "end_us": 12400000
+            },
+            {
+              "text": "it's",
+              "start_us": 12400000,
+              "end_us": 12560000
+            },
+            {
+              "text": "rewound",
+              "start_us": 12560000,
+              "end_us": 12960000
+            },
+            {
+              "text": "for",
+              "start_us": 12960000,
+              "end_us": 13120000
+            },
+            {
+              "text": "instance",
+              "start_us": 13120000,
+              "end_us": 13680000
+            },
+            {
+              "text": "It",
+              "start_us": 14960000,
+              "end_us": 14960000
+            },
+            {
+              "text": "occurs",
+              "start_us": 17920000,
+              "end_us": 17920000
+            },
+            {
+              "text": "to",
+              "start_us": 18320000,
+              "end_us": 18400000
+            },
+            {
+              "text": "me",
+              "start_us": 18400000,
+              "end_us": 18400000
+            },
+            {
+              "text": "there",
+              "start_us": 18400000,
+              "end_us": 18560000
+            },
+            {
+              "text": "might",
+              "start_us": 18560000,
+              "end_us": 18640000
+            },
+            {
+              "text": "be",
+              "start_us": 18640000,
+              "end_us": 18800000
+            },
+            {
+              "text": "a",
+              "start_us": 18800000,
+              "end_us": 18800000
+            },
+            {
+              "text": "niche",
+              "start_us": 18800000,
+              "end_us": 19200000
+            },
+            {
+              "text": "for",
+              "start_us": 19360000,
+              "end_us": 19680000
+            },
+            {
+              "text": "a",
+              "start_us": 19840000,
+              "end_us": 19840000
+            },
+            {
+              "text": "remote",
+              "start_us": 21040000,
+              "end_us": 21600000
+            },
+            {
+              "text": "that",
+              "start_us": 21840000,
+              "end_us": 22000000
+            },
+            {
+              "text": "aimed",
+              "start_us": 23360000,
+              "end_us": 23680000
+            },
+            {
+              "text": "towards",
+              "start_us": 23680000,
+              "end_us": 24160000
+            },
+            {
+              "text": "some",
+              "start_us": 24160000,
+              "end_us": 24480000
+            },
+            {
+              "text": "of",
+              "start_us": 24480000,
+              "end_us": 24640000
+            },
+            {
+              "text": "that",
+              "start_us": 24960000,
+              "end_us": 25280000
+            },
+            {
+              "text": "sort",
+              "start_us": 25920000,
+              "end_us": 26240000
+            },
+            {
+              "text": "of",
+              "start_us": 26240000,
+              "end_us": 26320000
+            },
+            {
+              "text": "functionality",
+              "start_us": 26400000,
+              "end_us": 27040000
+            },
+            {
+              "text": "but",
+              "start_us": 27040000,
+              "end_us": 27200000
+            },
+            {
+              "text": "using",
+              "start_us": 27200000,
+              "end_us": 27600000
+            },
+            {
+              "text": "a",
+              "start_us": 27600000,
+              "end_us": 27600000
+            },
+            {
+              "text": "just",
+              "start_us": 27840000,
+              "end_us": 27920000
+            },
+            {
+              "text": "conventional",
+              "start_us": 28000000,
+              "end_us": 28560000
+            },
+            {
+              "text": "push",
+              "start_us": 28640000,
+              "end_us": 28800000
+            },
+            {
+              "text": "button",
+              "start_us": 28880000,
+              "end_us": 29120000
+            },
+            {
+              "text": "design",
+              "start_us": 29200000,
+              "end_us": 29760000
+            }
+          ],
+          "metrics": {
+            "reference_words": 81,
+            "returned_words": 63,
+            "matched_words_within_one_second": 55,
+            "word_edits_with_one_second_match_gate": 27,
+            "all_matched_edge_error": {
+              "n": 110,
+              "median_ms": 30.0,
+              "p95_ms": 860.0
+            },
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [
+              0,
+              1,
+              10,
+              13,
+              14,
+              15,
+              21,
+              27,
+              34,
+              35,
+              37,
+              41,
+              44,
+              57
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 1.0358828749740496
+        }
+      },
+      "emission_s": null
+    },
+    {
+      "case": "heldout-repeats",
+      "index": 2,
+      "input_sha256": "e15facf224fe70871804b21f3410741868181ef770f468478c09b3547bd12e81",
+      "reference_sha256": "530007d5b2bcd2edea849a9ae530fb287587ff8539ac7e1720e227259d00b3ed",
+      "source_start_sample": 12864000,
+      "source_end_sample": 12960000,
+      "results": {
+        "oracle": {
+          "status": "measured",
+          "supplied_text": "push button design And therefore putting it into a um well",
+          "words": [
+            {
+              "text": "push",
+              "start_us": 640000,
+              "end_us": 800000
+            },
+            {
+              "text": "button",
+              "start_us": 880000,
+              "end_us": 1120000
+            },
+            {
+              "text": "design",
+              "start_us": 1200000,
+              "end_us": 1760000
+            },
+            {
+              "text": "And",
+              "start_us": 2480000,
+              "end_us": 2800000
+            },
+            {
+              "text": "therefore",
+              "start_us": 3360000,
+              "end_us": 3840000
+            },
+            {
+              "text": "putting",
+              "start_us": 3840000,
+              "end_us": 4160000
+            },
+            {
+              "text": "it",
+              "start_us": 4160000,
+              "end_us": 4240000
+            },
+            {
+              "text": "into",
+              "start_us": 4240000,
+              "end_us": 4560000
+            },
+            {
+              "text": "a",
+              "start_us": 5040000,
+              "end_us": 5040000
+            },
+            {
+              "text": "um",
+              "start_us": 5040000,
+              "end_us": 5280000
+            },
+            {
+              "text": "well",
+              "start_us": 5760000,
+              "end_us": 5920000
+            }
+          ],
+          "metrics": {
+            "reference_words": 11,
+            "returned_words": 11,
+            "matched_words_within_one_second": 11,
+            "word_edits_with_one_second_match_gate": 0,
+            "all_matched_edge_error": {
+              "n": 22,
+              "median_ms": 50.0,
+              "p95_ms": 570.0
+            },
+            "matched_filler_edge_error": {
+              "n": 2,
+              "median_ms": 220.0,
+              "p95_ms": 390.0
+            },
+            "invalid_edge_indices": [
+              8
+            ],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": false,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.22210733394604176
+        },
+        "parakeet": {
+          "status": "measured",
+          "supplied_text": "conventional push-button design and therefore putting it into um",
+          "words": [
+            {
+              "text": "conventional",
+              "start_us": 0,
+              "end_us": 560000
+            },
+            {
+              "text": "pushbutton",
+              "start_us": 640000,
+              "end_us": 1120000
+            },
+            {
+              "text": "design",
+              "start_us": 1200000,
+              "end_us": 1760000
+            },
+            {
+              "text": "and",
+              "start_us": 2560000,
+              "end_us": 2800000
+            },
+            {
+              "text": "therefore",
+              "start_us": 3360000,
+              "end_us": 3840000
+            },
+            {
+              "text": "putting",
+              "start_us": 3840000,
+              "end_us": 4160000
+            },
+            {
+              "text": "it",
+              "start_us": 4160000,
+              "end_us": 4240000
+            },
+            {
+              "text": "into",
+              "start_us": 4240000,
+              "end_us": 4560000
+            },
+            {
+              "text": "um",
+              "start_us": 5040000,
+              "end_us": 5280000
+            }
+          ],
+          "metrics": {
+            "reference_words": 11,
+            "returned_words": 9,
+            "matched_words_within_one_second": 7,
+            "word_edits_with_one_second_match_gate": 4,
+            "all_matched_edge_error": {
+              "n": 14,
+              "median_ms": 50.0,
+              "p95_ms": 640.0
+            },
+            "matched_filler_edge_error": {
+              "n": 2,
+              "median_ms": 220.0,
+              "p95_ms": 390.0
+            },
+            "invalid_edge_indices": [],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": true,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.16478995908983052
+        },
+        "native": {
+          "status": "measured",
+          "supplied_text": "Conventional push button design and therefore putting it into, uhm,",
+          "words": [
+            {
+              "text": "Conventional",
+              "start_us": 0,
+              "end_us": 560000
+            },
+            {
+              "text": "push",
+              "start_us": 640000,
+              "end_us": 800000
+            },
+            {
+              "text": "button",
+              "start_us": 880000,
+              "end_us": 1120000
+            },
+            {
+              "text": "design",
+              "start_us": 1200000,
+              "end_us": 1760000
+            },
+            {
+              "text": "and",
+              "start_us": 2400000,
+              "end_us": 2800000
+            },
+            {
+              "text": "therefore",
+              "start_us": 3360000,
+              "end_us": 3840000
+            },
+            {
+              "text": "putting",
+              "start_us": 3840000,
+              "end_us": 4160000
+            },
+            {
+              "text": "it",
+              "start_us": 4160000,
+              "end_us": 4240000
+            },
+            {
+              "text": "into",
+              "start_us": 4240000,
+              "end_us": 4560000
+            },
+            {
+              "text": "uhm",
+              "start_us": 5040000,
+              "end_us": 5280000
+            }
+          ],
+          "metrics": {
+            "reference_words": 11,
+            "returned_words": 10,
+            "matched_words_within_one_second": 8,
+            "word_edits_with_one_second_match_gate": 4,
+            "all_matched_edge_error": {
+              "n": 16,
+              "median_ms": 50.0,
+              "p95_ms": 640.0
+            },
+            "matched_filler_edge_error": null,
+            "invalid_edge_indices": [],
+            "overlapping_edge_indices": [],
+            "supplied_tokens_preserved": true,
+            "geometry_valid": true,
+            "timing_validity": "unqualified",
+            "batch_qualified": false
+          },
+          "metadata": {
+            "timestamp_step_ms": 80.0
+          },
+          "elapsed_s": 0.2171549170743674
+        }
+      },
+      "emission_s": null
+    }
+  ]
+}

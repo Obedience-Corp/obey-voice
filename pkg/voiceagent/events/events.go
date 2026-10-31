@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
@@ -29,7 +30,9 @@ func (e STTPhase) eventType() string { return "stt_phase" }
 
 // UserInput carries the transcribed user text.
 type UserInput struct {
-	Trace *TraceContext `json:"trace,omitempty"`
+	TypedInput string               `json:"typed_input,omitempty"`
+	Utterance  *utterance.Finalized `json:"utterance,omitempty"`
+	Trace      *TraceContext        `json:"trace,omitempty"`
 
 	Text string
 	// Speaker is the stable live label for this turn (speaker-1) when live

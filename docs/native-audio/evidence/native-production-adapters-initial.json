@@ -1,0 +1,42 @@
+{
+  "answer": "15\n7 + 8 = 15\nDone, I set up the project\nBuilding that now, give me a sec.",
+  "asr_final_ms": 918,
+  "audio_ref": {
+    "id": "fdc8158aebc935a488991d208fc19130a0d8f612cf7e58c36c13474e9b4fb5cb",
+    "mime": "audio/wav",
+    "sample_rate": 16000,
+    "channels": 1,
+    "sample_count": 49265
+  },
+  "chat_final_ms": 1390,
+  "endpoint": "http://localhost:11434",
+  "model": "lfm3-audio:2b",
+  "persona_prompt_hash": "3c1594495e13",
+  "qualification": false,
+  "scope": "production adapters and scheduler, not full pipeline activation",
+  "sink": "software_drain",
+  "source_sha256": "15ddd19f5d3a4fc5aaee759d3a1b5828baec6de633cd848069fc25cf32a3c2f9",
+  "speech_rate": 24000,
+  "speech_samples": 145877,
+  "speech_start_ms": 1390,
+  "transcript": {
+    "state": "ready",
+    "text": "What is seven plus eight? Reply with only the answer.",
+    "provider": "ollama",
+    "model": "lfm3-audio:2b"
+  },
+  "transport": "chat_then_speech",
+  "voice": "female",
+  "runtime": {
+    "version": "0.40.12"
+  },
+  "model_digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+  "meaning_quality_pass": false,
+  "quality_limitation": "Unrequested persona-example action claims after the correct arithmetic answer.",
+  "privacy_review": {
+    "fixture": "Synthetic arithmetic question; no user recordings or project content.",
+    "local_paths": "Machine-specific source path redacted where present.",
+    "measurements": "Hashes, timings, counts and generated reply text are unchanged.",
+    "reply_review": "Stock persona-example claims are retained so the failed qualitative result remains reviewable."
+  }
+}

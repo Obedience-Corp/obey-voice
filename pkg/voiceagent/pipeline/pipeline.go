@@ -14,6 +14,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -93,6 +94,9 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
+	Input         utterance.Provider
+	AdmitAudio    func(context.Context, *utterance.Finalized) (ResponseAdmission, error)
+	Native        *NativePolicy
 	journalMu     sync.RWMutex
 	journalHealth events.WorkJournalHealth
 	// identityMu protects the host-owned conversation identity used when the
@@ -256,6 +260,9 @@ type Pipeline struct {
 	// boundary. It is wired from config.vad_pre_roll_ms.
 	CapturePreRoll            time.Duration
 	captureMu                 sync.Mutex
+	captureBoundary           *PreparedInputReplacement
+	captureStarting           *captureStartup
+	captureCancel             context.CancelFunc
 	captureSession            stt.Session
 	captureGeneration         uint64
 	captureToken              stt.PauseToken

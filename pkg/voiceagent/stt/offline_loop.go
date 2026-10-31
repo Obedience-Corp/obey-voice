@@ -2,6 +2,8 @@ package stt
 
 import (
 	"context"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -48,6 +50,7 @@ type offlineLoopDeps struct {
 	transcribe   transcribeFunc
 	acousticName func(context.Context, []float32) (string, error)
 	pause        *pauseController
+	native       *nativeFinalizer
 }
 
 // runOfflineLoop drives utterance-final STT over the typed frame contract and
@@ -59,12 +62,27 @@ type offlineLoopDeps struct {
 // the utterance cap are enforced even when a live source stalls mid-utterance.
 func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Event) {
 	transcribe := observedTranscribe(ctx, deps.transcribe)
+	if deps.native != nil && deps.policy.MaxUtterance > 0 {
+		limit := int(deps.policy.MaxUtterance * time.Duration(utterance.SampleRate) / time.Second)
+		if limit == 0 {
+			limit = -1
+		}
+		if deps.native.maxSamples == 0 || limit < deps.native.maxSamples {
+			deps.native.maxSamples = limit
+		}
+	}
 	if deps.pause != nil {
 		defer deps.pause.stop()
 	}
 	emitPhase := newPauseAwarePhaseEmitter(ctx, events, deps.pause)
 
-	deps.seg.Reset()
+	resetSegment := func() {
+		deps.seg.Reset()
+		if deps.native != nil {
+			deps.native.buffer.reset()
+		}
+	}
+	resetSegment()
 	if !emitPhase("listening") {
 		return
 	}
@@ -77,7 +95,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 	floor := func() float64 { return speechFloor(inputGain(deps.frames)) }
 	reader := completionFrameReader{owner: deps.pause, frames: deps.frames}
 	resetPlaybackInput := func() error {
-		deps.seg.Reset()
+		resetSegment()
 		track.reset()
 		gate = noiseGate{}
 		return nil
@@ -107,6 +125,14 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 
 		if !emitPhase("transcribing") {
 			return true
+		}
+
+		if deps.native != nil {
+			if deps.native.finalize(ctx, deps.seg, minimumSpeechSamples(deps.policy), floor(), final, events) {
+				return true
+			}
+			track.reset()
+			return !emitPhase("listening")
 		}
 
 		var samples []float32
@@ -161,6 +187,9 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			return
 		}
 
+		if read.ready && deps.native != nil {
+			deps.native.buffer.append(read.frame)
+		}
 		if read.ready && len(read.frame.Samples) > 0 {
 			levels.maybeEmit(events, read.frame.Samples)
 			deps.seg.AcceptWaveform(read.frame.Samples)
@@ -170,7 +199,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 				// Discard a pure noise latch. Once speech is admitted, retain
 				// its PCM and count the rejected tail as silence below; the
 				// endpoint policy must decide when the utterance is complete.
-				deps.seg.Reset()
+				resetSegment()
 			} else if track.observe(d.speech(track.detected), frameDur(read.frame)) {
 				if !emitPhase("hearing") {
 					return
@@ -211,6 +240,9 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 		}
 
 		if read.eof {
+			if deps.native != nil {
+				deps.native.reason = "source_exhausted"
+			}
 			deps.seg.Flush()
 			if !track.detected && !deps.seg.HasSegments() {
 				sendEvent(ctx, events, Timeout{})
@@ -221,18 +253,25 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 		}
 
 		decision := deps.policy.Decide(track.observation(false, false))
+		if deps.native != nil && strings.HasPrefix(decision.Reason, "max utterance reached") {
+			sendEvent(ctx, events, Failure{Err: utterance.ErrIncomplete})
+			return
+		}
 		switch decision.Kind {
 		case endpoint.Timeout:
 			sendEvent(ctx, events, Timeout{})
 			return
 		case endpoint.TooShort:
-			deps.seg.Reset()
+			resetSegment()
 			track.reset()
 			if !emitPhase("listening") {
 				return
 			}
 			continue
 		case endpoint.Finalize:
+			if deps.native != nil {
+				deps.native.reason = decision.Reason
+			}
 			deps.seg.Flush()
 			finalize(true)
 			return

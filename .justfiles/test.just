@@ -315,6 +315,12 @@ obey:
 audio-jobs:
     go test -race ./pkg/voiceagent/audiojob ./cmd/obey-voice/cmd -run 'Test(Audio|Translation|Dubbing|LocalAudio|CancelOnArtifact|PublishExact|FailureAndCancellation|RejectBeforeInference|TerminalClassifies)'
 
+# Guarded persona native audio contracts and existing Standard regressions.
+# All live model/device checks remain explicit opt-ins.
+[no-cd]
+native-audio:
+    go test -race ./pkg/voiceagent ./pkg/voiceagent/utterance/... ./pkg/voiceagent/chatmedia/... ./pkg/voiceagent/stt/... ./pkg/voiceagent/brain/... ./pkg/voiceagent/nativeaudio/... ./pkg/voiceagent/pipeline/... ./pkg/voiceagent/session/... ./internal/persona/... ./internal/tui/... ./internal/transcript/...
+
 # Quiet finite-runtime lifecycle proof using explicit installed local assets.
 [no-cd]
 managed-audio-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
@@ -324,3 +330,16 @@ managed-audio-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
 [no-cd]
 dubbing-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
     sandbox-exec -f "{{PROFILE}}" python3 docs/audio-jobs/probe/dubbing_probe.py --worker "{{WORKER}}" --config "{{CONFIG}}" --request "{{REQUEST}}" --out "{{OUTPUT}}" --fixture-review-only
+
+# Identical licensed recording windows; text recognition only, no devices/downloads.
+[no-cd]
+audio-recognition WORKER SPEECH_CONFIG AUDIO_CONFIG AUDIO_DIR ANNOTATIONS OUTPUT PROFILE:
+    python3 -m unittest discover -s scripts -p 'test_compare_audio_recognition.py'
+    python3 scripts/compare-audio-recognition.py --worker "{{WORKER}}" --speech-config "{{SPEECH_CONFIG}}" --audio-config "{{AUDIO_CONFIG}}" --audio-dir "{{AUDIO_DIR}}" --annotations "{{ANNOTATIONS}}" --output "{{OUTPUT}}" --sandbox-profile "{{PROFILE}}"
+
+# Explicit installed reference environment/models; geometry is not qualification.
+[no-cd]
+audio-alignment PYTHON PROVIDER MODEL COMPARISON OUTPUT PROFILE:
+    "{{PYTHON}}" -m unittest discover -s scripts -p 'test_ctc_path.py'
+    "{{PYTHON}}" -m unittest discover -s scripts -p 'test_alignment_metrics.py'
+    sandbox-exec -f "{{PROFILE}}" "{{PYTHON}}" docs/audio-jobs/probe/compare_alignment.py --provider "{{PROVIDER}}" --model "{{MODEL}}" --comparison "{{COMPARISON}}" --output "{{OUTPUT}}"

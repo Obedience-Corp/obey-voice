@@ -25,7 +25,8 @@ type SessionBinding struct {
 	BrainModel    string
 	TTS           TTS
 
-	cfg config.Config
+	audio Audio
+	cfg   config.Config
 }
 
 // ResolveBinding loads the persona profile (empty id resolves the configured
@@ -66,13 +67,15 @@ func ResolveBinding(cfg *config.Config, id string) (*SessionBinding, error) {
 }
 
 func bindProfile(cfg *config.Config, p *Profile) (*SessionBinding, error) {
-	snap := *cfg
-	fillDisplayNames(&snap)
-	Apply(&snap, p)
-	if err := config.BindPersonaDirectory(&snap, p.ID, p.StartingDirectory); err != nil {
+	snap, effective, err := ResolveAudioConfig(cfg, p)
+	if err != nil {
 		return nil, err
 	}
-	return newBinding(p.ID, p.DisplayName, p.TTS, snap), nil
+	fillDisplayNames(snap)
+	if err := config.BindPersonaDirectory(snap, p.ID, p.StartingDirectory); err != nil {
+		return nil, err
+	}
+	return newBinding(p.ID, p.DisplayName, p.TTS, *snap, effective), nil
 }
 
 // ResolveDefaultsBinding starts the complete saved Obey persona. Settings fill
@@ -103,7 +106,11 @@ func ResolveDefaultsBinding(cfg *config.Config) (*SessionBinding, error) {
 	return bindProfile(cfg, p)
 }
 
-func newBinding(id, display string, tts TTS, snap config.Config) *SessionBinding {
+func newBinding(id, display string, tts TTS, snap config.Config, effective ...Audio) *SessionBinding {
+	audio := (*Audio)(nil).defaults()
+	if len(effective) > 0 {
+		audio = effective[0]
+	}
 	return &SessionBinding{
 		PersonaID:     id,
 		DisplayName:   display,
@@ -113,6 +120,7 @@ func newBinding(id, display string, tts TTS, snap config.Config) *SessionBinding
 		BrainModel:    modelForProvider(&snap, snap.BrainProvider),
 		TTS:           tts,
 		cfg:           snap,
+		audio:         audio,
 	}
 }
 
@@ -121,3 +129,7 @@ func newBinding(id, display string, tts TTS, snap config.Config) *SessionBinding
 func (b *SessionBinding) Config() *config.Config {
 	return b.cfg.Clone()
 }
+
+// AudioConfig returns the immutable effective mode and policies resolved with the
+// binding. Native values describe a candidate until the runtime commits it.
+func (b *SessionBinding) AudioConfig() Audio { return b.audio }

@@ -1,0 +1,1 @@
+{"schema":"obey-audio-findings/v1","task":"transcription","windows":[{"start_sample":10048000,"end_sample":10528000,"input_window_sha256":"34343ab9d0d2c206ea458f2e3639f1c575f39d4de3bc2dbeaad9f029c34fa0e7","text":"By the way, I'm making some kind of assumptions, though.","usage":{"prompt_tokens":395,"completion_tokens":15}}]}
