@@ -1,0 +1,21 @@
+{
+  "reports": {
+    "ctc": {
+      "measured": 26,
+      "failed": 4,
+      "report_sha256": "88c6792bc53e4a301aa62f70340390688def0db512480ad8a3efc26bdffbbb6e"
+    },
+    "qwen": {
+      "measured": 30,
+      "failed": 0,
+      "report_sha256": "12197d9631cd78dd5dcc703ed73a16d87d9581fdb41f338b91a9c9a20f929c3f"
+    }
+  },
+  "source": "frozen AMI recognition-comparison-1",
+  "audit": "every metric and input/reference/probe hash recomputed",
+  "sandbox_profile": "(version 1)\n(allow default)\n(deny network*)\n",
+  "sandbox_profile_sha256": "5c358b8d847211333e7ba22df82d84f796b5f30a41a2682209a949d783adbd08",
+  "device_input": false,
+  "device_output": false,
+  "downloads_during_inference": false
+}
