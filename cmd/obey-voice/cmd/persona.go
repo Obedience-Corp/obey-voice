@@ -23,6 +23,7 @@ func newPersonaCmd() *cobra.Command {
 	cmd.AddCommand(personaListCmd())
 	cmd.AddCommand(personaDirectoriesCmd())
 	cmd.AddCommand(personaShowCmd())
+	cmd.AddCommand(personaAudioCheckCmd())
 	cmd.AddCommand(personaUseCmd())
 	cmd.AddCommand(personaCreateCmd())
 	cmd.AddCommand(personaEditCmd())

@@ -73,7 +73,7 @@ func setPersonaInactive(id string, inactive bool) (*personaResultJSON, error) {
 // default. Normal loads still seed shipped profiles and resolve migrations.
 func loadPersonaManagementConfig() (*config.Config, error) {
 	cfg, err := config.Load()
-	if errors.Is(err, persona.ErrInactive) {
+	if errors.Is(err, persona.ErrInactive) || errors.Is(err, persona.ErrNativeAudioUnavailable) {
 		return config.LoadRaw()
 	}
 	return cfg, err

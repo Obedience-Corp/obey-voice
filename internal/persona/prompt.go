@@ -14,6 +14,7 @@ import (
 
 // CreateOpts configures CreateAndUse / Create with optional system prompt text.
 type CreateOpts struct {
+	Audio             *Audio
 	StartingDirectory string
 	DisplayName       string
 	SystemPrompt      string // when set, writes prompts/persona/<id>.yaml and points the profile at it
@@ -27,6 +28,9 @@ type CreateOpts struct {
 // Create already seeds prompts/persona/<id>.yaml and binds prompts.persona to
 // the new id; a non-empty SystemPrompt overwrites that private document.
 func CreateWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
+	if err := opts.Audio.Validate(); err != nil {
+		return nil, err
+	}
 	directory, err := config.ValidateStartingDirectory(opts.StartingDirectory)
 	if err != nil {
 		return nil, err
@@ -34,6 +38,13 @@ func CreateWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
 	p, err := Create(cfg, opts.DisplayName)
 	if err != nil {
 		return nil, err
+	}
+	if opts.Audio != nil {
+		copy := *opts.Audio
+		p.Audio = &copy
+		if err := Write(p, false); err != nil {
+			return p, err
+		}
 	}
 	if directory != "" {
 		p.StartingDirectory = directory
@@ -84,6 +95,9 @@ func stackOverridden(opts CreateOpts) bool {
 
 // CreateAndUseWithOpts creates a persona (with optional system prompt) and activates it.
 func CreateAndUseWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
+	if opts.Audio.defaults().Mode == AudioNative {
+		return nil, fmt.Errorf("create native settings without activation until runtime setup is ready: %w", ErrNativeAudioUnavailable)
+	}
 	p, err := CreateWithOpts(cfg, opts)
 	if err != nil {
 		return nil, err
