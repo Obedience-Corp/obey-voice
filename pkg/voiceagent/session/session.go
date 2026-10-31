@@ -58,6 +58,7 @@ var ErrWorkScopeConflict = errors.New("session: work scope conflict")
 
 // Session represents a saved conversation.
 type Session struct {
+	Selection     *SelectionState                 `json:"selection,omitempty"`
 	Participation *discussion.Settings            `json:"participation,omitempty"`
 	Directories   *config.ConversationDirectories `json:"directories,omitempty"`
 	WorkDir       string                          `json:"work_dir,omitempty"`
@@ -111,7 +112,11 @@ func (s *Session) saveBackupTo(dir string, turns []brain.Turn) error {
 	}
 	// Copy so the backup never mutates the live session's Turns/UpdatedAt.
 	backup := *s
-	backup.FormatVersion = requiredFormatVersion(s.FormatVersion, turns)
+	backup.Selection = cloneSelection(s.Selection)
+	if err := validateSelectionState(backup.Selection); err != nil {
+		return err
+	}
+	backup.FormatVersion = requiredFormatVersion(s.FormatVersion, turns, s.Selection)
 	if err := validateAudioTurns(dir, s.ID, turns); err != nil {
 		return err
 	}
@@ -159,6 +164,10 @@ func saveSession(dir string, s *Session, turns []brain.Turn, snapshot *work.Snap
 
 func saveSessionWithFailures(dir string, s *Session, turns []brain.Turn, snapshot *work.Snapshot, beforeRename, afterRename error) error {
 	next := *s
+	next.Selection = cloneSelection(s.Selection)
+	if err := validateSelectionState(next.Selection); err != nil {
+		return err
+	}
 	if next.Participation != nil {
 		if err := next.Participation.Validate(); err != nil {
 			return err
@@ -169,7 +178,7 @@ func saveSessionWithFailures(dir string, s *Session, turns []brain.Turn, snapsho
 	if next.FormatVersion > CurrentFormatVersion {
 		return fmt.Errorf("%w: %d", ErrUnsupportedSessionVersion, next.FormatVersion)
 	}
-	next.FormatVersion = requiredFormatVersion(next.FormatVersion, turns)
+	next.FormatVersion = requiredFormatVersion(next.FormatVersion, turns, next.Selection)
 	if err := validateAudioTurns(dir, s.ID, turns); err != nil {
 		return err
 	}
@@ -299,8 +308,11 @@ func loadFrom(dir, id string) (*Session, error) {
 	if s.FormatVersion == 0 {
 		s.FormatVersion = 1
 	}
-	if requiredFormatVersion(StandardFormatVersion, s.Turns) > StandardFormatVersion && s.FormatVersion < 3 {
+	if requiredFormatVersion(StandardFormatVersion, s.Turns, s.Selection) > StandardFormatVersion && s.FormatVersion < 3 {
 		return nil, errors.New("audio evidence requires session format 3")
+	}
+	if err := validateSelectionState(s.Selection); err != nil {
+		return nil, err
 	}
 	if err := validateAudioMetadata(s.Turns); err != nil {
 		return nil, err
@@ -434,40 +446,6 @@ func (st *Store) injectWriteFailures(before, after error) {
 	st.failBeforeRename, st.failAfterRename = before, after
 }
 
-// SaveSelection atomically publishes the selected responder metadata while
-// retaining the newest durable work snapshot. On WriteCommittedError the
-// caller also receives the installed selection, with durability unconfirmed.
-func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string, directories ...*config.ConversationDirectories) error {
-	sessionWriteMu.Lock()
-	defer sessionWriteMu.Unlock()
-	current, err := loadFrom(st.dir, s.ID)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("load session before selection save: %w", err)
-	}
-	candidate := *s
-	if err == nil {
-		candidate = *current
-	}
-	candidate.Turns = normalizeTurns(turns)
-	candidate.SelectedPersonaID = personaID
-	candidate.SelectedPersonaDisplayName = displayName
-	candidate.SelectedPersonaPromptHash = promptHash
-	if len(directories) > 0 && directories[0] != nil {
-		candidate.Directories = directories[0].Clone()
-		if choice, ok := candidate.Directories.Personas[personaID]; ok {
-			candidate.WorkDir, candidate.WorkDirSource = choice.Dir, choice.Source
-		}
-	}
-	if err := saveSessionWithFailures(st.dir, &candidate, candidate.Turns, candidate.Work, st.failBeforeRename, st.failAfterRename); err != nil {
-		if WriteCommitted(err) {
-			*s = candidate
-		}
-		return err
-	}
-	*s = candidate
-	return nil
-}
-
 // Session checkpoints are infrequent and short. A package-wide lock keeps
 // independently-created Store values safe without retaining Session pointers
 // or allowing path aliases to bypass a per-session lock.
@@ -506,6 +484,7 @@ func (st *Store) Save(s *Session, turns []brain.Turn) error {
 		candidate.SelectedPersonaID = current.SelectedPersonaID
 		candidate.SelectedPersonaDisplayName = current.SelectedPersonaDisplayName
 		candidate.SelectedPersonaPromptHash = current.SelectedPersonaPromptHash
+		candidate.Selection = cloneSelection(current.Selection)
 		candidate.WorkDir, candidate.WorkDirSource = current.WorkDir, current.WorkDirSource
 		candidate.Directories = current.Directories.Clone()
 	}

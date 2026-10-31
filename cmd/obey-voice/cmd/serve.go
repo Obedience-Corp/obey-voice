@@ -625,7 +625,7 @@ func (s *servePersonaSwitcher) initialize() error {
 		Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
 			s.sessions.mu.Lock()
 			defer s.sessions.mu.Unlock()
-			return session.DefaultStore().SaveSelection(s.sessions.sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
+			return session.DefaultStore().SaveSelectionState(s.sessions.sess, turns, selected)
 		},
 	}
 	if s.newBrain != nil {

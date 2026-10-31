@@ -8,8 +8,11 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 )
 
-func requiredFormatVersion(current int, turns []brain.Turn) int {
+func requiredFormatVersion(current int, turns []brain.Turn, selection ...*SelectionState) int {
 	version := max(current, StandardFormatVersion)
+	if len(selection) > 0 && selection[0] != nil && selection[0].AudioMode == "native" {
+		version = max(version, 3)
+	}
 	for _, turn := range turns {
 		if turn.Utterance != nil || turn.AudioRetained || turn.TypedInput != "" {
 			return max(version, 3)
