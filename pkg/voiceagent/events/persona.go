@@ -26,6 +26,10 @@ type PersonaSelection struct {
 	BrainModel        string                          `json:"brain_model"`
 	VoiceProvider     string                          `json:"voice_provider"`
 	Voice             string                          `json:"voice"`
+	AudioMode         string                          `json:"audio_mode,omitempty"`
+	AudioControls     string                          `json:"audio_controls,omitempty"`
+	AudioTranscript   string                          `json:"audio_transcript,omitempty"`
+	AudioRetained     bool                            `json:"audio_retained,omitempty"`
 	Reason            string                          `json:"reason"`
 }
 

@@ -139,10 +139,16 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 	responseCfg := cfg.Clone()
 	responseCfg.VoiceWorkers = nil
 	// Only the digest is exposed; credential-bearing config is never logged.
+	effectiveAudio := b.AudioConfig()
+	// Saved inactive native settings do not change a Standard response binding.
+	if effectiveAudio.Mode == persona.AudioStandard {
+		effectiveAudio = persona.Audio{Mode: persona.AudioStandard}
+	}
 	encoded, _ := json.Marshal(struct {
 		Config *config.Config
 		Prompt string
-	}{responseCfg, hash})
+		Audio  persona.Audio
+	}{responseCfg, hash, effectiveAudio})
 	digest := sha256.Sum256(encoded)
 	scope := s.opts.Pipeline.ConversationScope()
 	return events.PersonaSelection{
@@ -151,6 +157,7 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 		PersonaID: b.PersonaID, DisplayName: b.DisplayName, PromptHash: hash, BindingHash: hex.EncodeToString(digest[:]),
 		Generation: generation, BrainProvider: b.BrainProvider, BrainModel: b.BrainModel,
 		VoiceProvider: cfg.TTSProvider, Voice: config.TTSVoiceFor(cfg, cfg.TTSProvider), Reason: reason,
+		AudioMode: effectiveAudio.Mode, AudioControls: effectiveAudio.Controls, AudioTranscript: effectiveAudio.Transcript, AudioRetained: effectiveAudio.RetainAudio,
 	}
 }
 
