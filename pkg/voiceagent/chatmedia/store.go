@@ -30,7 +30,12 @@ type Ref struct {
 	Height int    `json:"height"`
 	Frames int    `json:"frames"`
 }
-type Store struct{ Dir string }
+type Store struct {
+	Dir string
+	// anchor is the canonical caller-selected root for derived owned stores.
+	// Children cannot become new selected roots by introducing a symlink.
+	anchor string
+}
 
 func DefaultStore() Store { return Store{Dir: filepath.Join(config.SessionsDir(), "attachments")} }
 func (s Store) Path(r Ref) string {

@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
@@ -25,7 +24,7 @@ func (st *Store) AudioMedia(id string) (chatmedia.Store, error) {
 	if err := validateSessionID(id); err != nil {
 		return chatmedia.Store{}, err
 	}
-	return chatmedia.Store{Dir: filepath.Join(st.dir, "media", id)}, nil
+	return (chatmedia.Store{Dir: st.dir}).OwnedSubdir("media", id)
 }
 func validateAudioMetadata(turns []brain.Turn) error {
 	for _, turn := range turns {

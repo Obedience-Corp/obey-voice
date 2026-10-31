@@ -653,7 +653,8 @@ func (st *Store) Latest() *Session {
 }
 
 // Delete removes the session file <id>.json and its pre-compact backup
-// (<id>.pre-compact.json, best-effort — its absence is not an error).
+// (<id>.pre-compact.json, its absence is not an error), plus its owned media.
+// Media is removed before metadata; a partial failure retains metadata for retry.
 // Returns ErrSessionNotFound when no session with that id exists. id is
 // validated before any filesystem call: a path separator or a ".." segment
 // is rejected outright, so a delete verb can never escape the store's
@@ -666,18 +667,35 @@ func (st *Store) Delete(id string) error {
 	defer sessionWriteMu.Unlock()
 
 	path := filepath.Join(st.dir, id+".json")
-	if err := os.Remove(path); err != nil {
+	if _, err := os.Lstat(path); err != nil {
 		if os.IsNotExist(err) {
 			return ErrSessionNotFound
 		}
-		return fmt.Errorf("delete session %s: %w", id, err)
+		return fmt.Errorf("inspect session before deletion: %w", err)
+	}
+	media, err := st.AudioMedia(id)
+	if err != nil {
+		return fmt.Errorf("validate session media before deletion: %w", err)
+	}
+	// Keep metadata until owned media removal succeeds, so a failed deletion can
+	// be retried. A partial failure is reported; missing audio is never regenerated.
+	if err := media.RemoveOwned(); err != nil {
+		return err
 	}
 
 	backup := filepath.Join(st.dir, id+".pre-compact.json")
 	if err := os.Remove(backup); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("delete session %s backup: %w", id, err)
 	}
-	return nil
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("delete session %s: %w", id, err)
+	}
+	parent, err := os.Open(st.dir)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	return parent.Sync()
 }
 
 // validateSessionID rejects an id that could escape the store's directory
