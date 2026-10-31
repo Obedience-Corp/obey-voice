@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func TestPersonaAudioDraftEditingPreservesStandardAndGlobalChoices(t *testing.T) {
@@ -86,5 +87,30 @@ func TestPersonaOrdinaryEditKeepsAudioOmitted(t *testing.T) {
 	}
 	if p.Audio != nil {
 		t.Fatal("ordinary profile acquired audio settings")
+	}
+}
+
+func TestNativeDefaultDraftKeepsRealCommandPreRunRepairAvailable(t *testing.T) {
+	personaEnv(t)
+	if err := config.SetAndSave("active_persona", "samantha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runPersona(t, "edit", "samantha", "--audio-mode", "native", "--json"); err != nil {
+		t.Fatal(err)
+	}
+	tree := newPersonaCmd()
+	edit, _, err := tree.Find([]string{"edit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rootCmd.PersistentPreRunE(edit, nil); err != nil {
+		t.Fatal("saved native draft blocked repair pre-run", err)
+	}
+	if _, err := runPersona(t, "edit", "samantha", "--audio-mode", "standard", "--json"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := persona.Load("samantha")
+	if err != nil || p.Audio.Mode != persona.AudioStandard {
+		t.Fatal("could not repair default", err)
 	}
 }

@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 var rootCmd = &cobra.Command{
@@ -15,7 +13,7 @@ var rootCmd = &cobra.Command{
 	Short: "Give Claude a voice",
 	Long:  "Obey Voice — ultra-low-latency voice assistant for AI coding, inspired by Her.",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		_, err := config.Load()
+		_, err := loadCommandConfig(cmd)
 		return err
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {

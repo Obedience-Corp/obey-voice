@@ -51,7 +51,7 @@ var rootCmd = &cobra.Command{
 		if cmd.Name() == serveCommandName {
 			dropBrokenPipeSignals()
 		}
-		cfg, err := config.Load()
+		cfg, err := loadCommandConfig(cmd)
 		if err != nil {
 			return err
 		}

@@ -78,3 +78,12 @@ func loadPersonaManagementConfig() (*config.Config, error) {
 	}
 	return cfg, err
 }
+
+// Persona repair/setup must remain reachable even when the saved default is a
+// native draft that ordinary conversation startup cannot yet activate.
+func loadCommandConfig(cmd *cobra.Command) (*config.Config, error) {
+	if cmd.Parent() != nil && cmd.Parent().Name() == "persona" {
+		return loadPersonaManagementConfig()
+	}
+	return config.Load()
+}
