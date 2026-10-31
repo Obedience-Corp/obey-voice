@@ -12,12 +12,15 @@ func (p *Pipeline) resolveNativeInput(ctx context.Context, input *utterance.Fina
 		return "", errors.New("native input binding is unavailable")
 	}
 	input = input.Clone()
-	if err := input.Validate(); err != nil {
-		return "", err
-	}
 	metrics.input = input
 	metrics.inputOwner = p.Native.Media
 	metrics.inputPolicy = p.Native
+	if err := input.Validate(); err != nil {
+		return "", err
+	}
+	if err := p.rememberAudioMedia(p.Native.Media); err != nil {
+		return "", err
+	}
 	if err := p.prepareNativeForeground(ctx); err != nil {
 		return "", err
 	}

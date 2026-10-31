@@ -131,7 +131,12 @@ func (p *Pipeline) ClearConversation() error {
 		p.adoptConversationScope(next)
 	}
 	if p.Brain != nil {
+		turns := p.Brain.History()
+		if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
+			turns = canonical.CanonicalHistory()
+		}
 		p.Brain.ClearHistory()
+		p.releaseConversationAudio(turns)
 	}
 	if p.Agency != nil {
 		p.Agency.discardPendingSpeech()

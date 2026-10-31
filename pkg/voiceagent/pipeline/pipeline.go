@@ -9,6 +9,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -260,6 +261,7 @@ type Pipeline struct {
 	// boundary. It is wired from config.vad_pre_roll_ms.
 	CapturePreRoll            time.Duration
 	captureMu                 sync.Mutex
+	audioMedia                *chatmedia.AudioSession
 	captureBoundary           *PreparedInputReplacement
 	captureStarting           *captureStartup
 	captureCancel             context.CancelFunc

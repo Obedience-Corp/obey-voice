@@ -329,6 +329,11 @@ func TestClearAndCloseJoinOptionalCaptionBeforeConversationMutation(t *testing.T
 			if clear && len(f.responder.History()) != 0 {
 				t.Fatal("clear retained canonical turns")
 			}
+			if clear {
+				if _, err := f.media.ResolveAudio(t.Context(), f.ref); !errors.Is(err, utterance.ErrAudioUnavailable) {
+					t.Fatal("clear retained caption/canonical audio", err)
+				}
+			}
 			close(f.release)
 			if err := f.pipeline.Native.Scheduler.CancelCaption(t.Context()); err != nil {
 				t.Fatal(err)
