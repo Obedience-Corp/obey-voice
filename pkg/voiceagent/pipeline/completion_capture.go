@@ -63,6 +63,13 @@ func (p *Pipeline) closeCompletionCapture() {
 	}
 	p.captureMu.Lock()
 	session := p.captureSession
+	if p.captureCancel != nil {
+		p.captureCancel()
+		p.captureCancel = nil
+	}
+	if p.captureStarting != nil {
+		p.captureStarting.cancel()
+	}
 	p.captureGeneration++
 	p.captureSession = nil
 	p.captureToken = stt.PauseToken{}
@@ -80,8 +87,36 @@ func (p *Pipeline) closeCompletionCapture() {
 }
 
 func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64, error) {
+	coordinator := p.WorkCoordinator()
+	startCtx := ctx
+	if coordinator != nil {
+		startCtx = context.WithoutCancel(ctx)
+	}
+	startCtx, cancelStart := context.WithCancel(startCtx)
+	stopRequestCancel := context.AfterFunc(ctx, cancelStart)
+	defer stopRequestCancel()
+	startup := &captureStartup{cancel: cancelStart, done: make(chan struct{})}
+	adopted := false
 	p.captureMu.Lock()
+	if p.captureBoundary != nil || p.captureStarting != nil || (p.captureSession != nil && !p.captureYielded) {
+		p.captureMu.Unlock()
+		cancelStart()
+		return nil, 0, ErrInputTransition
+	}
+	p.captureStarting = startup
 	session, token, generation := p.captureSession, p.captureToken, p.captureGeneration
+	input, native, recognizer := p.Input, p.Native, p.STT
+	defer func() {
+		if !adopted {
+			cancelStart()
+		}
+		p.captureMu.Lock()
+		if p.captureStarting == startup {
+			p.captureStarting = nil
+		}
+		close(startup.done)
+		p.captureMu.Unlock()
+	}()
 	resuming := session != nil && p.captureYielded
 	if resuming {
 		p.captureYielded = false
@@ -89,7 +124,7 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 	p.captureMu.Unlock()
 	if resuming {
 		if owner, ok := session.(stt.CompletionCapture); ok {
-			if err := owner.ResumeCapture(ctx, token); err != nil {
+			if err := owner.ResumeCapture(startCtx, token); err != nil {
 				p.captureMu.Lock()
 				if p.captureSession != nil && p.captureGeneration == generation {
 					p.captureYielded = true
@@ -101,6 +136,13 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 		// Resume transferred the retained utterance from the yielded owner;
 		// consume the one-turn keep flag so a later fresh session does not
 		// replay the same retained audio.
+		p.captureMu.Lock()
+		valid := p.captureBoundary == nil && p.captureGeneration == generation && ctx.Err() == nil
+		p.captureMu.Unlock()
+		if !valid {
+			_ = session.Close()
+			return nil, 0, ErrInputTransition
+		}
 		p.keepCapture.Store(false)
 		return session, generation, nil
 	}
@@ -122,33 +164,39 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 	// A prepared scope was already trimmed at the response boundary. Keep
 	// everything captured since then, including speech during classification.
 
-	startCtx := ctx
-	coordinator := p.WorkCoordinator()
-	if coordinator != nil {
-		// A yielded turn ends before its capture session. Explicit Close below
-		// still cancels and joins on all ordinary return and shutdown paths.
-		startCtx = context.WithoutCancel(ctx)
-	}
 	var err error
-	if p.Input != nil {
-		if p.Native == nil || p.Native.Media == nil {
+	if input != nil {
+		if native == nil || native.Media == nil {
 			return nil, 0, errors.New("native input has no prepared media binding")
 		}
-		owner, startErr := p.Input.Start(startCtx)
+		owner, startErr := input.Start(startCtx)
 		err = startErr
+		if err == nil && owner == nil {
+			err = errors.New("native input provider returned no session")
+		}
 		if err == nil {
-			session = stt.AdaptNativeSession(startCtx, owner, p.Native.Media.Release)
+			session = stt.AdaptNativeSession(startCtx, owner, native.Media.Release)
 		}
 	} else {
-		session, err = p.STT.Start(startCtx)
+		session, err = recognizer.Start(startCtx)
 	}
 	if err != nil {
 		return nil, 0, err
+	}
+	if session == nil {
+		return nil, 0, errors.New("capture provider returned no session")
 	}
 	if binder, ok := session.(interface{ BindCompletionCoordinator(*work.Coordinator) }); ok {
 		binder.BindCompletionCoordinator(coordinator)
 	}
 	p.captureMu.Lock()
+	if p.captureBoundary != nil || p.captureGeneration != generation || ctx.Err() != nil {
+		p.captureMu.Unlock()
+		_ = session.Close()
+		return nil, 0, ErrInputTransition
+	}
+	p.captureCancel = cancelStart
+	adopted = true
 	p.captureSession = session
 	p.captureGeneration++
 	generation = p.captureGeneration
@@ -161,6 +209,10 @@ func (p *Pipeline) finishCaptureSession(session stt.Session, generation uint64, 
 	if p.captureSession != nil && p.captureGeneration == generation {
 		p.captureYielded = yielded
 		if !yielded {
+			if p.captureCancel != nil {
+				p.captureCancel()
+				p.captureCancel = nil
+			}
 			p.captureSession = nil
 			p.captureToken = stt.PauseToken{}
 		}
