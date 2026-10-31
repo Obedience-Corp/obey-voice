@@ -1,0 +1,45 @@
+{
+  "fixture_root": "/var/folders/9d/nyc358s50g7591g74wjx8pn40000gn/T/obey-desktop-ui-rgg__77l",
+  "source_checkpoint": "8a56f2c6",
+  "native_ui": {
+    "blocked_switch_message": "Switch blocked: transcribe recorded input or start a new conversation.",
+    "explicit_retry_updates_original": true,
+    "standard_badge_and_response": true,
+    "native_reactivation_and_response": true,
+    "quit_reopen_same_session_six_turns": true
+  },
+  "session_id": "20261030-235858-9e3e",
+  "selection": {
+    "binding_hash": "ffa5b7c8ae27fa6e574c93485740a6aef522336f86b4db1a027014fb3740f168",
+    "revision": 0,
+    "audio_mode": "native",
+    "audio_controls": "conversation",
+    "audio_transcript": "off",
+    "audio_retained": true,
+    "brain_provider": "ollama",
+    "brain_model": "lfm3-audio:2b",
+    "voice_provider": "openai-speech",
+    "voice": "female"
+  },
+  "standard_request": {
+    "model": "desktop-test",
+    "recording_transcript_present": true,
+    "wav_count": 0
+  },
+  "native_request": {
+    "model": "lfm3-audio:2b",
+    "wav_count": 1,
+    "wav_sha256": "fb6f4d3343c94caffb6a7486f732f43a07b876bf9936539075f2db1edbe0e8c3",
+    "prior_standard_response_present": true
+  },
+  "requests_by_route": {
+    "/api/show": 3,
+    "/api/chat": 7,
+    "/v1/audio/speech": 3,
+    "/v1/audio/transcriptions": 1
+  },
+  "global_config_unchanged": true,
+  "saved_standard_tts_and_prompts_unchanged": true,
+  "devices": "disabled; software sink only",
+  "qualification": "protocol fixture, not model quality or physical-device proof"
+}

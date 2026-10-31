@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -31,7 +33,7 @@ func (a App) onPersonaSelectionResult(msg personaSelectionResultMsg) (tea.Model,
 		return a, nil
 	}
 	if msg.err != nil {
-		a.personas.message = fmt.Sprintf("Failed to switch persona: %v", msg.err)
+		a.personas.message = personaSelectionFailure(msg.err)
 	} else {
 		name := msg.selection.DisplayName
 		if name == "" {
@@ -109,4 +111,14 @@ func (a App) onTalkControlClosed(msg talkControlClosedMsg) (tea.Model, tea.Cmd) 
 	// endpoint simply stops answering.
 	a.control = nil
 	return a, nil
+}
+
+func personaSelectionFailure(err error) string {
+	if errors.Is(err, brain.ErrAudioProjection) {
+		return "Switch blocked: transcribe recorded input or start a new conversation."
+	}
+	if errors.Is(err, brain.ErrImageProjection) {
+		return "Switch blocked: choose a persona that supports the saved images or start a new conversation."
+	}
+	return fmt.Sprintf("Failed to switch persona: %v", err)
 }

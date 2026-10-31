@@ -58,8 +58,12 @@ func TestServeSnapshotUsesCanonicalHistoryAndRejectsMixedSession(t *testing.T) {
 		t.Fatal("canceled snapshot succeeded")
 	}
 	s.sessions.mu.Lock()
+	originalID := s.sessions.sess.ID
 	s.sessions.sess.ID = "different-session"
 	s.sessions.mu.Unlock()
+	// Restore this deliberately corrupted fixture before draining the work
+	// checkpoint, whose immutable owner must reject a changed Session.ID.
+	defer func() { s.sessions.mu.Lock(); s.sessions.sess.ID = originalID; s.sessions.mu.Unlock() }()
 	if _, err := s.snapshot(context.Background()); err == nil {
 		t.Fatal("snapshot combined different session owners")
 	}
