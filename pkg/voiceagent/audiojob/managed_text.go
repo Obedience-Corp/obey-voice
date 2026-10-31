@@ -12,8 +12,11 @@ import (
 	"unicode/utf8"
 )
 
-func (p *ManagedRuntime) Analyze(ctx context.Context, wav []byte, task, instruction string) (string, TextUsage, error) {
+func (p *ManagedRuntime) Analyze(ctx context.Context, wav []byte, task TextTask) (string, TextUsage, error) {
 	var usage TextUsage
+	if err := task.validate(); err != nil {
+		return "", usage, err
+	}
 	if !p.audioInput || !p.textOutput {
 		return "", usage, fmt.Errorf("the selected runtime does not report audio input and text output")
 	}
@@ -21,10 +24,10 @@ func (p *ManagedRuntime) Analyze(ctx context.Context, wav []byte, task, instruct
 		return "", usage, fmt.Errorf("audio window exceeds its bounded input")
 	}
 	content := []any{map[string]any{"type": "input_audio", "input_audio": map[string]any{"data": base64.StdEncoding.EncodeToString(wav), "format": "wav"}}}
-	if task == "understanding" {
-		content = append(content, map[string]any{"type": "text", "text": instruction})
+	if task.Task == "understanding" {
+		content = append(content, map[string]any{"type": "text", "text": task.Instruction})
 	}
-	body := map[string]any{"model": ManagedModel, "messages": []any{map[string]any{"role": "system", "content": textPrompt(task)}, map[string]any{"role": "user", "content": content}}, "stream": false, "max_tokens": MaxTextTokens, "temperature": 0, "seed": 42, "cache_prompt": false, "n_keep": -1, "modalities": []string{"text"}, "chat_template_kwargs": map[string]any{"enable_thinking": false}}
+	body := map[string]any{"model": ManagedModel, "messages": []any{map[string]any{"role": "system", "content": task.prompt()}, map[string]any{"role": "user", "content": content}}, "stream": false, "max_tokens": MaxTextTokens, "temperature": 0, "seed": 42, "cache_prompt": false, "n_keep": -1, "modalities": []string{"text"}, "chat_template_kwargs": map[string]any{"enable_thinking": false}}
 	data, err := json.Marshal(body)
 	if err != nil {
 		return "", usage, err

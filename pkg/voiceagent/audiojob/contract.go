@@ -15,6 +15,7 @@ import (
 
 const Protocol = "obey-audio-job/v1"
 const TextProtocol = "obey-audio-job/v2"
+const DubbingProtocol = "obey-audio-job/v3"
 const ConfigSchema = "obey-voice.audio-config/v1"
 
 type Source struct {
@@ -54,19 +55,20 @@ type Limits struct {
 	OutputBytes    int64 `json:"output_bytes"`
 }
 type Request struct {
-	Protocol       string  `json:"protocol"`
-	JobID          string  `json:"job_id"`
-	Task           string  `json:"task"`
-	Source         Source  `json:"source"`
-	Input          Input   `json:"input"`
-	Runtime        Runtime `json:"runtime"`
-	Script         string  `json:"script"`
-	Instruction    string  `json:"instruction,omitempty"`
-	Language       string  `json:"language"`
-	TargetLanguage string  `json:"target_language,omitempty"`
-	DurationPolicy string  `json:"duration_policy"`
-	OutputDir      string  `json:"output_dir"`
-	Limits         Limits  `json:"limits"`
+	Protocol          string             `json:"protocol"`
+	JobID             string             `json:"job_id"`
+	Task              string             `json:"task"`
+	Source            Source             `json:"source"`
+	Input             Input              `json:"input"`
+	Runtime           Runtime            `json:"runtime"`
+	Script            string             `json:"script"`
+	Instruction       string             `json:"instruction,omitempty"`
+	Language          string             `json:"language"`
+	TargetLanguage    string             `json:"target_language,omitempty"`
+	DurationPolicy    string             `json:"duration_policy"`
+	OutputDir         string             `json:"output_dir"`
+	Limits            Limits             `json:"limits"`
+	TranslationReview *TranslationReview `json:"translation_review,omitempty"`
 }
 
 // Config is deliberately independent of the assistant config and credentials.
@@ -90,41 +92,46 @@ type Output struct {
 	SampleCount int64  `json:"sample_count,omitempty"`
 }
 type Manifest struct {
-	Protocol          string        `json:"protocol"`
-	JobID             string        `json:"job_id"`
-	Task              string        `json:"task"`
-	Source            Source        `json:"source"`
-	Input             Input         `json:"input"`
-	Runtime           Runtime       `json:"runtime"`
-	RuntimeVersion    string        `json:"runtime_version"`
-	ModelDigest       string        `json:"model_digest"`
-	Transport         string        `json:"transport"`
-	ScriptSHA256      string        `json:"script_sha256"`
-	Language          string        `json:"language"`
-	DurationPolicy    string        `json:"duration_policy"`
-	SourceWindows     []Window      `json:"source_windows"`
-	Output            Output        `json:"output"`
-	ProjectorDigest   string        `json:"projector_digest,omitempty"`
-	RuntimeDigest     string        `json:"runtime_digest,omitempty"`
-	Sampling          *Sampling     `json:"sampling,omitempty"`
-	InstructionSHA256 string        `json:"instruction_sha256,omitempty"`
-	PromptSHA256      string        `json:"prompt_sha256,omitempty"`
-	ChunkPolicy       string        `json:"chunk_policy,omitempty"`
-	TextSampling      *TextSampling `json:"text_sampling,omitempty"`
+	Protocol                  string             `json:"protocol"`
+	JobID                     string             `json:"job_id"`
+	Task                      string             `json:"task"`
+	Source                    Source             `json:"source"`
+	Input                     Input              `json:"input"`
+	Runtime                   Runtime            `json:"runtime"`
+	RuntimeVersion            string             `json:"runtime_version"`
+	ModelDigest               string             `json:"model_digest"`
+	Transport                 string             `json:"transport"`
+	ScriptSHA256              string             `json:"script_sha256"`
+	Language                  string             `json:"language"`
+	TargetLanguage            string             `json:"target_language,omitempty"`
+	DurationPolicy            string             `json:"duration_policy"`
+	SourceWindows             []Window           `json:"source_windows"`
+	Output                    Output             `json:"output"`
+	ProjectorDigest           string             `json:"projector_digest,omitempty"`
+	RuntimeDigest             string             `json:"runtime_digest,omitempty"`
+	Sampling                  *Sampling          `json:"sampling,omitempty"`
+	InstructionSHA256         string             `json:"instruction_sha256,omitempty"`
+	PromptSHA256              string             `json:"prompt_sha256,omitempty"`
+	ChunkPolicy               string             `json:"chunk_policy,omitempty"`
+	TextSampling              *TextSampling      `json:"text_sampling,omitempty"`
+	TranslationReview         *TranslationReview `json:"translation_review,omitempty"`
+	TranslationManifestSHA256 string             `json:"translation_manifest_sha256,omitempty"`
+	ApprovedScript            string             `json:"approved_script,omitempty"`
 }
 
 // Capability distinguishes transport support and installed assets from a task's
 // independent quality qualification. Ready is never inferred from model names.
 type Capability struct {
-	Task         string   `json:"task"`
-	Supported    bool     `json:"supported"`
-	Installed    bool     `json:"installed"`
-	Qualified    bool     `json:"qualified"`
-	Reason       string   `json:"reason"`
-	Protocol     string   `json:"protocol,omitempty"`
-	Languages    []string `json:"languages,omitempty"`
-	Voices       []string `json:"voices,omitempty"`
-	OutputFormat string   `json:"output_format,omitempty"`
+	Task            string   `json:"task"`
+	Supported       bool     `json:"supported"`
+	Installed       bool     `json:"installed"`
+	Qualified       bool     `json:"qualified"`
+	Reason          string   `json:"reason"`
+	Protocol        string   `json:"protocol,omitempty"`
+	Languages       []string `json:"languages,omitempty"`
+	TargetLanguages []string `json:"target_languages,omitempty"`
+	Voices          []string `json:"voices,omitempty"`
+	OutputFormat    string   `json:"output_format,omitempty"`
 }
 
 func Decode(r io.Reader, out any) error {
@@ -178,7 +185,7 @@ func (r Request) Validate(c Config) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
-	if (r.Protocol != Protocol && r.Protocol != TextProtocol) || r.JobID == "" || strings.ContainsAny(r.JobID, "/\\\x00") || r.JobID == "." || r.JobID == ".." {
+	if (r.Protocol != Protocol && r.Protocol != TextProtocol && r.Protocol != DubbingProtocol) || r.JobID == "" || strings.ContainsAny(r.JobID, "/\\\x00") || r.JobID == "." || r.JobID == ".." {
 		return fmt.Errorf("invalid protocol or job_id")
 	}
 	if r.Runtime != c.Runtime {
@@ -195,7 +202,14 @@ func (r Request) Validate(c Config) error {
 	default:
 		return fmt.Errorf("unknown input channel role")
 	}
-	if r.Protocol == TextProtocol {
+	if r.Protocol != DubbingProtocol && r.TranslationReview != nil {
+		return fmt.Errorf("translation review is only valid for explicit v3 dubbing")
+	}
+	if r.Protocol == DubbingProtocol {
+		if err := r.validateDubbing(c); err != nil {
+			return err
+		}
+	} else if r.Protocol == TextProtocol {
 		if err := r.validateTextTask(c); err != nil {
 			return err
 		}

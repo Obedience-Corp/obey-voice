@@ -24,8 +24,12 @@ func TestAudioCapabilitiesKeepInstallationSupportAndQualitySeparate(t *testing.T
 					if !task.Supported || task.Protocol != Protocol {
 						t.Fatal(task)
 					}
-				case "transcription", "understanding":
+				case "transcription", "understanding", "translation":
 					if task.Supported != (mode == "healthy") || task.Protocol != TextProtocol {
+						t.Fatal(task)
+					}
+				case "dubbing":
+					if task.Supported != (mode == "healthy") || task.Protocol != DubbingProtocol {
 						t.Fatal(task)
 					}
 				default:

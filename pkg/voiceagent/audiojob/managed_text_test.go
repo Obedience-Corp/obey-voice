@@ -109,7 +109,7 @@ func TestAudioTextRuntimeChecksCompleteInputAndTerminalResponse(t *testing.T) {
 			runtime := &ManagedRuntime{endpoint: server.URL, token: "fixture-token", client: server.Client(), audioInput: mode != "no-input", textOutput: true}
 			ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
 			defer cancel()
-			text, _, err := runtime.Analyze(ctx, wav, "understanding", "Describe the sound.")
+			text, _, err := runtime.Analyze(ctx, wav, TextTask{Task: "understanding", Instruction: "Describe the sound.", Language: "en"})
 			if mode == "valid" {
 				if err != nil || text != "A short draft." {
 					t.Fatal(text, err)

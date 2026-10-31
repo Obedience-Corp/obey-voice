@@ -56,7 +56,14 @@ func newAudioJobCmd() *cobra.Command {
 					_, err = audiojob.RunText(ctx, c, r, runtime, provenance, func(event audiojob.Event) error { return enc.Encode(event) })
 					return err
 				}
-				_, err = audiojob.Run(ctx, c, r, runtime, provenance, func(event audiojob.Event) error { return enc.Encode(event) })
+				var speech audiojob.Synthesizer = runtime
+				if r.Protocol == audiojob.DubbingProtocol {
+					speech, err = runtime.SpeechInLanguage(r.TargetLanguage)
+					if err != nil {
+						return err
+					}
+				}
+				_, err = audiojob.Run(ctx, c, r, speech, provenance, func(event audiojob.Event) error { return enc.Encode(event) })
 				return err
 			}
 			provenance, e := audioRuntimeProvenance(ctx, c.Runtime)
@@ -77,7 +84,7 @@ func newAudioJobCmd() *cobra.Command {
 			return e
 		}}
 	cmd.Flags().StringVar(&configPath, "audio-config", "", "Absolute isolated obey-voice.audio-config/v1 JSON")
-	cmd.Flags().StringVar(&requestPath, "request", "", "Absolute obey-audio-job/v1 narration or v2 audio-text request JSON")
+	cmd.Flags().StringVar(&requestPath, "request", "", "Absolute v1 narration, v2 audio-text or v3 reviewed dubbing request JSON")
 	cmd.Flags().BoolVar(&jsonl, "jsonl", false, "Write bounded job events as JSONL")
 	return cmd
 }

@@ -29,8 +29,9 @@ func (p *ManagedRuntime) Capabilities(runtime Runtime, provenance Provenance) Ca
 		{Task: "narration", Supported: true, Installed: true, Qualified: false, Reason: reason, Protocol: Protocol, Languages: []string{"en"}, Voices: []string{"female", "male"}, OutputFormat: "wav_pcm_s16le_24000_mono"},
 		{Task: "transcription", Supported: supported, Installed: true, Qualified: false, Reason: textReason, Protocol: TextProtocol, Languages: []string{"en"}, OutputFormat: FindingsSchema},
 		{Task: "understanding", Supported: supported, Installed: true, Qualified: false, Reason: textReason, Protocol: TextProtocol, Languages: []string{"en"}, OutputFormat: FindingsSchema},
+		{Task: "translation", Supported: supported, Installed: true, Qualified: false, Reason: textReason, Protocol: TextProtocol, Languages: []string{"en", "es"}, TargetLanguages: []string{"en", "es"}, OutputFormat: FindingsSchema},
 		{Task: "alignment", Installed: true, Reason: "Measured word alignment is unavailable; window coverage is not word timing."},
 		{Task: "voice_conversion", Installed: true, Reason: "Recording-preserving voice conversion is not qualified; no task substitution is allowed."},
-		{Task: "dubbing", Installed: true, Reason: "Translation and timed dubbing are not implemented or qualified."},
+		{Task: "dubbing", Supported: supported, Installed: true, Qualified: false, Reason: "Reviewed translation and duration review required; quality is not qualified.", Protocol: DubbingProtocol, Languages: []string{"en", "es"}, TargetLanguages: []string{"en", "es"}, Voices: []string{"female", "male"}, OutputFormat: "wav_pcm_s16le_24000_mono"},
 	}}
 }
