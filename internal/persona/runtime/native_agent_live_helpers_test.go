@@ -186,3 +186,9 @@ func nativeFixtureTimes(samples int64) (time.Time, time.Time) {
 	end := time.Now()
 	return end.Add(-time.Duration(samples) * time.Second / utterance.SampleRate), end
 }
+
+func (r *liveRequestObserver) CloseIdleConnections() {
+	if closer, ok := r.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
