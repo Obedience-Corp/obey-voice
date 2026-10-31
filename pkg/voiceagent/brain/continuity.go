@@ -87,6 +87,12 @@ func (o *OllamaBrain) effectiveNumCtx() int {
 // numCtxFor is effectiveNumCtx over a snapshot of the high-water mark, for a
 // caller on another goroutine.
 func (o *OllamaBrain) numCtxFor(highWater int) int {
+	if o.audioResolver != nil {
+		if o.cfg == nil || o.cfg.OllamaNumCtx <= 0 {
+			return nativeContextCeiling
+		}
+		return min(o.cfg.OllamaNumCtx, nativeContextCeiling)
+	}
 	if o.cfg == nil {
 		return 0
 	}
@@ -134,6 +140,9 @@ func (o *OllamaBrain) contextBudgetError(skillCtx string, tools api.Tools) error
 func (o *OllamaBrain) messagesBudgetError(messages []api.Message, tools api.Tools) error {
 	if o.audioProjectionBlocked {
 		return ErrAudioProjection
+	}
+	if o.audioResolver != nil {
+		return o.nativeMessagesBudgetError(messages, tools)
 	}
 	if o.effectiveNumCtx() <= 0 {
 		return nil
