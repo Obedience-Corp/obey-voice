@@ -16,6 +16,7 @@ import (
 const Protocol = "obey-audio-job/v1"
 const TextProtocol = "obey-audio-job/v2"
 const DubbingProtocol = "obey-audio-job/v3"
+const ConversionProtocol = "obey-audio-job/v4"
 const ConfigSchema = "obey-voice.audio-config/v1"
 
 type Source struct {
@@ -69,14 +70,16 @@ type Request struct {
 	OutputDir         string             `json:"output_dir"`
 	Limits            Limits             `json:"limits"`
 	TranslationReview *TranslationReview `json:"translation_review,omitempty"`
+	Reference         *Input             `json:"reference,omitempty"`
 }
 
 // Config is deliberately independent of the assistant config and credentials.
 type Config struct {
-	Schema      string         `json:"schema"`
-	Runtime     Runtime        `json:"runtime"`
-	StorageRoot string         `json:"storage_root"`
-	Managed     *ManagedConfig `json:"managed,omitempty"`
+	Schema      string          `json:"schema"`
+	Runtime     Runtime         `json:"runtime"`
+	StorageRoot string          `json:"storage_root"`
+	Managed     *ManagedConfig  `json:"managed,omitempty"`
+	Waveform    *WaveformConfig `json:"waveform,omitempty"`
 }
 type Window struct {
 	StartSample int64 `json:"start_sample"`
@@ -92,31 +95,35 @@ type Output struct {
 	SampleCount int64  `json:"sample_count,omitempty"`
 }
 type Manifest struct {
-	Protocol                  string             `json:"protocol"`
-	JobID                     string             `json:"job_id"`
-	Task                      string             `json:"task"`
-	Source                    Source             `json:"source"`
-	Input                     Input              `json:"input"`
-	Runtime                   Runtime            `json:"runtime"`
-	RuntimeVersion            string             `json:"runtime_version"`
-	ModelDigest               string             `json:"model_digest"`
-	Transport                 string             `json:"transport"`
-	ScriptSHA256              string             `json:"script_sha256"`
-	Language                  string             `json:"language"`
-	TargetLanguage            string             `json:"target_language,omitempty"`
-	DurationPolicy            string             `json:"duration_policy"`
-	SourceWindows             []Window           `json:"source_windows"`
-	Output                    Output             `json:"output"`
-	ProjectorDigest           string             `json:"projector_digest,omitempty"`
-	RuntimeDigest             string             `json:"runtime_digest,omitempty"`
-	Sampling                  *Sampling          `json:"sampling,omitempty"`
-	InstructionSHA256         string             `json:"instruction_sha256,omitempty"`
-	PromptSHA256              string             `json:"prompt_sha256,omitempty"`
-	ChunkPolicy               string             `json:"chunk_policy,omitempty"`
-	TextSampling              *TextSampling      `json:"text_sampling,omitempty"`
-	TranslationReview         *TranslationReview `json:"translation_review,omitempty"`
-	TranslationManifestSHA256 string             `json:"translation_manifest_sha256,omitempty"`
-	ApprovedScript            string             `json:"approved_script,omitempty"`
+	Protocol                  string              `json:"protocol"`
+	JobID                     string              `json:"job_id"`
+	Task                      string              `json:"task"`
+	Source                    Source              `json:"source"`
+	Input                     Input               `json:"input"`
+	Runtime                   Runtime             `json:"runtime"`
+	RuntimeVersion            string              `json:"runtime_version"`
+	ModelDigest               string              `json:"model_digest"`
+	Transport                 string              `json:"transport"`
+	ScriptSHA256              string              `json:"script_sha256"`
+	Language                  string              `json:"language"`
+	TargetLanguage            string              `json:"target_language,omitempty"`
+	DurationPolicy            string              `json:"duration_policy"`
+	SourceWindows             []Window            `json:"source_windows"`
+	Output                    Output              `json:"output"`
+	ProjectorDigest           string              `json:"projector_digest,omitempty"`
+	RuntimeDigest             string              `json:"runtime_digest,omitempty"`
+	Sampling                  *Sampling           `json:"sampling,omitempty"`
+	InstructionSHA256         string              `json:"instruction_sha256,omitempty"`
+	PromptSHA256              string              `json:"prompt_sha256,omitempty"`
+	ChunkPolicy               string              `json:"chunk_policy,omitempty"`
+	TextSampling              *TextSampling       `json:"text_sampling,omitempty"`
+	TranslationReview         *TranslationReview  `json:"translation_review,omitempty"`
+	TranslationManifestSHA256 string              `json:"translation_manifest_sha256,omitempty"`
+	ApprovedScript            string              `json:"approved_script,omitempty"`
+	Reference                 *Input              `json:"reference,omitempty"`
+	EncoderDigest             string              `json:"encoder_digest,omitempty"`
+	WorkerDigest              string              `json:"worker_digest,omitempty"`
+	ConversionSampling        *ConversionSampling `json:"conversion_sampling,omitempty"`
 }
 
 // Capability distinguishes transport support and installed assets from a task's
@@ -159,6 +166,15 @@ func (c Config) Validate() error {
 	if c.Schema != ConfigSchema || !filepath.IsAbs(c.StorageRoot) {
 		return fmt.Errorf("audio config requires %s and absolute storage_root", ConfigSchema)
 	}
+	if c.Runtime.Provider == "openvoice" {
+		if c.Waveform == nil || c.Managed != nil || c.Runtime.Endpoint != "" || c.Runtime.Model != "openvoice-v2" || c.Runtime.Voice != "reference" {
+			return fmt.Errorf("waveform conversion requires explicit openvoice-v2 pack and reference voice, without endpoint")
+		}
+		return c.Waveform.Validate()
+	}
+	if c.Waveform != nil {
+		return fmt.Errorf("waveform pack requires openvoice runtime")
+	}
 	if c.Runtime.Provider == "llama.cpp" {
 		if c.Managed == nil || c.Runtime.Endpoint != "" || c.Runtime.Model != ManagedModel || (c.Runtime.Voice != "female" && c.Runtime.Voice != "male") {
 			return fmt.Errorf("managed audio requires an explicit llama.cpp pack, empty endpoint, lfm3-audio-2b model and female or male voice")
@@ -185,7 +201,7 @@ func (r Request) Validate(c Config) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
-	if (r.Protocol != Protocol && r.Protocol != TextProtocol && r.Protocol != DubbingProtocol) || r.JobID == "" || strings.ContainsAny(r.JobID, "/\\\x00") || r.JobID == "." || r.JobID == ".." {
+	if (r.Protocol != Protocol && r.Protocol != TextProtocol && r.Protocol != DubbingProtocol && r.Protocol != ConversionProtocol) || r.JobID == "" || strings.ContainsAny(r.JobID, "/\\\x00") || r.JobID == "." || r.JobID == ".." {
 		return fmt.Errorf("invalid protocol or job_id")
 	}
 	if r.Runtime != c.Runtime {
@@ -194,8 +210,12 @@ func (r Request) Validate(c Config) error {
 	if !HashValid(r.Source.MediaSHA256) || r.Source.ClipID == "" || r.Source.RangeID == "" || r.Source.ProjectRevision == "" {
 		return fmt.Errorf("missing source identity")
 	}
-	if !filepath.IsAbs(r.Input.Path) || !HashValid(r.Input.SHA256) || r.Input.SampleCount <= 0 || r.Input.SampleRate != 16000 || r.Input.Channels != 1 || r.Input.SourceOriginSamples < 0 || r.Input.SourceOriginSamples > math.MaxInt64-r.Input.SampleCount {
-		return fmt.Errorf("input requires nonempty hash-addressed 16 kHz mono WAV and source origin")
+	rate := 16000
+	if r.Protocol == ConversionProtocol {
+		rate = 22050
+	}
+	if !filepath.IsAbs(r.Input.Path) || !HashValid(r.Input.SHA256) || r.Input.SampleCount <= 0 || r.Input.SampleRate != rate || r.Input.Channels != 1 || r.Input.SourceOriginSamples < 0 || r.Input.SourceOriginSamples > math.MaxInt64-r.Input.SampleCount {
+		return fmt.Errorf("input requires nonempty hash-addressed task-rate mono WAV and source origin")
 	}
 	switch r.Input.ChannelRole {
 	case "microphone", "speech", "mixed":
@@ -205,7 +225,14 @@ func (r Request) Validate(c Config) error {
 	if r.Protocol != DubbingProtocol && r.TranslationReview != nil {
 		return fmt.Errorf("translation review is only valid for explicit v3 dubbing")
 	}
-	if r.Protocol == DubbingProtocol {
+	if r.Protocol != ConversionProtocol && (r.Reference != nil || c.Waveform != nil) {
+		return fmt.Errorf("waveform pack/reference only valid for explicit v4 conversion")
+	}
+	if r.Protocol == ConversionProtocol {
+		if err := r.validateConversion(c); err != nil {
+			return err
+		}
+	} else if r.Protocol == DubbingProtocol {
 		if err := r.validateDubbing(c); err != nil {
 			return err
 		}

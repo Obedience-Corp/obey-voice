@@ -242,3 +242,71 @@ Exact output sample count exposes duration mismatch. Clients must review it and
 choose a supported timeline policy before Apply; this worker performs no
 stretching, trimming, alignment, source replacement or picture retiming.
 Dubbing is an unqualified preview, not recording-preserving voice conversion.
+
+
+## v4 recorded-waveform conversion (WI-43b072)
+
+`obey-audio-job/v4`, task `voice_conversion`, is a distinct waveform operation.
+It uses the shared native OpenVoice component extracted in Keepshot #174. It
+never invokes chat, ASR or TTS, and does not interpret a script as a reference.
+Transport support and installed assets remain separate from quality qualification;
+this first adapter is experimental and unqualified for intelligibility/delivery.
+
+The existing isolated `obey-voice.audio-config/v1` gains an optional `waveform`
+pack. It is mutually exclusive with `managed` and requires runtime provider
+`openvoice`, model `openvoice-v2`, empty endpoint and voice `reference`. The pack
+contains hash-pinned absolute `executable`, `encoder`, `converter` and
+`runtime_library` files and version `openvoice-v2-onnxruntime-1.30.0`. The three
+native assets share one pack directory under their fixed names; the executable
+is an independently pinned `keepshot-voice-worker`. No assistant globals or
+server are read or changed, and no network/download route exists in this adapter.
+
+The request preserves existing job/source/project/range identity and resource
+limits. `input` is a nonempty PCM16 mono WAV at 22,050 Hz, at most one hour, with
+explicit SHA, sample count and source origin. Only microphone/speech channel
+roles are admitted; mixed recordings need explicit separation before conversion.
+`reference` is another hash-addressed PCM16 mono 22,050 Hz WAV, 1–15 seconds, role
+`reference`, origin 0. Reference identity is retained independently of the source.
+`script`, `instruction`, `target_language` and `translation_review` must be empty;
+`language` is `en` for the initial adapter experiment. `duration_policy` remains
+`preserve_picture`. Output budget must cover exactly 44 + 2 × input_samples bytes.
+
+Execution verifies inputs and every installed asset before starting the native
+helper. It snapshots decoded PCM into private f32le files, invokes the helper
+with explicit pack/source/reference/output paths, bounds receipt/error output,
+and owns/reaps its process group. Cancellation, timeout, changed input/reference,
+wrong helper receipt, malformed/truncated WAV, sample-count mismatch or a failed
+worker exit leave no published artifact. Existing ordered events and atomic
+publication apply; progress stage is `waveform_conversion`.
+
+The v4 manifest records source/input/reference identities, actual transport
+`waveform_conversion`, `reference` voice, selected language, exact source range,
+worker/model/encoder/runtime hashes, native runtime version, zero-temperature
+conversion, output 22,050 Hz mono PCM16 geometry/hash and chunk policy
+`10s-core-1s-context-linear-crossfade/v1`. Source windows are the nonoverlapping
+10-second cores; each inference adds at most one second of context on each side.
+No word alignment is implied. Output sample count must equal input sample count;
+only known internal model-hop padding is removed, never arbitrary retiming.
+
+The native helper contract is `keepshot.recorded-voice-worker/v1`:
+`--version` returns one bounded JSON capability document with exact pins;
+`convert PACK SOURCE.f32 REFERENCE.f32 NEW.wav TIMEOUT_MS` converts explicit
+22,050Hz mono f32le files and returns one JSON receipt containing source/reference/
+output SHA-256, sample count/rate, transport and chunk policy. The outer facade
+owns source/project provenance, WAV decoding, events and publication. The helper
+uses the shared converter, no recorder-private modules. V1/V2/V3 retain their
+existing input rates, tasks and validation; no request silently changes task.
+
+Examples (paths/hashes are placeholders, not a runnable installed pack):
+
+```json
+{"schema":"obey-voice.audio-config/v1","storage_root":"/private/editor/jobs","runtime":{"provider":"openvoice","endpoint":"","model":"openvoice-v2","voice":"reference"},"waveform":{"version":"openvoice-v2-onnxruntime-1.30.0","executable":{"path":"/private/editor/worker/keepshot-voice-worker","sha256":"WORKER_SHA256"},"encoder":{"path":"/private/editor/pack/tone_extract.onnx","sha256":"ENCODER_SHA256"},"converter":{"path":"/private/editor/pack/tone_color.onnx","sha256":"CONVERTER_SHA256"},"runtime_library":{"path":"/private/editor/pack/libonnxruntime.1.30.0.dylib","sha256":"LIBRARY_SHA256"}}}
+```
+
+```json
+{"protocol":"obey-audio-job/v4","job_id":"conversion-preview","task":"voice_conversion","source":{"media_sha256":"SOURCE_MEDIA_SHA256","clip_id":"clip1","range_id":"2-12","project_revision":"EDIT_SHA256"},"input":{"path":"/private/editor/jobs/input.wav","sha256":"INPUT_SHA256","sample_count":220500,"sample_rate_hz":22050,"channels":1,"channel_role":"microphone","source_origin_samples":44100},"reference":{"path":"/private/editor/jobs/reference.wav","sha256":"REFERENCE_SHA256","sample_count":176400,"sample_rate_hz":22050,"channels":1,"channel_role":"reference","source_origin_samples":0},"runtime":{"provider":"openvoice","endpoint":"","model":"openvoice-v2","voice":"reference"},"language":"en","duration_policy":"preserve_picture","output_dir":"/private/editor/jobs/take","limits":{"timeout_seconds":300,"output_bytes":441044}}
+```
+
+The [native transport proof](audio-jobs/evidence/waveform/README.md) records
+network-denied success and cancellation after a converted chunk. Reproduce with
+`just test waveform-proof WORKER CONFIG REQUEST NEW_OUTPUT DENY_NETWORK_PROFILE`.

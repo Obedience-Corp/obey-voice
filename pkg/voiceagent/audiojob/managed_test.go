@@ -17,6 +17,10 @@ import (
 // The test binary doubles as a runtime fixture, so process death, cancellation
 // and environment isolation exercise an actual executable rather than a mock.
 func TestMain(m *testing.M) {
+	if filepath.Base(os.Args[0]) == "native-waveform-fixture" {
+		runWaveformFixture()
+		os.Exit(0)
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		fmt.Println("version: 0.8.0-dev (build 11960, commit 8642541b2)")
 		os.Exit(0)

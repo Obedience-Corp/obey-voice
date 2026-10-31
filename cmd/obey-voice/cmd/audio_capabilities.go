@@ -24,13 +24,20 @@ func newAudioCapabilitiesCmd() *cobra.Command {
 		if err := readAudioDocument(configPath, &config); err != nil {
 			return err
 		}
-		if config.Managed == nil {
+		if config.Managed == nil && config.Waveform == nil {
 			return fmt.Errorf("audio-capabilities requires the explicit editor-owned pack")
 		}
 		ctx, cancel := signalContext()
 		defer cancel()
 		ctx, timeout := context.WithTimeout(ctx, 2*time.Minute)
 		defer timeout()
+		if config.Waveform != nil {
+			_, provenance, err := audiojob.PrepareWaveform(ctx, config)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(command.OutOrStdout()).Encode(audiojob.WaveformCapabilities(config.Runtime, provenance))
+		}
 		runtime, provenance, err := audiojob.StartManaged(ctx, config)
 		if err != nil {
 			return err

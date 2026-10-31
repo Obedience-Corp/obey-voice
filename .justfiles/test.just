@@ -313,7 +313,7 @@ obey:
 # Quiet finite audio-artifact validation and cancellation (no devices or models).
 [no-cd]
 audio-jobs:
-    go test -race ./pkg/voiceagent/audiojob ./cmd/obey-voice/cmd -run 'Test(Audio|Translation|Dubbing|LocalAudio|CancelOnArtifact|PublishExact|FailureAndCancellation|RejectBeforeInference|TerminalClassifies)'
+    go test -race ./pkg/voiceagent/audiojob ./cmd/obey-voice/cmd -run 'Test(Audio|Translation|Dubbing|Conversion|Waveform|LocalAudio|CancelOnArtifact|PublishExact|FailureAndCancellation|RejectBeforeInference|TerminalClassifies)'
 
 # Quiet finite-runtime lifecycle proof using explicit installed local assets.
 [no-cd]
@@ -324,3 +324,8 @@ managed-audio-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
 [no-cd]
 dubbing-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
     sandbox-exec -f "{{PROFILE}}" python3 docs/audio-jobs/probe/dubbing_probe.py --worker "{{WORKER}}" --config "{{CONFIG}}" --request "{{REQUEST}}" --out "{{OUTPUT}}" --fixture-review-only
+
+# Native waveform conversion and owned-process cancellation; no device or network.
+[no-cd]
+waveform-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
+    python3 docs/audio-jobs/probe/waveform_probe.py --worker "{{WORKER}}" --config "{{CONFIG}}" --request "{{REQUEST}}" --out "{{OUTPUT}}" --sandbox-profile "{{PROFILE}}"
