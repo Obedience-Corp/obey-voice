@@ -27,6 +27,7 @@ func waveformFixture(t *testing.T, mode string) (Config, Request, Provenance) {
 	r.Input.SampleRate = WaveformRate
 	r.Input.SampleCount = WaveformRate*21 + 17
 	r.Input.SourceOriginSamples = WaveformRate * 2
+	r.Input.StreamIndex = 7
 	if err := audio.WriteWAVFloat32(r.Input.Path, WaveformRate, make([]float32, r.Input.SampleCount)); err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +37,7 @@ func waveformFixture(t *testing.T, mode string) (Config, Request, Provenance) {
 		t.Fatal(err)
 	}
 	refHash, _ := fileHash(t.Context(), reference)
-	r.Reference = &Input{Path: reference, SHA256: refHash, SampleCount: WaveformRate, SampleRate: WaveformRate, Channels: 1, ChannelRole: "reference"}
+	r.Reference = &Input{StreamIndex: 3, Path: reference, SHA256: refHash, SampleCount: WaveformRate, SampleRate: WaveformRate, Channels: 1, ChannelRole: "reference"}
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +145,7 @@ func TestConversionNativeProcessPublishesWholeRangeAndIndependentReference(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Output.SampleCount != r.Input.SampleCount || m.Output.SampleRate != WaveformRate || m.Reference == nil || *m.Reference != *r.Reference || m.Source != r.Source || m.WorkerDigest != p.WorkerDigest || m.Transport != "waveform_conversion" {
+	if m.Input != r.Input || m.Output.SampleCount != r.Input.SampleCount || m.Output.SampleRate != WaveformRate || m.Reference == nil || *m.Reference != *r.Reference || m.Source != r.Source || m.WorkerDigest != p.WorkerDigest || m.Transport != "waveform_conversion" {
 		t.Fatal("lost waveform provenance", m)
 	}
 	if len(m.SourceWindows) != 3 || m.SourceWindows[0].StartSample != r.Input.SourceOriginSamples || m.SourceWindows[2].EndSample != r.Input.SourceOriginSamples+r.Input.SampleCount {

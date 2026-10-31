@@ -266,7 +266,10 @@ limits. `input` is a nonempty PCM16 mono WAV at 22,050 Hz, at most one hour, wit
 explicit SHA, sample count and source origin. Only microphone/speech channel
 roles are admitted; mixed recordings need explicit separation before conversion.
 `reference` is another hash-addressed PCM16 mono 22,050 Hz WAV, 1–15 seconds, role
-`reference`, origin 0. Reference identity is retained independently of the source.
+`reference`, origin 0. Reference identity is retained independently of the source. Both source and
+reference inputs may include `stream_index` (original media stream index, default
+0); it is retained in the manifest for exact editor track replacement. This
+metadata does not change the decoded single-channel WAV contract.
 `script`, `instruction`, `target_language` and `translation_review` must be empty;
 `language` is `en` for the initial adapter experiment. `duration_policy` remains
 `preserve_picture`. Output budget must cover exactly 44 + 2 × input_samples bytes.

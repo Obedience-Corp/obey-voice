@@ -26,6 +26,8 @@ type Source struct {
 	ProjectRevision string `json:"project_revision"`
 }
 type Input struct {
+	// Original source stream identity; PCM decoding still produces one mono WAV.
+	StreamIndex         uint32 `json:"stream_index,omitempty"`
 	Path                string `json:"path"`
 	SHA256              string `json:"sha256"`
 	SampleCount         int64  `json:"sample_count"`
