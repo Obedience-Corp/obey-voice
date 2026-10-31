@@ -314,3 +314,9 @@ obey:
 [no-cd]
 audio-jobs:
     go test -race ./pkg/voiceagent/audiojob ./cmd/obey-voice/cmd -run 'Test(Audio|LocalAudio|CancelOnArtifact|PublishExact|FailureAndCancellation|RejectBeforeInference|TerminalClassifies)'
+
+# Guarded persona native audio contracts and existing Standard regressions.
+# All live model/device checks remain explicit opt-ins.
+[no-cd]
+native-audio:
+    go test -race ./pkg/voiceagent/utterance/... ./pkg/voiceagent/chatmedia/... ./pkg/voiceagent/stt/... ./pkg/voiceagent/brain/... ./pkg/voiceagent/nativeaudio/... ./pkg/voiceagent/pipeline/... ./pkg/voiceagent/session/... ./internal/persona/... ./internal/tui/... ./internal/transcript/...

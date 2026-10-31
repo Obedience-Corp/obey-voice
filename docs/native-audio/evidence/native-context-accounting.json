@@ -1,0 +1,59 @@
+{
+  "runtime": {
+    "version": "0.40.12"
+  },
+  "model": "lfm3-audio:2b",
+  "model_digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+  "source_sha256": "15ddd19f5d3a4fc5aaee759d3a1b5828baec6de633cd848069fc25cf32a3c2f9",
+  "purpose": "Observe configured context/no-truncation enforcement and audio prompt accounting; not meaning or listening qualification.",
+  "cases": [
+    {
+      "mode": "text",
+      "truncate": false,
+      "shift": false,
+      "num_ctx": 2048,
+      "num_predict": 1,
+      "prior_user_bytes": 24576,
+      "audio_count": 0,
+      "http_status": 200,
+      "prompt_eval_count": 4141,
+      "eval_count": 1,
+      "done": true,
+      "done_reason": "length",
+      "reply": "",
+      "elapsed_seconds": 1.949
+    },
+    {
+      "mode": "audio",
+      "truncate": false,
+      "shift": false,
+      "num_ctx": 2048,
+      "num_predict": 1,
+      "prior_user_bytes": 24576,
+      "audio_count": 1,
+      "http_status": 200,
+      "prompt_eval_count": 4172,
+      "eval_count": 1,
+      "done": true,
+      "done_reason": "length",
+      "reply": "9",
+      "elapsed_seconds": 0.952
+    },
+    {
+      "mode": "audio",
+      "truncate": true,
+      "shift": false,
+      "num_ctx": 2048,
+      "num_predict": 1,
+      "prior_user_bytes": 24576,
+      "audio_count": 1,
+      "http_status": 200,
+      "prompt_eval_count": 4172,
+      "eval_count": 1,
+      "done": true,
+      "done_reason": "length",
+      "reply": "9",
+      "elapsed_seconds": 0.022
+    }
+  ]
+}

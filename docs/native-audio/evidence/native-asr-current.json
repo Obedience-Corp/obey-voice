@@ -1,0 +1,28 @@
+{
+  "audio_ref": {
+    "id": "fdc8158aebc935a488991d208fc19130a0d8f612cf7e58c36c13474e9b4fb5cb",
+    "mime": "audio/wav",
+    "sample_rate": 16000,
+    "channels": 1,
+    "sample_count": 49265
+  },
+  "device": "none",
+  "elapsed_ms": 1415,
+  "endpoint": "http://localhost:11434",
+  "model": "lfm3-audio:2b",
+  "qualification": false,
+  "source": "/Users/lancerogers/Dev/AI/My_Tools/workflow/design/obey-voice-native-audio-input/proof/artifacts/addition.wav",
+  "source_sha256": "15ddd19f5d3a4fc5aaee759d3a1b5828baec6de633cd848069fc25cf32a3c2f9",
+  "transcript": {
+    "state": "ready",
+    "text": "What is seven plus eight? Reply with only the answer.",
+    "provider": "ollama",
+    "model": "lfm3-audio:2b"
+  },
+  "transport": "multipart_transcription",
+  "runtime": {
+    "version": "0.40.12"
+  },
+  "model_digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+  "meaning_quality_pass": null
+}
