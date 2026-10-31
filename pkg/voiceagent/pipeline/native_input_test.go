@@ -53,7 +53,7 @@ type nativeInputBrain struct {
 func (b *nativeInputBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
 	b.input = input
 	b.opts = opts
-	b.turns = append(b.turns, brain.Turn{Role: "user", Utterance: opts.Utterance.Clone()})
+	b.turns = append(b.turns, brain.Turn{Role: "user", Utterance: opts.Utterance.Clone(), AudioRetained: opts.AudioRetained})
 	return b.fakeBrain.ThinkStream(ctx, input, opts)
 }
 func (b *nativeInputBrain) History() []brain.Turn { return b.turns }

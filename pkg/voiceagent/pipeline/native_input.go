@@ -18,6 +18,9 @@ func (p *Pipeline) resolveNativeInput(ctx context.Context, input *utterance.Fina
 	metrics.input = input
 	metrics.inputOwner = p.Native.Media
 	metrics.inputPolicy = p.Native
+	if err := p.prepareNativeForeground(ctx); err != nil {
+		return "", err
+	}
 	policy := p.Native
 	required := policy.Controls == "standard" || policy.Transcript == "required"
 	if policy.Controls != "standard" && policy.Controls != "conversation" {
@@ -44,15 +47,10 @@ func (p *Pipeline) resolveNativeInput(ctx context.Context, input *utterance.Fina
 			return "", err
 		}
 	}
-	if policy.RetainAudio {
-		if policy.Store == nil {
-			return "", errors.New("native recording retention has no session media store")
-		}
-		if err := policy.Media.PersistAudio(ctx, *policy.Store, *input.Audio); err != nil {
-			return "", err
-		}
-		metrics.audioRetained = true
+	if policy.RetainAudio && policy.Store == nil {
+		return "", errors.New("native recording retention has no session media store")
 	}
+	metrics.audioRetained = policy.RetainAudio
 	if input.Transcript.State == utterance.Ready {
 		return input.Transcript.Text, nil
 	}
@@ -71,4 +69,40 @@ func (p *Pipeline) releaseUncommittedInput(metrics *turnMetrics) {
 		}
 	}
 	metrics.inputOwner.Release(*metrics.input.Audio)
+}
+
+// Publish recordings only after an admitted input actually belongs to canonical
+// history, and before autosave can write a durable retained reference. Rejected
+// admission/failed pre-dispatch input never creates an unreferenced WAV.
+func (p *Pipeline) persistCanonicalNativeInput(ctx context.Context, metrics *turnMetrics) error {
+	if metrics == nil || metrics.input == nil || !metrics.audioRetained || metrics.retentionWritten {
+		return nil
+	}
+	policy := metrics.inputPolicy
+	if policy == nil || policy.Store == nil || metrics.inputOwner == nil {
+		return errors.New("retained input has no owning media store")
+	}
+	found := false
+	if p.Brain != nil {
+		for _, turn := range p.Brain.History() {
+			if turn.Utterance != nil && turn.Utterance.ID == metrics.input.ID && turn.Utterance.CaptureEpoch == metrics.input.CaptureEpoch && turn.Utterance.Audio != nil && *turn.Utterance.Audio == *metrics.input.Audio {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		return nil
+	}
+	if ctx.Err() != nil {
+		if policy.Lifetime == nil {
+			return ctx.Err()
+		}
+		ctx = policy.Lifetime
+	}
+	if err := metrics.inputOwner.PersistAudio(ctx, *policy.Store, *metrics.input.Audio); err != nil {
+		return err
+	}
+	metrics.retentionWritten = true
+	return nil
 }

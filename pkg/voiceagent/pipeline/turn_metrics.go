@@ -27,12 +27,14 @@ func (p *Pipeline) trackMetrics(m *turnMetrics) func() {
 }
 
 type turnMetrics struct {
-	inputPolicy   *NativePolicy
-	inputOwner    *chatmedia.AudioSession
-	audioRetained bool
-	input         *utterance.Finalized
-	mediaReply    *events.ResponseReady
-	trace         events.TraceContext
+	captionEligible  bool
+	retentionWritten bool
+	inputPolicy      *NativePolicy
+	inputOwner       *chatmedia.AudioSession
+	audioRetained    bool
+	input            *utterance.Finalized
+	mediaReply       *events.ResponseReady
+	trace            events.TraceContext
 	// Host-routed turns may never call the brain. Retain their input boundary
 	// and intended reply independently of whether audio output is enabled.
 	originalInput      string

@@ -98,6 +98,16 @@ func (m *turnMetrics) responseIdentity() *brain.TurnIdentity {
 }
 
 func (p *Pipeline) emitResponse(metrics *turnMetrics, event events.Event) {
+	if _, ready := event.(events.ResponseReady); ready && metrics != nil {
+		ctx := context.Background()
+		if metrics.inputPolicy != nil && metrics.inputPolicy.Lifetime != nil {
+			ctx = metrics.inputPolicy.Lifetime
+		}
+		if err := p.persistCanonicalNativeInput(ctx, metrics); err != nil {
+			metrics.degraded = true
+			p.emit(events.Error{Stage: "session_audio", Message: err.Error()})
+		}
+	}
 	event = p.replyMediaEvent(metrics, event)
 	if metrics != nil {
 		event = events.Attribute(event, metrics.response)

@@ -198,3 +198,100 @@ func TestNewForegroundCancelsCaptionAndMarksItsOriginalInputUnavailable(t *testi
 		t.Fatal("canonical input lost after caption cancellation", err)
 	}
 }
+
+type cancellingCaptionBrain struct {
+	*captionFixtureBrain
+	cancel context.CancelFunc
+}
+
+func (b *cancellingCaptionBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	if _, err := b.captionFixtureBrain.ThinkStream(ctx, input, opts); err != nil {
+		return nil, err
+	}
+	b.cancel()
+	chunks := make(chan string)
+	close(chunks)
+	terminal := make(chan brain.StreamResult, 1)
+	terminal <- brain.StreamResult{Err: context.Canceled}
+	close(terminal)
+	return &brain.Stream{Chunks: chunks, Done: terminal}, nil
+}
+func TestCancelledNativeTurnDoesNotStartOptionalASR(t *testing.T) {
+	f := newCaptionFixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	f.pipeline.Brain = &cancellingCaptionBrain{captionFixtureBrain: f.responder, cancel: cancel}
+	_, _ = f.pipeline.RunTurn(ctx)
+	f.pipeline.Native.captionMu.Lock()
+	ticket := f.pipeline.Native.caption
+	f.pipeline.Native.captionMu.Unlock()
+	if ticket != nil {
+		t.Fatal("cancelled response created a caption producer")
+	}
+	select {
+	case <-f.started:
+		t.Fatal("new ASR started after cancellation")
+	case <-time.After(200 * time.Millisecond):
+	}
+	history := f.responder.History()
+	if len(history) != 1 || history[0].Utterance.Transcript.State != utterance.Unavailable {
+		t.Fatal("cancelled input stayed pending", history)
+	}
+}
+
+type waitingNativeInput struct{ started chan struct{} }
+
+func (*waitingNativeInput) Available() bool { return true }
+func (p *waitingNativeInput) Start(ctx context.Context) (utterance.Session, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	events := make(chan utterance.Event)
+	done := make(chan struct{})
+	close(p.started)
+	go func() { defer close(done); defer close(events); <-ctx.Done() }()
+	return &waitingNativeSession{events: events, cancel: cancel, done: done}, nil
+}
+
+type waitingNativeSession struct {
+	events chan utterance.Event
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func (s *waitingNativeSession) Events() <-chan utterance.Event { return s.events }
+func (s *waitingNativeSession) Close() error                   { s.cancel(); <-s.done; return nil }
+func TestListeningAloneDoesNotCancelOptionalCaption(t *testing.T) {
+	f := newCaptionFixture(t)
+	if _, err := f.pipeline.RunTurn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	listener := &waitingNativeInput{started: make(chan struct{})}
+	f.pipeline.Input = listener
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() { _, err := f.pipeline.RunTurn(ctx); finished <- err }()
+	select {
+	case <-listener.started:
+	case <-ctx.Done():
+		t.Fatal("next listen did not start")
+	}
+	select {
+	case <-f.stopped:
+		t.Fatal("mere listening canceled the caption")
+	default:
+	}
+	close(f.release)
+	select {
+	case update := <-f.updates:
+		if update.Transcript.State != utterance.Ready {
+			t.Fatal(update)
+		}
+	case <-ctx.Done():
+		t.Fatal("caption could not finish while listening")
+	}
+	cancel()
+	if err := <-finished; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}

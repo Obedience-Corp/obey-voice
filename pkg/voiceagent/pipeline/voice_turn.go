@@ -30,12 +30,14 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	p.incActiveTurn()
 	defer p.decActiveTurn()
 	p.bindBrainInfo()
-	if err := p.prepareNativeForeground(ctx); err != nil {
-		return "", err
-	}
 	metrics := newTurnMetrics()
 	defer p.releaseUncommittedInput(metrics)
-	defer p.scheduleNativeCaption(metrics)
+	defer func() { p.finishNativeCaption(ctx, metrics) }()
+	defer func() {
+		if err := p.persistCanonicalNativeInput(ctx, metrics); err != nil {
+			p.emit(events.Error{Stage: "session_audio", Message: err.Error()})
+		}
+	}()
 	defer p.trackMetrics(metrics)()
 	turn := p.newTurnConductor(metrics, ctx)
 	ctx = events.WithTrace(ctx, metrics.trace)
@@ -291,6 +293,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	if p.OnTurn != nil {
 		p.OnTurn()
 	}
+	metrics.captionEligible = !interrupted && !metrics.degraded && ctx.Err() == nil
 
 	return original, nil
 }
@@ -347,6 +350,11 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 			te := stt.ToTyped(event)
 			switch te.Kind {
 			case stt.KindPhase:
+				if p.Native != nil && te.Phase == "hearing" {
+					if err := p.prepareNativeForeground(ctx); err != nil {
+						return "", err
+					}
+				}
 				if te.Phase == "transcribing" {
 					turn.to(TurnTranscribing)
 				}
