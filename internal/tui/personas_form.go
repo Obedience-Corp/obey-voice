@@ -29,6 +29,13 @@ const (
 	formRowVoice
 	formRowVoiceLanguage
 	formRowTier
+	formRowAudioMode
+	formRowAudioModel
+	formRowAudioEndpoint
+	formRowAudioVoice
+	formRowAudioControls
+	formRowAudioTranscript
+	formRowAudioRetain
 	formRowDirectory
 	formRowPrompt
 	formRowCount
@@ -42,7 +49,7 @@ func isStackRow(row int) bool {
 
 // isCycleRow reports the rows ←/→ cycles: the stack rows and the directory.
 func isCycleRow(row int) bool {
-	return isStackRow(row) || row == formRowDirectory
+	return isStackRow(row) || row == formRowDirectory || isAudioCycleRow(row)
 }
 
 // stackDefaultLabel is provider index 0: inherit the app-level default.
@@ -335,6 +342,10 @@ func isPersonaFormSaveKey(key string) bool {
 }
 
 func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
+	if msg.String() == "ctrl+g" {
+		return m, m.startAudioSetup()
+	}
+	m.cancelAudioSetup()
 	if m.promptOpen {
 		return m.updatePromptEditor(msg)
 	}
@@ -343,6 +354,10 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 	case isPersonaFormSaveKey(key):
 		return m.submitForm()
 	case key == "p" && m.formRow == formRowVoice:
+		if m.audioDraft.value.Mode == persona.AudioNative {
+			m.message = "Native voice uses quiet setup; Standard preview is inactive"
+			return m, nil
+		}
 		if m.preview.previewing != "" {
 			m.preview.cancel()
 			m.message = "Preview stopped"
@@ -393,6 +408,12 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 
 	var cmd tea.Cmd
 	switch {
+	case m.formRow == formRowAudioModel:
+		m.audioDraft.model, cmd = m.audioDraft.model.Update(msg)
+	case m.formRow == formRowAudioEndpoint:
+		m.audioDraft.endpoint, cmd = m.audioDraft.endpoint.Update(msg)
+	case m.formRow == formRowAudioVoice:
+		m.audioDraft.voice, cmd = m.audioDraft.voice.Update(msg)
 	case m.formRow == formRowName:
 		m.nameInput, cmd = m.nameInput.Update(msg)
 	case m.formRow == formRowBrainModel && m.brainModels.custom:
@@ -441,6 +462,9 @@ func (m personasModel) openPrompt() (personasModel, tea.Cmd) {
 	m.nameInput.Blur()
 	m.brainModelInput.Blur()
 	m.directoryInput.Blur()
+	m.audioDraft.model.Blur()
+	m.audioDraft.endpoint.Blur()
+	m.audioDraft.voice.Blur()
 	// Ensure a usable draft: an empty prompt body gets the seed identity.
 	if strings.TrimSpace(m.promptTA.Value()) == "" {
 		if text := m.resolveSeedPrompt(); text != "" {
@@ -466,6 +490,10 @@ func (m personasModel) closePrompt(note string) (personasModel, tea.Cmd) {
 
 // cycleStackRow applies ←/→ to the model & voice row under the cursor.
 func (m *personasModel) cycleStackRow(delta int) {
+	if isAudioCycleRow(m.formRow) {
+		m.cycleAudioRow(delta)
+		return
+	}
 	switch m.formRow {
 	case formRowBrainProvider:
 		list := stackBrainProviders()
@@ -540,6 +568,12 @@ func (m *personasModel) setFormRow(row int) {
 	m.brainModelInput.Blur()
 	m.directoryInput.Blur()
 	switch {
+	case row == formRowAudioModel:
+		m.audioDraft.model.Focus()
+	case row == formRowAudioEndpoint:
+		m.audioDraft.endpoint.Focus()
+	case row == formRowAudioVoice:
+		m.audioDraft.voice.Focus()
 	case row == formRowName:
 		m.nameInput.Focus()
 	case row == formRowBrainModel && m.brainModels.custom:
@@ -572,6 +606,7 @@ func (m *personasModel) formTTS() persona.TTS {
 
 // prefillStack seeds the stack step from a profile (nil = defaults).
 func (m *personasModel) prefillStack(p *persona.Profile) {
+	m.prefillAudio(p)
 	// The Model row always opens on the picker; "(custom)" and anything typed
 	// under it are chosen per form, never inherited from the last one.
 	m.brainModels.clearCustom()
@@ -609,6 +644,7 @@ func (m *personasModel) prefillStack(p *persona.Profile) {
 }
 
 func (m *personasModel) cancelForm() {
+	m.cancelAudioSetup()
 	m.preview.close()
 	m.formMode = ""
 	m.formRow = formRowName
@@ -777,13 +813,23 @@ func (m personasModel) submitForm() (personasModel, tea.Cmd) {
 		directory = normalized
 	}
 
+	audio := m.formAudio()
+	if err := audio.Validate(); err != nil {
+		m.setFormRow(formRowAudioMode)
+		m.message = err.Error()
+		return m, nil
+	}
 	switch m.formMode {
 	case "create":
 		create := m.createPersona
 		if create == nil {
 			create = persona.CreateAndUseWithOpts
 		}
+		if audio != nil && audio.Mode == persona.AudioNative {
+			create = persona.CreateWithOpts
+		}
 		p, err := create(m.cfg, persona.CreateOpts{
+			Audio:             audio,
 			StartingDirectory: directory,
 			DisplayName:       name,
 			SystemPrompt:      prompt,
@@ -827,6 +873,12 @@ func (m personasModel) submitForm() (personasModel, tea.Cmd) {
 		if m.saveStack != nil {
 			if _, err := m.saveStack(m.editID, m.formBrain(), m.formTTS()); err != nil {
 				m.message = fmt.Sprintf("Failed to save model/voice: %v", err)
+				return m, nil
+			}
+		}
+		if audio != nil {
+			if _, err := persona.UpdateAudio(m.editID, audio); err != nil {
+				m.message = "Failed to save audio: " + err.Error()
 				return m, nil
 			}
 		}

@@ -19,6 +19,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--native-audio', action='store_true', help='Quiet native persona setup fixture; no device playback')
 parser.add_argument('--fresh', action='store_true', help='Start without config.yaml or setup progress')
 parser.add_argument('--voice-preview', action='store_true', help='Serve test tones for persona previews; voice broken fails, slow delays')
 parser.add_argument("--brain-error", action="store_true", help="Return a provider error for requests containing trigger failure")
@@ -43,9 +44,23 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
     def do_GET(self):
+        if args.native_audio:
+            if self.path == '/api/version': self.respond({'version': 'native-ui-fixture'}); return
+            if self.path == '/api/tags': self.respond({'models': [{'name': 'lfm3-audio:2b', 'digest': 'a' * 64}]}); return
+            if self.path == '/v1/models': self.respond({'data': [{'id': 'lfm3-audio:2b'}]}); return
+            if self.path == '/v1/audio/voices': self.send_error(404); return
         self.respond({'models': [{'name': 'desktop-test', 'model': 'desktop-test'}]})
     def do_POST(self):
         request = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+        if args.native_audio:
+            with (fixture_root / 'native-requests.jsonl').open('a') as log:
+                log.write(json.dumps({'path': self.path, 'request': request}) + '\n')
+            if self.path == '/api/show':
+                self.respond({'capabilities': ['completion', 'audio', 'speech', 'tools'], 'voices': ['female', 'male']}); return
+            if self.path == '/v1/audio/speech':
+                self.send_response(200); self.send_header('Content-Type', 'application/octet-stream'); self.end_headers(); self.wfile.write(b'\x00\x00\x01\x00'); return
+            if self.path == '/api/chat':
+                self.respond({'model': 'lfm3-audio:2b', 'message': {'role': 'assistant', 'content': '15'}, 'done': True}); return
         if args.images:
             with (fixture_root / 'image-requests.jsonl').open('a') as log:
                 log.write(json.dumps(request) + '\n')
@@ -135,7 +150,7 @@ if args.images:
     info.update(CFBundleIdentifier='com.obedience.voice-agent.images-test', CFBundleName='Obey Voice Images Test', CFBundleDisplayName='Obey Voice Images Test')
 if args.agent_images:
     info.update(CFBundleIdentifier='com.obedience.voice-agent.agent-images-test', CFBundleName='Obey Voice Agent Images Test', CFBundleDisplayName='Obey Voice Agent Images Test')
-if args.group_participation or args.images:
+if args.group_participation or args.images or args.native_audio:
     launcher = fixture_app / 'Contents/MacOS/fixture-launcher'
     # A Mach-O launcher also keeps resume text-only; LaunchServices does not
     # reliably launch a shell script as CFBundleExecutable.

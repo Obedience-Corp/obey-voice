@@ -27,9 +27,8 @@ func (m personasModel) View() string {
 	}
 
 	if m.formMode != "" {
-		// Form is never pad-truncated: the prompt field was easy to clip when we
-		// reused the list body height budget.
-		for _, line := range m.formLines() {
+		// Keep the active field and footer reachable as optional audio fields expand.
+		for _, line := range m.visibleFormLines() {
 			b.WriteString(ansi.Truncate(line, width, "…"))
 			b.WriteString("\n")
 		}
@@ -136,6 +135,7 @@ func (m personasModel) formLines() []string {
 	}
 	lines = append(lines, formBox(nameTitle, []string{m.nameInput.View()}, boxW, m.formRow == formRowName)...)
 	lines = append(lines, formBox(stackTitle, m.stackLines(), boxW, isStackRow(m.formRow))...)
+	lines = append(lines, formBox(headerStyle.Render("Per-persona audio"), m.audioLines(), boxW, isAudioRow(m.formRow))...)
 	lines = append(lines, formBox(directoryTitle, m.directoryLines(), boxW, m.formRow == formRowDirectory)...)
 	lines = append(lines, formBox(promptTitle, m.promptSummaryLines(), boxW, m.formRow == formRowPrompt)...)
 	return lines

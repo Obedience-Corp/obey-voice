@@ -1,0 +1,8 @@
+{"protocol":"obey-transcript/v2","job_id":"quiet-filler-0","seq":0,"type":"accepted","provider":"parakeet","model_id":"tdt-0.6b-v2","model_revision":"157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad","timing":"word","text_policy":"verbatim","timing_method":"parakeet-tdt-token-duration","timing_validity":"estimated","language":"en","runtime":"sherpa-onnx/1.13.8"}
+{"protocol":"obey-transcript/v2","job_id":"quiet-filler-0","seq":1,"type":"progress","consumed_us":5000000,"duration_us":30000000}
+{"protocol":"obey-transcript/v2","job_id":"quiet-filler-0","seq":2,"type":"progress","consumed_us":10000000,"duration_us":30000000}
+{"protocol":"obey-transcript/v2","job_id":"quiet-filler-0","seq":3,"type":"progress","consumed_us":15000000,"duration_us":30000000}
+{"protocol":"obey-transcript/v2","job_id":"quiet-filler-0","seq":4,"type":"progress","consumed_us":20000000,"duration_us":30000000}
+{"protocol":"obey-transcript/v2","job_id":"quiet-filler-0","seq":5,"type":"progress","consumed_us":25000000,"duration_us":30000000}
+{"protocol":"obey-transcript/v2","job_id":"quiet-filler-0","seq":6,"type":"progress","consumed_us":30000000,"duration_us":30000000}
+{"protocol":"obey-transcript/v2","job_id":"quiet-filler-0","seq":7,"type":"completed","duration_us":30000000,"segment_count":0,"outcome":"no_speech"}

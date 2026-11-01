@@ -73,8 +73,17 @@ func setPersonaInactive(id string, inactive bool) (*personaResultJSON, error) {
 // default. Normal loads still seed shipped profiles and resolve migrations.
 func loadPersonaManagementConfig() (*config.Config, error) {
 	cfg, err := config.Load()
-	if errors.Is(err, persona.ErrInactive) {
+	if errors.Is(err, persona.ErrInactive) || errors.Is(err, persona.ErrNativeAudioUnavailable) {
 		return config.LoadRaw()
 	}
 	return cfg, err
+}
+
+// Persona repair/setup must remain reachable even when the saved default is a
+// native draft that ordinary conversation startup cannot yet activate.
+func loadCommandConfig(cmd *cobra.Command) (*config.Config, error) {
+	if cmd.Parent() != nil && cmd.Parent().Name() == "persona" {
+		return loadPersonaManagementConfig()
+	}
+	return config.Load()
 }

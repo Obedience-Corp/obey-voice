@@ -12,6 +12,7 @@ package voiceagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"log"
@@ -28,6 +29,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 )
 
 // Agent is a constructed voice pipeline.
@@ -67,11 +69,18 @@ type Options struct {
 	// An injected Brain assembled its prompts before New was called, so Env and
 	// PromptsDir cannot reach it; New rejects those combinations rather than
 	// accept an option it would ignore.
-	Brain       brain.Provider
-	STT         stt.Provider
-	TTS         tts.Provider
-	TTSFallback tts.Provider
-	Player      audio.Engine
+	Brain brain.Provider
+	// Input replaces recognition with finalized modality-aware input. InputFactory
+	// constructs that provider over the same finalized capture/VAD owner after
+	// device setup. Neither path constructs a Standard recognizer. These fields
+	// are mutually exclusive with each other and STT; injected lifetimes remain
+	// the host's responsibility.
+	Input        utterance.Provider
+	InputFactory func(audio.FrameSource, *audio.VAD) (utterance.Provider, error)
+	STT          stt.Provider
+	TTS          tts.Provider
+	TTSFallback  tts.Provider
+	Player       audio.Engine
 
 	// VAD replaces the config-built voice detector. Any implementation of
 	// pipeline.VoiceDetector works — a host feeding audio from a browser or a
@@ -158,6 +167,22 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	}
 	if opts.Events == nil {
 		return nil, nil, fmt.Errorf("voiceagent: Events is required")
+	}
+	inputChoices := 0
+	if opts.Input != nil {
+		inputChoices++
+	}
+	if opts.InputFactory != nil {
+		inputChoices++
+	}
+	if opts.STT != nil {
+		inputChoices++
+	}
+	if inputChoices > 1 {
+		return nil, nil, fmt.Errorf("voiceagent: Input, InputFactory and STT are mutually exclusive")
+	}
+	if opts.TextOnly && opts.InputFactory != nil {
+		return nil, nil, fmt.Errorf("voiceagent: InputFactory requires capture mode")
 	}
 	// Env and PromptsDir only reach a brain New builds from Config; an injected
 	// Brain assembled its prompts before New was called. Rejecting the
@@ -398,7 +423,28 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 			}
 		}
 
-		if opts.STT != nil {
+		if opts.Input != nil {
+			p.Input = opts.Input
+		} else if opts.InputFactory != nil {
+			var source audio.FrameSource
+			if localCapture != nil {
+				endable := audio.NewFinalizable(localCapture)
+				source = endable
+				p.Utterance = endable
+			} else {
+				source, _ = opts.Capture.(audio.FrameSource)
+			}
+			if source == nil {
+				cleanup()
+				return nil, nil, fmt.Errorf("voiceagent: InputFactory requires a frame-capable capture")
+			}
+			input, err := opts.InputFactory(source, sttVAD)
+			if err != nil || input == nil || !input.Available() {
+				cleanup()
+				return nil, nil, fmt.Errorf("init finalized input: %w", errors.Join(err, errors.New("input must be available")))
+			}
+			p.Input = input
+		} else if opts.STT != nil {
 			p.STT = opts.STT
 		} else {
 			if localCapture == nil {
@@ -421,6 +467,8 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 			p.STT = sttProvider
 			p.Utterance = endable
 		}
+	} else if opts.Input != nil {
+		p.Input = opts.Input
 	} else if opts.STT != nil {
 		// A caller that injects an STT provider in text mode means it: the
 		// provider reads from somewhere other than a local microphone, which is

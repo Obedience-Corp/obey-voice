@@ -52,6 +52,7 @@ with.`,
 	cmd.Flags().String("voice", "", "Voice id for the effective TTS provider (empty clears to the app default)")
 	cmd.Flags().String("tier", "", "Qwen3-TTS model tier: 0.6b or 1.7b (empty inherits the app default)")
 	cmd.Flags().Bool("json", false, "Emit JSON")
+	addPersonaAudioFlags(cmd)
 	cmd.MarkFlagsMutuallyExclusive("prompt", "prompt-file")
 	return cmd
 }
@@ -99,6 +100,10 @@ func applyPersonaEdit(cmd *cobra.Command, id string) (*personaResultJSON, error)
 		}
 	}
 	brain, tts, stackPaths, err := mergePersonaStack(cmd, cfg, p)
+	if err != nil {
+		return nil, err
+	}
+	audio, audioPaths, err := mergePersonaAudio(cmd, p.Audio)
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +174,12 @@ func applyPersonaEdit(cmd *cobra.Command, id string) (*personaResultJSON, error)
 			return nil, withChanged(err, changed)
 		}
 		changed = append(changed, stackPaths...)
+	}
+	if len(audioPaths) > 0 {
+		if _, err := persona.UpdateAudio(p.ID, audio); err != nil {
+			return nil, withChanged(err, changed)
+		}
+		changed = append(changed, audioPaths...)
 	}
 	if promptChanged {
 		if _, err := persona.UpdateSystemPrompt(p.ID, promptBody); err != nil {

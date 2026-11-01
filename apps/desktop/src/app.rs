@@ -5,6 +5,7 @@ mod events;
 pub(crate) mod media;
 mod media_view;
 mod obey_catalog;
+mod persona_audio;
 mod persona_directory;
 mod persona_preview;
 mod resident;

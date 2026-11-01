@@ -2,6 +2,7 @@ package personaruntime
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 
@@ -25,6 +26,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	generation := s.generation
 	p := s.opts.Pipeline
 	oldBrain, scope := p.Brain, p.ConversationScope()
+	outgoingNative := s.nativeCandidate
 	if p.ConversationRetired() {
 		return events.PersonaSelection{}, errors.New("persona selection belongs to a closed conversation")
 	}
@@ -35,6 +37,10 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	var nextBrain, worker brain.Provider
 	var voice *voiceagent.TTSSet
 	var prepared *pipeline.PreparedBrainReplacement
+	var inputPrepared *pipeline.PreparedInputReplacement
+	var native *voiceagent.NativeCandidate
+	var inputCleanup func()
+	token := rand.Text()
 	var turns []brain.Turn
 	var err, workerErr, durabilityErr error
 	unchanged, installed := false, false
@@ -42,8 +48,18 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 		if prepared != nil {
 			_ = prepared.Discard()
 		}
+		if inputPrepared != nil {
+			inputPrepared.Discard()
+		}
 		if !installed {
-			closeBrain(nextBrain)
+			if native != nil {
+				_ = native.Close()
+			} else {
+				closeBrain(nextBrain)
+			}
+			if inputCleanup != nil {
+				inputCleanup()
+			}
 			closeBrain(worker)
 			voice.Close()
 		}
@@ -58,6 +74,9 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			}
 			previous = s.Snapshot()
 			currentScope := s.opts.Pipeline.ConversationScope()
+			if s.opts.Native != nil && (!currentScope.Valid() || currentScope.SessionID != s.opts.SessionID) {
+				return errors.New("native selection requires a live matching conversation scope")
+			}
 			if s.opts.UseDefaults && reason == "response_boundary" && id == s.opts.Initial.PersonaID {
 				binding, err = persona.ResolveDefaultsBinding(s.opts.Base)
 				if err != nil {
@@ -65,7 +84,11 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				}
 			} else {
 				var issues []persona.CatalogIssue
-				binding, issues, err = s.opts.Catalog.ResolveBindingWithIssues(s.opts.Base, id)
+				if s.opts.Native != nil {
+					binding, issues, err = s.opts.Catalog.ResolveCandidateBindingWithIssues(s.opts.Base, id)
+				} else {
+					binding, issues, err = s.opts.Catalog.ResolveBindingWithIssues(s.opts.Base, id)
+				}
 				s.warnCatalogIssues(issues)
 			}
 			if err != nil {
@@ -115,7 +138,56 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if unchanged {
 				return nil
 			}
-			nextBrain, err = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewBrain(ctx, cfg) }, closeBrain)
+			if s.opts.Native != nil {
+				if err = p.QuiesceNative(ctx); err != nil {
+					return err
+				}
+				inputPrepared, err = p.PrepareInputReplacement(ctx, p.InputSnapshot(s.opts.Native.TextOnly))
+				if err != nil {
+					return err
+				}
+			}
+			if binding.AudioConfig().Mode == persona.AudioNative {
+				if s.opts.Native == nil {
+					return persona.ErrNativeAudioUnavailable
+				}
+				native, err = prepareResource(ctx, func() (*voiceagent.NativeCandidate, error) {
+					return s.opts.Native.Prepare(ctx, cfg, binding.AudioConfig(), next, s.captionPublisher(token, next))
+				}, func(c *voiceagent.NativeCandidate) {
+					if c != outgoingNative {
+						_ = c.Close()
+					}
+				})
+				if err != nil {
+					return err
+				}
+				if native != nil && native == outgoingNative {
+					native = nil
+					return errors.New("native preparation returned the live binding instead of a fresh candidate")
+				}
+				if native == nil || native.Brain == nil || native.Voice == nil || native.Policy == nil {
+					return errors.New("native candidate is incomplete")
+				}
+				if err := native.BindScope(scope); err != nil {
+					return err
+				}
+				if native.PreparedConfig() != nil {
+					mode := binding.AudioConfig()
+					if err := native.ValidateBinding(cfg, mode.Controls, mode.Transcript, mode.RetainAudio); err != nil {
+						return err
+					}
+				}
+				if s.opts.Native.Authorize == nil {
+					return ErrNativeUnqualified
+				}
+				if err = s.opts.Native.Authorize(ctx, binding, native); err != nil {
+					return err
+				}
+				nextBrain = native.Brain
+				voice = native.Voice
+			} else {
+				nextBrain, err = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewBrain(ctx, cfg) }, closeBrain)
+			}
 			if err != nil {
 				return fmt.Errorf("prepare persona brain: %w", err)
 			}
@@ -134,6 +206,24 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if canonical, ok := oldBrain.(brain.CanonicalHistoryProvider); ok {
 				turns = canonical.CanonicalHistory()
 			}
+			if native != nil {
+				nativeView := turns
+				if source, ok := oldBrain.(brain.ContinuityTransferProvider); ok {
+					nativeView = source.ContinuitySnapshot().Working
+				}
+				if err := brain.ValidateNativeProjection(nativeView); err != nil {
+					return err
+				}
+			}
+			if native == nil && s.opts.Native != nil {
+				textView := turns
+				if source, ok := oldBrain.(brain.ContinuityTransferProvider); ok {
+					textView = source.ContinuitySnapshot().Working
+				}
+				if err := brain.ValidateTextProjection(textView); err != nil {
+					return fmt.Errorf("native history needs a ready transcript or explicit summary before Standard mode: %w", err)
+				}
+			}
 			if source, ok := oldBrain.(brain.ContinuityTransferProvider); ok {
 				if target, ok := nextBrain.(brain.ContinuityTransferProvider); ok {
 					if err := target.ImportContinuity(source.ContinuitySnapshot()); err != nil {
@@ -145,7 +235,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			} else if err := projection.ImportHistory(turns); err != nil {
 				return fmt.Errorf("project conversation: %w", err)
 			}
-			if s.opts.Voices != nil {
+			if s.opts.Voices != nil && native == nil {
 				voice, err = prepareResource(ctx, func() (*voiceagent.TTSSet, error) { return s.opts.NewVoice(ctx, cfg) }, func(v *voiceagent.TTSSet) { v.Close() })
 				if err != nil {
 					return fmt.Errorf("prepare persona voice: %w", err)
@@ -155,6 +245,19 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				}
 				if voice.FallbackWarning != nil || voice.VoiceNotice != nil {
 					return fmt.Errorf("persona voice cannot be bound as configured: %w", errors.Join(voice.FallbackWarning, voice.VoiceNotice))
+				}
+			}
+			if native != nil && s.opts.Voices == nil {
+				return errors.New("native selection requires managed voice replacement")
+			}
+			if inputPrepared != nil {
+				var nextInput pipeline.InputBinding
+				nextInput, inputCleanup, err = s.opts.Native.PrepareInput(ctx, cfg, native)
+				if err != nil {
+					return err
+				}
+				if err = inputPrepared.Stage(nextInput); err != nil {
+					return err
 				}
 			}
 			if p.Agency != nil {
@@ -187,6 +290,26 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				}
 				return nil
 			}
+			if native != nil {
+				if err := native.ValidateScope(p.ConversationScope()); err != nil {
+					return err
+				}
+				if err := native.ValidatePrepared(ctx); err != nil {
+					return err
+				}
+			}
+			if inputPrepared != nil {
+				if err := inputPrepared.Validate(); err != nil {
+					return err
+				}
+			}
+			s.publicationMu.Lock()
+			publicationLocked := true
+			defer func() {
+				if publicationLocked {
+					s.publicationMu.Unlock()
+				}
+			}()
 			next.Revision = previous.Revision + 1
 			persist := func() error {
 				if err := ctx.Err(); err != nil {
@@ -213,6 +336,15 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if err != nil {
 				return fmt.Errorf("commit persona selection: %w", err)
 			}
+			if inputPrepared != nil {
+				inputPrepared.Publish()
+			}
+			oldNative, oldInputCleanup := s.nativeCandidate, s.inputCleanup
+			s.nativeCandidate, s.inputCleanup = native, inputCleanup
+			if native != nil {
+				native.TransferBrainOwnership()
+			}
+			s.bindingToken = token
 			installed = true
 			s.opts.Base.ConversationDirectories = cfg.ConversationDirectories.Clone()
 			if reason != "response_boundary" {
@@ -222,6 +354,14 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			s.binding, s.selected = binding, next
 			s.mu.Unlock()
 			s.requiresSelection = false
+			s.publicationMu.Unlock()
+			publicationLocked = false
+			if oldNative != nil {
+				_ = oldNative.Close()
+			}
+			if oldInputCleanup != nil {
+				oldInputCleanup()
+			}
 			if p.Events != nil {
 				p.Events.Emit(next)
 			}

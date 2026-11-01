@@ -97,20 +97,22 @@ func (m *settingsModel) commitObeyEdit(key, value string) {
 		m.message = "Obey setting was not saved: " + err.Error()
 		return
 	}
-	m.cancelObeyCatalog()
-	m.obeyCatalog = nil
-	switch key {
-	case "obey_provider":
-		m.cfg.ObeyProvider = value
-	case "obey_model":
-		m.cfg.ObeyModel = value
-	case "obey_camp":
-		m.cfg.ObeyCamp = value
-	case "obey_socket":
-		m.cfg.ObeySocket = value
-	case "obey_tool_policy":
-		m.cfg.ObeyToolPolicy = value
-	}
+	m.keepFocus(func() {
+		m.cancelObeyCatalog()
+		m.obeyCatalog = nil
+		switch key {
+		case "obey_provider":
+			m.cfg.ObeyProvider = value
+		case "obey_model":
+			m.cfg.ObeyModel = value
+		case "obey_camp":
+			m.cfg.ObeyCamp = value
+		case "obey_socket":
+			m.cfg.ObeySocket = value
+		case "obey_tool_policy":
+			m.cfg.ObeyToolPolicy = value
+		}
+	})
 	m.message = "Obey setting saved; applies to the next conversation"
 }
 
@@ -143,9 +145,10 @@ func (m settingsModel) receiveObeyCatalog(msg obeyCatalogMsg) settingsModel {
 	if msg.seq != m.obeyCatalogSeq || m.cfg.BrainProvider != "obey" || route.Socket != m.cfg.ObeySocket || route.Provider != m.cfg.ObeyProvider || route.Model != m.cfg.ObeyModel || route.ToolPolicy != m.cfg.ObeyToolPolicy {
 		return m
 	}
-	m.obeyCatalogLoading = false
-	m.obeyCatalog = &route
-	m.clampCursor()
+	m.keepFocus(func() {
+		m.obeyCatalogLoading = false
+		m.obeyCatalog = &route
+	})
 	return m
 }
 

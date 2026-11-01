@@ -16,6 +16,7 @@ import (
 
 func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.CancelFunc, stream *brain.Stream, allowBargeIn bool, metrics *turnMetrics, turn *turnConductor, repair *promiseRepairState) (string, bool, error) {
 	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	// loopDone closes when this function returns — the moment the loop stops
 	// draining playbackEvents. Playback watchers select on it so their sends
@@ -29,7 +30,28 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// Two narrow upstream stages feed the turn loop: the model observer forwards
 	// brain chunks (stamping first-chunk metrics), then the segmenter turns that
 	// chunk stream into voice-ready sentences. Both are testable in isolation.
-	streamedChunks, tokenTick, observeDone := p.observeStream(streamCtx, stream, metrics)
+	var streamedChunks <-chan string
+	var tokenTick <-chan struct{}
+	var observeDone <-chan struct{}
+	if p.Native != nil {
+		reply, result, err := p.collectNativeReply(streamCtx, cancelTurn, stream, metrics)
+		if err != nil {
+			return reply, false, err
+		}
+		chunks := make(chan string, 1)
+		chunks <- reply
+		close(chunks)
+		terminal := make(chan brain.StreamResult, 1)
+		terminal <- result
+		close(terminal)
+		stream = &brain.Stream{Chunks: chunks, Done: terminal}
+		streamedChunks = chunks
+		finished := make(chan struct{})
+		close(finished)
+		observeDone = finished
+	} else {
+		streamedChunks, tokenTick, observeDone = p.observeStream(streamCtx, stream, metrics)
+	}
 	// Join the observer before returning: it stamps firstModelChunk, which the
 	// caller reads via snapshot() in finish(). Cancel first so the goroutine
 	// unblocks, then wait for it to exit. cancel is idempotent — the barge-in and
@@ -828,7 +850,12 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 // ResponseDelta events along the way, and returns the full accumulated text.
 // It waits on stream.Done for the terminal error so a failed stream surfaces
 // even after partial chunks were displayed.
-func (p *Pipeline) collectTextStream(ctx context.Context, stream *brain.Stream, metrics *turnMetrics) (string, string, error) {
+func (p *Pipeline) collectTextStream(ctx context.Context, cancel context.CancelFunc, stream *brain.Stream, metrics *turnMetrics) (string, string, error) {
+	if p.Native != nil {
+		reply, result, err := p.collectNativeReply(ctx, cancel, stream, metrics)
+		metrics.route.Tier, metrics.route.ReasonCode = result.RouteTier, result.RouteReasonCode
+		return strings.TrimSpace(reply), result.Route, err
+	}
 	out, _, done := p.observeStream(ctx, stream, metrics)
 
 	var b strings.Builder

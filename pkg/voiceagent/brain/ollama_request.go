@@ -30,6 +30,11 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 		Think:     o.resolvedThink(),
 		Options:   o.requestOptions(),
 	}
+	if o.audioResolver != nil {
+		truncate, shift := false, false
+		req.Truncate = &truncate
+		req.Shift = &shift
+	}
 	return req
 }
 
@@ -86,6 +91,9 @@ func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 // before any response is delivered. Required routing tools return a compatibility
 // error when unsupported. Legacy tools and thinking retain their logged fallback.
 func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
+	if o.audioProjectionBlocked {
+		return ErrAudioProjection
+	}
 	budget := workerBudgetFromContext(ctx)
 	parseRetried := false
 	parseRetryPending := false

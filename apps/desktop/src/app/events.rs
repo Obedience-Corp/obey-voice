@@ -21,6 +21,7 @@ impl VoiceApp {
                         continue;
                     }
                     self.persona_preview_lost(&err);
+                    self.stop_persona_audio_check();
                     self.connected = false;
                     self.setup.busy = None;
                     self.setup.invalidate();
@@ -160,6 +161,10 @@ impl VoiceApp {
             self.complete_persona_directory(id, purpose, result);
             return;
         }
+        if matches!(purpose, Purpose::PersonaAudioCheck) {
+            self.complete_persona_audio_check(id, result);
+            return;
+        }
         if matches!(purpose, Purpose::PersonaPreview) {
             self.complete_persona_preview(id, result);
             return;
@@ -191,7 +196,8 @@ impl VoiceApp {
             | Purpose::Setup(_)
             | Purpose::PersonaDirectories
             | Purpose::PersonaBrowse
-            | Purpose::PersonaPreview => {
+            | Purpose::PersonaPreview
+            | Purpose::PersonaAudioCheck => {
                 unreachable!()
             }
             Purpose::Sessions => self.sessions = serde_json::from_value(v).unwrap_or_default(),
@@ -258,8 +264,10 @@ impl VoiceApp {
             }
             Purpose::PersonaLoad => {
                 self.stop_persona_preview();
+                self.stop_persona_audio_check();
                 let p = &v["persona"];
                 self.persona_form = PersonaForm {
+                    audio: crate::persona_audio::AudioDraft::load(&p["audio"]),
                     starting_directory: string(p, "starting_directory"),
                     original_directory: string(p, "starting_directory"),
                     id: string(p, "id"),

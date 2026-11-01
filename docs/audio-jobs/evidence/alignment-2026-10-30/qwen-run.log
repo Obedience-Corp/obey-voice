@@ -1,0 +1,13 @@
+initial-filler 0 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+quiet-filler 0 {'oracle': 'measured', 'parakeet': 'no_transcript', 'native': 'measured'}
+meaningful-like-pauses 0 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+meaningful-like-pauses 1 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+meaningful-like-pauses 2 {'oracle': 'no_transcript', 'parakeet': 'no_transcript', 'native': 'measured'}
+later-background 0 {'oracle': 'no_transcript', 'parakeet': 'measured', 'native': 'measured'}
+later-background 1 {'oracle': 'no_transcript', 'parakeet': 'no_transcript', 'native': 'measured'}
+later-background 2 {'oracle': 'no_transcript', 'parakeet': 'measured', 'native': 'measured'}
+later-background 3 {'oracle': 'no_transcript', 'parakeet': 'no_transcript', 'native': 'measured'}
+heldout-introduction 0 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+heldout-repeats 0 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+heldout-repeats 1 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}
+heldout-repeats 2 {'oracle': 'measured', 'parakeet': 'measured', 'native': 'measured'}

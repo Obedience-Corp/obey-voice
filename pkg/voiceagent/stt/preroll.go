@@ -85,27 +85,31 @@ func (s *vadSegmenter) HasSegments() bool { return s.vad.IsSpeechDetected() }
 // or after a Reset the detector's offset basis did not share), it returns the
 // segment unchanged rather than splicing misaligned audio.
 func (s *vadSegmenter) NextSegment() ([]float32, bool) {
+	samples, _, ok := s.NextSegmentRange()
+	return samples, ok
+}
+
+// NextSegmentRange preserves the source offset of the returned pre-roll and
+// segment. Native input uses this to retain pauses and capture provenance.
+func (s *vadSegmenter) NextSegmentRange() ([]float32, int, bool) {
 	if s.vad.IsEmpty() {
-		return nil, false
+		return nil, 0, false
 	}
 	seg, start := s.vad.FrontSegment()
 	s.vad.Pop()
-
 	if s.preRoll <= 0 || len(seg) == 0 {
-		return seg, true
+		return seg, start, true
 	}
-
 	lo := max(start-s.preRoll, s.windowBase)
 	hi := min(start, s.windowBase+len(s.window))
 	if start < s.windowBase || hi <= lo {
-		return seg, true
+		return seg, start, true
 	}
-
 	pre := s.window[lo-s.windowBase : hi-s.windowBase]
 	out := make([]float32, 0, len(pre)+len(seg))
 	out = append(out, pre...)
 	out = append(out, seg...)
-	return out, true
+	return out, lo, true
 }
 
 func (s *vadSegmenter) Reset() {

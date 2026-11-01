@@ -132,6 +132,9 @@ func (o *OllamaBrain) contextBudgetError(skillCtx string, tools api.Tools) error
 }
 
 func (o *OllamaBrain) messagesBudgetError(messages []api.Message, tools api.Tools) error {
+	if o.audioProjectionBlocked {
+		return ErrAudioProjection
+	}
 	if o.effectiveNumCtx() <= 0 {
 		return nil
 	}

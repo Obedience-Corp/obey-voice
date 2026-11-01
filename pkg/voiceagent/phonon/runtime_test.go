@@ -2,9 +2,11 @@ package phonon
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,9 +15,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
+
+type runtimeChildProbe struct {
+	Address string `json:"address"`
+	PID     int    `json:"pid"`
+}
 
 // This helper runs as an actual child process: lifecycle checks exercise the
 // same exec/readiness/cleanup boundary used by the native Rust runtime.
@@ -40,13 +48,17 @@ func TestRuntimeChild(t *testing.T) {
 	if !strings.Contains(arg("--voice-catalog"), CatalogRevision) {
 		os.Exit(5)
 	}
+	if delay := os.Getenv("PHONON_TEST_START_DELAY"); delay != "" {
+		d, err := time.ParseDuration(delay)
+		if err != nil {
+			os.Exit(7)
+		}
+		time.Sleep(d)
+	}
 	addr := arg("--addr")
 	l, err := net.Listen("tcp4", addr)
 	if err != nil {
 		os.Exit(6)
-	}
-	if marker := os.Getenv("PHONON_TEST_ADDRESS"); marker != "" {
-		_ = os.WriteFile(marker, []byte(addr), 0600)
 	}
 	fmt.Println("model loaded device=CPU weights=f32")
 	mux := http.NewServeMux()
@@ -54,6 +66,17 @@ func TestRuntimeChild(t *testing.T) {
 		model := Model
 		if os.Getenv("PHONON_TEST_NOT_READY") == "1" {
 			model = "different-model"
+		}
+		if notify := os.Getenv("PHONON_TEST_PROBE_NOTIFY"); notify != "" {
+			body, _ := json.Marshal(runtimeChildProbe{Address: addr, PID: os.Getpid()})
+			resp, err := (&http.Client{Timeout: 5 * time.Second}).Post(notify, "application/json", bytes.NewReader(body))
+			if err != nil {
+				os.Exit(8)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				os.Exit(9)
+			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"id": model}}})
 	})
@@ -117,20 +140,100 @@ func TestStartOwnsAndClosesChild(t *testing.T) {
 func TestReadinessCancellationKillsChild(t *testing.T) {
 	o := childOptions(t)
 	t.Setenv("PHONON_TEST_NOT_READY", "1")
-	marker := filepath.Join(t.TempDir(), "address")
-	t.Setenv("PHONON_TEST_ADDRESS", marker)
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	defer cancel()
-	if _, err := Start(ctx, o, false); err == nil || !strings.Contains(err.Error(), "deadline exceeded") {
-		t.Fatalf("got %v", err)
+	// Exceed the old test's 300 ms launch-to-cancel budget deliberately. The
+	// cancellation assertion must depend on lifecycle progress, not launch speed.
+	t.Setenv("PHONON_TEST_START_DELAY", "600ms")
+	probes := make(chan runtimeChildProbe, 1)
+	notify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var probe runtimeChildProbe
+		if err := json.NewDecoder(r.Body).Decode(&probe); err != nil || probe.Address == "" || probe.PID <= 0 {
+			http.Error(w, "invalid child probe", http.StatusBadRequest)
+			return
+		}
+		select {
+		case probes <- probe:
+		default:
+		}
+	}))
+	defer notify.Close()
+	t.Setenv("PHONON_TEST_PROBE_NOTIFY", notify.URL)
+	ctx, cancel := context.WithCancel(t.Context())
+	returned := make(chan struct{})
+	var startErr error
+	go func() {
+		p, err := Start(ctx, o, false)
+		if p != nil {
+			p.Close() // A surprising success must not leak a fixture process.
+		}
+		startErr = err
+		close(returned)
+	}()
+	var child runtimeChildProbe
+	defer func() {
+		cancel()
+		// Also clean up a leaking child if the lifecycle assertion fails.
+		if child.PID != 0 {
+			if p, err := os.FindProcess(child.PID); err == nil {
+				if p.Signal(syscall.Signal(0)) == nil {
+					_ = p.Kill()
+				}
+				_ = p.Release()
+			}
+		}
+		select {
+		case <-returned:
+		case <-time.After(5 * time.Second):
+			t.Error("Start did not return after cleanup cancellation")
+		}
+	}()
+	select {
+	case child = <-probes:
+		// The helper has a listener and Start has issued a readiness request.
+	case <-returned:
+		t.Fatalf("Start returned before probing the child: %v", startErr)
+	case <-time.After(10 * time.Second):
+		t.Fatal("child did not receive a readiness probe")
 	}
-	addr, err := os.ReadFile(marker)
-	if err != nil {
-		t.Fatal(err)
+	cancel()
+	select {
+	case <-returned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not join the child after readiness cancellation")
 	}
-	if conn, err := net.DialTimeout("tcp", string(addr), time.Second); err == nil {
+	if !errors.Is(startErr, context.Canceled) {
+		t.Fatalf("got %v, want context.Canceled", startErr)
+	}
+	if p, err := os.FindProcess(child.PID); err == nil {
+		running := p.Signal(syscall.Signal(0)) == nil
+		_ = p.Release()
+		if running {
+			t.Fatal("cancelled child still exists or has not been reaped")
+		}
+	}
+	if conn, err := net.DialTimeout("tcp", child.Address, time.Second); err == nil {
 		conn.Close()
 		t.Fatal("cancelled child still listens")
+	}
+}
+
+func TestStartHonorsCanceledContextBeforeLaunch(t *testing.T) {
+	o := childOptions(t)
+	// If Start reaches exec, it returns a missing-binary error instead of the
+	// context cause. No timing or helper marker is needed to detect that bug.
+	o.Binary = filepath.Join(t.TempDir(), "missing-server")
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	expired, expire := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer expire()
+	for _, ctx := range []context.Context{canceled, expired} {
+		p, err := Start(ctx, o, false)
+		if p != nil {
+			p.Close()
+			t.Fatal("canceled startup returned a process")
+		}
+		if !errors.Is(err, ctx.Err()) {
+			t.Fatalf("got %v, want %v before launching the binary", err, ctx.Err())
+		}
 	}
 }
 

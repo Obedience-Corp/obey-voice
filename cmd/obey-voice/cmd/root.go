@@ -51,7 +51,7 @@ var rootCmd = &cobra.Command{
 		if cmd.Name() == serveCommandName {
 			dropBrokenPipeSignals()
 		}
-		cfg, err := config.Load()
+		cfg, err := loadCommandConfig(cmd)
 		if err != nil {
 			return err
 		}
@@ -371,7 +371,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 					return session.DefaultStore().SaveParticipation(sess, settings)
 				},
 				Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
-					return session.DefaultStore().SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
+					return session.DefaultStore().SaveSelectionState(sess, turns, selected)
 				},
 				NewBrain: func(_ context.Context, next *config.Config) (brain.Provider, error) {
 					provider, err := brain.NewProvider(next)

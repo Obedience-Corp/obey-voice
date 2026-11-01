@@ -116,6 +116,8 @@ func TraceOf(event Event) *TraceContext {
 		return e.Trace
 	case TurnMetrics:
 		return e.Trace
+	case InputTranscriptUpdated:
+		return e.Trace
 	case UserInput:
 		return e.Trace
 	case VoiceGateStripped:
@@ -226,6 +228,9 @@ func AttributeTrace(event Event, trace TraceContext) Event {
 		e.Trace = &trace
 		return e
 	case TurnMetrics:
+		e.Trace = &trace
+		return e
+	case InputTranscriptUpdated:
 		e.Trace = &trace
 		return e
 	case UserInput:

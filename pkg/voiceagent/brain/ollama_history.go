@@ -2,6 +2,7 @@ package brain
 
 import (
 	"encoding/json"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"regexp"
 	"strings"
 	"time"
@@ -157,6 +158,8 @@ func (o *OllamaBrain) ClearHistory() {
 	o.resetDelegation()
 	o.archive = continuity.Store{}
 	o.history = nil
+	o.audioProjection = nil
+	o.inputTranscripts.Clear()
 	o.canonical = nil
 	o.working = nil
 }
@@ -174,7 +177,7 @@ func (o *OllamaBrain) SessionInfo() SessionState {
 // History returns conversation history as Turn slices for session persistence.
 func (o *OllamaBrain) History() []Turn {
 	if len(o.canonical) > 0 {
-		return deepCopyTurns(o.canonical)
+		return o.effectiveTurns(o.canonical)
 	}
 	return o.ContextHistory()
 }
@@ -194,6 +197,14 @@ func (o *OllamaBrain) ContextHistory() []Turn {
 			Speaker:    speaker,
 			ToolName:   m.ToolName,
 			ToolCallID: m.ToolCallID,
+		}
+		if i < len(o.working) {
+			turns[i].Utterance = o.effectiveTurn(o.working[i]).Utterance
+			turns[i].TypedInput = o.working[i].TypedInput
+			turns[i].AudioRetained = o.working[i].AudioRetained
+			if turns[i].Utterance != nil && turns[i].Utterance.Transcript.State == utterance.Ready {
+				turns[i].Content = audioTranscriptProjection(o.effectiveTurn(o.working[i]))
+			}
 		}
 		if m.Role == "assistant" || m.Role == "tool" {
 			turns[i].PersonaID = o.activePersona()
@@ -218,7 +229,7 @@ func (o *OllamaBrain) ContextHistory() []Turn {
 
 // CanonicalHistory returns the complete transcript, including raw tool data,
 // independently of the bounded Ollama projection.
-func (o *OllamaBrain) CanonicalHistory() []Turn { return deepCopyTurns(o.canonical) }
+func (o *OllamaBrain) CanonicalHistory() []Turn { return o.effectiveTurns(o.canonical) }
 
 // ContinuitySnapshot returns persistence history separately from the bounded
 // model view. The latter is the compacted seed plus its retained tail when
@@ -236,8 +247,8 @@ func (o *OllamaBrain) ContinuitySnapshot() ContinuitySnapshot {
 	contextHighWater := o.contextHighWater
 	o.stateMu.Unlock()
 	return ContinuitySnapshot{
-		Canonical:        deepCopyTurns(canonical),
-		Working:          deepCopyTurns(working),
+		Canonical:        o.effectiveTurns(canonical),
+		Working:          o.effectiveTurns(working),
 		Archive:          append([]continuity.Entry(nil), o.archive.Snapshot()...),
 		ContextHighWater: contextHighWater,
 	}
@@ -340,6 +351,7 @@ func (o *OllamaBrain) activePersona() string {
 }
 
 func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned bool) api.Message {
+	t = o.effectiveTurn(t)
 	role := t.Role
 	if role == "samantha" {
 		role = "assistant"
@@ -353,6 +365,15 @@ func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned b
 			content = encodeOllamaUser(t.Speaker, content)
 		}
 		images, _ := loadImageData(t.Attachments) // Validated before a model request; assets are immutable.
+		if t.Utterance != nil && t.Utterance.Audio != nil {
+			if data := o.audioProjection[t.Utterance.Audio.ID]; data != nil {
+				images = []api.ImageData{data}
+				content = t.TypedInput
+			}
+			if len(images) == 0 && t.Utterance.Transcript.State == utterance.Ready {
+				content = audioTranscriptProjection(t)
+			}
+		}
 		return api.Message{Role: "user", Content: content, Images: images}
 	}
 	owner, name := strings.TrimSpace(t.PersonaID), strings.TrimSpace(t.PersonaDisplayName)
@@ -451,6 +472,7 @@ func deepCopyTurns(in []Turn) []Turn {
 	out := make([]Turn, len(in))
 	copy(out, in)
 	for i := range out {
+		out[i].Utterance = cloneUtterance(in[i].Utterance)
 		out[i].Attachments = append([]chatmedia.Ref(nil), in[i].Attachments...)
 		out[i].ToolCalls = append([]TurnToolCall(nil), in[i].ToolCalls...)
 	}
@@ -518,6 +540,22 @@ func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) error {
 		}
 	}
 	o.attachInputImages(opts.Attachments, images)
+	if opts.Utterance != nil {
+		last := len(o.canonical) - 1
+		o.canonical[last].TypedInput = input
+		o.working[len(o.working)-1].TypedInput = input
+		if input == "" && opts.Utterance.Transcript.State == utterance.Ready {
+			o.canonical[last].Content = opts.Utterance.Transcript.Text
+			o.working[len(o.working)-1].Content = opts.Utterance.Transcript.Text
+		}
+		o.canonical[last].Utterance = cloneUtterance(opts.Utterance)
+		o.canonical[last].AudioRetained = opts.AudioRetained
+		o.working[len(o.working)-1].Utterance = cloneUtterance(opts.Utterance)
+		o.working[len(o.working)-1].AudioRetained = opts.AudioRetained
+		if data := o.audioProjection[opts.Utterance.Audio.ID]; data != nil {
+			o.history[len(o.history)-1].Images = []api.ImageData{data}
+		}
+	}
 	return nil
 }
 
@@ -556,6 +594,10 @@ func (o *OllamaBrain) trimHistory() {
 		return
 	}
 	if start := historyWindowStart(o.history, low); start > 0 {
+		if ValidateTextProjection(o.effectiveTurns(o.working[:min(start, len(o.working))])) != nil {
+			o.audioProjectionBlocked = true
+			return
+		}
 		o.archiveMessages(o.history[:start])
 		o.history = append([]api.Message(nil), o.history[start:]...)
 		if start <= len(o.working) {

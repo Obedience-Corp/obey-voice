@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"reflect"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
@@ -33,17 +34,19 @@ type SelectionOptions struct {
 	PersistParticipation func(discussion.Settings) error
 	// UseDefaults preserves the launcher's Settings stack until an explicit
 	// persona selection; the default profile still supplies identity/prompt.
-	UseDefaults bool
-	Base        *config.Config
-	Catalog     persona.Catalog
-	Pipeline    *pipeline.Pipeline
-	Voices      *voiceagent.LiveTTSManager
-	SessionID   string
-	Initial     *persona.SessionBinding
-	Persist     func([]brain.Turn, events.PersonaSelection) error
-	NewBrain    func(context.Context, *config.Config) (brain.Provider, error)
-	NewWorker   func(context.Context, *config.Config) (brain.Provider, error)
-	NewVoice    func(context.Context, *config.Config) (*voiceagent.TTSSet, error)
+	UseDefaults   bool
+	Base          *config.Config
+	Catalog       persona.Catalog
+	Pipeline      *pipeline.Pipeline
+	Voices        *voiceagent.LiveTTSManager
+	SessionID     string
+	Initial       *persona.SessionBinding
+	Persist       func([]brain.Turn, events.PersonaSelection) error
+	NewBrain      func(context.Context, *config.Config) (brain.Provider, error)
+	NewWorker     func(context.Context, *config.Config) (brain.Provider, error)
+	NewVoice      func(context.Context, *config.Config) (*voiceagent.TTSSet, error)
+	Native        *NativeSelectionHooks
+	InitialNative *voiceagent.NativeCandidate
 }
 
 // Selector replaces response resources at the host's serialized boundary. It
@@ -58,6 +61,11 @@ type Selector struct {
 	participation       discussion.Settings
 	opts                SelectionOptions
 	transitionMu        sync.Mutex // joins publication before host resource cleanup
+	publicationMu       sync.RWMutex
+	publicationClosed   bool
+	bindingToken        string
+	nativeCandidate     *voiceagent.NativeCandidate
+	inputCleanup        func()
 	closed              bool
 	mu                  sync.RWMutex // protects read-only snapshots; never held during I/O
 	selected            events.PersonaSelection
@@ -79,6 +87,13 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	}
 	if _, _, err := SelectionFlowInfo(); err != nil {
 		return nil, err
+	}
+	if opts.Native != nil && (opts.Native.Prepare == nil || opts.Native.PrepareInput == nil) {
+		return nil, errors.New("native selection requires candidate and input preparation hooks")
+	}
+	if opts.Native != nil {
+		nativeHooks := *opts.Native
+		opts.Native = &nativeHooks
 	}
 	opts.Base = opts.Base.Clone()
 	opts.Base.WorkDir = opts.Initial.Config().WorkDir
@@ -107,8 +122,30 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	if err := settings.Validate(); err != nil {
 		return nil, err
 	}
+	if opts.Initial.AudioConfig().Mode == persona.AudioNative {
+		candidate := opts.InitialNative
+		scope := opts.Pipeline.ConversationScope()
+		if opts.Native == nil || opts.Native.Authorize == nil || candidate == nil || candidate.Policy == nil || candidate.Policy.Lifetime == nil || opts.Voices == nil || !scope.Valid() || scope.SessionID != opts.SessionID || opts.Pipeline.Native != candidate.Policy || !sameProviderIdentity(opts.Pipeline.Brain, candidate.Brain) {
+			return nil, errors.New("native startup requires an authorized prepared binding and matching conversation owner")
+		}
+		if err := candidate.ValidatePrepared(candidate.Policy.Lifetime); err != nil {
+			return nil, err
+		}
+		if err := candidate.ValidateScope(scope); err != nil {
+			return nil, err
+		}
+		mode := opts.Initial.AudioConfig()
+		if err := candidate.ValidateBinding(opts.Initial.Config(), mode.Controls, mode.Transcript, mode.RetainAudio); err != nil {
+			return nil, err
+		}
+		if err := opts.Native.Authorize(candidate.Policy.Lifetime, opts.Initial, candidate); err != nil {
+			return nil, err
+		}
+	} else if opts.InitialNative != nil {
+		return nil, errors.New("prepared native startup does not match Standard selection")
+	}
 	opts.Pipeline.GroupParticipationEnabled = opts.Base.GroupParticipationEnabled
-	s := &Selector{opts: opts, binding: opts.Initial, participation: settings}
+	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text()}
 	hash := freezer.FreezePersonaPrompt()
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	if err := opts.Persist(opts.Pipeline.Brain.History(), s.selected); err != nil {
@@ -117,7 +154,20 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		}
 		s.warnPersistence(err)
 	}
+	if opts.InitialNative != nil {
+		opts.InitialNative.TransferBrainOwnership()
+		opts.InitialNative.Policy.PublishCaption = s.captionPublisher(s.bindingToken, s.selected)
+		s.nativeCandidate = opts.InitialNative
+	}
 	return s, nil
+}
+
+func sameProviderIdentity(a, b brain.Provider) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	left, right := reflect.ValueOf(a), reflect.ValueOf(b)
+	return left.Type() == right.Type() && left.Comparable() && right.Comparable() && a == b
 }
 
 func (s *Selector) Snapshot() events.PersonaSelection {
@@ -139,10 +189,16 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 	responseCfg := cfg.Clone()
 	responseCfg.VoiceWorkers = nil
 	// Only the digest is exposed; credential-bearing config is never logged.
+	effectiveAudio := b.AudioConfig()
+	// Saved inactive native settings do not change a Standard response binding.
+	if effectiveAudio.Mode == persona.AudioStandard {
+		effectiveAudio = persona.Audio{Mode: persona.AudioStandard}
+	}
 	encoded, _ := json.Marshal(struct {
 		Config *config.Config
 		Prompt string
-	}{responseCfg, hash})
+		Audio  persona.Audio
+	}{responseCfg, hash, effectiveAudio})
 	digest := sha256.Sum256(encoded)
 	scope := s.opts.Pipeline.ConversationScope()
 	return events.PersonaSelection{
@@ -151,6 +207,7 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 		PersonaID: b.PersonaID, DisplayName: b.DisplayName, PromptHash: hash, BindingHash: hex.EncodeToString(digest[:]),
 		Generation: generation, BrainProvider: b.BrainProvider, BrainModel: b.BrainModel,
 		VoiceProvider: cfg.TTSProvider, Voice: config.TTSVoiceFor(cfg, cfg.TTSProvider), Reason: reason,
+		AudioMode: effectiveAudio.Mode, AudioControls: effectiveAudio.Controls, AudioTranscript: effectiveAudio.Transcript, AudioRetained: effectiveAudio.RetainAudio,
 	}
 }
 
@@ -266,6 +323,9 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 			s.opts.Base.WorkDir, s.opts.Base.WorkDirSource = choice.Dir, choice.Source
 		}
 	}
+	s.publicationMu.Lock()
+	s.bindingToken = rand.Text()
+	s.publicationMu.Unlock()
 	s.generation++
 	s.opts.SessionID = sessionID
 	s.opts.UseDefaults = false
@@ -293,6 +353,18 @@ func (s *Selector) Close() {
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	s.closed = true
+	s.publicationMu.Lock()
+	s.publicationClosed = true
+	s.bindingToken = ""
+	s.publicationMu.Unlock()
+	if s.nativeCandidate != nil {
+		_ = s.nativeCandidate.Close()
+		s.nativeCandidate = nil
+	}
+	if s.inputCleanup != nil {
+		s.inputCleanup()
+		s.inputCleanup = nil
+	}
 }
 
 func closeBrain(b brain.Provider) {

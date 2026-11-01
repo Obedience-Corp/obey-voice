@@ -110,6 +110,9 @@ func (f *fallbackLatch) latch() {
 // sit below it: a worker with no queue slot to draw from is a goroutine that
 // never runs.
 func (p *Pipeline) lookahead(primary tts.Provider) (depth, workers int) {
+	if p.Native != nil {
+		return 1, 1
+	}
 	depth = p.TTSLookahead
 	if depth < 1 {
 		depth = voiceQueueDepth
