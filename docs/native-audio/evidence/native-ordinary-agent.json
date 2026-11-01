@@ -1,0 +1,195 @@
+{
+  "actual_asr_requests": 0,
+  "actual_chat_requests": 2,
+  "actual_speech_requests": 2,
+  "answer_quality_qualified": false,
+  "canonical_audio_only_turns": 2,
+  "checkout_revision": "375913ebdafdd2491766eb7ea97d238e379f10a6",
+  "construction_stages": [],
+  "devices": "none",
+  "downloads": false,
+  "external_model_store_entries": 0,
+  "format_version": 3,
+  "global_standard_settings_unchanged": true,
+  "injected_worker": "unused fixture worker; independent worker configuration preserved, no worker runtime claim",
+  "input_sessions": 3,
+  "maximum_active_inference_bodies": 1,
+  "no_speech_http_requests": 0,
+  "observer_scope": "after quiet setup; actual ordinary-agent requests; no rewriting",
+  "pcm_segments": [
+    {
+      "float32_sha256": "b267fe0ff1abd24e9a49d98b9b03283a43caa7e16a9f6a6252a69570d6541047",
+      "rate": 24000,
+      "samples": 82175,
+      "sink": "software_drain"
+    },
+    {
+      "float32_sha256": "2a71414a472de1f64ba45f662e069e638c21df65b15cc554705fb64054defc7e",
+      "rate": 24000,
+      "samples": 84480,
+      "sink": "software_drain"
+    }
+  ],
+  "persona_prompt_hash": "3c1594495e13",
+  "persona_prompt_ref": "samantha",
+  "profile_activation_ui_qualified": false,
+  "proxy_or_prompt_replacement": false,
+  "requests": [
+    {
+      "messages": [
+        {
+          "audio_wire": [],
+          "content_bytes": 5967,
+          "content_sha256": "a5880461c5f8ddce1e5c62872138e5e2f026526150027f42befa7a5e7f976289",
+          "role": "system"
+        },
+        {
+          "audio_wire": [
+            {
+              "bytes": 98574,
+              "riff_wave": true,
+              "sha256": "fdc8158aebc935a488991d208fc19130a0d8f612cf7e58c36c13474e9b4fb5cb"
+            }
+          ],
+          "content_bytes": 0,
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "role": "user",
+          "user_text": ""
+        }
+      ],
+      "model": "lfm3-audio:2b",
+      "route": "/api/chat",
+      "speech_input": "",
+      "stream": true
+    },
+    {
+      "messages": [],
+      "model": "lfm3-audio:2b",
+      "route": "/v1/audio/speech",
+      "speech_input": "15\nDone, I set up the project\n\n\n15",
+      "stream": false
+    },
+    {
+      "messages": [
+        {
+          "audio_wire": [],
+          "content_bytes": 5967,
+          "content_sha256": "a5880461c5f8ddce1e5c62872138e5e2f026526150027f42befa7a5e7f976289",
+          "role": "system"
+        },
+        {
+          "audio_wire": [
+            {
+              "bytes": 98574,
+              "riff_wave": true,
+              "sha256": "fdc8158aebc935a488991d208fc19130a0d8f612cf7e58c36c13474e9b4fb5cb"
+            }
+          ],
+          "content_bytes": 0,
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "role": "user",
+          "user_text": ""
+        },
+        {
+          "audio_wire": [],
+          "content_bytes": 45,
+          "content_sha256": "8bf22cd2180cbc6326f1710955a2ad79518ae61d3b009860127fa2e062373fb3",
+          "role": "assistant"
+        },
+        {
+          "audio_wire": [
+            {
+              "bytes": 98574,
+              "riff_wave": true,
+              "sha256": "56ffb3829ae369deec62962698ccba6514b250144551c40dc9488c148d894dd1"
+            }
+          ],
+          "content_bytes": 0,
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "role": "user",
+          "user_text": ""
+        }
+      ],
+      "model": "lfm3-audio:2b",
+      "route": "/api/chat",
+      "speech_input": "",
+      "stream": true
+    },
+    {
+      "messages": [],
+      "model": "lfm3-audio:2b",
+      "route": "/v1/audio/speech",
+      "speech_input": "12\nDone, I set up the project\n\n\n12",
+      "stream": false
+    }
+  ],
+  "saved_mode": "native",
+  "scope": "ordinary native fixture host; production persona/history adapters",
+  "setup": {
+    "metadata": {
+      "endpoint": "http://localhost:11434",
+      "runtime_version": "0.40.12",
+      "model": "lfm3-audio:2b",
+      "digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+      "capabilities": [
+        "audio",
+        "completion",
+        "speech",
+        "tools"
+      ]
+    },
+    "voice": "female",
+    "requirements": {
+      "asr": false,
+      "tools": false
+    },
+    "protocol_ready": true,
+    "quality_qualified": false,
+    "known_combination": false,
+    "checked_at": "2026-10-31T02:27:48.172274Z",
+    "quiet_chat_text": "15",
+    "quiet_speech_samples": 16806
+  },
+  "sink": "software_drain",
+  "test_pass": true,
+  "timeline": [
+    "chat_completed",
+    "speech_pcm_ready_software_sink",
+    "chat_completed",
+    "speech_pcm_ready_software_sink"
+  ],
+  "turns": [
+    {
+      "actual_response": "15\n7 + 8 = 15\nDone, I set up the project\n\n\n15",
+      "audio_ref": {
+        "id": "fdc8158aebc935a488991d208fc19130a0d8f612cf7e58c36c13474e9b4fb5cb",
+        "mime": "audio/wav",
+        "sample_rate": 16000,
+        "channels": 1,
+        "sample_count": 49265
+      },
+      "caption_state": "disabled",
+      "expected_answer": "15",
+      "fixture": "addition",
+      "reply_pcm_samples": 82175,
+      "retained_audio_verified": true,
+      "source_sha256": "15ddd19f5d3a4fc5aaee759d3a1b5828baec6de633cd848069fc25cf32a3c2f9"
+    },
+    {
+      "actual_response": "12\n3 * 4 = 12\nDone, I set up the project\n\n\n12",
+      "audio_ref": {
+        "id": "56ffb3829ae369deec62962698ccba6514b250144551c40dc9488c148d894dd1",
+        "mime": "audio/wav",
+        "sample_rate": 16000,
+        "channels": 1,
+        "sample_count": 49265
+      },
+      "caption_state": "disabled",
+      "expected_answer": "12",
+      "fixture": "multiplication",
+      "reply_pcm_samples": 84480,
+      "retained_audio_verified": true,
+      "source_sha256": "247a9444206491baf15a6c3b6ed504f76787cbfe9de13d9fe6e19ce5ddef11a6"
+    }
+  ]
+}

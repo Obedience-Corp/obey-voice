@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // NativeCandidateOptions describes an isolated binding under preparation. The
@@ -48,6 +49,8 @@ type NativeCandidate struct {
 	brainAdopted atomic.Bool
 	once         sync.Once
 	closeErr     error
+	scopeMu      sync.Mutex
+	scope        work.WorkScope
 }
 
 func PrepareNativeCandidate(ctx context.Context, cfg *config.Config, opts NativeCandidateOptions) (*NativeCandidate, error) {

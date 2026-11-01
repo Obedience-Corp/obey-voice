@@ -20,6 +20,7 @@ impl VoiceApp {
         ui.horizontal(|ui| {
             if ui.button("+ Create persona").clicked() {
                 self.stop_persona_preview();
+                self.stop_persona_audio_check();
                 self.persona_form = PersonaForm {
                     open: true,
                     prompt: "You are {agent_name}, a voice assistant.".into(),
@@ -34,6 +35,7 @@ impl VoiceApp {
         });
         egui::ScrollArea::vertical().show(ui, |ui| {
             for p in self.personas.clone() {
+                let native = p.audio["mode"].as_str() == Some("native");
                 card(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(&p.display_name).size(20.).strong());
@@ -48,12 +50,15 @@ impl VoiceApp {
                         RichText::new(format!("{} · {} · {}", p.id, p.provider, p.voice))
                             .color(muted(ui)),
                     );
+                    if native {
+                        ui.label("Native audio · experimental");
+                    }
                     ui.horizontal_wrapped(|ui| {
                         let playing = self.persona_form.preview_persona == p.id
                             && self.persona_form.preview_request.is_some();
                         if ui
                             .add_enabled(
-                                self.connected && !self.demo,
+                                self.connected && !self.demo && !native,
                                 egui::Button::new(if playing {
                                     "Stop preview"
                                 } else {

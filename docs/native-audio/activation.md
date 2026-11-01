@@ -1,20 +1,28 @@
 # Prepared native persona bindings
 
 Production activation remains guarded. The activation worktree adds candidate
-setup and transaction machinery; it does not yet connect persona controls,
-startup/restart/replay, or qualify A20 context behavior and model quality.
+setup, ordinary-agent construction and transaction machinery. Product persona
+controls and restore/replay integration remain. Known answer-quality limitations
+stay documented for experimental opt-in; general model accuracy is not a blanket
+activation predicate.
 
 `nativeaudio.SupportCache.Prepare` reads the explicitly selected runtime version,
 model digest and capabilities, then quietly checks required same-model ASR,
 audio chat and speech. Transcript off skips ASR. The cache identity includes
 endpoint, version, model digest, voice and requirements. A known tuple still
 revalidates routes before candidate activation. Successful protocol checks remain
-separate from quality qualification. Setup uses an embedded synthetic fixture and
+separate from quality qualification. Experimental persona opt-in may retain documented answer
+limitations; editor task quality remains a separate contract. Setup uses an embedded synthetic fixture and
 software drain; it opens no capture/playback device and installs no assets.
 
 `voiceagent.PrepareNativeCandidate` owns the selected HTTP client, shared body
 scheduler, brain and speech resources. Conversation media is borrowed and survives
-persona retirement. `Options.Input`/`InputFactory` provide a decoder-free constructor
+persona retirement. `NativeCandidate.NewAgent` requires an explicit integration-readiness decision,
+rejects prepared config/provider overrides, adopts its owned resources once, and
+closes them after joined teardown. Startup selector adoption additionally verifies
+prepared config/policies, exact provider identity and the complete bound session/
+runtime/conversation scope before persistence. An old candidate cannot be relabeled
+for a new epoch with the same session ID. `Options.Input`/`InputFactory` provide a decoder-free constructor
 path over the same capture/VAD owner; they exclude Standard recognizer construction.
 Ambiguous input choices fail before resource construction.
 

@@ -123,6 +123,7 @@ front end can offer "create" and "switch" as separate decisions.`,
 	cmd.Flags().String("starting-directory", "", "Starting directory for new conversations (empty inherits app default)")
 	cmd.Flags().Bool("no-activate", false, "Create without making the new persona active")
 	cmd.Flags().Bool("json", false, "Emit JSON")
+	addPersonaAudioFlags(cmd)
 	cmd.MarkFlagsMutuallyExclusive("prompt", "prompt-file")
 	return cmd
 }
@@ -158,13 +159,22 @@ func createPersona(cmd *cobra.Command, args []string) (*personaCreateJSON, error
 	if err != nil {
 		return nil, codedError("invalid_directory", "%v", err)
 	}
+	audio, _, err := mergePersonaAudio(cmd, nil)
+	if err != nil {
+		return nil, err
+	}
 	opts := persona.CreateOpts{
+		Audio:             audio,
 		StartingDirectory: directory,
 		DisplayName:       strings.TrimSpace(strings.Join(args, " ")),
 		SystemPrompt:      body,
 	}
 
 	noActivate, _ := cmd.Flags().GetBool("no-activate")
+	if audio != nil && audio.Mode == persona.AudioNative && !noActivate {
+		return nil, codedError(codeInvalidInput, "create native settings with --no-activate, then check setup before selecting the persona")
+	}
+
 	create := persona.CreateAndUseWithOpts
 	if noActivate {
 		// CreateWithOpts leaves active_persona alone, so a front end can create

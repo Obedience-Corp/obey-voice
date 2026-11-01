@@ -270,6 +270,9 @@ func (m *personasModel) cycleStackModel(delta int) {
 // lists the keys, so this line spends itself on the field instead — and the
 // (custom) typing hint is scoped to the row that owns it, never left behind.
 func (m personasModel) formRowHelp() string {
+	if isAudioRow(m.formRow) {
+		return "Native audio · ←/→ changes choices · type model/origin/voice · ctrl+g checks setup quietly"
+	}
 	switch m.formRow {
 	case formRowName:
 		return "Display name · the agent answers to this"

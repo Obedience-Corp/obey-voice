@@ -11,12 +11,14 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
-var ErrNativeUnqualified = errors.New("native activation requires verified context accounting and task qualification")
+var ErrNativeUnqualified = errors.New("native activation requires verified input, history and lifecycle readiness")
 
 // NativeSelectionHooks joins host-owned media/capture to the existing selector.
 // Prepare must use the supplied publisher and selection session/epoch, never a
 // global media store. Authorize is mandatory: protocol readiness alone cannot
-// qualify context safety or quality. Nil hooks preserve guarded Standard paths.
+// establish input/history and lifecycle readiness. Known model-answer limits
+// remain disclosed for experimental opt-in; general accuracy is not an activation
+// predicate. Nil hooks preserve guarded Standard paths.
 type NativeSelectionHooks struct {
 	TextOnly     bool
 	Prepare      func(context.Context, *config.Config, persona.Audio, events.PersonaSelection, func(context.Context, func() error) error) (*voiceagent.NativeCandidate, error)

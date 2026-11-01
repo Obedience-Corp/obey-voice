@@ -331,6 +331,13 @@ managed-audio-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
 dubbing-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
     sandbox-exec -f "{{PROFILE}}" python3 docs/audio-jobs/probe/dubbing_probe.py --worker "{{WORKER}}" --config "{{CONFIG}}" --request "{{REQUEST}}" --out "{{OUTPUT}}" --fixture-review-only
 
+# Opt-in ordinary native persona pipeline with synthetic recordings/software sink.
+# Requires installed selected local Ollama; no model installation or device use.
+[no-cd]
+native-persona-proof FIXTURES RECEIPT COVERAGE:
+    OBEY_NATIVE_AGENT_FIXTURE_DIR="{{FIXTURES}}" OBEY_NATIVE_AGENT_RECEIPT="{{RECEIPT}}" go test -count=1 -timeout 4m -covermode=atomic -coverpkg=./pkg/voiceagent/stt/...,./pkg/voiceagent/tts/...,./pkg/voiceagent/phonon/... -coverprofile="{{COVERAGE}}" ./internal/persona/runtime -run '^TestLiveNativeOrdinaryAgentAndHistory$' -v
+    go run ./docs/native-audio/probe/factory-coverage --profile "{{COVERAGE}}" --receipt "{{RECEIPT}}" --out "{{RECEIPT}}.factories.json"
+
 # Identical licensed recording windows; text recognition only, no devices/downloads.
 [no-cd]
 audio-recognition WORKER SPEECH_CONFIG AUDIO_CONFIG AUDIO_DIR ANNOTATIONS OUTPUT PROFILE:
