@@ -1,0 +1,154 @@
+{
+  "schema": "wi-43b072-waveform-verification/v1",
+  "quality_qualified": false,
+  "network": "deny network* sandbox applied to facade and inherited by native helper",
+  "devices": "none",
+  "source_fixture": {
+    "corpus": "AMI",
+    "source": "ES2002a.Headset-0.wav, 130\u2013155.003 seconds",
+    "reference": "ES2003a.Headset-0.wav, 232\u2013240 seconds"
+  },
+  "facade_binary_sha256": "26bce90f20dc2826bdd440011e7fda9a56b9d03b55fd7319943b80da3831a3fa",
+  "native_worker_sha256": "4fd7557c13332f0131cf5dfa39c1ea8f607312fd835604fe6681fb39335b86b3",
+  "success": {
+    "job": "success",
+    "elapsed_seconds": 9.480505250045098,
+    "exit_code": 0,
+    "events": [
+      "accepted",
+      "progress",
+      "artifact",
+      "completed"
+    ],
+    "request_sha256": "01f7ac94df186c0595f57eb59ab75f01207875f67cad38987b4a9cc6768a9af3",
+    "manifest_sha256": "e2be6a1ec467282c5f1e6cbb2848cf23f9c6fff146dd3e88cc07760485414977"
+  },
+  "cancel": {
+    "job": "cancel",
+    "elapsed_seconds": 4.254260124987923,
+    "exit_code": 1,
+    "events": [
+      "accepted",
+      "progress",
+      "cancelled"
+    ],
+    "request_sha256": "bd136feaed2d6a19cbf5218d7bf9418194c02f46512a4570b40843b65a5b9ff0",
+    "cancel_to_exit_seconds": 0.012221834040246904,
+    "observed_native_child": true,
+    "converted_partial_bytes": 441044,
+    "child_reaped": true
+  },
+  "verified_manifest": {
+    "protocol": "obey-audio-job/v4",
+    "job_id": "success",
+    "task": "voice_conversion",
+    "source": {
+      "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "clip_id": "licensed-ami",
+      "range_id": "130-155.003",
+      "project_revision": "fixture-v1"
+    },
+    "runtime": {
+      "provider": "openvoice",
+      "endpoint": "",
+      "model": "openvoice-v2",
+      "voice": "reference"
+    },
+    "runtime_version": "openvoice-v2-onnxruntime-1.30.0",
+    "model_digest": "896195b84b0cb87a828bb8cab06577e9c024356bc9727b1a8f4174154bc0affa",
+    "transport": "waveform_conversion",
+    "script_sha256": "",
+    "language": "en",
+    "duration_policy": "preserve_picture",
+    "source_windows": [
+      {
+        "start_sample": 2866500,
+        "end_sample": 3087000
+      },
+      {
+        "start_sample": 3087000,
+        "end_sample": 3307500
+      },
+      {
+        "start_sample": 3307500,
+        "end_sample": 3417817
+      }
+    ],
+    "output": {
+      "path": "audio.wav",
+      "sha256": "2d7e0d5bd68854b0c220529395aea08a5d2a51555f569cc1dfd9226fb901edad",
+      "sample_rate_hz": 22050,
+      "channels": 1,
+      "sample_count": 551317
+    },
+    "runtime_digest": "bcc9110f9d638a119de2db7afb3ba9a1da8085f0cb3401e1c48ae1caf450b6fa",
+    "chunk_policy": "10s-core-1s-context-linear-crossfade/v1",
+    "encoder_digest": "e91c2cb696e199d2519ed8b62ca6e3c8e42cb99ca13955dd6e188051486e681c",
+    "worker_digest": "4fd7557c13332f0131cf5dfa39c1ea8f607312fd835604fe6681fb39335b86b3",
+    "conversion_sampling": {
+      "temperature": 0
+    }
+  },
+  "input": {
+    "sha256": "b37efaebcb2c415c6b38ca5bfeb77ab309e4b7d4035d7ce99c71cff33a554399",
+    "sample_count": 551317,
+    "sample_rate_hz": 22050,
+    "channels": 1,
+    "channel_role": "microphone",
+    "source_origin_samples": 2866500
+  },
+  "reference": {
+    "sha256": "691949d5cfe55f90edc5ee0eb1ae62a042995b3d234cbbec2bf80f62791822a3",
+    "sample_count": 176400,
+    "sample_rate_hz": 22050,
+    "channels": 1,
+    "channel_role": "reference",
+    "source_origin_samples": 0
+  },
+  "publication": {
+    "files": [
+      "audio.wav",
+      "manifest.json"
+    ],
+    "raw_pcm_or_native_cache_published": false,
+    "staging_or_locks_remaining": false
+  },
+  "limitations": [
+    "No intelligibility, delivery, speaker similarity or seam quality pass",
+    "No editor controls, installer or Apply acceptance in this proof",
+    "Apple Silicon macOS only; no signed distribution acceptance"
+  ],
+  "failed_attempts": [
+    "Initial manual command omitted transcribe namespace; no work started",
+    "Initial proof caught native cache/debug files published with artifact; fixed by private runtime scratch and regression fixture",
+    "Sandboxed harness could not execute ps; moved observation outside sandbox while keeping worker network denied"
+  ],
+  "source_files": {
+    "keepshot/crates/keepshot-persona-native/src/runtime.rs": "53c5ce58c7e2f36d21ff7c833ad87d47607afed42855e5515159bea2c4f9a240",
+    "keepshot/crates/keepshot-persona-native/src/recording.rs": "5537e6f5ce9f605d99a21b6a7f48ee19cc8d299d8c0ae75cc157a4e7c0ca5481",
+    "keepshot/crates/keepshot-persona-native/src/lib.rs": "b41db167db52ed63047b063d9c3909af96d554745961e0d132cce06043d2b3cd",
+    "keepshot/crates/keepshot-persona-native/src/worker.rs": "32e13d7cef932cd757eb5cd3ac7933edd0c60c8a2f968eab7c93d0c88c43f93c",
+    "keepshot/crates/keepshot-persona-native/src/voice.rs": "c7bfe859435d27eeba3f546478429367e665cf4f398e2d985c3214096c2b5b20",
+    "keepshot/crates/keepshot-persona-native/src/bin/keepshot-voice-worker.rs": "46ba78d4ff3f7117ad7ba4749ac8841f16f863026cf62ec55fc26d1304c7ba9a",
+    "obey-voice/pkg/voiceagent/audiojob/waveform_cancel_windows.go": "a06e7c097948a263221c335ce01d66935550ee8615aa38510c32236aa881d21b",
+    "obey-voice/pkg/voiceagent/audiojob/managed_speech.go": "af814bb636debe85c633ecb8c0429f0438c28cfbdbff01c18bd0930402c7d993",
+    "obey-voice/pkg/voiceagent/audiojob/run.go": "43f7fb797331a67f759938ddbe012fe4dbe9f4a3aeb417d85903c4fd2f0ee38b",
+    "obey-voice/pkg/voiceagent/audiojob/render_text.go": "d2133f25b4c7b14809c148f9a16231c7d31bb767312c4de15a707dc050ddad92",
+    "obey-voice/pkg/voiceagent/audiojob/waveform.go": "ac0fc2cb62b4e12a68d73cabcbd8e79bc4ce5e15625529889b48f3187680fa15",
+    "obey-voice/pkg/voiceagent/audiojob/waveform_process.go": "0515f9aa6de17c345042f3154ceecf0ace2046e8013bc72b41a4230d16551baa",
+    "obey-voice/pkg/voiceagent/audiojob/managed.go": "630e3a4987a1ffe027eb7ac0e44217e27b37210d1e786a78791af7bd466c352d",
+    "obey-voice/pkg/voiceagent/audiojob/managed_process.go": "2b97a9037b081308d6501996fb913990db5d149fac68e419cd9c640e7e5018f7",
+    "obey-voice/pkg/voiceagent/audiojob/waveform_cancel_unix.go": "8604fee145e82a9961d54710e68a12d13529d1a6dba67eb3e85807799048457d",
+    "obey-voice/pkg/voiceagent/audiojob/managed_text.go": "ec4e641398801d755440cf5348ffa74010ff1390cd47b9657aca7b37f7d937a2",
+    "obey-voice/pkg/voiceagent/audiojob/capabilities.go": "41a90b08f198c285df87b3c7b667669b83b75b1d1140b9e2487cfb0cdfcd5463",
+    "obey-voice/pkg/voiceagent/audiojob/dubbing.go": "344eea872078525b000cc96b3ce955a98154a21b1022bfad40cfdbf1fe361682",
+    "obey-voice/pkg/voiceagent/audiojob/contract.go": "de3384784f0f9eb03a21333ae341f3565b3adda310fc85ec48a89b72b7eea5d0",
+    "obey-voice/pkg/voiceagent/audiojob/render_narration.go": "c52ccc79ad895547e4ddcde49502910dfc6fda9060ad2242629b088446afda0b",
+    "obey-voice/pkg/voiceagent/audiojob/run_tasks.go": "8ab3ae0b604ad3b5624b76b4659d268ec1ac36a0e0f79a59de128f50af7bb73b",
+    "obey-voice/pkg/voiceagent/audiojob/text_contract.go": "8d7dbf571a3e103a17db4198cd1b0c824f3c3a6c3b65fb9464976d1fbaa47d25",
+    "obey-voice/pkg/voiceagent/audiojob/render_conversion.go": "92fc78eee5b5cb30066fc7351f714afa7bd1ad0712a4f0c1bc5ff91b187e766c",
+    "obey-voice/cmd/obey-voice/cmd/audio_job.go": "be951f5c958c680008f3c9c632e22c54b6a2ace707fdf33dfdaddd6e006262d2",
+    "obey-voice/cmd/obey-voice/cmd/audio_capabilities.go": "947b9b3727e30a065b13553666bbc6eeedad358442a662bbb57adffcb972c9c0",
+    "obey-voice/docs/audio-jobs/probe/waveform_probe.py": "327d9e227d681f1f5a95eece2c88c66324d9c22d18a6bcc21dc5deb080b13a8c"
+  }
+}

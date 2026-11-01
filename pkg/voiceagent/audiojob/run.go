@@ -21,6 +21,7 @@ type Synthesizer interface {
 }
 type Provenance struct {
 	RuntimeVersion, ModelDigest    string
+	EncoderDigest, WorkerDigest    string
 	ProjectorDigest, RuntimeDigest string
 	Sampling                       *Sampling
 }
@@ -42,6 +43,11 @@ func (r Request) Preflight(ctx context.Context, c Config) error {
 	}
 	if err := checkInput(ctx, r.Input); err != nil {
 		return err
+	}
+	if r.Reference != nil {
+		if err := checkInput(ctx, *r.Reference); err != nil {
+			return fmt.Errorf("reference: %w", err)
+		}
 	}
 	if err := safeDirectory(c.StorageRoot, r.OutputDir); err != nil {
 		return err
@@ -90,6 +96,10 @@ func run(ctx context.Context, c Config, r Request, p Provenance, emit func(Event
 		err = fmt.Errorf("managed runtime provenance does not match the selected pack")
 		return
 	}
+	if c.Waveform != nil && !c.Waveform.matches(p) {
+		err = fmt.Errorf("waveform provenance does not match selected pack")
+		return
+	}
 	parent := filepath.Dir(r.OutputDir)
 	lock, e := os.OpenFile(r.OutputDir+".lock", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if e != nil {
@@ -115,6 +125,9 @@ func run(ctx context.Context, c Config, r Request, p Provenance, emit func(Event
 	if r.Protocol == TextProtocol {
 		jobStage = "audio_analysis"
 	}
+	if r.Protocol == ConversionProtocol {
+		jobStage = "waveform_conversion"
+	}
 	if err = send("progress", jobStage, "", ""); err != nil {
 		return
 	}
@@ -124,6 +137,11 @@ func run(ctx context.Context, c Config, r Request, p Provenance, emit func(Event
 	}
 	if err = checkInput(ctx, r.Input); err != nil {
 		return
+	}
+	if r.Reference != nil {
+		if err = checkInput(ctx, *r.Reference); err != nil {
+			return
+		}
 	}
 	data, e := json.MarshalIndent(manifest, "", "  ")
 	if e != nil {

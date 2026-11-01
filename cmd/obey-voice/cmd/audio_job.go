@@ -46,6 +46,14 @@ func newAudioJobCmd() *cobra.Command {
 			if err := r.Preflight(ctx, c); err != nil {
 				return err
 			}
+			if c.Waveform != nil {
+				converter, provenance, err := audiojob.PrepareWaveform(ctx, c)
+				if err != nil {
+					return err
+				}
+				_, err = audiojob.RunConversion(ctx, c, r, converter, provenance, func(event audiojob.Event) error { return enc.Encode(event) })
+				return err
+			}
 			if c.Managed != nil {
 				runtime, provenance, err := audiojob.StartManaged(ctx, c)
 				if err != nil {
@@ -84,7 +92,7 @@ func newAudioJobCmd() *cobra.Command {
 			return e
 		}}
 	cmd.Flags().StringVar(&configPath, "audio-config", "", "Absolute isolated obey-voice.audio-config/v1 JSON")
-	cmd.Flags().StringVar(&requestPath, "request", "", "Absolute v1 narration, v2 audio-text or v3 reviewed dubbing request JSON")
+	cmd.Flags().StringVar(&requestPath, "request", "", "Absolute v1 narration, v2 audio-text, v3 dubbing or v4 waveform request JSON")
 	cmd.Flags().BoolVar(&jsonl, "jsonl", false, "Write bounded job events as JSONL")
 	return cmd
 }
