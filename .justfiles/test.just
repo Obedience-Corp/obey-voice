@@ -343,6 +343,18 @@ native-persona-proof FIXTURES RECEIPT COVERAGE:
     OBEY_NATIVE_AGENT_FIXTURE_DIR="{{FIXTURES}}" OBEY_NATIVE_AGENT_RECEIPT="{{RECEIPT}}" go test -count=1 -timeout 4m -covermode=atomic -coverpkg=./pkg/voiceagent/stt/...,./pkg/voiceagent/tts/...,./pkg/voiceagent/phonon/... -coverprofile="{{COVERAGE}}" ./internal/persona/runtime -run '^TestLiveNativeOrdinaryAgentAndHistory$' -v
     go run ./docs/native-audio/probe/factory-coverage --profile "{{COVERAGE}}" --receipt "{{RECEIPT}}" --out "{{RECEIPT}}.factories.json"
 
+# Actual local Native invalid-voice/cancellation proof. Uses installed Ollama,
+# synthetic input and software-only output; never starts a daemon or devices.
+[no-cd]
+native-persona-negative-proof RECEIPT:
+    OBEY_NATIVE_NEGATIVE_RECEIPT="{{RECEIPT}}" go test -count=1 -timeout 2m ./pkg/voiceagent -run '^TestLiveNativeProviderNegativePaths$' -v
+
+# Pinned installed Ollama/LFM3 context geometry and hard rejection. Synthetic
+# WAVs only; no installs, daemon changes, config or audio devices.
+[no-cd]
+native-context-contract-proof RECEIPT:
+    python3 docs/native-audio/probe/context_contract.py "{{RECEIPT}}"
+
 # Identical licensed recording windows; text recognition only, no devices/downloads.
 [no-cd]
 audio-recognition WORKER SPEECH_CONFIG AUDIO_CONFIG AUDIO_DIR ANNOTATIONS OUTPUT PROFILE:

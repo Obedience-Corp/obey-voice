@@ -49,7 +49,15 @@ impl Screen {
 }
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
+pub struct Recording {
+    pub id: String,
+    pub epoch: u64,
+    pub available: bool,
+}
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
 pub struct Turn {
+    pub recording: Option<Recording>,
     #[serde(deserialize_with = "nullable_vec")]
     pub attachments: Vec<crate::app::media::Attachment>,
     pub role: String,
@@ -91,17 +99,22 @@ pub struct State {
     #[serde(default)]
     pub work_result_images: Vec<Vec<crate::app::media::Attachment>>,
     pub settings_message: String,
+    pub persona_message: String,
     pub enrollment: Enrollment,
     #[serde(deserialize_with = "nullable_vec")]
     pub speaker_names: Vec<String>,
     pub session_id: String,
     pub name: String,
+    pub audio_mode: String,
+    pub audio_controls: String,
+    pub audio_transcript: String,
     pub brain_provider: String,
     pub brain_model: String,
     pub status: String,
     pub error: bool,
     pub mic: bool,
     pub voice_available: bool,
+    pub output_available: bool,
     pub muted: bool,
     pub busy: bool,
     pub recording: String,

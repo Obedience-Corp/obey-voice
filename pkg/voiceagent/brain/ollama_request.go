@@ -75,7 +75,7 @@ func (o *OllamaBrain) requestOptions() map[string]any {
 // high-water mark, for a caller on another goroutine.
 func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 	opts := map[string]any{}
-	if o.cfg != nil && o.cfg.OllamaNumCtx > 0 {
+	if o.audioResolver != nil || (o.cfg != nil && o.cfg.OllamaNumCtx > 0) {
 		opts["num_ctx"] = o.numCtxFor(highWater)
 	}
 	if o.cfg != nil && o.cfg.OllamaNumBatch > 0 {

@@ -113,7 +113,7 @@ var clearPhrases = []string{
 // Text input is read from in cancellably so a stdin read never blocks shutdown.
 func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVoice bool) error {
 	var input *lineReader // started lazily so voice mode never touches stdin
-	voiceAvailable := p.STT != nil
+	voiceAvailable := p.HasCaptureProvider()
 	voiceFailures := 0
 
 	for {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,7 +23,11 @@ import (
 func TestChatMediaTerminal(t *testing.T)         { runMediaTerminal(t, false, false) }
 func TestAgentMediaTerminal(t *testing.T)        { runMediaTerminal(t, true, false) }
 func TestChatMediaRejectedTerminal(t *testing.T) { runMediaTerminal(t, false, true) }
-func runMediaTerminal(t *testing.T, agent, reject bool) {
+func TestChatMediaRejectedTerminalSlowValidation(t *testing.T) {
+	runMediaTerminal(t, false, true, 250*time.Millisecond)
+}
+
+func runMediaTerminal(t *testing.T, agent, reject bool, validationDelay ...time.Duration) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	path := filepath.Join(t.TempDir(), "Screenshot with spaces.png")
 	fixture := testmedia.PNG()
@@ -38,6 +43,9 @@ func runMediaTerminal(t *testing.T, agent, reject bool) {
 	}
 	bus := events.NewBus()
 	runner := &mediaTerminalRunner{bus: bus, agent: agent}
+	if len(validationDelay) > 0 {
+		runner.validationDelay = validationDelay[0]
+	}
 	if reject {
 		runner.validationErr = errors.New("model lfm3:1.7b does not support images; select a vision-capable Ollama model")
 	}
@@ -101,17 +109,31 @@ func runMediaTerminal(t *testing.T, agent, reject bool) {
 }
 
 type mediaTerminalRunner struct {
-	bus           *events.Bus
-	agent         bool
-	reply         string
-	output        []chatmedia.Ref
-	refs          []chatmedia.Ref
-	validationErr error
+	bus             *events.Bus
+	agent           bool
+	reply           string
+	output          []chatmedia.Ref
+	refs            []chatmedia.Ref
+	validationErr   error
+	validationMu    sync.RWMutex
+	validationDelay time.Duration
 }
 
 func (r *mediaTerminalRunner) RunTurn(context.Context) (string, error) { return "", nil }
-func (r *mediaTerminalRunner) ValidateImages(context.Context, []chatmedia.Ref) error {
-	return r.validationErr
+func (r *mediaTerminalRunner) ValidateImages(ctx context.Context, _ []chatmedia.Ref) error {
+	r.validationMu.RLock()
+	err := r.validationErr
+	r.validationMu.RUnlock()
+	if r.validationDelay > 0 {
+		timer := time.NewTimer(r.validationDelay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
 }
 func (r *mediaTerminalRunner) RunTurnTextMode(ctx context.Context, text string) error {
 	r.refs = chatmedia.Input(ctx)
@@ -148,6 +170,9 @@ func (h *mediaTerminal) next(n int) tea.Cmd {
 func (h *mediaTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var next tea.Cmd
 	if step, ok := msg.(mediaTerminalStep); ok {
+		if !h.readyForStep(step) {
+			return h, h.next(int(step))
+		}
 		switch step {
 		case 0:
 			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(strings.ReplaceAll(h.path, " ", "\\ ")), Paste: true}
@@ -170,7 +195,9 @@ func (h *mediaTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case 7, 8:
 			if h.reject && step == 7 {
+				h.runner.validationMu.Lock()
 				h.runner.validationErr = nil
+				h.runner.validationMu.Unlock()
 				msg = tea.KeyMsg{Type: tea.KeyEnter}
 				break
 			}
@@ -191,3 +218,33 @@ func (h *mediaTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return h, tea.Batch(cmd, next)
 }
 func (h *mediaTerminal) View() string { return h.model.View() }
+
+// Script ticks pace the visual recording; readiness, rather than a fixed delay,
+// decides when an asynchronous import/validation/response can be acted on.
+func (h *mediaTerminal) readyForStep(step mediaTerminalStep) bool {
+	switch step {
+	case 1:
+		return !h.model.media.importing && len(h.model.media.draft) == 1
+	case 2, 3, 4:
+		return !h.model.media.importing && len(h.model.media.draft) == 2
+	case 5, 6:
+		if h.reject {
+			return !h.model.media.validating && h.model.media.err != ""
+		}
+	case 7:
+		if h.reject {
+			return !h.model.media.validating && h.model.media.err != ""
+		}
+		return h.hasReply()
+	case 8:
+		return h.hasReply()
+	}
+	return true
+}
+func (h *mediaTerminal) hasReply() bool {
+	if len(h.model.plainTurns) < 2 {
+		return false
+	}
+	last := h.model.plainTurns[len(h.model.plainTurns)-1]
+	return strings.Contains(last.text, "Two colored blocks") && (!h.agent || len(last.attachments) == 2)
+}

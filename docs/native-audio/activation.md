@@ -1,10 +1,10 @@
 # Prepared native persona bindings
 
-Production activation remains guarded. The activation worktree adds candidate
-setup, ordinary-agent construction and transaction machinery. Product persona
-controls and restore/replay integration remain. Known answer-quality limitations
-stay documented for experimental opt-in; general model accuracy is not a blanket
-activation predicate.
+Native-aware CLI, terminal and desktop hosts now install prepared activation,
+selection and restoration through the [shared conversation boundary](frontdoor.md).
+Generic hosts remain guarded. Replay UI and complete acceptance qualification remain
+open. Known answer limitations stay documented for experimental opt-in; general
+model accuracy is not a blanket activation predicate.
 
 `nativeaudio.SupportCache.Prepare` reads the explicitly selected runtime version,
 model digest and capabilities, then quietly checks required same-model ASR,
@@ -31,7 +31,9 @@ preparation and an independent authorization decision. Missing authorization fai
 with `ErrNativeUnqualified`. Hosts must provide a live matching conversation scope,
 bind media/store/lifetime to that session, and serialize selection with turn/lifecycle
 work. The default selector and ordinary binding resolver continue to reject native
-activation. No production authorization override is installed by this checkpoint.
+activation. The current native-aware host supplies readiness checks for its owned media,
+prepared config/protocol and exact live scope. This does not promote model quality
+or exact runtime context accounting to qualified.
 
 At the serialized selection boundary:
 

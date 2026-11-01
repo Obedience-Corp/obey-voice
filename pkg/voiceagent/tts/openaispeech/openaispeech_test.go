@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -731,5 +732,33 @@ func TestTailTrimmerDropsPadKeepsPauses(t *testing.T) {
 	_ = tr3.finish()
 	if len(c3.got) != 100 {
 		t.Fatalf("short silent input emitted %d samples, want 100", len(c3.got))
+	}
+}
+
+func TestTruncatedSpeechBodyIsTypedAndNeverRetried(t *testing.T) {
+	_, catalog := newFake(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/speech" {
+			catalog.Config.Handler.ServeHTTP(w, r)
+			return
+		}
+		requests.Add(1)
+		w.Header().Set("Content-Type", "audio/pcm")
+		w.Header().Set("Content-Length", "100")
+		_, _ = w.Write([]byte{1, 0})
+	}))
+	defer server.Close()
+	provider, cleanup, err := New(cfgFor(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	_, err = drain(t, provider, "Do not retry this partial output.")
+	if !tts.IsProviderErrorKind(err, tts.ProviderErrorUnavailable) || !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("truncated HTTP body: %v", err)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("partial speech retried %d times", requests.Load())
 	}
 }

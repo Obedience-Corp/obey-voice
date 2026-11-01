@@ -32,6 +32,14 @@ func personaPreviewConfig(base *config.Config, selection persona.TTS) (config.Co
 }
 
 func (m *personasModel) previewSelectedPersona() tea.Cmd {
+	if m.cursor >= 0 && m.cursor < len(m.items) {
+		p := m.items[m.cursor]
+		if p != nil && p.Audio != nil && p.Audio.Mode == persona.AudioNative {
+			m.message = "Native voice: edit persona and use ctrl+g for quiet setup"
+			return nil
+		}
+	}
+
 	if m.preview.previewing != "" {
 		m.preview.cancel()
 		m.message = "Preview stopped"

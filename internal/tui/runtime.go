@@ -68,8 +68,9 @@ type ConversationRuntime struct {
 	// Persist flushes the session while the pipeline is still alive. run()
 	// calls it before the process-quit timer so a wedged TTS/STT close cannot
 	// discard the chat.
-	Persist func()
-	Cleanup func() // tears down pipeline resources and saves the session
+	ReplayRecording func(context.Context, string, uint64) error
+	Persist         func()
+	Cleanup         func() // tears down pipeline resources and saves the session
 }
 
 // PersonaBindingError identifies a startup failure caused by an unavailable

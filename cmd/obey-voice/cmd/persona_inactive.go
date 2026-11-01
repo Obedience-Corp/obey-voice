@@ -85,5 +85,16 @@ func loadCommandConfig(cmd *cobra.Command) (*config.Config, error) {
 	if cmd.Parent() != nil && cmd.Parent().Name() == "persona" {
 		return loadPersonaManagementConfig()
 	}
+	if cmd.Name() == "obey-voice" {
+		return loadConversationSettings()
+	}
 	return config.Load()
+}
+
+func loadConversationSettings() (*config.Config, error) {
+	cfg, err := config.Load()
+	if errors.Is(err, persona.ErrNativeAudioUnavailable) {
+		return config.LoadRaw()
+	}
+	return cfg, err
 }

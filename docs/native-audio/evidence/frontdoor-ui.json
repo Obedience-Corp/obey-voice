@@ -1,0 +1,86 @@
+{
+  "kind": "synthetic protocol UI and CLI integration, not model quality",
+  "fixture_root": "/var/folders/9d/nyc358s50g7591g74wjx8pn40000gn/T/obey-desktop-ui-d0ldedl6",
+  "request_counts": {
+    "/api/show": 3,
+    "/api/chat": 9,
+    "/v1/audio/speech": 3
+  },
+  "sessions": [
+    {
+      "id": "20261030-220819-68ba",
+      "sha256": "db3e0f7a762b07665e9b4a17cfce785c60f0a516f7850bc42b4d97a7cb45c4a7",
+      "format_version": 3,
+      "selection": {
+        "binding_hash": "d0c0fc72d93337c5715b95b007326b9abadf52f1bb87121b7691450ec3fb7ac5",
+        "revision": 0,
+        "audio_mode": "native",
+        "audio_controls": "conversation",
+        "audio_transcript": "off",
+        "brain_provider": "ollama",
+        "brain_model": "lfm3-audio:2b",
+        "voice_provider": "openai-speech",
+        "voice": "female"
+      },
+      "turns": [
+        [
+          "user",
+          "Verify the native startup fixture."
+        ],
+        [
+          "assistant",
+          "Native fixture response."
+        ],
+        [
+          "user",
+          "Continue the saved native fixture."
+        ],
+        [
+          "assistant",
+          "Native fixture response."
+        ]
+      ]
+    },
+    {
+      "id": "20261030-221540-32a5",
+      "sha256": "04be6acd9893b54e51eca1cdf01512c922f503079fb403a3c94effca91bb81d7",
+      "format_version": 3,
+      "selection": {
+        "binding_hash": "d0c0fc72d93337c5715b95b007326b9abadf52f1bb87121b7691450ec3fb7ac5",
+        "revision": 0,
+        "audio_mode": "native",
+        "audio_controls": "conversation",
+        "audio_transcript": "off",
+        "brain_provider": "ollama",
+        "brain_model": "lfm3-audio:2b",
+        "voice_provider": "openai-speech",
+        "voice": "female"
+      },
+      "turns": [
+        [
+          "user",
+          "Verify the plain native CLI fixture."
+        ],
+        [
+          "assistant",
+          "Native fixture response."
+        ]
+      ]
+    }
+  ],
+  "config_sha256": "875b3293d12fba9a7b7d7c40c92702ce501d64fb1f85948205c3488add5aaad8",
+  "post_restart_request_has_prior_turn": true,
+  "no_asr": true,
+  "history_match": "substring within actual host-attributed user messages; canonical saved text remains unwrapped",
+  "wire_sha256": "e80958a0e2c53f2b34aa6af1b01ea09bfd9c67df4616aff0c84ce5e135401594",
+  "desktop_and_microphone": "fixture launcher text-only/silent; CUA verified mic and speech controls disabled; app quit; fixture server reaped",
+  "first_trial": "8xl1utl8: bare 15 without explicit terminal reason hit production mid-sentence recovery; trial retained as a limitation/investigation, not a pass",
+  "unverified": [
+    "real model quality",
+    "recorded-input UI/replay",
+    "physical speech or microphone",
+    "numeric-only genuine-model integrity trial"
+  ],
+  "production_code_checkpoint": "96ffc3ac",
+  "limits": "Synthetic protocol UI/CLI verification only; no real-model quality, recorded-input UI/replay or hardware qualification."
+}

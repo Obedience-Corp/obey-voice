@@ -4,6 +4,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,6 +29,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 )
 
 var (
@@ -85,7 +87,7 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := loadConversationSettings()
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
@@ -197,12 +199,23 @@ func loadConfigForSession(personaID string) (*config.Config, error) {
 // StartDefaultsID. Unset profile fields inherit Settings.
 func bindSession(cfg *config.Config, personaID string) (*persona.SessionBinding, error) {
 	if personaID == appTUI.StartDefaultsID {
-		return persona.ResolveDefaultsBinding(cfg)
+		binding, err := persona.ResolveDefaultsBinding(cfg)
+		if errors.Is(err, persona.ErrNativeAudioUnavailable) {
+			binding, _, err = (persona.Catalog{}).ResolveCandidateBindingWithIssues(cfg, persona.DefaultID)
+		}
+		return binding, err
 	}
 	if personaID == "" {
 		personaID = personaOverride
 	}
-	return persona.ResolveBinding(cfg, personaID)
+	binding, err := persona.ResolveBinding(cfg, personaID)
+	if errors.Is(err, persona.ErrNativeAudioUnavailable) {
+		if personaID == "" {
+			personaID = persona.ActiveID(cfg)
+		}
+		binding, _, err = (persona.Catalog{}).ResolveCandidateBindingWithIssues(cfg, personaID)
+	}
+	return binding, err
 }
 
 // conversationRuntimeBuilder returns the RuntimeBuilder the TUI invokes on
@@ -267,10 +280,40 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			return nil, &appTUI.PersonaBindingError{Err: err, SessionID: failedSessionID}
 		}
 
+		native := binding.AudioConfig().Mode == persona.AudioNative
+		if sess != nil {
+			var projectionErr error
+			if native {
+				projectionErr = brain.ValidateNativeProjection(sess.Turns)
+			} else {
+				projectionErr = brain.ValidateTextProjection(sess.Turns)
+			}
+			if projectionErr != nil {
+				return nil, &appTUI.PersonaBindingError{Err: projectionErr, SessionID: sess.ID}
+			}
+		}
+		resumed := sess != nil
+		if sess == nil {
+			sess = session.New(cfg.BrainProvider, modelName(cfg))
+		}
+		recordings, err := newConversationAudio(ctx, session.DefaultStore(), sess)
+		if err != nil {
+			return nil, &appTUI.PersonaBindingError{Err: err, SessionID: sess.ID}
+		}
+		ready := false
+		defer func() {
+			if !ready {
+				recordings.close()
+			}
+		}()
+		if recordings.restored != nil {
+			sess = recordings.restored.Session
+		}
+
 		spCfg := speaker.FromAppConfig(cfg)
 		req := config.AssetRequest{
-			NeedTTS:     !noVoice,
-			NeedSTT:     !textMode,
+			NeedTTS:     !noVoice && !native,
+			NeedSTT:     !textMode && !native,
 			NeedVAD:     !textMode && cfg.VADEnabled,
 			NeedSpeaker: !textMode && spCfg.LiveActive(),
 		}
@@ -287,17 +330,27 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		liveTTS := &voiceagent.LiveTTSManager{}
 		// The pipeline names its own steps: each model load is seconds, and the
 		// screen waiting on them has nothing else to report.
-		p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice, liveTTS, progress.Stage)
+		p, cleanup, err := recordings.build(ctx, binding, bus, textMode, noVoice, liveTTS, progress.Stage)
 		if err != nil {
 			liveTTS.Close()
 			closeTap()
+			if native {
+				failedID := ""
+				if resumed {
+					failedID = sess.ID
+				}
+				return nil, &appTUI.PersonaBindingError{Err: fmt.Errorf("init native audio: %w", err), SessionID: failedID}
+			}
 			return nil, fmt.Errorf("init pipeline: %w", err)
 		}
 
-		resumed := sess != nil
-		if sess == nil {
-			sess = session.New(cfg.BrainProvider, modelName(cfg))
-		} else {
+		if err := p.BindAudioMedia(recordings.media); err != nil {
+			cleanup()
+			liveTTS.Close()
+			closeTap()
+			return nil, err
+		}
+		if resumed {
 			p.Brain.LoadHistory(sess.Turns)
 		}
 
@@ -359,12 +412,18 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 
 		var selector *personaruntime.Selector
 		if _, supported := p.Brain.(brain.HistoryProjectionProvider); supported {
-			var voices *voiceagent.LiveTTSManager
-			if !noVoice {
-				voices = liveTTS
+			voices := liveTTS
+			if recordings.initial != nil {
+				if err := recordings.initial.BindScope(p.ConversationScope()); err != nil {
+					cleanup()
+					liveTTS.Close()
+					closeTap()
+					return nil, err
+				}
 			}
 			selector, err = personaruntime.NewSelector(personaruntime.SelectionOptions{
 				Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
+				Native: recordings.hooks(p, textMode, noVoice), InitialNative: recordings.initial,
 				UseDefaults:   sessionBindID == appTUI.StartDefaultsID,
 				Participation: sess.Participation,
 				PersistParticipation: func(settings discussion.Settings) error {
@@ -390,6 +449,11 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				cleanup()
 				closeTap()
 				return nil, err
+			}
+			p.BeforeCapture = func(ctx context.Context) error { _, err := selector.Admit(ctx); return err }
+			p.AdmitAudio = func(ctx context.Context, _ *utterance.Finalized) (pipeline.ResponseAdmission, error) {
+				envelope, err := selector.Admit(ctx)
+				return pipeline.ResponseAdmission{Envelope: envelope}, err
 			}
 			p.AdmitInput = selector.Route
 			p.RouteHandoff = selector.RouteHandoff
@@ -419,7 +483,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		rt = &appTUI.ConversationRuntime{
 			Pipeline:     p,
 			Bus:          bus,
-			Voice:        p.STT != nil,
+			Voice:        p.STT != nil || p.Input != nil,
 			Output:       p.HasTTS() && p.Player != nil,
 			PersonaID:    binding.PersonaID,
 			AgentName:    binding.AgentName,
@@ -494,17 +558,22 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				}
 				return nil
 			},
+			ReplayRecording: func(ctx context.Context, id string, epoch uint64) error {
+				return recordings.replay(ctx, p, cfg.OutputDevice, id, epoch)
+			},
 			Persist: func() {
 				if err := sess.Save(p.Brain.History()); err != nil {
 					fmt.Fprintf(os.Stderr, "  warning: failed to save session %s: %v\n", sess.ID, err)
 				}
 			},
 			Cleanup: func() {
-				if selector != nil {
-					selector.Close()
-				}
+				// Join/materialize pending captions while their publication
+				// lease is valid, then retire selection and provider resources.
 				if err := closeWorkSession(p, checkpoint); err != nil {
 					fmt.Fprintf(os.Stderr, "  warning: work cleanup: %v\n", err)
+				}
+				if selector != nil {
+					selector.Close()
 				}
 				// stopLive closes feed, adapter, and analyzer/engine.
 				if stopLive != nil {
@@ -517,6 +586,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				}
 				liveTTS.Close()
 				cleanup()
+				recordings.close()
 				closeTap()
 			},
 		}
@@ -533,6 +603,13 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		if resumed {
 			rt.Seed = sess.Turns
 		}
+		if recordings.restored != nil {
+			if err := recordings.restored.Adopt(); err != nil {
+				rt.Cleanup()
+				return nil, err
+			}
+		}
+		ready = true
 		return rt, nil
 	}
 }
@@ -557,101 +634,39 @@ func wireCompact(p *pipeline.Pipeline, cfg *config.Config, sess *session.Session
 	}
 }
 
-func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
+func startPipeline(_ *config.Config, resumeSession *session.Session) error {
 	ctx, cancel := signalContext()
 	defer cancel()
-
-	// Same binding rule as the TUI runtime: the CLI conversation runs on an
-	// identity snapshot, not the live global overlay. --persona selects which
-	// identity, for this process only.
 	bindID := personaOverride
 	if bindID == "" && resumeSession != nil {
 		bindID = resumeSession.SelectedPersonaID
 	}
-	if err := resolveConversationDirectory(cfg, bindID, "", resumeSession); err != nil {
-		return err
-	}
-	binding, err := persona.ResolveBinding(cfg, bindID)
-	if err != nil {
-		return fmt.Errorf("resolve persona: %w", err)
-	}
-	cfg = binding.Config()
-
-	req := config.AssetRequest{
-		NeedTTS: !noVoice,
-		NeedSTT: !textMode,
-		NeedVAD: !textMode && cfg.VADEnabled,
-	}
-	if err := config.EnsureRuntimeAssets(ctx, cfg, req, modelProgress); err != nil {
-		return fmt.Errorf("ensure runtime assets: %w", err)
-	}
-
-	bus := events.NewBus()
-	closeTap, err := attachTranscriptLog(bus)
-	if err != nil {
-		return fmt.Errorf("transcript log: %w", err)
-	}
-	defer closeTap()
-	display := ui.New(bus, cfg.AgentName)
-
-	p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice, nil, printStage)
-	if err != nil {
-		return fmt.Errorf("init pipeline: %w", err)
-	}
-	defer cleanup()
-	display.SetWorkSnapshot(p.WorkSnapshot)
-
-	// Create or resume session.
-	sess := resumeSession
-	if sess == nil {
-		sess = session.New(cfg.BrainProvider, modelName(cfg))
-	} else {
-		// Restore conversation history.
-		if sess.Provider != "" && sess.Provider != cfg.BrainProvider {
-			fmt.Printf("  Note: session was recorded with provider %q, resuming with %q\n", sess.Provider, cfg.BrainProvider)
-		}
-		p.Brain.LoadHistory(sess.Turns)
-		fmt.Printf("  Resuming session %s (%d turns)\n", sess.ID, len(sess.Turns))
-	}
-
-	checkpoint, err := bindWorkSession(p, cfg, sess, session.DefaultStore())
+	rt, err := conversationRuntimeBuilderFor(resumeSession, textMode, noVoice)(ctx, func(stage appTUI.BuildStage) { printStage(stage.Text()) }, "", bindID)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if closeErr := closeWorkSession(p, checkpoint); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "  warning: work cleanup: %v\n", closeErr)
-		}
-	}()
-
-	// Preload the model while the welcome/setup is shown so the user's first
-	// turn isn't the cold one. Best-effort — failures are ignored. After the
-	// session is restored: LoadHistory resets the delegation runtime whose
-	// tools warmup sends.
-	if w, ok := p.Brain.(brain.Warmer); ok {
-		go w.Warmup(ctx)
-	}
-
-	// Auto-save after each turn.
-	p.OnTurn = func() {
-		checkpoint.retry()
-		if err := sess.Save(p.Brain.History()); err != nil {
-			bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
-		}
-	}
-
+	defer rt.Cleanup()
+	display := ui.New(rt.Bus, rt.AgentName)
+	display.SetWorkSnapshot(rt.Pipeline.WorkSnapshot)
 	display.ShowWelcome()
-	display.ShowProviders(cfg.TTSProvider, cfg.STTProvider)
-	defer display.ShowGoodbye()
-
-	err = app.Run(ctx, p, os.Stdin, textMode, noVoice)
-
-	// Final save on exit.
-	if saveErr := sess.Save(p.Brain.History()); saveErr != nil {
-		fmt.Fprintf(os.Stderr, "  warning: failed to save session %s: %v\n", sess.ID, saveErr)
+	input := rt.SessionCfg.STTProvider
+	if rt.Pipeline.Native != nil {
+		input = "native audio (direct)"
+		if textMode {
+			input = "native audio (typed input)"
+		}
 	}
-
-	return err
+	display.ShowProviders(rt.SessionCfg.TTSProvider, input)
+	defer display.ShowGoodbye()
+	if resumeSession != nil {
+		if resumeSession.Provider != "" && resumeSession.Provider != rt.SessionCfg.BrainProvider {
+			fmt.Printf("  Note: session was recorded with provider %q, resuming with %q\n", resumeSession.Provider, rt.SessionCfg.BrainProvider)
+		}
+		fmt.Printf("  Resuming session %s (%d turns)\n", rt.SessionID, len(rt.Seed))
+	}
+	// Both plain CLI and native desktop/terminal now use the same prepared
+	// binding, restore, selector and persistence boundary.
+	return app.Run(ctx, rt.Pipeline, os.Stdin, textMode, noVoice)
 }
 
 // buildPipeline constructs the interactive pipeline through the library, so the

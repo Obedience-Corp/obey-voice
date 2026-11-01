@@ -3,6 +3,7 @@ package brain
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -17,6 +18,11 @@ const (
 	continuitySoftLimitRatio = 80 // percent; matches DECISIONS D3 soft limit
 )
 
+// A numeric scalar can be a complete answer without sentence punctuation.
+// Require the runtime's explicit stop signal; length/unknown termination and
+// prompt saturation retain their existing rejection/recovery behavior.
+var completeNumericAnswer = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?%?$`)
+
 // IntegrityInput captures stream completion signals for integrity evaluation.
 type IntegrityInput struct {
 	DoneReason   string
@@ -29,10 +35,11 @@ type IntegrityInput struct {
 
 func evaluateStreamIntegrity(in IntegrityInput) IntegrityResult {
 	speakable := strings.TrimSpace(in.Speakable)
+	stoppedNumber := strings.EqualFold(strings.TrimSpace(in.DoneReason), "stop") && completeNumericAnswer.MatchString(speakable)
 	midSentence := !in.HasToolCalls &&
 		in.GenTokens < continuityMinCompleteGen &&
 		speakable != "" &&
-		endsMidSentence(speakable)
+		endsMidSentence(speakable) && !stoppedNumber
 
 	lengthStop := strings.EqualFold(strings.TrimSpace(in.DoneReason), "length")
 	promptSaturated := in.NumCtx > 0 && in.PromptTokens >= in.NumCtx-continuityPromptMargin

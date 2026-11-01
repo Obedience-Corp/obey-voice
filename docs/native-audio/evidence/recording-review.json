@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "source_checkpoint": "87767c7d",
+  "fixture_root": "/var/folders/9d/nyc358s50g7591g74wjx8pn40000gn/T/obey-desktop-ui-_jluxzjb",
+  "fixture_type": "synthetic 440 Hz retained PCM and deterministic local protocol, not speech quality",
+  "original": {
+    "epoch": 17,
+    "id": "recorded-fixture",
+    "pcm_sha256": "0d511822d23f99dec9df9e700f9f215efc2ed8a768e892422438ba7c6f6f4033",
+    "sample_rate": 16000,
+    "samples": 48000,
+    "session_id": "20261030-225501-2bad"
+  },
+  "sink": {
+    "epoch": 17,
+    "id": "recorded-fixture",
+    "pcm_sha256": "0d511822d23f99dec9df9e700f9f215efc2ed8a768e892422438ba7c6f6f4033",
+    "sample_rate": 16000,
+    "samples": 48000
+  },
+  "exact_original_pcm": true,
+  "replay_no_model_requests": true,
+  "resumed_replay_no_model_requests": true,
+  "native_observed": [
+    "resume retained transcript-off input",
+    "Replay original -> Original recording finished",
+    "Transcribe recording -> original row Explicit recording transcript.",
+    "quit/reopen -> same session and ready transcript",
+    "Replay original after reopen -> same PCM"
+  ],
+  "persisted": {
+    "turn_count": 2,
+    "transcript": {
+      "state": "ready",
+      "text": "Explicit recording transcript.",
+      "provider": "ollama",
+      "model": "lfm3-audio:2b"
+    },
+    "same_audio_ref": true,
+    "selection_audio_mode": "native"
+  },
+  "request_counts": {
+    "/api/show": 2,
+    "/api/chat": 4,
+    "/v1/audio/speech": 2,
+    "/v1/audio/transcriptions": 1
+  },
+  "requests_sha256": "7c8fb204075f1e6a6f8c09b0dbc17fde1ef19a442edfd129cf973df1b15400f7",
+  "failed_first_trial": {
+    "root": "/var/folders/9d/nyc358s50g7591g74wjx8pn40000gn/T/obey-desktop-ui-yx5nnw1e",
+    "finding": "canonical transcript saved Ready but live row remained off because eventBridge.attach lacked InputTranscriptUpdated subscription",
+    "regression": "overlay without subscription fails TestLiveCaptionCrossesActualEventBridgeToOriginalRow; current subscription passes"
+  },
+  "limits": [
+    "software sink drains without wall-clock playback timing",
+    "no microphone or audible device",
+    "no real ASR/model quality claim",
+    "recording-list status addition verified by Go tests rather than native rerun"
+  ],
+  "cleanup": "native app quit via CUA; owned fixture process reaped exit0"
+}

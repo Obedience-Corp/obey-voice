@@ -112,7 +112,7 @@ func PrepareNativeCandidate(ctx context.Context, cfg *config.Config, opts Native
 	candidate.closeSpeech = closeSpeech
 	candidate.Setup = result
 	candidate.Voice = &TTSSet{Primary: speech}
-	candidate.Brain, err = brain.NewNativeOllama(prepareCtx, snap, client.HTTPClient(), opts.Media)
+	candidate.Brain, err = brain.NewNativeOllama(prepareCtx, snap, client.HTTPClient(), opts.Media, brain.NativeContextIdentity{RuntimeVersion: result.Metadata.RuntimeVersion, Digest: result.Metadata.Digest})
 	if err != nil {
 		return nil, fmt.Errorf("prepare native brain: %w", err)
 	}

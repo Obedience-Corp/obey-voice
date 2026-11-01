@@ -346,3 +346,28 @@ func TestClearAndCloseJoinOptionalCaptionBeforeConversationMutation(t *testing.T
 		})
 	}
 }
+
+func TestRetiredNativeCleanupIsIdempotentButForegroundRemainsRejected(t *testing.T) {
+	p := &Pipeline{Native: &NativePolicy{Scheduler: nativeaudio.NewScheduler()}}
+	if err := p.BeginConversationIdentity("cleanup"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Native.Retire(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.QuiesceNative(t.Context()); err != nil {
+		t.Fatal("retired cleanup cannot join", err)
+	}
+	if err := p.prepareNativeForeground(t.Context()); err == nil {
+		t.Fatal("retired input was admitted")
+	}
+	if err := p.CloseWork(); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.CloseWork(); err != nil {
+		t.Fatal("repeat cleanup failed", err)
+	}
+	if !p.ConversationRetired() {
+		t.Fatal("conversation identity remained live")
+	}
+}

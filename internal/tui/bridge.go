@@ -44,6 +44,7 @@ func newEventBridge(capacity int) *eventBridge {
 func (b *eventBridge) attach(bus *events.Bus) {
 	forward[events.STTPhase](b, bus)
 	forward[events.UserInput](b, bus)
+	forward[events.InputTranscriptUpdated](b, bus)
 	forward[events.TranscriptPartial](b, bus)
 	// AudioLevel is high-rate and droppable; never durable (fitBridgeQueue).
 	forward[events.AudioLevel](b, bus)

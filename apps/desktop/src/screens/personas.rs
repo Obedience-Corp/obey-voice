@@ -7,6 +7,13 @@ use eframe::egui::RichText;
 
 impl VoiceApp {
     pub(super) fn persona_list(&mut self, ui: &mut egui::Ui) {
+        if self.active && !self.state.persona_message.is_empty() {
+            ui.add(
+                egui::Label::new(&self.state.persona_message)
+                    .wrap()
+                    .selectable(true),
+            );
+        }
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(if self.active {
@@ -46,10 +53,20 @@ impl VoiceApp {
                             ui.label("Inactive");
                         }
                     });
-                    ui.label(
-                        RichText::new(format!("{} · {} · {}", p.id, p.provider, p.voice))
-                            .color(muted(ui)),
-                    );
+                    let details = if native {
+                        let model = p.audio["model"]
+                            .as_str()
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or("lfm3-audio:2b");
+                        let voice = p.audio["voice"]
+                            .as_str()
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or("model default voice");
+                        format!("{} · {} · {}", p.id, model, voice)
+                    } else {
+                        format!("{} · {} · {}", p.id, p.provider, p.voice)
+                    };
+                    ui.label(RichText::new(details).color(muted(ui)));
                     if native {
                         ui.label("Native audio · experimental");
                     }

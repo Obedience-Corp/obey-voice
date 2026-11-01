@@ -185,7 +185,7 @@ func (p *Pipeline) runCanonicalCompletion(ctx context.Context, lease work.Comple
 
 func (p *Pipeline) completionNeedsVoice() bool {
 	primary, fallback := p.ttsProviders()
-	return p.STT != nil || p.Player != nil || primary != nil || fallback != nil
+	return p.HasCaptureProvider() || p.Player != nil || primary != nil || fallback != nil
 }
 
 // Unsupported providers use canonical data directly. No tool/model can turn

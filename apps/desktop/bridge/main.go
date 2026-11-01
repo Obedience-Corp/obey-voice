@@ -225,6 +225,7 @@ func (h *host) handle(ctx context.Context, r request, o *output) (any, error) {
 			rt.Cleanup()
 			return nil, ctx.Err()
 		}
+		configureRecordingFixture(rt)
 		// The consumer owns the latest full snapshot; slow UI output cannot stall
 		// the TUI state machine, microphone, or model event bus.
 		states := make(chan engine.DesktopState, 1)

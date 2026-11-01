@@ -1,9 +1,11 @@
-# Guarded native audio integration (WI-43b072)
+# Experimental native audio integration (WI-43b072)
 
-Native persona activation remains disabled by `persona.RequireEnabled`. This
-checkpoint adds tested input, history, delivery and caption components. The
-[activation continuation](activation.md) adds guarded setup/transaction machinery;
-production startup, persona controls and qualification remain follow-up work. Existing personas use their Standard providers and saved settings.
+Native-aware CLI, terminal and desktop conversations now opt into the prepared
+persona integration. The generic binding API remains guarded for unaware hosts.
+[Frontdoor verification](frontdoor.md) covers actual startup/default selection,
+restore/projection, native UI and the numeric-integrity correction.
+[Prepared bindings](activation.md) describes the transaction machinery. Existing
+Standard personas retain their providers and saved settings. Original replay/retry controls are delivered in [recording review](recording-review.md). Current A01–A25 software evidence is mapped in the [acceptance audit](acceptance-audit.md). Physical-device/model quality qualifications remain separate. The reviewed runtime now has a [pinned context contract](context-contract.md); other identities retain estimated admission.
 
 The implementation shares the existing capture/VAD/endpoint/completion owner,
 with a decoder-free `utterance.Provider`. Native input and image attachments have
@@ -32,8 +34,8 @@ audio. Audio-only context cannot be silently evicted or compacted as blank text.
 - `just test unit`, `just test voiceflow`, `just build`: whole-project gates.
 - `OBEY_NATIVE_AUDIO_FIXTURE="$PWD/pkg/voiceagent/nativeaudio/assets/setup.wav" go test ./pkg/voiceagent/nativeaudio -run '^TestLiveNativeProductionAdapters$' -count=1 -v`: explicitly selected installed local Ollama model, isolated temporary config and software drain. This checks adapters/scheduler, not complete profile activation or model quality. It does not install a model.
 
-The committed checkpoint was tested from an exact archive, excluding ongoing
-candidate setup work. Native race suites, build, voiceflow and audio-crackle pass.
+The historical foundation checkpoint was tested from an exact archive, excluding
+then-ongoing candidate setup work. Current host checks are in [frontdoor.md](frontdoor.md). Native race suites, build, voiceflow and audio-crackle pass.
 The first whole-unit run reported 5,457/5,459 passing: the scene dependency guard
 failed and the TUI dashboard reported one unnamed failure. Raw TUI reruns pass;
 the initial failure is retained rather than described as a clean full-unit run.
@@ -41,7 +43,7 @@ The confirmed scene regression was repaired by moving the shared WAV metadata
 reader into a dependency-free package, preserving the existing audio API. Scene,
 audio and chatmedia race suites then pass, as does changed-code lint.
 
-Full local lint remains failing on unchanged errcheck findings in
+That foundation full-local-lint run reported unchanged errcheck findings in
 `job/table_test.go:670` and `tts/qwen/native_session.go:220,223` (also present in
 main). The review correction separately passed the full pipeline race suite and
 changed-code lint. These results do not qualify activation or model quality.
@@ -54,7 +56,7 @@ python3 docs/native-audio/evidence/context_accounting_probe.py --output /tmp/nat
 
 The [ordinary agent proof](ordinary-agent-proof.md) now covers two actual recorded
 inputs through constructor, selector/history and software speech, with verified
-zero forbidden-factory execution. Production UI integration remains separate.
+zero forbidden-factory execution. Current production UI integration evidence is separate in [frontdoor.md](frontdoor.md).
 
 ## Evidence and open gates
 
@@ -82,11 +84,31 @@ and both raw/canonical hashes are documented there.
   specifies hop 160 and encoder stride 8. Neither a text-only estimate nor one
   text/audio token difference qualifies exact audio history accounting.
 
-The context-budget discrepancy remains an open no-omission/resource-safety
-investigation. A20 specifically covers unavailable text/image projection: typed
-rejections now retain the previous binding; product Retry/New context actions
-remain to be integrated. A24 covers typed/local/completion native speech and
-scheduling, not model accuracy. A06 now has two distinct real production-path
-fixture responses in the ordinary-agent proof. Native selection/startup rollback, restart/replay/deletion,
-UI activation, fresh whole-project Standard checks and broader quality/physical
-listener gates remain explicit. No complete A01–A25 pass is claimed.
+The earlier context observation is explained for the pinned MLX path: it uses the
+model-level hard limit, expands complete audio first, and rejects oversized input.
+Actual boundary and mixed-input probes plus source/tokenizer hashes are in the
+[context contract](context-contract.md). The client retains its smaller 32K cap;
+unknown model/runtime identities do not inherit that proof.
+
+A20 projection failures retain the prior binding, and [actual desktop switching](controls-switching.md)
+verifies explicit transcription repair, Standard response, Native reactivation and
+six-turn restart with unchanged global choices. Lifecycle deletion/replay and
+startup rollback are delivered with owning negative tests. A24 selected typed/local/
+completion speech and scheduler/worker isolation are in [delivery verification](completion-delivery.md).
+The later full unit run passed 5,540 tests in 86 packages; historical failures above
+remain disclosed. Physical devices, representative listener quality and editor task
+qualification are not inferred from these software fixtures.
+
+Original recording replay and explicit transcript retry: [controls and evidence](recording-review.md).
+
+Typed/local/worker speech and Native recorded completion context: [delivery verification](completion-delivery.md).
+
+Actual invalid-voice and cancellation milestones: [local provider negatives](provider-negatives.md).
+
+Standard spoken controls and reversible Native/Standard selection: [native UI and product-host evidence](controls-switching.md).
+
+Pinned runtime accounting proof (already installed model, fresh absolute output):
+
+```sh
+just test native-context-contract-proof /tmp/native-context-contract-new.json
+```

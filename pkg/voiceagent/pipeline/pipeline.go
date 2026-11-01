@@ -95,8 +95,11 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
-	Input         utterance.Provider
-	AdmitAudio    func(context.Context, *utterance.Finalized) (ResponseAdmission, error)
+	Input      utterance.Provider
+	AdmitAudio func(context.Context, *utterance.Finalized) (ResponseAdmission, error)
+	// BeforeCapture refreshes the host binding before opening a reader and
+	// snapshotting its policy. Hosts serialize this with clear/restore/selection.
+	BeforeCapture func(context.Context) error
 	Native        *NativePolicy
 	journalMu     sync.RWMutex
 	journalHealth events.WorkJournalHealth
@@ -515,3 +518,7 @@ func (p *Pipeline) clearPreparedCapture() {
 
 // CurrentSpeakerID is the finalized-input speaker snapshot used by admission owners.
 func (p *Pipeline) CurrentSpeakerID() string { return p.currentSpeakerID() }
+
+// HasCaptureProvider includes finalized native input as well as Standard STT.
+// It does not open a reader or imply that a hardware device is available.
+func (p *Pipeline) HasCaptureProvider() bool { return p != nil && (p.STT != nil || p.Input != nil) }

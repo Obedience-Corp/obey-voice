@@ -13,7 +13,7 @@ import (
 // BackgroundCaptureReady prevents an idle host from skipping passive capture
 // and dispatching unsolicited speech before the owner has examined input.
 func (p *Pipeline) BackgroundCaptureReady() bool {
-	if p.WorkCoordinator() == nil || p.STT == nil || p.externalCompletionCapture != nil {
+	if p.WorkCoordinator() == nil || !p.HasCaptureProvider() || p.externalCompletionCapture != nil {
 		return true
 	}
 	p.captureMu.Lock()
@@ -57,7 +57,7 @@ func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Con
 		if err != nil {
 			return err
 		}
-	} else if p.STT == nil {
+	} else if !p.HasCaptureProvider() {
 		var err error
 		permit, err = c.AcquireCapturePermit(scope, request, p.captureRequests.Load())
 		if err != nil {
@@ -68,7 +68,7 @@ func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Con
 	}
 	lease, err := c.Claim(scope, request, request, refs, permit)
 	if err != nil {
-		if p.STT == nil || p.externalCompletionCapture != nil {
+		if !p.HasCaptureProvider() || p.externalCompletionCapture != nil {
 			_ = c.ReleaseCapturePermit(permit)
 		}
 		return err
