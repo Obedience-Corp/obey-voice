@@ -1,0 +1,1 @@
+{"schema":"obey-audio-findings/v1","task":"transcription","windows":[{"start_sample":720000,"end_sample":960000,"input_window_sha256":"5d01ec995eb6b6b14c73b1c8c5b66596b26700131f1f8e0ab31b25a5ac33058b","text":"Dave Cochran. User interface designer, yes.","usage":{"prompt_tokens":208,"completion_tokens":12}}]}

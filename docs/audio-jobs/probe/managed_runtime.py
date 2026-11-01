@@ -2,6 +2,7 @@
 """Quiet, explicit finite-worker lifecycle proof; no capture, playback or downloads."""
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -49,7 +50,7 @@ def main():
         attempt.mkdir(mode=0o700)
         cfg = dict(config, storage_root=str(attempt))
         req = dict(request, job_id=mode, output_dir=str(attempt / 'artifact'))
-        if mode != 'complete':
+        if mode != 'complete' and request['protocol'] == 'obey-audio-job/v1':
             req['script'] = ('This recording is a quiet cancellation fixture. ' * 15).strip()
         cfg_path, req_path = attempt / 'config.json', attempt / 'request.json'
         cfg_path.write_text(json.dumps(cfg, indent=2))
@@ -101,13 +102,42 @@ def main():
         if mode == 'complete':
             assert code == 0 and record['events'][-1] == 'completed', errors_path.read_text()
             manifest = json.loads((attempt / 'artifact' / 'manifest.json').read_text())
-            wav = attempt / 'artifact' / 'audio.wav'
-            assert digest(wav) == manifest['output']['sha256']
-            with wave.open(str(wav), 'rb') as stream:
-                assert stream.getframerate() == 24000 and stream.getnchannels() == 1
-                assert stream.getnframes() == manifest['output']['sample_count']
-                record.update(output_sha256=digest(wav), samples=stream.getnframes(),
-                              duration_seconds=stream.getnframes() / 24000)
+            output = attempt / 'artifact' / manifest['output']['path']
+            assert digest(output) == manifest['output']['sha256']
+            if request['protocol'] == 'obey-audio-job/v2':
+                assert manifest['output']['kind'] == 'json'
+                assert output.stat().st_size == manifest['output']['bytes']
+                findings = json.loads(output.read_text())
+                assert findings['schema'] == 'obey-audio-findings/v1'
+                assert findings['task'] == request['task']
+                with wave.open(request['input']['path'], 'rb') as stream:
+                    pcm = stream.readframes(stream.getnframes())
+                origin = request['input']['source_origin_samples']
+                count = request['input']['sample_count']
+                windows = findings['windows']
+                assert windows[0]['start_sample'] == origin
+                assert windows[-1]['end_sample'] == origin + count
+                for index, window in enumerate(windows):
+                    start, end = window['start_sample'] - origin, window['end_sample'] - origin
+                    assert 0 <= start < end <= count and end - start <= 30 * 16000
+                    if index:
+                        assert window['start_sample'] == windows[index - 1]['end_sample'] - 2 * 16000
+                    expected = io.BytesIO()
+                    with wave.open(expected, 'wb') as segment:
+                        segment.setnchannels(1)
+                        segment.setsampwidth(2)
+                        segment.setframerate(16000)
+                        segment.writeframes(pcm[start * 2:end * 2])
+                    assert hashlib.sha256(expected.getvalue()).hexdigest() == window['input_window_sha256']
+                    assert window['text'].strip()
+                record.update(output_sha256=digest(output), findings=findings,
+                              full_input_samples=count, windows=len(windows))
+            else:
+                with wave.open(str(output), 'rb') as stream:
+                    assert stream.getframerate() == 24000 and stream.getnchannels() == 1
+                    assert stream.getnframes() == manifest['output']['sample_count']
+                    record.update(output_sha256=digest(output), samples=stream.getnframes(),
+                                  duration_seconds=stream.getnframes() / 24000)
             record['manifest'] = manifest
         else:
             assert code != 0 and not (attempt / 'artifact').exists()

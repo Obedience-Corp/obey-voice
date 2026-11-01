@@ -1,0 +1,358 @@
+{
+  "worker_sha256": "2bd2473ebc6c63858fd49561947afb63621b17523c79e14c4328cd3e06768a8f",
+  "source_unchanged": true,
+  "external_network_denied": true,
+  "loopback_allowed_for_owned_runtime": true,
+  "playback": false,
+  "listening_or_task_quality_qualified": false,
+  "results": [
+    {
+      "case": "complete",
+      "exit": 0,
+      "seconds": 4.5734161250293255,
+      "events": [
+        "accepted",
+        "progress",
+        "artifact",
+        "completed"
+      ],
+      "owned_group_before_stop": [],
+      "owned_processes_after_exit": [],
+      "stop_seconds": null,
+      "output_sha256": "9e4aa6e6df7ea752206c00943769662323c20f0dae15f42979642fc09ed87488",
+      "findings": {
+        "schema": "obey-audio-findings/v1",
+        "task": "transcription",
+        "windows": [
+          {
+            "start_sample": 0,
+            "end_sample": 480000,
+            "input_window_sha256": "009f5bc4328e437da2b0da0f745a46f2eff752c8f26665737b05507e74a162be",
+            "text": "I just got the project announcement, but what the project is about? Designing a remote control. That's about it. And games and all. Did you get the same thing? So we're going to have an individual workshop and then we're going to talk about it. We'll repeat the process three times. And we're going to try to do like work over there.",
+            "usage": {
+              "prompt_tokens": 395,
+              "completion_tokens": 78
+            }
+          },
+          {
+            "start_sample": 448000,
+            "end_sample": 928000,
+            "input_window_sha256": "baa2103aab6a852c19f67288d5555bdd70a3cb964ef444d949e64093c2e39b6e",
+            "text": "I just got the project announcement, but what the project is that? Designing a remote control, that's about it, and gazing yours. Did you get the same thing? So we're going to have an individual work and then we're going to talk about it, repeat the process three times, and this is going to be a trial to like work over there.",
+            "usage": {
+              "prompt_tokens": 395,
+              "completion_tokens": 77
+            }
+          },
+          {
+            "start_sample": 896000,
+            "end_sample": 1376000,
+            "input_window_sha256": "f1cc238c134ffd8dc3dc6920ce2b77977f96de2c11e696a12301a1d6f826515e",
+            "text": "I just got the project announcement, but what the project is that? Designing a remote control, that's about it, engaging yours. Did you get the same thing? So we're going to have an individual work and then we're going to talk about it. We'll repeat the process three times.",
+            "usage": {
+              "prompt_tokens": 395,
+              "completion_tokens": 63
+            }
+          },
+          {
+            "start_sample": 1344000,
+            "end_sample": 1440000,
+            "input_window_sha256": "49167c6bb6d2c54c46dc80a4be3c1441b8de9d83a1908624341d1996b886d06e",
+            "text": "And just going to try to fly forward over there.",
+            "usage": {
+              "prompt_tokens": 95,
+              "completion_tokens": 12
+            }
+          }
+        ]
+      },
+      "full_input_samples": 1440000,
+      "windows": 4,
+      "manifest": {
+        "protocol": "obey-audio-job/v2",
+        "job_id": "complete",
+        "task": "transcription",
+        "source": {
+          "media_sha256": "21bb0939e9aee986246ad13f18b612df9080dadcabb1e4c1cb990fd562630671",
+          "clip_id": "public-ami-repeated-fixture",
+          "range_id": "full-90s",
+          "project_revision": "transport-proof-1"
+        },
+        "input": {
+          "path": "<PROOF_ROOT>/source-repeated-90s.wav",
+          "sha256": "21bb0939e9aee986246ad13f18b612df9080dadcabb1e4c1cb990fd562630671",
+          "sample_count": 1440000,
+          "sample_rate_hz": 16000,
+          "channels": 1,
+          "channel_role": "microphone",
+          "source_origin_samples": 0
+        },
+        "runtime": {
+          "provider": "llama.cpp",
+          "endpoint": "",
+          "model": "lfm3-audio-2b",
+          "voice": "female"
+        },
+        "runtime_version": "b11960-8642541b2",
+        "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+        "transport": "audio_to_text",
+        "script_sha256": "",
+        "language": "en",
+        "duration_policy": "preserve_picture",
+        "source_windows": [
+          {
+            "start_sample": 0,
+            "end_sample": 480000
+          },
+          {
+            "start_sample": 448000,
+            "end_sample": 928000
+          },
+          {
+            "start_sample": 896000,
+            "end_sample": 1376000
+          },
+          {
+            "start_sample": 1344000,
+            "end_sample": 1440000
+          }
+        ],
+        "output": {
+          "kind": "json",
+          "bytes": 1834,
+          "path": "findings.json",
+          "sha256": "9e4aa6e6df7ea752206c00943769662323c20f0dae15f42979642fc09ed87488"
+        },
+        "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+        "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+        "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+        "chunk_policy": "fixed-30s-overlap-2s/v1",
+        "text_sampling": {
+          "seed": 42,
+          "temperature": 0,
+          "max_tokens": 1024,
+          "context_tokens": 8192
+        }
+      },
+      "incomplete_files_after_worker_exit": [],
+      "caller_retired_incomplete_files": true
+    },
+    {
+      "case": "cancel",
+      "exit": 1,
+      "seconds": 1.3846142499241978,
+      "events": [
+        "accepted",
+        "progress",
+        "cancelled"
+      ],
+      "owned_group_before_stop": [
+        {
+          "pid": 69094,
+          "command": "/private/tmp/wi-43b072-supervisor-fixtures/editor-audio-input-worker"
+        },
+        {
+          "pid": 69126,
+          "command": "<PINNED_ASSET_ROOT>/llama-runtime/llama-b11960/llama-server"
+        }
+      ],
+      "owned_processes_after_exit": [],
+      "stop_seconds": 0.22902704204898328,
+      "incomplete_files_after_worker_exit": [],
+      "caller_retired_incomplete_files": true
+    },
+    {
+      "case": "forced",
+      "exit": -9,
+      "seconds": 1.3924439590191469,
+      "events": [
+        "accepted",
+        "progress"
+      ],
+      "owned_group_before_stop": [
+        {
+          "pid": 69185,
+          "command": "/private/tmp/wi-43b072-supervisor-fixtures/editor-audio-input-worker"
+        },
+        {
+          "pid": 69224,
+          "command": "<PINNED_ASSET_ROOT>/llama-runtime/llama-b11960/llama-server"
+        }
+      ],
+      "owned_processes_after_exit": [],
+      "stop_seconds": 0.2946488750167191,
+      "incomplete_files_after_worker_exit": [
+        "artifact.lock",
+        ".audio-job-3770625041",
+        ".audio-runtime-784360774"
+      ],
+      "caller_retired_incomplete_files": true
+    }
+  ],
+  "understanding": {
+    "manifest": {
+      "protocol": "obey-audio-job/v2",
+      "job_id": "understanding-range-2-12",
+      "task": "understanding",
+      "source": {
+        "media_sha256": "59528cb4e3cb41e73a4574f76acbee119d9a1bc34b5c133aa5125c2f726a16be",
+        "clip_id": "ami-es2002a",
+        "range_id": "source-32000-192000",
+        "project_revision": "fixture-1"
+      },
+      "input": {
+        "path": "<PROOF_ROOT>/understanding-range-2-12/selected-2-12.wav",
+        "sha256": "4575ad9debf4735e4eb9c4684d99d2baa92effbb9c650edacd30c44115c14465",
+        "sample_count": 160000,
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "channel_role": "microphone",
+        "source_origin_samples": 32000
+      },
+      "runtime": {
+        "provider": "llama.cpp",
+        "endpoint": "",
+        "model": "lfm3-audio-2b",
+        "voice": "female"
+      },
+      "runtime_version": "b11960-8642541b2",
+      "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+      "transport": "audio_to_text",
+      "script_sha256": "",
+      "language": "en",
+      "duration_policy": "preserve_picture",
+      "source_windows": [
+        {
+          "start_sample": 32000,
+          "end_sample": 192000
+        }
+      ],
+      "output": {
+        "kind": "json",
+        "bytes": 281,
+        "path": "findings.json",
+        "sha256": "ed5516ee5c9ae29cd2e6eee41e736b60f27195300a8051dddc27322357c4d4ff"
+      },
+      "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+      "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+      "instruction_sha256": "d72d2a51c7e8daff39c877a81a04db250859c7e4a12dc29941e92218349a931c",
+      "prompt_sha256": "37e5527134161eff3ffce6baf864a4741888abc1dad832bcebd28e06d1f73b6d",
+      "chunk_policy": "fixed-30s-overlap-2s/v1",
+      "text_sampling": {
+        "seed": 42,
+        "temperature": 0,
+        "max_tokens": 1024,
+        "context_tokens": 8192
+      }
+    },
+    "findings": {
+      "schema": "obey-audio-findings/v1",
+      "task": "understanding",
+      "windows": [
+        {
+          "start_sample": 32000,
+          "end_sample": 192000,
+          "input_window_sha256": "4575ad9debf4735e4eb9c4684d99d2baa92effbb9c650edacd30c44115c14465",
+          "text": "A remote control",
+          "usage": {
+            "prompt_tokens": 181,
+            "completion_tokens": 4
+          }
+        }
+      ]
+    },
+    "actual_range_seconds": [
+      2,
+      12
+    ],
+    "source_media_sha_verified": true
+  },
+  "capabilities": {
+    "schema": "obey-audio-capabilities/v1",
+    "runtime": {
+      "provider": "llama.cpp",
+      "endpoint": "",
+      "model": "lfm3-audio-2b",
+      "voice": "female"
+    },
+    "runtime_version": "b11960-8642541b2",
+    "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+    "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+    "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+    "input_format": "wav_pcm_s16le",
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "script_bytes": 1024,
+    "instruction_bytes": 1024,
+    "chunk_policy": "fixed-30s-overlap-2s/v1",
+    "tasks": [
+      {
+        "task": "narration",
+        "supported": true,
+        "installed": true,
+        "qualified": false,
+        "reason": "Preview only; independent task quality is not qualified.",
+        "protocol": "obey-audio-job/v1",
+        "languages": [
+          "en"
+        ],
+        "voices": [
+          "female",
+          "male"
+        ],
+        "output_format": "wav_pcm_s16le_24000_mono"
+      },
+      {
+        "task": "transcription",
+        "supported": true,
+        "installed": true,
+        "qualified": false,
+        "reason": "Preview only; independent task quality is not qualified.",
+        "protocol": "obey-audio-job/v2",
+        "languages": [
+          "en"
+        ],
+        "output_format": "obey-audio-findings/v1"
+      },
+      {
+        "task": "understanding",
+        "supported": true,
+        "installed": true,
+        "qualified": false,
+        "reason": "Preview only; independent task quality is not qualified.",
+        "protocol": "obey-audio-job/v2",
+        "languages": [
+          "en"
+        ],
+        "output_format": "obey-audio-findings/v1"
+      },
+      {
+        "task": "alignment",
+        "supported": false,
+        "installed": true,
+        "qualified": false,
+        "reason": "Measured word alignment is unavailable; window coverage is not word timing."
+      },
+      {
+        "task": "voice_conversion",
+        "supported": false,
+        "installed": true,
+        "qualified": false,
+        "reason": "Recording-preserving voice conversion is not qualified; no task substitution is allowed."
+      },
+      {
+        "task": "dubbing",
+        "supported": false,
+        "installed": true,
+        "qualified": false,
+        "reason": "Translation and timed dubbing are not implemented or qualified."
+      }
+    ]
+  },
+  "initial_metadata_trial": {
+    "path": "understanding",
+    "excluded_from_range_evidence": true,
+    "reason": "caller specified 130s origin for a cropped 30s source; corrected independent run selected actual 2\u201312s PCM"
+  }
+}

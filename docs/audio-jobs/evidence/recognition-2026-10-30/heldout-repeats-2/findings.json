@@ -1,0 +1,1 @@
+{"schema":"obey-audio-findings/v1","task":"transcription","windows":[{"start_sample":12864000,"end_sample":12960000,"input_window_sha256":"e15facf224fe70871804b21f3410741868181ef770f468478c09b3547bd12e81","text":"Conventional push button design and therefore putting it into, uhm,","usage":{"prompt_tokens":95,"completion_tokens":15}}]}

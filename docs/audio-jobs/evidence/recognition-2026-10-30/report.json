@@ -1,0 +1,1885 @@
+{
+  "schema": "obey-voice.recognition-comparison/v1",
+  "worker_sha256": "9617b8999e78933159559eb479ca84d0d1006b9e032f015de5a4b8af31a500df",
+  "annotations_sha256": "b56e5babb2496b8795deeeda7e71178d7fbc9963f94276cf2a3f4b56ebbc9f9d",
+  "license": "AMI Meeting Corpus, CC BY 4.0, https://groups.inf.ed.ac.uk/ami/corpus/",
+  "speech_config": {
+    "schema": "obey-voice.speech-config/v1",
+    "provider": "parakeet",
+    "model": "tdt-0.6b-v2",
+    "models_dir": "/Users/lancerogers/.cache/obey-voice/models",
+    "language": "en"
+  },
+  "audio_config": {
+    "schema": "obey-voice.audio-config/v1",
+    "runtime": {
+      "provider": "llama.cpp",
+      "endpoint": "",
+      "model": "lfm3-audio-2b",
+      "voice": "female"
+    },
+    "storage_root": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1",
+    "managed": {
+      "executable": {
+        "path": "/tmp/wi-43b072-sol/llama-runtime/llama-b11960/llama-server",
+        "sha256": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be"
+      },
+      "model": {
+        "path": "/tmp/wi-43b072-sol/audio-pack-import/LFM3-Audio-2B-Q4_K_M.gguf",
+        "sha256": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2"
+      },
+      "projector": {
+        "path": "/tmp/wi-43b072-sol/audio-pack-import/mmproj-LFM3-Audio-2B-Q8_0.gguf",
+        "sha256": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365"
+      },
+      "version": "b11960-8642541b2"
+    }
+  },
+  "method": "identical PCM windows; normalized unit-cost word edit distance against channel-A annotations",
+  "limits": [
+    "Overlapping windows are correlated; do not pool into independent population estimates.",
+    "Other-speaker cross-talk counts as errors against channel A; listener adjudication pending.",
+    "Boundary words use the existing AMI reference inclusion rule; no timing score for LFM3 text.",
+    "Filler counts are counts, not matched-filler precision or recall.",
+    "No task qualification, alignment, silence detection or automatic-cut authorization."
+  ],
+  "batch_qualified": false,
+  "windows": [
+    {
+      "case": "initial-filler",
+      "index": 0,
+      "split": "calibration",
+      "gain_db": 0,
+      "source_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "input_sha256": "d620c7237cebd353f6c0d54b6b8f176233e46f0fedec0a09c7bcdb9a1ca976de",
+      "start_sample": 2080000,
+      "end_sample": 2560000,
+      "reference_tokens": [
+        "um",
+        "i",
+        "just",
+        "got",
+        "the",
+        "project",
+        "announcement",
+        "about",
+        "what",
+        "the",
+        "project",
+        "is",
+        "designing",
+        "a",
+        "remote",
+        "control",
+        "that's",
+        "about",
+        "it",
+        "didn't",
+        "get",
+        "anything",
+        "else",
+        "did",
+        "you",
+        "get",
+        "the",
+        "same",
+        "thing"
+      ],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.522,
+        "success": true,
+        "text": "I just got the project announcement, but what the project is about? Designing a remote control. That's about it. Engaging yours. Did you get the same thing? So we're going to have an individual workshop and then we're going to be talking about it. We'll repeat the process three times. And we're going to try to feel like we're there.",
+        "metrics": {
+          "reference_words": 29,
+          "predicted_words": 60,
+          "word_edits": 40,
+          "word_edit_rate": 1.3793103448275863,
+          "reference_fillers": 1,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "initial-filler-0",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+            "clip_id": "ES2002a",
+            "range_id": "initial-filler-0",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/initial-filler/0/input.wav",
+            "sha256": "d620c7237cebd353f6c0d54b6b8f176233e46f0fedec0a09c7bcdb9a1ca976de",
+            "sample_count": 480000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 2080000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 2080000,
+              "end_sample": 2560000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 603,
+            "path": "findings.json",
+            "sha256": "39f8f82b38ffb01d2cb60f0650b96b516f166f88c837ccf71808e3abb778c586"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 395,
+          "completion_tokens": 78
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.648,
+        "success": true,
+        "text": "Um I just got the project announcement. Is that designing a remote control? That's about it. Did we get anything else? I think so we're gonna have like um",
+        "metrics": {
+          "reference_words": 29,
+          "predicted_words": 29,
+          "word_edits": 15,
+          "word_edit_rate": 0.5172413793103449,
+          "reference_fillers": 1,
+          "predicted_fillers": 2
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "initial-filler-0",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "quiet-filler",
+      "index": 0,
+      "split": "diagnostic variant",
+      "gain_db": -18,
+      "source_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "input_sha256": "b678a9f41cbfc3fbb3573f26f8cf9bc2564d0e655766d8396161d154e699a3bc",
+      "start_sample": 2080000,
+      "end_sample": 2560000,
+      "reference_tokens": [
+        "um",
+        "i",
+        "just",
+        "got",
+        "the",
+        "project",
+        "announcement",
+        "about",
+        "what",
+        "the",
+        "project",
+        "is",
+        "designing",
+        "a",
+        "remote",
+        "control",
+        "that's",
+        "about",
+        "it",
+        "didn't",
+        "get",
+        "anything",
+        "else",
+        "did",
+        "you",
+        "get",
+        "the",
+        "same",
+        "thing"
+      ],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.508,
+        "success": true,
+        "text": "I just got the project announcement about what the project is about, designing a remote control, that's about it, and getting yours. Did you get something? So we're going to have like 10 people working on this project. We'll be talking three times, two times. And I think we're going to get pilot trials for this.",
+        "metrics": {
+          "reference_words": 29,
+          "predicted_words": 56,
+          "word_edits": 37,
+          "word_edit_rate": 1.2758620689655173,
+          "reference_fillers": 1,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "quiet-filler-0",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+            "clip_id": "ES2002a",
+            "range_id": "quiet-filler-0",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/quiet-filler/0/input.wav",
+            "sha256": "b678a9f41cbfc3fbb3573f26f8cf9bc2564d0e655766d8396161d154e699a3bc",
+            "sample_count": 480000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 2080000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 2080000,
+              "end_sample": 2560000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 582,
+            "path": "findings.json",
+            "sha256": "d120b61f5cc66c54bb26cbb67f472215c07ddab49e2de8518c5c7448bc824f8e"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 395,
+          "completion_tokens": 71
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.673,
+        "success": true,
+        "text": "",
+        "metrics": {
+          "reference_words": 29,
+          "predicted_words": 0,
+          "word_edits": 29,
+          "word_edit_rate": 1.0,
+          "reference_fillers": 1,
+          "predicted_fillers": 0
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "quiet-filler-0",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "meaningful-like-pauses",
+      "index": 0,
+      "split": "calibration",
+      "gain_db": 0,
+      "source_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "input_sha256": "3a7eb0ba9055c3b493c5b59aa0f19fd0987b243eefde1b3b7a6c1b813989a15b",
+      "start_sample": 4800000,
+      "end_sample": 5280000,
+      "reference_tokens": [
+        "can't",
+        "draw",
+        "um",
+        "yeah",
+        "um",
+        "well",
+        "anyway",
+        "i",
+        "don't",
+        "know",
+        "it's",
+        "just",
+        "the",
+        "first",
+        "animal",
+        "i",
+        "can",
+        "think",
+        "off",
+        "the",
+        "top",
+        "of",
+        "my",
+        "head",
+        "um",
+        "yes",
+        "big",
+        "reason",
+        "is",
+        "'cause",
+        "i'm",
+        "allergic",
+        "to",
+        "most",
+        "animals",
+        "allergic",
+        "to",
+        "animal",
+        "fur",
+        "so"
+      ],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.497,
+        "success": true,
+        "text": "I don't know, mine isn't noticeable in this spot. It's impressionist. Can't draw. Yeah? Well, I don't know, it's just the first animal I can think of off the top of my head. Yes, big reason is because I'm allergic to most animals. Allergic to animal fur, so.",
+        "metrics": {
+          "reference_words": 40,
+          "predicted_words": 48,
+          "word_edits": 17,
+          "word_edit_rate": 0.425,
+          "reference_fillers": 3,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "meaningful-like-pauses-0",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+            "clip_id": "ES2002a",
+            "range_id": "meaningful-like-pauses-0",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/meaningful-like-pauses/0/input.wav",
+            "sha256": "3a7eb0ba9055c3b493c5b59aa0f19fd0987b243eefde1b3b7a6c1b813989a15b",
+            "sample_count": 480000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 4800000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 4800000,
+              "end_sample": 5280000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 527,
+            "path": "findings.json",
+            "sha256": "44f03b11b6490c6143929f47b9583a55040cedcb5671506881dc75f5dd3015ec"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 395,
+          "completion_tokens": 70
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.642,
+        "success": true,
+        "text": "Yeah. Um well am I I don't know, it's just the first animal I can think of off the top of my head. Um guess big reason is 'cause I'm allergic to most animals. Allergic to animal first, so um",
+        "metrics": {
+          "reference_words": 40,
+          "predicted_words": 40,
+          "word_edits": 9,
+          "word_edit_rate": 0.225,
+          "reference_fillers": 3,
+          "predicted_fillers": 3
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "meaningful-like-pauses-0",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "meaningful-like-pauses",
+      "index": 1,
+      "split": "calibration",
+      "gain_db": 0,
+      "source_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "input_sha256": "ecaf622c395ce3d316e4861fa139eea4a1fbfb395c655095780e9d95aa0a89ae",
+      "start_sample": 5248000,
+      "end_sample": 5728000,
+      "reference_tokens": [
+        "to",
+        "animal",
+        "fur",
+        "so",
+        "um",
+        "fish",
+        "was",
+        "a",
+        "natural",
+        "choice",
+        "um",
+        "yeah",
+        "and",
+        "i",
+        "kind",
+        "of",
+        "like",
+        "whales",
+        "they",
+        "come",
+        "in",
+        "and",
+        "go",
+        "eat",
+        "everything",
+        "in",
+        "sight",
+        "and",
+        "they're",
+        "quite",
+        "harmless",
+        "and",
+        "mild",
+        "and",
+        "interesting",
+        "tail's",
+        "a",
+        "bit",
+        "big",
+        "i",
+        "think"
+      ],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.407,
+        "success": true,
+        "text": "magic animal for us, so fish was a natural choice. And I kind of like whales. They come in and go, eat everything in sight. And they're quite harmless and mild and interesting. Tail is a bit big, I think.",
+        "metrics": {
+          "reference_words": 41,
+          "predicted_words": 40,
+          "word_edits": 8,
+          "word_edit_rate": 0.1951219512195122,
+          "reference_fillers": 2,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "meaningful-like-pauses-1",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+            "clip_id": "ES2002a",
+            "range_id": "meaningful-like-pauses-1",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/meaningful-like-pauses/1/input.wav",
+            "sha256": "ecaf622c395ce3d316e4861fa139eea4a1fbfb395c655095780e9d95aa0a89ae",
+            "sample_count": 480000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 5248000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 5248000,
+              "end_sample": 5728000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 473,
+            "path": "findings.json",
+            "sha256": "a11d18e1f10cd707efda112814ffe92760c56f210a0ff319573cef254de13e33"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 395,
+          "completion_tokens": 51
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.654,
+        "success": true,
+        "text": "To animal fur, so fish was a natural choice. And I kind of like whales. They come in and go eat everything in sight. They're quite harmless and mild and interesting. Tails a bit bigger, I think.",
+        "metrics": {
+          "reference_words": 41,
+          "predicted_words": 37,
+          "word_edits": 6,
+          "word_edit_rate": 0.14634146341463414,
+          "reference_fillers": 2,
+          "predicted_fillers": 0
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "meaningful-like-pauses-1",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "meaningful-like-pauses",
+      "index": 2,
+      "split": "calibration",
+      "gain_db": 0,
+      "source_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "input_sha256": "c0b0db3fde08407b72b47b4b33589031f9807b371db233be9514a32da613f313",
+      "start_sample": 5696000,
+      "end_sample": 5760000,
+      "reference_tokens": [],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.144,
+        "success": true,
+        "text": "So this way, so that's done.",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 6,
+          "word_edits": 6,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "meaningful-like-pauses-2",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+            "clip_id": "ES2002a",
+            "range_id": "meaningful-like-pauses-2",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/meaningful-like-pauses/2/input.wav",
+            "sha256": "c0b0db3fde08407b72b47b4b33589031f9807b371db233be9514a32da613f313",
+            "sample_count": 64000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 5696000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 5696000,
+              "end_sample": 5760000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 296,
+            "path": "findings.json",
+            "sha256": "be11a028d016406a5e3c293b655eca99f78cbd09704101feb3873b07be4291bd"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 70,
+          "completion_tokens": 10
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.116,
+        "success": true,
+        "text": "",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 0,
+          "word_edits": 0,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 0
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "meaningful-like-pauses-2",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "later-background",
+      "index": 0,
+      "split": "calibration",
+      "gain_db": 0,
+      "source_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "input_sha256": "17f02dfd26549c43c11f1ac37b23220bee6ec0465514edde74460a7443a7f9cf",
+      "start_sample": 9600000,
+      "end_sample": 10080000,
+      "reference_tokens": [],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.345,
+        "success": true,
+        "text": "Like, how much money people have to spend on things? Or just like, basic product with it positioned at the 25 euro remote control marketing thing to get in running?",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 30,
+          "word_edits": 30,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "later-background-0",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+            "clip_id": "ES2002a",
+            "range_id": "later-background-0",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/later-background/0/input.wav",
+            "sha256": "17f02dfd26549c43c11f1ac37b23220bee6ec0465514edde74460a7443a7f9cf",
+            "sample_count": 480000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 9600000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 9600000,
+              "end_sample": 10080000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 434,
+            "path": "findings.json",
+            "sha256": "c7cac4885291e4aff0198e894b80aa1e9fc8182cd3dee11ea2e079db8665cd49"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 395,
+          "completion_tokens": 36
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.625,
+        "success": true,
+        "text": "And I think we've got to use",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 7,
+          "word_edits": 7,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 0
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "later-background-0",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "later-background",
+      "index": 1,
+      "split": "calibration",
+      "gain_db": 0,
+      "source_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "input_sha256": "34343ab9d0d2c206ea458f2e3639f1c575f39d4de3bc2dbeaad9f029c34fa0e7",
+      "start_sample": 10048000,
+      "end_sample": 10528000,
+      "reference_tokens": [],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.271,
+        "success": true,
+        "text": "By the way, I'm making some kind of assumptions, though.",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 10,
+          "word_edits": 10,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "later-background-1",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+            "clip_id": "ES2002a",
+            "range_id": "later-background-1",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/later-background/1/input.wav",
+            "sha256": "34343ab9d0d2c206ea458f2e3639f1c575f39d4de3bc2dbeaad9f029c34fa0e7",
+            "sample_count": 480000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 10048000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 10048000,
+              "end_sample": 10528000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 327,
+            "path": "findings.json",
+            "sha256": "a41b0caa5b0f0cce23c977f05abbd6a523b819e7c6ec20cce9d4a32e125072fb"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 395,
+          "completion_tokens": 15
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.713,
+        "success": true,
+        "text": "",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 0,
+          "word_edits": 0,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 0
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "later-background-1",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "later-background",
+      "index": 2,
+      "split": "calibration",
+      "gain_db": 0,
+      "source_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "input_sha256": "82d9bc0ceeb02abee2a8a6801e203044b540a7428bd50bfd649527a6aed909d1",
+      "start_sample": 10496000,
+      "end_sample": 10976000,
+      "reference_tokens": [],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.59,
+        "success": true,
+        "text": "making some kind of assumptions about what information we're giving here. The term trendy probably means something other than just basic. Yeah. And other than just standard. So I'm wondering right away, selling 25 euros, is that certain? Is it going to be a premium product? Yeah, yeah, like how much does, you know, a real control cost? With 25 euros, I mean, that's worth it.",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 66,
+          "word_edits": 66,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "later-background-2",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+            "clip_id": "ES2002a",
+            "range_id": "later-background-2",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/later-background/2/input.wav",
+            "sha256": "82d9bc0ceeb02abee2a8a6801e203044b540a7428bd50bfd649527a6aed909d1",
+            "sample_count": 480000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 10496000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 10496000,
+              "end_sample": 10976000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 648,
+            "path": "findings.json",
+            "sha256": "1d6ac7c6eab7f01130aa5c29cb5e1f719d0e1f0b82b8cb51efe1e3ef6a8a1f83"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 395,
+          "completion_tokens": 89
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.703,
+        "success": true,
+        "text": "Yeah yeah, we can choose that which we find. Um",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 10,
+          "word_edits": 10,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 1
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "later-background-2",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "later-background",
+      "index": 3,
+      "split": "calibration",
+      "gain_db": 0,
+      "source_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+      "input_sha256": "745ea828de76d7c9049a20d4e5c7486779ae5c294e16105cdf73ce69b1fc13da",
+      "start_sample": 10944000,
+      "end_sample": 11040000,
+      "reference_tokens": [],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.2,
+        "success": true,
+        "text": "That's one thing. It sometimes you can, or no, it is not to say.",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 14,
+          "word_edits": 14,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "later-background-3",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "3bf0627106d6b6f02e5cc8b69f283b70303275c6b354aef3bdc7a50762d3f25e",
+            "clip_id": "ES2002a",
+            "range_id": "later-background-3",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/later-background/3/input.wav",
+            "sha256": "745ea828de76d7c9049a20d4e5c7486779ae5c294e16105cdf73ce69b1fc13da",
+            "sample_count": 96000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 10944000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 10944000,
+              "end_sample": 11040000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 334,
+            "path": "findings.json",
+            "sha256": "bf95eb7bbdd5a5271c5521aff40f170ba59663a5ce2cdf4e6d30b17125e2e919"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 95,
+          "completion_tokens": 20
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.162,
+        "success": true,
+        "text": "",
+        "metrics": {
+          "reference_words": 0,
+          "predicted_words": 0,
+          "word_edits": 0,
+          "word_edit_rate": null,
+          "reference_fillers": 0,
+          "predicted_fillers": 0
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "later-background-3",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "heldout-introduction",
+      "index": 0,
+      "split": "held-out speaker",
+      "gain_db": 0,
+      "source_sha256": "5a3b066d904bd15f9e8eb7469de8a6f4fe7724d6f746e3011e6e19ab5de2460a",
+      "input_sha256": "5d01ec995eb6b6b14c73b1c8c5b66596b26700131f1f8e0ab31b25a5ac33058b",
+      "start_sample": 720000,
+      "end_sample": 960000,
+      "reference_tokens": [
+        "uh",
+        "dave",
+        "cochrane",
+        "user",
+        "interface",
+        "defin",
+        "designer",
+        "yes"
+      ],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.165,
+        "success": true,
+        "text": "Dave Cochran. User interface designer, yes.",
+        "metrics": {
+          "reference_words": 8,
+          "predicted_words": 6,
+          "word_edits": 3,
+          "word_edit_rate": 0.375,
+          "reference_fillers": 1,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "heldout-introduction-0",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "5a3b066d904bd15f9e8eb7469de8a6f4fe7724d6f746e3011e6e19ab5de2460a",
+            "clip_id": "ES2003a",
+            "range_id": "heldout-introduction-0",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/heldout-introduction/0/input.wav",
+            "sha256": "5d01ec995eb6b6b14c73b1c8c5b66596b26700131f1f8e0ab31b25a5ac33058b",
+            "sample_count": 240000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 720000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 720000,
+              "end_sample": 960000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 310,
+            "path": "findings.json",
+            "sha256": "bf5700c8bce2e2532ff1c2e2c803a41327c99b8f7b5e24f4675cb7483d7c9d7e"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 208,
+          "completion_tokens": 12
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.339,
+        "success": true,
+        "text": "Uh Dave Cochran User Interface Define Designer, yes.",
+        "metrics": {
+          "reference_words": 8,
+          "predicted_words": 8,
+          "word_edits": 2,
+          "word_edit_rate": 0.25,
+          "reference_fillers": 1,
+          "predicted_fillers": 1
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "heldout-introduction-0",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "heldout-repeats",
+      "index": 0,
+      "split": "held-out speaker",
+      "gain_db": 0,
+      "source_sha256": "5a3b066d904bd15f9e8eb7469de8a6f4fe7724d6f746e3011e6e19ab5de2460a",
+      "input_sha256": "b0d320e07958c9ca1bad468a7e75d98616320e3b8f63d20edf94b94a7cf7b93d",
+      "start_sample": 11968000,
+      "end_sample": 12448000,
+      "reference_tokens": [
+        "remotes",
+        "that",
+        "can",
+        "be",
+        "uh",
+        "programmed",
+        "in",
+        "m",
+        "much",
+        "more",
+        "sophisticated",
+        "ways",
+        "than",
+        "sort",
+        "of",
+        "conventional",
+        "models",
+        "so",
+        "you",
+        "get",
+        "the",
+        "sort",
+        "of",
+        "you",
+        "get",
+        "um",
+        "you",
+        "you",
+        "can",
+        "redesign",
+        "the",
+        "interface",
+        "to",
+        "your",
+        "own",
+        "needs",
+        "you",
+        "can",
+        "programme",
+        "in",
+        "macros",
+        "and",
+        "you",
+        "get",
+        "a",
+        "much",
+        "greater",
+        "degree",
+        "um",
+        "um",
+        "i",
+        "mean",
+        "you",
+        "get",
+        "in",
+        "these",
+        "sort",
+        "of",
+        "three",
+        "in",
+        "one",
+        "five",
+        "in",
+        "one",
+        "whatevers",
+        "but",
+        "you",
+        "can",
+        "get",
+        "integration",
+        "between",
+        "the",
+        "different",
+        "uh",
+        "the",
+        "the",
+        "the",
+        "diff",
+        "the",
+        "different",
+        "things",
+        "that",
+        "it's",
+        "designed",
+        "to",
+        "control",
+        "to",
+        "a",
+        "much",
+        "greater",
+        "extent",
+        "and",
+        "you",
+        "can"
+      ],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.662,
+        "success": true,
+        "text": "D remotes that can be programmed in much more sophisticated ways than sort of convention and what else. So you get the sort of, you get, um, you, you, you can redesign the interface to your own needs. You can program in macros and you get a much greater degree. I mean, you get these sort of three in one, five in one, whatever it is, but you can get integration between the different, uh, the, the, the different things that is designed to control to a much greater extent.",
+        "metrics": {
+          "reference_words": 94,
+          "predicted_words": 90,
+          "word_edits": 21,
+          "word_edit_rate": 0.22340425531914893,
+          "reference_fillers": 5,
+          "predicted_fillers": 2
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "heldout-repeats-0",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "5a3b066d904bd15f9e8eb7469de8a6f4fe7724d6f746e3011e6e19ab5de2460a",
+            "clip_id": "ES2003a",
+            "range_id": "heldout-repeats-0",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/heldout-repeats/0/input.wav",
+            "sha256": "b0d320e07958c9ca1bad468a7e75d98616320e3b8f63d20edf94b94a7cf7b93d",
+            "sample_count": 480000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 11968000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 11968000,
+              "end_sample": 12448000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 746,
+            "path": "findings.json",
+            "sha256": "abd0327f37dd3d74eb572e9c160db50fb1e73a27f4f9971189e77a6d3f83dc4c"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 395,
+          "completion_tokens": 109
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.682,
+        "success": true,
+        "text": "remotes that can be uh programmed in much more sophisticated ways than sort of conventional models. So you get the sort of you get um you you you can redesign the interface to your own needs, you can program in macros and you get a a much greater degree I mean you get the these sort of three and one, five and one, whatever, but you can get integration between the different uh the the the the the different things that it's designed to control to a much greater extent and you can",
+        "metrics": {
+          "reference_words": 94,
+          "predicted_words": 93,
+          "word_edits": 11,
+          "word_edit_rate": 0.11702127659574468,
+          "reference_fillers": 5,
+          "predicted_fillers": 3
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "heldout-repeats-0",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "heldout-repeats",
+      "index": 1,
+      "split": "held-out speaker",
+      "gain_db": 0,
+      "source_sha256": "5a3b066d904bd15f9e8eb7469de8a6f4fe7724d6f746e3011e6e19ab5de2460a",
+      "input_sha256": "5376a420a12f03b44c4c463e7c3cd9516248019d031c7996116680d72a0b6557",
+      "start_sample": 12416000,
+      "end_sample": 12896000,
+      "reference_tokens": [
+        "to",
+        "a",
+        "much",
+        "greater",
+        "extent",
+        "and",
+        "you",
+        "can",
+        "have",
+        "one",
+        "uh",
+        "you",
+        "know",
+        "one",
+        "macro",
+        "to",
+        "turn",
+        "the",
+        "uh",
+        "you",
+        "know",
+        "turn",
+        "the",
+        "t_v_",
+        "to",
+        "the",
+        "right",
+        "channel",
+        "get",
+        "the",
+        "uh",
+        "re",
+        "uh",
+        "rewind",
+        "the",
+        "tape",
+        "in",
+        "the",
+        "v_c_r_",
+        "and",
+        "get",
+        "it",
+        "to",
+        "play",
+        "once",
+        "it's",
+        "rewound",
+        "for",
+        "instance",
+        "um",
+        "b",
+        "it",
+        "occurs",
+        "to",
+        "me",
+        "there",
+        "might",
+        "be",
+        "a",
+        "niche",
+        "for",
+        "uh",
+        "for",
+        "a",
+        "remote",
+        "that",
+        "aimed",
+        "towards",
+        "some",
+        "of",
+        "that",
+        "sort",
+        "of",
+        "functionality",
+        "but",
+        "using",
+        "a",
+        "just",
+        "conventional",
+        "push",
+        "button"
+      ],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.539,
+        "success": true,
+        "text": "To a much greater extent, you can have one macro to turn the TV to the right channel, rewind the tape in the VCR and get it to play once it's rewound, for instance. It occurs to me there might be a niche for a remote that aimed towards some of that sort of functionality, but using a just conventional push button design.",
+        "metrics": {
+          "reference_words": 81,
+          "predicted_words": 63,
+          "word_edits": 22,
+          "word_edit_rate": 0.2716049382716049,
+          "reference_fillers": 6,
+          "predicted_fillers": 0
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "heldout-repeats-1",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "5a3b066d904bd15f9e8eb7469de8a6f4fe7724d6f746e3011e6e19ab5de2460a",
+            "clip_id": "ES2003a",
+            "range_id": "heldout-repeats-1",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/heldout-repeats/1/input.wav",
+            "sha256": "5376a420a12f03b44c4c463e7c3cd9516248019d031c7996116680d72a0b6557",
+            "sample_count": 480000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 12416000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 12416000,
+              "end_sample": 12896000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 592,
+            "path": "findings.json",
+            "sha256": "1ca7f035d1d842702c1d011765f13e1639174674e55eebb0bd3946b8dc63c80a"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 395,
+          "completion_tokens": 73
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.698,
+        "success": true,
+        "text": "To a much greater extent, and you can have one macro to turn the turn the TV to the right channel, get the re rewind the tape in the VCR and get it to play once it's rewound, for instance. It occurs to me there might be a niche for. for uh for a remote that aimed towards some of that sort of functionality but using a just conventional push button design.",
+        "metrics": {
+          "reference_words": 81,
+          "predicted_words": 72,
+          "word_edits": 15,
+          "word_edit_rate": 0.18518518518518517,
+          "reference_fillers": 6,
+          "predicted_fillers": 1
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "heldout-repeats-1",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    },
+    {
+      "case": "heldout-repeats",
+      "index": 2,
+      "split": "held-out speaker",
+      "gain_db": 0,
+      "source_sha256": "5a3b066d904bd15f9e8eb7469de8a6f4fe7724d6f746e3011e6e19ab5de2460a",
+      "input_sha256": "e15facf224fe70871804b21f3410741868181ef770f468478c09b3547bd12e81",
+      "start_sample": 12864000,
+      "end_sample": 12960000,
+      "reference_tokens": [
+        "push",
+        "button",
+        "design",
+        "and",
+        "therefore",
+        "putting",
+        "it",
+        "into",
+        "a",
+        "um",
+        "well"
+      ],
+      "native": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.136,
+        "success": true,
+        "text": "Conventional push button design and therefore putting it into, uhm,",
+        "metrics": {
+          "reference_words": 11,
+          "predicted_words": 10,
+          "word_edits": 4,
+          "word_edit_rate": 0.36363636363636365,
+          "reference_fillers": 1,
+          "predicted_fillers": 1
+        },
+        "manifest": {
+          "protocol": "obey-audio-job/v2",
+          "job_id": "heldout-repeats-2",
+          "task": "transcription",
+          "source": {
+            "media_sha256": "5a3b066d904bd15f9e8eb7469de8a6f4fe7724d6f746e3011e6e19ab5de2460a",
+            "clip_id": "ES2003a",
+            "range_id": "heldout-repeats-2",
+            "project_revision": "ami-diagnostic-v1"
+          },
+          "input": {
+            "path": "/private/tmp/wi-43b072-supervisor-fixtures/recognition-comparison-1/heldout-repeats/2/input.wav",
+            "sha256": "e15facf224fe70871804b21f3410741868181ef770f468478c09b3547bd12e81",
+            "sample_count": 96000,
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "channel_role": "microphone",
+            "source_origin_samples": 12864000
+          },
+          "runtime": {
+            "provider": "llama.cpp",
+            "endpoint": "",
+            "model": "lfm3-audio-2b",
+            "voice": "female"
+          },
+          "runtime_version": "b11960-8642541b2",
+          "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+          "transport": "audio_to_text",
+          "script_sha256": "",
+          "language": "en",
+          "duration_policy": "preserve_picture",
+          "source_windows": [
+            {
+              "start_sample": 12864000,
+              "end_sample": 12960000
+            }
+          ],
+          "output": {
+            "kind": "json",
+            "bytes": 337,
+            "path": "findings.json",
+            "sha256": "a2ee6091b22f5179970ae159340e0c5e8b8c859f4e0cf0c32691296330cc61b5"
+          },
+          "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+          "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+          "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "prompt_sha256": "e390faded41a0e6f932c0d95fe2ae00a2cab7f051d397ec30b85ce35dd6ade5c",
+          "chunk_policy": "fixed-30s-overlap-2s/v1",
+          "text_sampling": {
+            "seed": 42,
+            "temperature": 0,
+            "max_tokens": 1024,
+            "context_tokens": 8192
+          }
+        },
+        "usage": {
+          "prompt_tokens": 95,
+          "completion_tokens": 15
+        }
+      },
+      "parakeet": {
+        "exit_code": 0,
+        "timed_out": false,
+        "elapsed_s": 1.155,
+        "success": true,
+        "text": "conventional push-button design and therefore putting it into um",
+        "metrics": {
+          "reference_words": 11,
+          "predicted_words": 9,
+          "word_edits": 4,
+          "word_edit_rate": 0.36363636363636365,
+          "reference_fillers": 1,
+          "predicted_fillers": 1
+        },
+        "accepted": {
+          "protocol": "obey-transcript/v2",
+          "job_id": "heldout-repeats-2",
+          "seq": 0,
+          "type": "accepted",
+          "provider": "parakeet",
+          "model_id": "tdt-0.6b-v2",
+          "model_revision": "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+          "timing": "word",
+          "text_policy": "verbatim",
+          "timing_method": "parakeet-tdt-token-duration",
+          "timing_validity": "estimated",
+          "language": "en",
+          "runtime": "sherpa-onnx/1.13.8"
+        }
+      }
+    }
+  ]
+}

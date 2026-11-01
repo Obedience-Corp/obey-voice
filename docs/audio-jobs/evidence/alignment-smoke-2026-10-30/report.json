@@ -1,0 +1,217 @@
+{
+  "model": "Qwen/Qwen3-ForcedAligner-0.6B",
+  "revision": "c7cbfc2048c462b0d63a45797104fc9db3ad62b7",
+  "input_sha256": "d620c7237cebd353f6c0d54b6b8f176233e46f0fedec0a09c7bcdb9a1ca976de",
+  "transcript_kind": "manual channel-A reference; oracle diagnostic, not recognizer output",
+  "input_text": "Um I just got the project announcement about what the project is Designing a remote control That's about it didn't get anything else Did you get the same thing",
+  "words": [
+    {
+      "text": "Um",
+      "start_us": 2560000,
+      "end_us": 3120000
+    },
+    {
+      "text": "I",
+      "start_us": 3200000,
+      "end_us": 3280000
+    },
+    {
+      "text": "just",
+      "start_us": 3280000,
+      "end_us": 3520000
+    },
+    {
+      "text": "got",
+      "start_us": 3520000,
+      "end_us": 3680000
+    },
+    {
+      "text": "the",
+      "start_us": 3840000,
+      "end_us": 3840000
+    },
+    {
+      "text": "project",
+      "start_us": 3840000,
+      "end_us": 4240000
+    },
+    {
+      "text": "announcement",
+      "start_us": 4240000,
+      "end_us": 4800000
+    },
+    {
+      "text": "about",
+      "start_us": 5040000,
+      "end_us": 5120000
+    },
+    {
+      "text": "what",
+      "start_us": 5200000,
+      "end_us": 5280000
+    },
+    {
+      "text": "the",
+      "start_us": 5280000,
+      "end_us": 5360000
+    },
+    {
+      "text": "project",
+      "start_us": 5440000,
+      "end_us": 5760000
+    },
+    {
+      "text": "is",
+      "start_us": 6800000,
+      "end_us": 6880000
+    },
+    {
+      "text": "Designing",
+      "start_us": 6880000,
+      "end_us": 7280000
+    },
+    {
+      "text": "a",
+      "start_us": 7360000,
+      "end_us": 7360000
+    },
+    {
+      "text": "remote",
+      "start_us": 7520000,
+      "end_us": 7680000
+    },
+    {
+      "text": "control",
+      "start_us": 7680000,
+      "end_us": 8080000
+    },
+    {
+      "text": "That's",
+      "start_us": 8160000,
+      "end_us": 8320000
+    },
+    {
+      "text": "about",
+      "start_us": 8400000,
+      "end_us": 8560000
+    },
+    {
+      "text": "it",
+      "start_us": 9600000,
+      "end_us": 9600000
+    },
+    {
+      "text": "didn't",
+      "start_us": 9600000,
+      "end_us": 9920000
+    },
+    {
+      "text": "get",
+      "start_us": 9920000,
+      "end_us": 9920000
+    },
+    {
+      "text": "anything",
+      "start_us": 9920000,
+      "end_us": 10080000
+    },
+    {
+      "text": "else",
+      "start_us": 10160000,
+      "end_us": 10320000
+    },
+    {
+      "text": "Did",
+      "start_us": 10800000,
+      "end_us": 11040000
+    },
+    {
+      "text": "you",
+      "start_us": 11040000,
+      "end_us": 11040000
+    },
+    {
+      "text": "get",
+      "start_us": 11040000,
+      "end_us": 11040000
+    },
+    {
+      "text": "the",
+      "start_us": 11200000,
+      "end_us": 11520000
+    },
+    {
+      "text": "same",
+      "start_us": 11520000,
+      "end_us": 11520000
+    },
+    {
+      "text": "thing",
+      "start_us": 11520000,
+      "end_us": 12000000
+    }
+  ],
+  "matched_words": 28,
+  "edit_count_with_one_second_match_gate": 1,
+  "edge_errors": {
+    "n": 56,
+    "median_ms": 60.0,
+    "p95_ms": 450.0
+  },
+  "filler_edge_errors": {
+    "n": 2,
+    "median_ms": 55.0,
+    "p95_ms": 100.0
+  },
+  "model_load_s": 0.5296331670833752,
+  "alignment_s": 1.2274155829800293,
+  "device": "cpu",
+  "dtype": "float32",
+  "batch_qualified": false,
+  "invalid_edges": [
+    {
+      "text": "the",
+      "start_us": 3840000,
+      "end_us": 3840000
+    },
+    {
+      "text": "a",
+      "start_us": 7360000,
+      "end_us": 7360000
+    },
+    {
+      "text": "it",
+      "start_us": 9600000,
+      "end_us": 9600000
+    },
+    {
+      "text": "get",
+      "start_us": 9920000,
+      "end_us": 9920000
+    },
+    {
+      "text": "you",
+      "start_us": 11040000,
+      "end_us": 11040000
+    },
+    {
+      "text": "get",
+      "start_us": 11040000,
+      "end_us": 11040000
+    },
+    {
+      "text": "same",
+      "start_us": 11520000,
+      "end_us": 11520000
+    }
+  ],
+  "overlapping_edges": [],
+  "timing_validity": "unqualified",
+  "packages": {
+    "qwen-asr": "0.0.6",
+    "torch": "2.15.0",
+    "transformers": "4.57.6"
+  },
+  "reference_sha256": "070ab5bf3b74b1a92e8b3b01fbc5e031b9d63e31af812070917aab5bc1f73393",
+  "probe_sha256": "ee2ba56061c141a44fbfc2b8c03c8cbbb648e858585feb3ac0722092846628fe"
+}

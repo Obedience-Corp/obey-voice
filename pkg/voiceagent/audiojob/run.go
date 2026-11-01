@@ -52,13 +52,13 @@ func (r Request) Preflight(ctx context.Context, c Config) error {
 	return nil
 }
 
-// Run validates the input by streaming, drains all producer frames, and publishes
-// only complete artifacts. emit must backpressure rather than drop events.
-func Run(ctx context.Context, c Config, r Request, s Synthesizer, p Provenance, emit func(Event) error) (manifest Manifest, err error) {
+// run owns the shared validation, event and atomic publication transaction.
+// The renderer writes one bounded artifact into its private stage.
+func run(ctx context.Context, c Config, r Request, p Provenance, emit func(Event) error, render func(context.Context, string) (Manifest, error)) (manifest Manifest, err error) {
 	callerContext := ctx
 	seq := 0
 	send := func(kind, stage, path, message string) error {
-		e := Event{Protocol: Protocol, JobID: r.JobID, Seq: seq, Type: kind, Stage: stage, ManifestPath: path, Message: message}
+		e := Event{Protocol: r.Protocol, JobID: r.JobID, Seq: seq, Type: kind, Stage: stage, ManifestPath: path, Message: message}
 		if e := emit(e); e != nil {
 			return e
 		}
@@ -111,61 +111,20 @@ func Run(ctx context.Context, c Config, r Request, s Synthesizer, p Provenance, 
 	if err = send("accepted", "", "", ""); err != nil {
 		return
 	}
-	if err = send("progress", "synthesis", "", ""); err != nil {
+	jobStage := "synthesis"
+	if r.Protocol == TextProtocol {
+		jobStage = "audio_analysis"
+	}
+	if err = send("progress", jobStage, "", ""); err != nil {
 		return
 	}
-	writer, e := audio.NewWAVWriter(filepath.Join(stage, "audio.wav"), 24000)
-	if e != nil {
-		err = e
-		return
-	}
-	stream, e := s.Synthesize(ctx, r.Script)
-	if e != nil {
-		_ = writer.Close()
-		err = e
-		return
-	}
-	var samples int64
-	for frame := range stream.Frames() {
-		if err == nil {
-			if ctx.Err() != nil {
-				err = ctx.Err()
-			} else if samples+int64(len(frame)) > (r.Limits.OutputBytes-44)/2 {
-				err = fmt.Errorf("generated audio exceeds output limit")
-				cancel()
-			} else if e = writer.Write(frame); e != nil {
-				err = e
-				cancel()
-			} else {
-				samples += int64(len(frame))
-			}
-		}
-	}
-	if e = stream.Err(); err == nil && e != nil {
-		err = e
-	}
-	if e = writer.Close(); err == nil && e != nil {
-		err = e
-	}
+	manifest, err = render(ctx, stage)
 	if err != nil {
 		return
 	}
-	if ctx.Err() != nil {
-		err = ctx.Err()
+	if err = checkInput(ctx, r.Input); err != nil {
 		return
 	}
-	if samples == 0 {
-		err = fmt.Errorf("empty generated audio")
-		return
-	}
-	hash, e := fileHash(ctx, filepath.Join(stage, "audio.wav"))
-	if e != nil {
-		err = e
-		return
-	}
-	scriptHash := sha256.Sum256([]byte(r.Script))
-	manifest = Manifest{Protocol: Protocol, JobID: r.JobID, Task: r.Task, Source: r.Source, Input: r.Input, Runtime: r.Runtime, RuntimeVersion: p.RuntimeVersion, ModelDigest: p.ModelDigest, Transport: "text_then_speech", ScriptSHA256: hex.EncodeToString(scriptHash[:]), Language: r.Language, DurationPolicy: r.DurationPolicy, SourceWindows: []Window{{StartSample: r.Input.SourceOriginSamples, EndSample: r.Input.SourceOriginSamples + r.Input.SampleCount}}, Output: Output{Path: "audio.wav", SHA256: hash, SampleRate: 24000, Channels: 1, SampleCount: samples}}
-	manifest.ProjectorDigest, manifest.RuntimeDigest, manifest.Sampling = p.ProjectorDigest, p.RuntimeDigest, p.Sampling
 	data, e := json.MarshalIndent(manifest, "", "  ")
 	if e != nil {
 		err = e
@@ -174,7 +133,7 @@ func Run(ctx context.Context, c Config, r Request, s Synthesizer, p Provenance, 
 	if err = os.WriteFile(filepath.Join(stage, "manifest.json"), data, 0600); err != nil {
 		return
 	}
-	for _, name := range []string{"audio.wav", "manifest.json"} {
+	for _, name := range []string{manifest.Output.Path, "manifest.json"} {
 		f, e := os.OpenFile(filepath.Join(stage, name), os.O_RDWR, 0)
 		if e != nil {
 			err = e

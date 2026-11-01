@@ -344,3 +344,16 @@ native-persona-negative-proof RECEIPT:
 [no-cd]
 native-context-contract-proof RECEIPT:
     python3 docs/native-audio/probe/context_contract.py "{{RECEIPT}}"
+
+# Identical licensed recording windows; text recognition only, no devices/downloads.
+[no-cd]
+audio-recognition WORKER SPEECH_CONFIG AUDIO_CONFIG AUDIO_DIR ANNOTATIONS OUTPUT PROFILE:
+    python3 -m unittest discover -s scripts -p 'test_compare_audio_recognition.py'
+    python3 scripts/compare-audio-recognition.py --worker "{{WORKER}}" --speech-config "{{SPEECH_CONFIG}}" --audio-config "{{AUDIO_CONFIG}}" --audio-dir "{{AUDIO_DIR}}" --annotations "{{ANNOTATIONS}}" --output "{{OUTPUT}}" --sandbox-profile "{{PROFILE}}"
+
+# Explicit installed reference environment/models; geometry is not qualification.
+[no-cd]
+audio-alignment PYTHON PROVIDER MODEL COMPARISON OUTPUT PROFILE:
+    "{{PYTHON}}" -m unittest discover -s scripts -p 'test_ctc_path.py'
+    "{{PYTHON}}" -m unittest discover -s scripts -p 'test_alignment_metrics.py'
+    sandbox-exec -f "{{PROFILE}}" "{{PYTHON}}" docs/audio-jobs/probe/compare_alignment.py --provider "{{PROVIDER}}" --model "{{MODEL}}" --comparison "{{COMPARISON}}" --output "{{OUTPUT}}"
