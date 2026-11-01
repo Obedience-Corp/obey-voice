@@ -11,8 +11,8 @@ import (
 )
 
 func renderNarration(ctx context.Context, r Request, s Synthesizer, p Provenance, stage string) (manifest Manifest, err error) {
-	if r.Protocol != Protocol {
-		return manifest, fmt.Errorf("narration requires the v1 protocol")
+	if r.Protocol != Protocol && r.Protocol != DubbingProtocol {
+		return manifest, fmt.Errorf("speech requires v1 narration or v3 reviewed dubbing")
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -67,6 +67,13 @@ func renderNarration(ctx context.Context, r Request, s Synthesizer, p Provenance
 	}
 	scriptHash := sha256.Sum256([]byte(r.Script))
 	manifest = Manifest{Protocol: r.Protocol, JobID: r.JobID, Task: r.Task, Source: r.Source, Input: r.Input, Runtime: r.Runtime, RuntimeVersion: p.RuntimeVersion, ModelDigest: p.ModelDigest, Transport: "text_then_speech", ScriptSHA256: hex.EncodeToString(scriptHash[:]), Language: r.Language, DurationPolicy: r.DurationPolicy, SourceWindows: []Window{{StartSample: r.Input.SourceOriginSamples, EndSample: r.Input.SourceOriginSamples + r.Input.SampleCount}}, Output: Output{Path: "audio.wav", SHA256: hash, SampleRate: 24000, Channels: 1, SampleCount: samples}}
+	if r.Protocol == DubbingProtocol {
+		manifest.Transport = "reviewed_translation_then_speech"
+		manifest.TargetLanguage = r.TargetLanguage
+		manifest.ApprovedScript = r.Script
+		manifest.TranslationReview = r.TranslationReview
+		manifest.TranslationManifestSHA256 = hashBytes([]byte(r.TranslationReview.Manifest))
+	}
 	manifest.ProjectorDigest, manifest.RuntimeDigest, manifest.Sampling = p.ProjectorDigest, p.RuntimeDigest, p.Sampling
 	return
 }

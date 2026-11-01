@@ -313,7 +313,7 @@ obey:
 # Quiet finite audio-artifact validation and cancellation (no devices or models).
 [no-cd]
 audio-jobs:
-    go test -race ./pkg/voiceagent/audiojob ./cmd/obey-voice/cmd -run 'Test(Audio|LocalAudio|CancelOnArtifact|PublishExact|FailureAndCancellation|RejectBeforeInference|TerminalClassifies)'
+    go test -race ./pkg/voiceagent/audiojob ./cmd/obey-voice/cmd -run 'Test(Audio|Translation|Dubbing|LocalAudio|CancelOnArtifact|PublishExact|FailureAndCancellation|RejectBeforeInference|TerminalClassifies)'
 
 # Guarded persona native audio contracts and existing Standard regressions.
 # All live model/device checks remain explicit opt-ins.
@@ -325,6 +325,11 @@ native-audio:
 [no-cd]
 managed-audio-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
     python3 docs/audio-jobs/probe/managed_runtime.py --worker "{{WORKER}}" --config "{{CONFIG}}" --request "{{REQUEST}}" --output "{{OUTPUT}}" --sandbox-profile "{{PROFILE}}"
+
+# Quiet translation + reviewed dubbing round trip; fixture approval only.
+[no-cd]
+dubbing-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
+    sandbox-exec -f "{{PROFILE}}" python3 docs/audio-jobs/probe/dubbing_probe.py --worker "{{WORKER}}" --config "{{CONFIG}}" --request "{{REQUEST}}" --out "{{OUTPUT}}" --fixture-review-only
 
 # Opt-in ordinary native persona pipeline with synthetic recordings/software sink.
 # Requires installed selected local Ollama; no model installation or device use.

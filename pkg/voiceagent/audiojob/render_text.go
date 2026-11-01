@@ -38,7 +38,11 @@ func renderText(ctx context.Context, r Request, s TextAnalyzer, p Provenance, st
 	}
 	defer output.Close()
 	bounded := &boundedTextWriter{writer: output, remaining: r.Limits.OutputBytes}
-	if _, err = fmt.Fprintf(bounded, "{\"schema\":%q,\"task\":%q,\"windows\":[", FindingsSchema, r.Task); err != nil {
+	languages := ""
+	if r.Task == "translation" {
+		languages = fmt.Sprintf(",\"language\":%q,\"target_language\":%q", r.Language, r.TargetLanguage)
+	}
+	if _, err = fmt.Fprintf(bounded, "{\"schema\":%q,\"task\":%q%s,\"windows\":[", FindingsSchema, r.Task, languages); err != nil {
 		return manifest, err
 	}
 	windows := textWindows(r.Input)
@@ -50,7 +54,7 @@ func renderText(ctx context.Context, r Request, s TextAnalyzer, p Provenance, st
 		if err != nil {
 			return manifest, fmt.Errorf("audio window %d: %w", index, err)
 		}
-		text, usage, err := s.Analyze(ctx, data, r.Task, r.Instruction)
+		text, usage, err := s.Analyze(ctx, data, r.textTask())
 		if err != nil {
 			return manifest, fmt.Errorf("audio window %d: %w", index, err)
 		}
@@ -80,7 +84,7 @@ func renderText(ctx context.Context, r Request, s TextAnalyzer, p Provenance, st
 	if err != nil {
 		return manifest, err
 	}
-	manifest = Manifest{Protocol: r.Protocol, JobID: r.JobID, Task: r.Task, Source: r.Source, Input: r.Input, Runtime: r.Runtime, RuntimeVersion: p.RuntimeVersion, ModelDigest: p.ModelDigest, ProjectorDigest: p.ProjectorDigest, RuntimeDigest: p.RuntimeDigest, Transport: "audio_to_text", Language: r.Language, DurationPolicy: r.DurationPolicy, SourceWindows: windows, Output: Output{Kind: "json", Path: "findings.json", SHA256: hash, Bytes: bounded.written}, InstructionSHA256: hashBytes([]byte(r.Instruction)), PromptSHA256: hashBytes([]byte(textPrompt(r.Task))), ChunkPolicy: ChunkPolicy, TextSampling: &TextSampling{Seed: 42, Temperature: 0, MaxTokens: MaxTextTokens, ContextTokens: ManagedContextTokens}}
+	manifest = Manifest{Protocol: r.Protocol, JobID: r.JobID, Task: r.Task, Source: r.Source, Input: r.Input, Runtime: r.Runtime, RuntimeVersion: p.RuntimeVersion, ModelDigest: p.ModelDigest, ProjectorDigest: p.ProjectorDigest, RuntimeDigest: p.RuntimeDigest, Transport: "audio_to_text", Language: r.Language, TargetLanguage: r.TargetLanguage, DurationPolicy: r.DurationPolicy, SourceWindows: windows, Output: Output{Kind: "json", Path: "findings.json", SHA256: hash, Bytes: bounded.written}, InstructionSHA256: hashBytes([]byte(r.Instruction)), PromptSHA256: hashBytes([]byte(r.textTask().prompt())), ChunkPolicy: ChunkPolicy, TextSampling: &TextSampling{Seed: 42, Temperature: 0, MaxTokens: MaxTextTokens, ContextTokens: ManagedContextTokens}}
 	return manifest, nil
 }
 

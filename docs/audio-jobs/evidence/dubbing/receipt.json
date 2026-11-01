@@ -1,0 +1,270 @@
+{
+  "schema": "wi-43b072.dubbing-transport-proof/v1",
+  "worker_sha256": "06a3fccefe655c941913b59129babe6f727537c65ae8f6de82f2ca94f22b847f",
+  "review": "fixture-only approval of model draft, not human linguistic qualification",
+  "input_kind": "licensed human English recording; reverse path uses generated Spanish",
+  "qualified": false,
+  "device_playback": false,
+  "jobs": [
+    {
+      "job_id": "en-es-translation",
+      "exit_code": 0,
+      "elapsed_seconds": 1.39417483296711,
+      "request_sha256": "0086d713e6bf4357435dac3c5d5d0ebe2a94bf926f60d82873bb422ffd7e5c84",
+      "manifest_sha256": "dcf467706a010af7cb94aeeb1b3bac18b2e4bd916fd845a034f1c18d7b11a219",
+      "manifest": {
+        "protocol": "obey-audio-job/v2",
+        "job_id": "en-es-translation",
+        "task": "translation",
+        "source": {
+          "media_sha256": "59528cb4e3cb41e73a4574f76acbee119d9a1bc34b5c133aa5125c2f726a16be",
+          "clip_id": "ami-es2002a",
+          "range_id": "source-32000-192000",
+          "project_revision": "dubbing-proof-1"
+        },
+        "input": {
+          "path": "/private/tmp/wi-43b072-supervisor-fixtures/editor-dubbing-live/source.wav",
+          "sha256": "4575ad9debf4735e4eb9c4684d99d2baa92effbb9c650edacd30c44115c14465",
+          "sample_count": 160000,
+          "sample_rate_hz": 16000,
+          "channels": 1,
+          "channel_role": "microphone",
+          "source_origin_samples": 32000
+        },
+        "runtime": {
+          "provider": "llama.cpp",
+          "endpoint": "",
+          "model": "lfm3-audio-2b",
+          "voice": "female"
+        },
+        "runtime_version": "b11960-8642541b2",
+        "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+        "transport": "audio_to_text",
+        "script_sha256": "",
+        "language": "en",
+        "target_language": "es",
+        "duration_policy": "preserve_picture",
+        "source_windows": [
+          {
+            "start_sample": 32000,
+            "end_sample": 192000
+          }
+        ],
+        "output": {
+          "kind": "json",
+          "bytes": 462,
+          "path": "findings.json",
+          "sha256": "63a5cad4973acb4a92f4fecf15ed964dcf69d5bfec682ce1bb2c045aeced846c"
+        },
+        "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+        "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+        "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "prompt_sha256": "174679c84ef4d437a8d2e2ec180c9002ea39d2e27c0a855066a18625233d03e1",
+        "chunk_policy": "fixed-30s-overlap-2s/v1",
+        "text_sampling": {
+          "seed": 42,
+          "temperature": 0,
+          "max_tokens": 1024,
+          "context_tokens": 8192
+        }
+      }
+    },
+    {
+      "job_id": "es-dubbing",
+      "exit_code": 0,
+      "elapsed_seconds": 2.530270707909949,
+      "request_sha256": "9731418b3b1719360eef6d1674162424c4ecf5dcf7e6bf59858faa6e402f25aa",
+      "manifest_sha256": "08028b8f0163aaa9704c6f8947bb475e07c236b393917e3931f4552d0ff7a85d",
+      "manifest": {
+        "protocol": "obey-audio-job/v3",
+        "job_id": "es-dubbing",
+        "task": "dubbing",
+        "source": {
+          "media_sha256": "59528cb4e3cb41e73a4574f76acbee119d9a1bc34b5c133aa5125c2f726a16be",
+          "clip_id": "ami-es2002a",
+          "range_id": "source-32000-192000",
+          "project_revision": "dubbing-proof-1"
+        },
+        "input": {
+          "path": "/private/tmp/wi-43b072-supervisor-fixtures/editor-dubbing-live/source.wav",
+          "sha256": "4575ad9debf4735e4eb9c4684d99d2baa92effbb9c650edacd30c44115c14465",
+          "sample_count": 160000,
+          "sample_rate_hz": 16000,
+          "channels": 1,
+          "channel_role": "microphone",
+          "source_origin_samples": 32000
+        },
+        "runtime": {
+          "provider": "llama.cpp",
+          "endpoint": "",
+          "model": "lfm3-audio-2b",
+          "voice": "female"
+        },
+        "runtime_version": "b11960-8642541b2",
+        "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+        "transport": "reviewed_translation_then_speech",
+        "script_sha256": "810c24fbbaba8b85b064c192b9ca83a9e3af5ad45c707da15ff165943ccaf7fd",
+        "language": "en",
+        "target_language": "es",
+        "duration_policy": "preserve_picture",
+        "source_windows": [
+          {
+            "start_sample": 32000,
+            "end_sample": 192000
+          }
+        ],
+        "output": {
+          "path": "audio.wav",
+          "sha256": "9f1b243f667399b01139e176aca0a9f2e9fdacf2a4153f4ee3cdcb495be62e64",
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "sample_count": 249600
+        },
+        "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+        "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+        "sampling": {
+          "seed": 42,
+          "max_audio_frames": 8192,
+          "repeat_penalty": 1.05
+        },
+        "translation_review": {
+          "reviewed": true,
+          "manifest_json": "{\n  \"protocol\": \"obey-audio-job/v2\",\n  \"job_id\": \"en-es-translation\",\n  \"task\": \"translation\",\n  \"source\": {\n    \"media_sha256\": \"59528cb4e3cb41e73a4574f76acbee119d9a1bc34b5c133aa5125c2f726a16be\",\n    \"clip_id\": \"ami-es2002a\",\n    \"range_id\": \"source-32000-192000\",\n    \"project_revision\": \"dubbing-proof-1\"\n  },\n  \"input\": {\n    \"path\": \"/private/tmp/wi-43b072-supervisor-fixtures/editor-dubbing-live/source.wav\",\n    \"sha256\": \"4575ad9debf4735e4eb9c4684d99d2baa92effbb9c650edacd30c44115c14465\",\n    \"sample_count\": 160000,\n    \"sample_rate_hz\": 16000,\n    \"channels\": 1,\n    \"channel_role\": \"microphone\",\n    \"source_origin_samples\": 32000\n  },\n  \"runtime\": {\n    \"provider\": \"llama.cpp\",\n    \"endpoint\": \"\",\n    \"model\": \"lfm3-audio-2b\",\n    \"voice\": \"female\"\n  },\n  \"runtime_version\": \"b11960-8642541b2\",\n  \"model_digest\": \"9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2\",\n  \"transport\": \"audio_to_text\",\n  \"script_sha256\": \"\",\n  \"language\": \"en\",\n  \"target_language\": \"es\",\n  \"duration_policy\": \"preserve_picture\",\n  \"source_windows\": [\n    {\n      \"start_sample\": 32000,\n      \"end_sample\": 192000\n    }\n  ],\n  \"output\": {\n    \"kind\": \"json\",\n    \"bytes\": 462,\n    \"path\": \"findings.json\",\n    \"sha256\": \"63a5cad4973acb4a92f4fecf15ed964dcf69d5bfec682ce1bb2c045aeced846c\"\n  },\n  \"projector_digest\": \"2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365\",\n  \"runtime_digest\": \"3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be\",\n  \"instruction_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"prompt_sha256\": \"174679c84ef4d437a8d2e2ec180c9002ea39d2e27c0a855066a18625233d03e1\",\n  \"chunk_policy\": \"fixed-30s-overlap-2s/v1\",\n  \"text_sampling\": {\n    \"seed\": 42,\n    \"temperature\": 0,\n    \"max_tokens\": 1024,\n    \"context_tokens\": 8192\n  }\n}",
+          "findings_json": "{\"schema\":\"obey-audio-findings/v1\",\"task\":\"translation\",\"language\":\"en\",\"target_language\":\"es\",\"windows\":[{\"start_sample\":32000,\"end_sample\":192000,\"input_window_sha256\":\"4575ad9debf4735e4eb9c4684d99d2baa92effbb9c650edacd30c44115c14465\",\"text\":\"Uhm, acabo de recibir el anuncio del proyecto, pero ¿de qué trata el proyecto? ¿Diseño de un control remoto? Eso es todo. ¿Y los otros? ¿Tienes lo mismo?\",\"usage\":{\"prompt_tokens\":152,\"completion_tokens\":48}}]}\n"
+        },
+        "translation_manifest_sha256": "dcf467706a010af7cb94aeeb1b3bac18b2e4bd916fd845a034f1c18d7b11a219",
+        "approved_script": "Uhm, acabo de recibir el anuncio del proyecto, pero ¿de qué trata el proyecto? ¿Diseño de un control remoto? Eso es todo. ¿Y los otros? ¿Tienes lo mismo?"
+      }
+    },
+    {
+      "job_id": "es-en-translation",
+      "exit_code": 0,
+      "elapsed_seconds": 1.394099291996099,
+      "request_sha256": "2e7c7064a97102a71cff096c704ffb4b94e385dfb223a68647cea2df30ffbe33",
+      "manifest_sha256": "799d2404d2698434177491ad0520c5b6352793a1493f8d360763a0b60c91df96",
+      "manifest": {
+        "protocol": "obey-audio-job/v2",
+        "job_id": "es-en-translation",
+        "task": "translation",
+        "source": {
+          "media_sha256": "9f1b243f667399b01139e176aca0a9f2e9fdacf2a4153f4ee3cdcb495be62e64",
+          "clip_id": "generated-spanish-transport-fixture",
+          "range_id": "full-generated-speech",
+          "project_revision": "dubbing-proof-1"
+        },
+        "input": {
+          "path": "/private/tmp/wi-43b072-supervisor-fixtures/editor-dubbing-proof-3/spanish-input.wav",
+          "sha256": "18499aa84c1ea5ba1eff2e1156ecb670ee0a90d5439f950069359f700472f61e",
+          "sample_count": 166400,
+          "sample_rate_hz": 16000,
+          "channels": 1,
+          "channel_role": "speech",
+          "source_origin_samples": 0
+        },
+        "runtime": {
+          "provider": "llama.cpp",
+          "endpoint": "",
+          "model": "lfm3-audio-2b",
+          "voice": "female"
+        },
+        "runtime_version": "b11960-8642541b2",
+        "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+        "transport": "audio_to_text",
+        "script_sha256": "",
+        "language": "es",
+        "target_language": "en",
+        "duration_policy": "preserve_picture",
+        "source_windows": [
+          {
+            "start_sample": 0,
+            "end_sample": 166400
+          }
+        ],
+        "output": {
+          "kind": "json",
+          "bytes": 459,
+          "path": "findings.json",
+          "sha256": "09075fc2c60db945eece56c8a9e9b351cfdef6777cd8d681100c4fd4fa750e77"
+        },
+        "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+        "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+        "instruction_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "prompt_sha256": "8ae7dbb95e6574f009422f17388139576ad3e81fb3cab68c5b4de386d466be60",
+        "chunk_policy": "fixed-30s-overlap-2s/v1",
+        "text_sampling": {
+          "seed": 42,
+          "temperature": 0,
+          "max_tokens": 1024,
+          "context_tokens": 8192
+        }
+      }
+    },
+    {
+      "job_id": "en-dubbing",
+      "exit_code": 0,
+      "elapsed_seconds": 2.2572990420740098,
+      "request_sha256": "a7a50279c5e6b756c977e88e0f4cf1696f978adcc529e11e98ebbaac8c161af3",
+      "manifest_sha256": "902b58eaee8d995791edf5715aadeedc34bf48006cdacfadb34cde173e6c95a9",
+      "manifest": {
+        "protocol": "obey-audio-job/v3",
+        "job_id": "en-dubbing",
+        "task": "dubbing",
+        "source": {
+          "media_sha256": "9f1b243f667399b01139e176aca0a9f2e9fdacf2a4153f4ee3cdcb495be62e64",
+          "clip_id": "generated-spanish-transport-fixture",
+          "range_id": "full-generated-speech",
+          "project_revision": "dubbing-proof-1"
+        },
+        "input": {
+          "path": "/private/tmp/wi-43b072-supervisor-fixtures/editor-dubbing-proof-3/spanish-input.wav",
+          "sha256": "18499aa84c1ea5ba1eff2e1156ecb670ee0a90d5439f950069359f700472f61e",
+          "sample_count": 166400,
+          "sample_rate_hz": 16000,
+          "channels": 1,
+          "channel_role": "speech",
+          "source_origin_samples": 0
+        },
+        "runtime": {
+          "provider": "llama.cpp",
+          "endpoint": "",
+          "model": "lfm3-audio-2b",
+          "voice": "female"
+        },
+        "runtime_version": "b11960-8642541b2",
+        "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+        "transport": "reviewed_translation_then_speech",
+        "script_sha256": "71170d6bc6ce5ecdba7be47d28692455392f3dda966529834dfdd7fe51fa6d2f",
+        "language": "es",
+        "target_language": "en",
+        "duration_policy": "preserve_picture",
+        "source_windows": [
+          {
+            "start_sample": 0,
+            "end_sample": 166400
+          }
+        ],
+        "output": {
+          "path": "audio.wav",
+          "sha256": "15f17b4ea2a55e4ad6dc554109474574f797a2f79f19e9db93c86f6793ed301b",
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "sample_count": 245760
+        },
+        "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+        "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+        "sampling": {
+          "seed": 42,
+          "max_audio_frames": 8192,
+          "repeat_penalty": 1.05
+        },
+        "translation_review": {
+          "reviewed": true,
+          "manifest_json": "{\n  \"protocol\": \"obey-audio-job/v2\",\n  \"job_id\": \"es-en-translation\",\n  \"task\": \"translation\",\n  \"source\": {\n    \"media_sha256\": \"9f1b243f667399b01139e176aca0a9f2e9fdacf2a4153f4ee3cdcb495be62e64\",\n    \"clip_id\": \"generated-spanish-transport-fixture\",\n    \"range_id\": \"full-generated-speech\",\n    \"project_revision\": \"dubbing-proof-1\"\n  },\n  \"input\": {\n    \"path\": \"/private/tmp/wi-43b072-supervisor-fixtures/editor-dubbing-proof-3/spanish-input.wav\",\n    \"sha256\": \"18499aa84c1ea5ba1eff2e1156ecb670ee0a90d5439f950069359f700472f61e\",\n    \"sample_count\": 166400,\n    \"sample_rate_hz\": 16000,\n    \"channels\": 1,\n    \"channel_role\": \"speech\",\n    \"source_origin_samples\": 0\n  },\n  \"runtime\": {\n    \"provider\": \"llama.cpp\",\n    \"endpoint\": \"\",\n    \"model\": \"lfm3-audio-2b\",\n    \"voice\": \"female\"\n  },\n  \"runtime_version\": \"b11960-8642541b2\",\n  \"model_digest\": \"9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2\",\n  \"transport\": \"audio_to_text\",\n  \"script_sha256\": \"\",\n  \"language\": \"es\",\n  \"target_language\": \"en\",\n  \"duration_policy\": \"preserve_picture\",\n  \"source_windows\": [\n    {\n      \"start_sample\": 0,\n      \"end_sample\": 166400\n    }\n  ],\n  \"output\": {\n    \"kind\": \"json\",\n    \"bytes\": 459,\n    \"path\": \"findings.json\",\n    \"sha256\": \"09075fc2c60db945eece56c8a9e9b351cfdef6777cd8d681100c4fd4fa750e77\"\n  },\n  \"projector_digest\": \"2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365\",\n  \"runtime_digest\": \"3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be\",\n  \"instruction_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"prompt_sha256\": \"8ae7dbb95e6574f009422f17388139576ad3e81fb3cab68c5b4de386d466be60\",\n  \"chunk_policy\": \"fixed-30s-overlap-2s/v1\",\n  \"text_sampling\": {\n    \"seed\": 42,\n    \"temperature\": 0,\n    \"max_tokens\": 1024,\n    \"context_tokens\": 8192\n  }\n}",
+          "findings_json": "{\"schema\":\"obey-audio-findings/v1\",\"task\":\"translation\",\"language\":\"es\",\"target_language\":\"en\",\"windows\":[{\"start_sample\":0,\"end_sample\":166400,\"input_window_sha256\":\"353756f7512e6fa6a219d4236c05de96d4e9571d6238e91242a44f1fa8e98eff\",\"text\":\"I have just received the announcement of the project, but what is the project about? Design of a remote control. That is all. And the others, they are the same.\",\"usage\":{\"prompt_tokens\":157,\"completion_tokens\":37}}]}\n"
+        },
+        "translation_manifest_sha256": "799d2404d2698434177491ad0520c5b6352793a1493f8d360763a0b60c91df96",
+        "approved_script": "I have just received the announcement of the project, but what is the project about? Design of a remote control. That is all. And the others, they are the same."
+      }
+    }
+  ]
+}

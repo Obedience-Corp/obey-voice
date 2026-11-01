@@ -1,0 +1,4 @@
+{"protocol":"obey-audio-job/v2","job_id":"es-en-translation","seq":0,"type":"accepted"}
+{"protocol":"obey-audio-job/v2","job_id":"es-en-translation","seq":1,"type":"progress","stage":"audio_analysis"}
+{"protocol":"obey-audio-job/v2","job_id":"es-en-translation","seq":2,"type":"artifact","manifest_path":"/private/tmp/wi-43b072-supervisor-fixtures/editor-dubbing-proof-3/es-en-translation/manifest.json"}
+{"protocol":"obey-audio-job/v2","job_id":"es-en-translation","seq":3,"type":"completed"}

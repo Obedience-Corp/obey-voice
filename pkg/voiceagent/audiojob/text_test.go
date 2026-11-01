@@ -13,10 +13,10 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
-type analyzeFunc func(context.Context, []byte, string, string) (string, TextUsage, error)
+type analyzeFunc func(context.Context, []byte, TextTask) (string, TextUsage, error)
 
-func (f analyzeFunc) Analyze(ctx context.Context, wav []byte, task, instruction string) (string, TextUsage, error) {
-	return f(ctx, wav, task, instruction)
+func (f analyzeFunc) Analyze(ctx context.Context, wav []byte, task TextTask) (string, TextUsage, error) {
+	return f(ctx, wav, task)
 }
 func textFixture(t *testing.T) (Config, Request, Provenance, []byte) {
 	t.Helper()
@@ -45,7 +45,7 @@ func TestAudioTextWindowsPreserveAllPCMAndSourceOffsets(t *testing.T) {
 	c, r, p, input := textFixture(t)
 	windows := []Window{{32000, 512000}, {480000, 960000}, {928000, 1008000}}
 	calls := 0
-	analyzer := analyzeFunc(func(ctx context.Context, wav []byte, task, instruction string) (string, TextUsage, error) {
+	analyzer := analyzeFunc(func(ctx context.Context, wav []byte, task TextTask) (string, TextUsage, error) {
 		window := windows[calls]
 		calls++
 		format, err := audio.ReadWAVFormat(bytes.NewReader(wav), int64(len(wav)))
@@ -56,7 +56,7 @@ func TestAudioTextWindowsPreserveAllPCMAndSourceOffsets(t *testing.T) {
 		if format.Frames() != end-start || !bytes.Equal(wav[format.DataOffset:], input[44+start*2:44+end*2]) {
 			t.Fatal("window changed or lost source samples")
 		}
-		if task != "transcription" || instruction != "" {
+		if task.Task != "transcription" || task.Instruction != "" || task.Language != "en" || task.TargetLanguage != "" {
 			t.Fatal("task changed")
 		}
 		return fmt.Sprintf("window %d, including overlap", calls), TextUsage{PromptTokens: 400, CompletionTokens: 12}, nil
@@ -66,7 +66,7 @@ func TestAudioTextWindowsPreserveAllPCMAndSourceOffsets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 3 || m.Transport != "audio_to_text" || m.Output.Kind != "json" || m.Output.SampleCount != 0 || m.ChunkPolicy != ChunkPolicy || m.Source != r.Source || m.PromptSHA256 != hashBytes([]byte(textPrompt(r.Task))) {
+	if calls != 3 || m.Transport != "audio_to_text" || m.Output.Kind != "json" || m.Output.SampleCount != 0 || m.ChunkPolicy != ChunkPolicy || m.Source != r.Source || m.PromptSHA256 != hashBytes([]byte(r.textTask().prompt())) {
 		t.Fatal("wrong findings provenance", m)
 	}
 	data, err := os.ReadFile(filepath.Join(r.OutputDir, m.Output.Path))
@@ -115,7 +115,7 @@ func TestAudioTextFailureNeverPublishesPartialWindows(t *testing.T) {
 				r.Limits.OutputBytes = 44
 			}
 			calls := 0
-			analyzer := analyzeFunc(func(context.Context, []byte, string, string) (string, TextUsage, error) {
+			analyzer := analyzeFunc(func(context.Context, []byte, TextTask) (string, TextUsage, error) {
 				calls++
 				if mode == "source-changed" && calls == 1 {
 					f, err := os.OpenFile(r.Input.Path, os.O_WRONLY, 0)

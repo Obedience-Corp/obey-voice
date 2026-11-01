@@ -15,6 +15,28 @@ import (
 )
 
 func (p *ManagedRuntime) Synthesize(ctx context.Context, text string) (*audio.PCMStream, error) {
+	return p.synthesize(ctx, text, "en")
+}
+
+// SpeechInLanguage binds each explicit dubbing request without mutating runtime
+// configuration or affecting concurrent/default English narration callers.
+func (p *ManagedRuntime) SpeechInLanguage(language string) (Synthesizer, error) {
+	if translationLanguage(language) == "" {
+		return nil, fmt.Errorf("unsupported speech language %q", language)
+	}
+	return managedLanguageSpeech{runtime: p, language: language}, nil
+}
+
+type managedLanguageSpeech struct {
+	runtime  *ManagedRuntime
+	language string
+}
+
+func (s managedLanguageSpeech) Synthesize(ctx context.Context, text string) (*audio.PCMStream, error) {
+	return s.runtime.synthesize(ctx, text, s.language)
+}
+
+func (p *ManagedRuntime) synthesize(ctx context.Context, text, language string) (*audio.PCMStream, error) {
 	if len(text) == 0 || len(text) > 1024 {
 		return nil, fmt.Errorf("managed narration requires a script of 1–1024 UTF-8 bytes")
 	}
@@ -24,13 +46,13 @@ func (p *ManagedRuntime) Synthesize(ctx context.Context, text string) (*audio.PC
 	stream := audio.NewPCMStream(ctx)
 	_ = stream.SetSampleRate(24000)
 	stream.SetIncremental(true)
-	go func() { stream.CloseWithError(p.speak(ctx, stream, text)) }()
+	go func() { stream.CloseWithError(p.speak(ctx, stream, text, language)) }()
 	return stream, nil
 }
 
-func (p *ManagedRuntime) speak(ctx context.Context, stream *audio.PCMStream, text string) error {
+func (p *ManagedRuntime) speak(ctx context.Context, stream *audio.PCMStream, text, language string) error {
 	payload, err := json.Marshal(map[string]any{
-		"input": text, "voice": p.voice, "lang": "en", "response_format": "pcm",
+		"input": text, "voice": p.voice, "lang": language, "response_format": "pcm",
 		"stream": true, "seed": 42, "n_predict": 8192, "repeat_penalty": 1.05,
 	})
 	if err != nil {

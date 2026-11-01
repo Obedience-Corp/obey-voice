@@ -11,9 +11,9 @@ sample count/rate/channels, channel role, source origin samples), `runtime`
 (provider, loopback endpoint, model, voice), `script`, `language`, `target_language`,
 `duration_policy`, `output_dir`, and `limits` (timeout seconds, output bytes).
 Every identity is echoed in the manifest. Narration requires a caller-approved
-script; it does not claim to reproduce the source recording. Conversion, dubbing
-and alignment require independent qualified capabilities and cannot fall back to
-narration or transcript-then-speech.
+script; it does not claim to reproduce the source recording. V1 cannot substitute narration for conversion or dubbing. Reviewed dubbing has
+its own explicit v3 request below; recording-preserving conversion and measured
+alignment remain unavailable.
 
 Each JSONL event has protocol, job_id, consecutive seq starting at zero and type.
 The order is accepted, zero or more progress events, artifact, completed. Failed
@@ -152,8 +152,8 @@ no-speech prose and empty text never establish silence or authorize cuts.
 
 Compatibility: a v1 narration still produces its unchanged WAV/manifest pair;
 a v2 text task produces findings/manifest and cannot enter the audio-take import
-path. Conversion, dubbing and measured alignment remain unavailable until their
-own transport and quality gates pass. The editor must validate this new major
+path. V2 cannot create a spoken take. Reviewed dubbing uses the explicit v3 request
+below; recording-preserving conversion and measured alignment remain unavailable. The editor must validate this new major
 version explicitly before displaying or saving findings.
 
 `obey-voice transcribe audio-capabilities --audio-config /absolute/config.json
@@ -168,3 +168,77 @@ occurs, and the owned server is reaped on exit or cancellation.
 `installed` describes the verified selected pack, including when a particular
 task remains unsupported; it never implies that an aligner or conversion
 implementation is available.
+
+
+## Translation drafts (additive v2 task)
+
+`task: "translation"` accepts the same source-audio envelope and JSON findings
+output as the other v2 tasks. The caller explicitly selects `language` and
+`target_language`. The first adapter pair is `en` (English) and `es` (Spanish),
+in either direction; identical, missing or other languages fail before runtime
+startup. `script` and `instruction` must be empty. Existing English transcription,
+understanding and v1 narration requests retain their behavior. Consumers must
+validate the task, not assume every v2 result is an original-language transcript.
+
+```json
+{"protocol":"obey-audio-job/v2","task":"translation","script":"",
+ "language":"en","target_language":"es","duration_policy":"preserve_picture"}
+```
+
+The fixed system prompt follows [the model card's translation
+instructions](https://huggingface.co/LiquidAI/LFM3-Audio-2B#translation):
+`Translate the following speech from English to Spanish in text form.`
+Only allowlisted language names enter that prompt; recording content is the
+separate audio message, with no tools. The actual prompt hash and both language
+codes are retained in the manifest. The findings also retain both languages so
+an exported draft remains unambiguous outside its job directory.
+
+All input windows, overlap, token preflight, terminal-response checks, resource
+limits and atomic publication rules apply unchanged. Overlapping drafts must be
+reviewed before becoming a spoken script: concatenating windows can duplicate
+words, and window endpoints are not subtitle or word timings. This task produces
+no audio, edits or cuts. A later explicit reviewed-script generation request is
+required for dubbing; requesting translation never silently synthesizes speech.
+Capability metadata reports source and target language choices separately and
+keeps `qualified: false`. Transport tests and a completed model reply do not
+qualify meaning preservation, pronunciation or timing.
+
+## Reviewed dubbing previews (v3)
+
+`obey-audio-job/v3` adds `task: "dubbing"` for the managed pack. It is a
+separate explicit request after translation review. Source and target languages
+must be distinct `en`/`es`; the caller supplies the approved target-language
+`script` (1–1024 UTF-8 bytes), empty instruction and the existing
+`preserve_picture` policy. V1 narration and v2 findings remain unchanged.
+
+The required `translation_review` object contains `reviewed: true`, the exact
+v2 translation `manifest_json` and `findings_json` strings. These strings contain
+the original JSON documents, preserving their bytes and trailing whitespace. The finite
+worker checks the findings bytes against their manifest hash, language pair,
+source/range/revision, original WAV identity, complete window plan, prompt and
+runtime/model/projector digests. The review capsule is bounded to 256 KiB. A
+missing, corrupt, stale or differently sourced translation fails before model
+startup. The explicit review assertion means the caller has shown the text and
+received approval; the model cannot provide this approval itself.
+
+```json
+{"protocol":"obey-audio-job/v3","task":"dubbing",
+ "script":"El texto aprobado.","language":"en","target_language":"es",
+ "duration_policy":"preserve_picture",
+ "translation_review":{"reviewed":true,"manifest_json":"<original manifest JSON>","findings_json":"<original findings JSON>"}}
+```
+
+The placeholder strings above stand for complete validated v2 artifacts,
+not valid requests. Preserve the original JSON bytes inside the review capsule;
+reformatting findings changes their hash. The new speech request sends only the
+approved script to `/tts`, with the explicit target `lang` and selected voice.
+It never synthesizes raw overlapping translation windows automatically.
+
+The v3 WAV manifest records `transport: "reviewed_translation_then_speech"`,
+source and target languages, `approved_script`, its hash, the complete bounded
+`translation_review` capsule and its original manifest hash. Keeping this proof
+in the manifest makes the generated take independent of translation caches.
+Exact output sample count exposes duration mismatch. Clients must review it and
+choose a supported timeline policy before Apply; this worker performs no
+stretching, trimming, alignment, source replacement or picture retiming.
+Dubbing is an unqualified preview, not recording-preserving voice conversion.
