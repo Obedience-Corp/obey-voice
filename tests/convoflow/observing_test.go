@@ -11,6 +11,36 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
+type routingObservedFixture struct {
+	*stubWorker
+	calls int
+}
+
+func (f *routingObservedFixture) ClassifyLiveRoute(context.Context, brain.LiveRouteRequest) (brain.StreamResult, error) {
+	f.calls++
+	return brain.StreamResult{Route: "spawn"}, nil
+}
+
+func TestObservingPreservesHarnessRoutingCapability(t *testing.T) {
+	inner := &routingObservedFixture{stubWorker: newStubWorker()}
+	wrapped, observer := observeProvider(inner)
+	router, ok := wrapped.(brain.LiveRouteClassifier)
+	if !ok {
+		t.Fatal("observer hid production harness routing")
+	}
+	result, err := router.ClassifyLiveRoute(t.Context(), brain.LiveRouteRequest{Text: "weather"})
+	if err != nil || result.Route != "spawn" || inner.calls != 1 {
+		t.Fatalf("routing=%+v calls=%d err=%v", result, inner.calls, err)
+	}
+	if stream, full := observer.calls(); stream != 0 || full != 0 {
+		t.Fatal("private route inference counted as a talking/worker call")
+	}
+	ordinary, _ := observeProvider(newStubWorker())
+	if _, ok := ordinary.(brain.LiveRouteClassifier); ok {
+		t.Fatal("observer invented a routing capability")
+	}
+}
+
 func TestObservingRecordsOptionsPerEntryPoint(t *testing.T) {
 	o := &observing{inner: newStubWorker()}
 	if _, err := o.ThinkFull(context.Background(), "task", brain.WorkerStreamOptions(true)); err != nil {

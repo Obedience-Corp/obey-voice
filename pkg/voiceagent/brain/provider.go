@@ -14,10 +14,13 @@ import (
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
-	Utterance     *utterance.Finalized
-	AudioRetained bool
-	Attachments   []chatmedia.Ref
-	Discussion    *discussion.Directive
+	// HarnessRouting describes the host's conversational path after classification
+	// or routing-context recovery. It is never a recorded user instruction.
+	HarnessRouting *HarnessRouting
+	Utterance      *utterance.Finalized
+	AudioRetained  bool
+	Attachments    []chatmedia.Ref
+	Discussion     *discussion.Directive
 	// WorkerBudget is the job-shared operational budget for this worker job.
 	WorkerBudget  *WorkerBudget
 	OnWorkerUsage func(WorkerUsage)

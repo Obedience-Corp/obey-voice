@@ -31,6 +31,13 @@ type observingOllama struct {
 	*brain.OllamaBrain
 }
 
+// Preserve harness routing without making Ollama or scripted providers appear
+// to support a second routing mechanism.
+type observingHarness struct {
+	*observing
+	brain.LiveRouteClassifier
+}
+
 var _ brain.HistoryProjectionProvider = (*observingOllama)(nil)
 var _ brain.PersonaPromptFreezer = (*observingOllama)(nil)
 var _ brain.CanonicalHistoryProvider = (*observingOllama)(nil)
@@ -65,6 +72,9 @@ func observeProvider(inner brain.Provider) (brain.Provider, *observing) {
 	core := &observing{inner: inner}
 	if b, ok := inner.(*brain.OllamaBrain); ok {
 		return &observingOllama{observing: core, OllamaBrain: b}, core
+	}
+	if classifier, ok := inner.(brain.LiveRouteClassifier); ok {
+		return &observingHarness{observing: core, LiveRouteClassifier: classifier}, core
 	}
 	return core, core
 }

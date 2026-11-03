@@ -199,5 +199,5 @@ func (c *CodexBrain) buildPrompt(input string, opts StreamOptions) string {
 	if !opts.OmitTurnInstruction && c.turnInstruction != "" {
 		b.WriteString("\n\n" + c.turnInstruction)
 	}
-	return b.String()
+	return b.String() + harnessRoutingContext(c.cfg, opts)
 }
