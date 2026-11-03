@@ -178,7 +178,6 @@ linux-artifact:
 # artifact; signing happens in the app's release pipeline (delta D5,
 # workflow/design/obey-voice-apps/PROTOCOL_DELTAS.md).
 #
-# Build a relocatable, self-contained macOS arm64 release artifact
 # License packaging rejects missing notices, new libraries and version/digest drift.
 [no-cd]
 macos-notices-test:
