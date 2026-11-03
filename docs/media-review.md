@@ -78,6 +78,8 @@ New text/voice choices may require corresponding readiness assertions to change.
 Downloaded voice/model packs and native runtime libraries are outside this
 tracked-media inventory. Inspect their exact versions, licenses, notices and
 packaging separately for each distributed binary. In particular, the Linux
-artifact recipe copies native notices, while the macOS CLI artifact recipe
-currently copies binaries/libraries without an equivalent license-copy step;
-this needs an artifact-specific follow-up before public binary distribution.
+artifact recipe copies native notices, while the reviewed baseline's macOS CLI
+artifact recipe lacked an equivalent license-copy step.
+[PR #334](https://github.com/Obedience-Corp/obey-voice/pull/334) fixes that packaging
+gap with verified notices and archive checks; include it in the release candidate.
+That fix does not clear embedded assets or the separate desktop app distribution.
