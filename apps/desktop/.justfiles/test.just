@@ -41,6 +41,11 @@ work:
 routing:
     python3 scripts/test-routing.py
 
+# Real companion setup, text reply, saved session and process restart; no audio/models
+[positional-arguments]
+first-conversation *args:
+    python3 scripts/test-first-conversation.py "$@"
+
 # Start native setup with no saved config; local test provider, no microphone automation
 [macos]
 setup:
