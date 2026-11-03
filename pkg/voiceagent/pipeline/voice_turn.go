@@ -243,7 +243,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	if metrics.input != nil {
 		modelInput = ""
 	}
-	brainStream, err := p.Brain.ThinkStream(requestCtx, modelInput, streamOpts)
+	brainStream, err := p.startBrainStream(requestCtx, modelInput, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)

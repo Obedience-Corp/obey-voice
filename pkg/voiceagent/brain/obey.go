@@ -316,5 +316,5 @@ func (b *ObeyBrain) buildPrompt(input string, opts StreamOptions) string {
 	if !opts.OmitTurnInstruction {
 		parts = append(parts, b.turnInstruction)
 	}
-	return joinPromptParts(parts...)
+	return joinPromptParts(parts...) + harnessRoutingContext(b.cfg, opts)
 }

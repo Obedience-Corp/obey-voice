@@ -178,7 +178,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	}
 	metrics.modelRequest = time.Now()
 	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)
-	stream, err := p.Brain.ThinkStream(brainCtx, input, streamOpts)
+	stream, err := p.startBrainStream(brainCtx, input, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)

@@ -119,7 +119,7 @@ func (b *MuseSparkBrain) buildPrompt(input string, o StreamOptions) string {
 	if !o.OmitTurnInstruction {
 		parts = append(parts, b.turnInstruction)
 	}
-	return joinPromptParts(parts...)
+	return joinPromptParts(parts...) + harnessRoutingContext(b.cfg, o)
 }
 
 func (b *MuseSparkBrain) commit(input, response string, o StreamOptions) {

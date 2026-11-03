@@ -373,7 +373,7 @@ func (b *Brain) warnSessionSize(streamOpts StreamOptions) {
 // touch b.history or the fallback text — the caller finalizes once, after any
 // resume-failure retry, so a failed first attempt never emits the fallback.
 func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts StreamOptions) (string, bool, error) {
-	prompt := b.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults)
+	prompt := b.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(b.cfg, streamOpts)
 	strip := newLabelStripper(b.agentName())
 
 	// Partial (stream_event) messages are not requested: chunking is
@@ -572,7 +572,7 @@ func (b *Brain) estimateSessionTokens() int {
 // id for resume. JSON output is required here (not plain text): the SDK only
 // populates ClaudeResult.SessionID when it parses a JSON transcript.
 func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions) (string, error) {
-	prompt := b.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults)
+	prompt := b.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(b.cfg, streamOpts)
 	opts := b.runOptions(claude.JSONOutput, liveCLITools(streamOpts))
 
 	result, err := b.client.RunPromptCtx(ctx, prompt, opts)

@@ -234,7 +234,7 @@ func (c *CursorBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOpt
 // for resume. The SDK's Classify already turns result.IsError into a Go error,
 // so a rejected --resume falls through to the flatten retry.
 func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions) (string, error) {
-	prompt := c.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults)
+	prompt := c.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(c.cfg, streamOpts)
 
 	result, err := c.client.AskCtx(ctx, prompt, c.askOptions(liveCLITools(streamOpts)))
 	if err != nil {
