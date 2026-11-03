@@ -6,609 +6,728 @@
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "d3a4ffcaeba1114396bc5c378e4683550939384a75c3e337871f90441a0a5beb"
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_128x128@2x.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "c9851bfad19ab7a0fe831ba2891ed5b272580e552cd81b9715991d92c95d508a"
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_16x16.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "1684b3d0ce5acf82fb42717977255109892b770f6549606a7273c80c1cc09881"
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_16x16@2x.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "f212cad7d5a6f0a2cf685252e631d448c51f53d433232d2d13165b2d87a806ee"
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_256x256.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "c9851bfad19ab7a0fe831ba2891ed5b272580e552cd81b9715991d92c95d508a"
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_256x256@2x.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "f7da38b75190f900547f65af68c068fab13159d86712e2298944309d8f8cb684"
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_32x32.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "be37125b8413dda57deca80326a07977620fa477d85dfb904c9f0e647a658d55"
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_32x32@2x.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "467d636c6741bb41ffad5bc9eed5551c047a527fc87b3a9a3ba6090504f295d3"
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_512x512.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "f7da38b75190f900547f65af68c068fab13159d86712e2298944309d8f8cb684"
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_512x512@2x.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "b4c4bd55fa88a89b0e174a0f8444aa6b9b8dbb6c695c2f763b3183a9af2da2a9"
+    },
+    {
+      "path": "apps/desktop/assets/obediencecorp-logo-dark.svg",
+      "source": "Desktop SVG source; ownership and content review pending",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "2d2a05f47f49bf65d91dc4f4d7342673564ccb2924f794bf2d06a0cc569b1a2f"
     },
     {
       "path": "apps/desktop/assets/tray-color.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "b84f5fe38222a8fe7593054bd8a07ee5f15c084416d8d00cb1ec59f9c973e274"
+    },
+    {
+      "path": "apps/desktop/assets/tray-color.svg",
+      "source": "Desktop SVG source; ownership and content review pending",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "9644f63611afffe9989ecd73e6116a9f6e3ead954df245ae2963dc0da81aeeb1"
     },
     {
       "path": "apps/desktop/assets/tray-template.png",
       "source": "Source and content not yet reviewed",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "5a5f3fe64a365c16ee9c74dff87095a5bdbb1a2fff3c5a05d8e60b645efc9493"
+    },
+    {
+      "path": "apps/desktop/assets/tray-template.svg",
+      "source": "Desktop SVG source; ownership and content review pending",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "837dd4d3cb02521fd96d2b344facab58dad21fe878eb20216d945cf87ef6c28f"
     },
     {
       "path": "demos/agent-images.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "6b7febb645b3712bd1e89388dadf9446b7a296254973734f6b9a101ff776b8dc"
     },
     {
       "path": "demos/chat-images.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "a32cdec559b2f6fa24e5d5116e4043bdb557b4bf4fb2115a6bd12037e838afd7"
     },
     {
       "path": "demos/context-meter.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "170e5fafda83434f1549fe9e3223f912481584be9cdc9bb52a6eb50d917af9f5"
     },
     {
       "path": "demos/conversation-record.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "def27db135322bed93e2e9f0ff9c650cf600417ba3b2bfc422d46934ebd7cab6"
     },
     {
       "path": "demos/frames/agent-images-draft.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "17bd947d04a57c33f711803c36d345f79a617320389e0eb49a9a053fee642f07"
     },
     {
       "path": "demos/frames/agent-images-thread.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "65298eec07c3e831ea5c247ecc82cc9b00a85a4aa5097ea07f5d447bf5d28006"
     },
     {
       "path": "demos/frames/chat-images-draft.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "17bd947d04a57c33f711803c36d345f79a617320389e0eb49a9a053fee642f07"
     },
     {
       "path": "demos/frames/chat-images-thread.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "7ef8f5aa00b0a7a86d8176915d774b65e22fead987b9c449c422aa318e693d94"
     },
     {
       "path": "demos/frames/chat-tools.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "65a885b94942852e4f512295df7d759f614a18c3fe4ec9ed1295e243a503fc4e"
     },
     {
       "path": "demos/frames/launcher-notice-open.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0",
+      "sha256": "f8844896a125a777498eb59efd44cc7edc3c3e427c84a80b4230d515058acd4a"
     },
     {
       "path": "demos/frames/launcher-notice-short-scrolled.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0",
+      "sha256": "cf65c0d1a8e1fd3feae944466eef17270099e886596ee7c7cd22b354d045b35f"
     },
     {
       "path": "demos/frames/launcher-notice-short.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0",
+      "sha256": "1832e0ae1158accaa32eda13466af8bdcd48a82d07acc30fc133fddbf1696b06"
     },
     {
       "path": "demos/frames/launcher-notice.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0",
+      "sha256": "85cd805bbf035588ac8811268ae524cb76ae0f16492e492793c6bda1a3a8eb30"
     },
     {
       "path": "demos/frames/launcher.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "98b403609f5bdf001e25d12390783460a3761c2771ae3510d733b52d4ec3a5f0"
     },
     {
       "path": "demos/frames/persona-model-claude.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "9e277b511f8af6808b97df8f2acf0d8e119943cc34d5f9d831af56d63f858a0c"
     },
     {
       "path": "demos/frames/persona-model-edit.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "5c6c9e164c4dafa781d462dd4760cc71424b2da620325145180c01d5a55d420a"
     },
     {
       "path": "demos/frames/persona-model-inherited.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "53311cc803e2006b29bc66228dd8f701f2971990cbdd688ee67f5d13470e8166"
     },
     {
       "path": "demos/frames/persona-model-view.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "9be53b6254a46d3ef8b897a3a3d74d3757c7d8f3d05baa08595d535a40496b73"
     },
     {
       "path": "demos/frames/persona-variable-picker.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "f73b5c7998a12a48f60da07b50719e6162f0a5f3e4ae432d8c70545c4075cd4b"
     },
     {
       "path": "demos/frames/persona-voice-preview.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "2ceabfb0689f7e6c6cc77ca0300650c26077843c527b74768903bacf8c5ba799"
     },
     {
       "path": "demos/frames/persona-voice-row.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "2af49198d06c28e3413415ec39d38531dd23bdf17c4a9631542481fc94b8edea"
     },
     {
       "path": "demos/frames/route-meeting-tab.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "e179f3f313f5a5a1d3cc627a7888dd0433ca76f56efe793732e0f0cbe5a61092"
     },
     {
       "path": "demos/frames/route-settings.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "0e5674a2affe1869b593a21de6df8879b31810aaf84347b35aa5c063bac6b5b8"
     },
     {
       "path": "demos/frames/route-speaker-tab.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "7e993a36d549d0c82a616f814064190f636bd507f9789197f5acc0606e5567d6"
     },
     {
       "path": "demos/frames/think-hidden.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "34e3034bfc0d41b5e3874543d705b701ab37e76cd59a877a8c8e2383a4d8a194"
     },
     {
       "path": "demos/frames/think-live.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "cc528394c92aec260a1570c588c27a5fbfdd4fd5fc996503d65a5566b8cad2e8"
     },
     {
       "path": "demos/frames/think-shown.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "9a6c6a28931ee3821f86345bfdd7da722209d054dbe8f59b39f879c156aa0b22"
     },
     {
       "path": "demos/frames/voice-eq.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "bc7b0c3a26ce4c68e0e27c4f8e85031eefffcd34b470db276d0cdf0c40c9b72a"
     },
     {
       "path": "demos/frames/work-cue-detail.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "d700ad9a251de53659522a5b044945418a9d9814ca57fdfe4436fb309137f6ab"
     },
     {
       "path": "demos/frames/work-cue-followup.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "f164c23c5cc06497cf39b50d5bc5b9fce5dcda8fc38d09b1f51b55712be9e36c"
     },
     {
       "path": "demos/frames/work-cue-listening.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "abd33b9acf59902c6aa9c404f61916bccf8649d3dbaeed5234965dfb5674f51a"
     },
     {
       "path": "demos/frames/workers-detail.png",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0",
+      "sha256": "4ec3a3b77df8c55209063a5b34d3da224456473e98af2f7e524d33e9af0814eb"
     },
     {
       "path": "demos/launcher-notice-short.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0",
+      "sha256": "ee7855e14e77e898a61da225da2ce6dbd287eac0dbd991af276a2c2b435257a9"
     },
     {
       "path": "demos/launcher-notice.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0",
+      "sha256": "d4a58ebbffc124857a54e779fc6fe0878f838ce5b05f024c6316bc465876db7a"
     },
     {
       "path": "demos/library.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "59bfe112fef61182363e2dccde9068094033d687374d52a0ec99206f84a51ebe"
     },
     {
       "path": "demos/meeting-route-speaker.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "5c096709c6cca4af9af173586ddf8f07302c5b95c9f2c9c35b3111a2ae74cc9b"
     },
     {
       "path": "demos/meeting-speakers.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "849c2747a49be168806b755c0c4ef4911f71a4878ae13fc5c3e301b1b0c32ada"
     },
     {
       "path": "demos/meeting.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "46f327843c38e9632e2791c74a75da6b50ba3e111fae77a2e073bed56506bb02"
     },
     {
       "path": "demos/persona-create.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "2372ae9b2d833d055cff08c54eeebe1fee6177b3021f1ae99db6164e6a1c8beb"
     },
     {
       "path": "demos/persona-form-ux.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "379c57e53dfd970b26205c5b3e381546f19a2bc465a2859c46de9d71559b2d71"
     },
     {
       "path": "demos/persona-model-view.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "c6dde4a8eeffa87a665550335db284760cc01c195e88a9e127706dcd0b3f20d8"
     },
     {
       "path": "demos/persona-switch.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "ec431668ee08852ba1214676baa3433d4f6ecb321f54139da0e8b60b816258ac"
     },
     {
       "path": "demos/qwen-voices.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "46df94a275fae22f5d2d3bf9a8c209e54a470fa1b04914cf5de437ea3a0df7dc"
     },
     {
       "path": "demos/settings-sidebar.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "be459c1117e9966c30a3e7513ca46c50443306eb2d1ac2cf853dfefdeb257226"
     },
     {
       "path": "demos/think-blocks.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "9a5b4a4a146de621bea756370e121d25699af282b5d0a8834719a8a2fdf8c82e"
     },
     {
       "path": "demos/tool-calls.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "3532eeb5391a300715ebbf513bf07390d17e0a81703aaf6c6d9b968d27abbaea"
     },
     {
       "path": "demos/voice-meter.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "ac93d449a89e181d8fb48fb3c2a908b848780bae245826c5d7c289eb14437db3"
     },
     {
       "path": "demos/work-cue.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "5ac5f0c2c65ee3c6327d70a8beb8358d34d91c8134c01ba0f7e0e8eee21dbdb2"
     },
     {
       "path": "demos/workers.gif",
       "source": "Application demonstration; content and source permissions require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0",
+      "sha256": "0993bd66bf5294dcd964a1fe69af7c354e3aac5b6942d32e197664d4c877133a"
     },
     {
       "path": "docs/audio-jobs/evidence/direct-output.wav",
       "source": "Finite audio job evidence; adjacent job receipts do not establish source rights",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "73edc8adba7fbb7a2e72903b633965c41419a0dedf8e73dee212071cdccb7935"
     },
     {
       "path": "docs/audio-jobs/evidence/recorded-staged-output.wav",
       "source": "Finite audio job evidence; adjacent job receipts do not establish source rights",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "d3479db6e61213847da350f2bb7c7ead45f7cb9ca8fa1232029a689834af79a1"
     },
     {
       "path": "docs/audio/golden/N2/after.wav",
       "source": "Generated audio with adjacent provenance.json; permissions still require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "ddd1ce05d77ceb30663a52e20cd43868f41777c662135bfc3a41803306dcebc6"
     },
     {
       "path": "docs/audio/golden/N2/before.wav",
       "source": "Generated audio with adjacent provenance.json; permissions still require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "0b0b23d6002c1803929d0a156f8196a8cf1544459e67306b6bb19cf0fb1eb4d7"
     },
     {
       "path": "docs/audio/golden/N3/after.wav",
       "source": "Generated audio with adjacent provenance.json; permissions still require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "bf426088b3e2dcb08f515d72968af18315dcd66980ec66a01e5030b0ef67ee9c"
     },
     {
       "path": "docs/audio/golden/N3/before.wav",
       "source": "Generated audio with adjacent provenance.json; permissions still require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "6ef6b7941cbb34fa2fce14cba4de5770bf0a26196ce7f1851598b2df3a1f132b"
     },
     {
       "path": "docs/audio/golden/N6/after.wav",
       "source": "Generated audio with adjacent provenance.json; permissions still require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "fda4b1a173d619fd6e6047905283d574457379092ec70cc916aa2290ed33eb4d"
     },
     {
       "path": "docs/audio/golden/N6/before.wav",
       "source": "Generated audio with adjacent provenance.json; permissions still require review",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "docs/images/desktop-conversation.png",
-      "source": "Source and content not yet reviewed",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "docs/images/desktop-home.png",
-      "source": "Source and content not yet reviewed",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "docs/images/desktop-settings.png",
-      "source": "Source and content not yet reviewed",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "docs/images/tui.gif",
-      "source": "Source and content not yet reviewed",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "pkg/voiceagent/qwen/voices/veronica/ref.wav",
-      "source": "Source-clip metadata in adjacent meta.json; redistribution and cloning rights unverified",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "pkg/voiceagent/qwen/voices/veronicadesk/ref.wav",
-      "source": "Source-clip metadata in adjacent meta.json; redistribution and cloning rights unverified",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "testdata/kws/bare.wav",
-      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "testdata/kws/british.wav",
-      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "testdata/kws/confusable.wav",
-      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "testdata/kws/kokoro.wav",
-      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "testdata/kws/mention.wav",
-      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "testdata/kws/negative.wav",
-      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "testdata/kws/other-keyword.wav",
-      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "testdata/kws/positive.wav",
-      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "testdata/kws/verb.wav",
-      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "tests/voiceflow/testdata/barge_in.wav",
-      "source": "Source and content not yet reviewed",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
-    },
-    {
-      "path": "tests/voiceflow/testdata/utterance.wav",
-      "source": "Source and content not yet reviewed",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "59c3455f30251b62f9949ea1dd129eb38dee47f56d73559fbfbd420ccba6f9ad"
     },
     {
       "path": "docs/benchmarks/t3b/transcripts.json",
       "source": "25 original meeting transcript records; source and redistribution rights unverified",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "pending"
+      "content_review": "pending",
+      "sha256": "c45181734603ebda4aff9aa5124356957336da79137efdf3ceedb148257a3d6e"
+    },
+    {
+      "path": "docs/images/desktop-conversation.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "fa713c71d7ca95208912cecb467dc6c05704079ebd004eb4b490b4e290ae2721"
+    },
+    {
+      "path": "docs/images/desktop-home.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "77111da8e8d4a1baa7fa8bfecbf2ca782ac63765a9eccdbfa00966aa94bc9e8f"
+    },
+    {
+      "path": "docs/images/desktop-settings.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "4adaae858fd3723af096894032a9de8fd7ca7e77bd8062b457e892a168957de4"
+    },
+    {
+      "path": "docs/images/tui.gif",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "9cb7d31ffc0dd5192a678e8b898916b62ea56c603e9e47de73cb4e21aefb63d6"
+    },
+    {
+      "path": "pkg/voiceagent/nativeaudio/assets/setup.wav",
+      "source": "macOS Samantha synthesis documented in adjacent README.md; redistribution terms unverified",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "fdc8158aebc935a488991d208fc19130a0d8f612cf7e58c36c13474e9b4fb5cb"
+    },
+    {
+      "path": "pkg/voiceagent/qwen/voices/veronica/ref.wav",
+      "source": "Source-clip metadata in adjacent meta.json; redistribution and cloning rights unverified",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "c7f9d546cbeb43e994cb24c1441daf2109548e166faf3c165feb77401790f8ed"
+    },
+    {
+      "path": "pkg/voiceagent/qwen/voices/veronicadesk/ref.wav",
+      "source": "Source-clip metadata in adjacent meta.json; redistribution and cloning rights unverified",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "992cff600bd8c2635fcad8bd218169168220abfbdfac4deca7b8e666ac184ce6"
+    },
+    {
+      "path": "testdata/kws/bare.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "ce5a6a804b058b7f16208b9e19ee1c3315331619c20f73002439ec1f6b1b5cbc"
+    },
+    {
+      "path": "testdata/kws/british.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "8d0ebca9ce601c27f9e11317b1e03bb7bc902a267957bc446bf75a93dff35a9b"
+    },
+    {
+      "path": "testdata/kws/confusable.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "d77c00301d7b33c428835c153e16ffcc586549db054df72a0d3dc830fa92803e"
+    },
+    {
+      "path": "testdata/kws/kokoro.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "3853c9ebe0b98d9d6f0a98d52b7a707479e90e9b995c77b2b35eb7b0d553b473"
+    },
+    {
+      "path": "testdata/kws/mention.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "09dd5273b38bf3e77ae1e896dc2b10f6d412776e682f11635a1d5c7e7536f1b7"
+    },
+    {
+      "path": "testdata/kws/negative.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "1551e8c55c4b795113d568085f8e116b652c4939c44153d0a33af501128390f3"
+    },
+    {
+      "path": "testdata/kws/other-keyword.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "0038cd5576b41f190cf4f63a76e462f11890affa119f1a790d3cb20ad40bc3f0"
+    },
+    {
+      "path": "testdata/kws/positive.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "99c5bcb84f6b62e82bb68c4bbe2a1c2d82a99d70af1f6e91b377bd19f86dc368"
+    },
+    {
+      "path": "testdata/kws/verb.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "18b8a6cf8a89ee91ea58edcb1422e5ab01ae9723eb8fa986493d27cbc5ad06c0"
+    },
+    {
+      "path": "tests/voiceflow/testdata/barge_in.wav",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "970c89ea66a4de6958d0b1c9913cdaa50580bb7fc08be315f75f9b4f79d78e7c"
+    },
+    {
+      "path": "tests/voiceflow/testdata/utterance.wav",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending",
+      "sha256": "514d15318033b31ef28e17643d3a5fdeaa9b325ed389dce924ca77c445a5a8a0"
     }
   ]
 }
