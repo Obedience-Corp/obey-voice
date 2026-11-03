@@ -220,3 +220,35 @@ type fakeError struct{ msg string }
 func (e *fakeError) Error() string { return e.msg }
 
 var errFake = &fakeError{"fake process error"}
+
+func TestRenderResetNeverJoinsOldAndNewReferencePCM(t *testing.T) {
+	var f renderFramer
+	old := make([]float32, frameSamples-1)
+	for i := range old {
+		old[i] = .8
+	}
+	if err := f.Push(old, func([]int16) error { t.Fatal("incomplete frame rendered"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	f.Reset()
+	fresh := make([]float32, frameSamples)
+	for i := range fresh {
+		fresh[i] = .2
+	}
+	calls := 0
+	if err := f.Push(fresh, func(frame []int16) error {
+		calls++
+		want := float32ToInt16([]float32{.2})[0]
+		for _, sample := range frame {
+			if sample != want {
+				t.Fatal("old reference PCM crossed reset")
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || len(f.pending) != 0 {
+		t.Fatalf("frames=%d pending=%d", calls, len(f.pending))
+	}
+}

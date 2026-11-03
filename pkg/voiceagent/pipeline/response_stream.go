@@ -15,6 +15,7 @@ import (
 )
 
 func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.CancelFunc, stream *brain.Stream, allowBargeIn bool, metrics *turnMetrics, turn *turnConductor, repair *promiseRepairState) (string, bool, error) {
+	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

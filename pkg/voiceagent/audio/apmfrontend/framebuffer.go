@@ -122,3 +122,9 @@ func int16ToFloat32(samples []int16) []float32 {
 	}
 	return out
 }
+
+// Reset discards an incomplete reference frame across output discontinuities.
+func (f *renderFramer) Reset() {
+	clear(f.pending)
+	f.pending = f.pending[:0]
+}

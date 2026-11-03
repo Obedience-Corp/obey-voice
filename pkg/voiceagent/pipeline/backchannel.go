@@ -172,6 +172,7 @@ func (b *backchannel) pick() (backchannelClip, bool) {
 // and stops Player immediately before enqueueing the answer, so a slow or queued
 // filler can never add its duration to response latency.
 func (p *Pipeline) playBackchannel(ctx context.Context) {
+	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	if p.backchannel == nil || p.Player == nil || !p.backchannel.shouldPlay() {
 		return
 	}

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
@@ -54,44 +55,50 @@ type DesktopEnrollment struct {
 	Processing bool    `json:"processing"`
 }
 type DesktopState struct {
-	PersonaMessage   string                   `json:"persona_message,omitempty"`
-	AudioMode        string                   `json:"audio_mode,omitempty"`
-	AudioControls    string                   `json:"audio_controls,omitempty"`
-	AudioTranscript  string                   `json:"audio_transcript,omitempty"`
-	AttachmentError  string                   `json:"attachment_error"`
-	Attachments      []desktopMedia           `json:"attachments,omitempty"`
-	AttachmentBusy   bool                     `json:"attachment_busy"`
-	Participation    *discussion.Settings     `json:"participation,omitempty"`
-	WorkDir          string                   `json:"work_dir"`
-	WorkDirSource    string                   `json:"work_dir_source"`
-	Notices          []string                 `json:"notices"`
-	WorkerThreads    map[string][]DesktopTurn `json:"worker_threads,omitempty"`
-	WorkResultImages [][]desktopMedia         `json:"work_result_images,omitempty"`
-	WorkResults      []string                 `json:"work_results"`
-	SettingsMessage  string                   `json:"settings_message"`
-	Enrollment       DesktopEnrollment        `json:"enrollment"`
-	SpeakerNames     []string                 `json:"speaker_names"`
-	SessionID        string                   `json:"session_id"`
-	Name             string                   `json:"name"`
-	BrainProvider    string                   `json:"brain_provider,omitempty"`
-	BrainModel       string                   `json:"brain_model,omitempty"`
-	Status           string                   `json:"status"`
-	Error            bool                     `json:"error"`
-	Mic              bool                     `json:"mic"`
-	OutputAvailable  bool                     `json:"output_available"`
-	VoiceAvailable   bool                     `json:"voice_available"`
-	Muted            bool                     `json:"muted"`
-	Busy             bool                     `json:"busy"`
-	Recording        string                   `json:"recording"`
-	Partial          string                   `json:"partial"`
-	Thinking         string                   `json:"thinking"`
-	Response         string                   `json:"response"`
-	InputLevel       float64                  `json:"input_level"`
-	OutputLevel      float64                  `json:"output_level"`
-	Turns            []DesktopTurn            `json:"turns"`
-	Activity         []DesktopActivity        `json:"activity"`
-	Workers          []pipeline.WorkerInfo    `json:"workers"`
-	WorkersEnabled   bool                     `json:"workers_enabled"`
+	OutputStatus         *audio.OutputStatus            `json:"output_status,omitempty"`
+	OutputCapture        *audio.DiagnosticCaptureStatus `json:"output_capture,omitempty"`
+	OutputActionBusy     bool                           `json:"output_action_busy"`
+	OutputMessage        string                         `json:"output_message,omitempty"`
+	OutputError          bool                           `json:"output_error"`
+	OutputResetAvailable bool                           `json:"output_reset_available"`
+	PersonaMessage       string                         `json:"persona_message,omitempty"`
+	AudioMode            string                         `json:"audio_mode,omitempty"`
+	AudioControls        string                         `json:"audio_controls,omitempty"`
+	AudioTranscript      string                         `json:"audio_transcript,omitempty"`
+	AttachmentError      string                         `json:"attachment_error"`
+	Attachments          []desktopMedia                 `json:"attachments,omitempty"`
+	AttachmentBusy       bool                           `json:"attachment_busy"`
+	Participation        *discussion.Settings           `json:"participation,omitempty"`
+	WorkDir              string                         `json:"work_dir"`
+	WorkDirSource        string                         `json:"work_dir_source"`
+	Notices              []string                       `json:"notices"`
+	WorkerThreads        map[string][]DesktopTurn       `json:"worker_threads,omitempty"`
+	WorkResultImages     [][]desktopMedia               `json:"work_result_images,omitempty"`
+	WorkResults          []string                       `json:"work_results"`
+	SettingsMessage      string                         `json:"settings_message"`
+	Enrollment           DesktopEnrollment              `json:"enrollment"`
+	SpeakerNames         []string                       `json:"speaker_names"`
+	SessionID            string                         `json:"session_id"`
+	Name                 string                         `json:"name"`
+	BrainProvider        string                         `json:"brain_provider,omitempty"`
+	BrainModel           string                         `json:"brain_model,omitempty"`
+	Status               string                         `json:"status"`
+	Error                bool                           `json:"error"`
+	Mic                  bool                           `json:"mic"`
+	OutputAvailable      bool                           `json:"output_available"`
+	VoiceAvailable       bool                           `json:"voice_available"`
+	Muted                bool                           `json:"muted"`
+	Busy                 bool                           `json:"busy"`
+	Recording            string                         `json:"recording"`
+	Partial              string                         `json:"partial"`
+	Thinking             string                         `json:"thinking"`
+	Response             string                         `json:"response"`
+	InputLevel           float64                        `json:"input_level"`
+	OutputLevel          float64                        `json:"output_level"`
+	Turns                []DesktopTurn                  `json:"turns"`
+	Activity             []DesktopActivity              `json:"activity"`
+	Workers              []pipeline.WorkerInfo          `json:"workers"`
+	WorkersEnabled       bool                           `json:"workers_enabled"`
 }
 
 type DesktopController struct {
@@ -104,11 +111,14 @@ func (d *DesktopController) Wait() error               { return <-d.done }
 
 type desktopTick struct{}
 type desktopModel struct {
-	app     App
-	rt      *ConversationRuntime
-	initial tea.Cmd
-	publish func(DesktopState)
-	last    time.Time
+	outputActionBusy bool
+	outputMessage    string
+	outputError      bool
+	app              App
+	rt               *ConversationRuntime
+	initial          tea.Cmd
+	publish          func(DesktopState)
+	last             time.Time
 }
 
 func (m desktopModel) Init() tea.Cmd { return tea.Batch(m.initial, desktopTimer()) }
@@ -156,6 +166,8 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if action, ok := msg.(DesktopAction); ok {
 		c := &m.app.conversation
 		switch action.Kind {
+		case "audio_reset", "audio_capture_start", "audio_capture_stop":
+			cmd = m.outputAction(action.Kind)
 		case "attachment_add":
 			cmd = c.importMedia(action.Paths, action.Image)
 		case "attachment_paste":
@@ -312,6 +324,12 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			c.setStatus(fmt.Sprintf("Unknown desktop action: %s", action.Kind), true)
 		}
+	} else if result, ok := msg.(desktopOutputResult); ok {
+		m.outputActionBusy = false
+		m.outputMessage, m.outputError = result.message, result.err != nil
+		if result.err != nil {
+			m.outputMessage = result.err.Error()
+		}
 	} else if _, ok := msg.(desktopTick); ok {
 		cmd = desktopTimer()
 	} else {
@@ -332,6 +350,7 @@ func (m desktopModel) state() DesktopState {
 	state := DesktopState{SessionID: m.rt.SessionID, Name: c.agentName, Status: ansi.Strip(c.status), Error: c.statusErr, Mic: c.voiceEnabled,
 		VoiceAvailable: m.rt.Voice, OutputAvailable: m.rt.Output, Muted: c.outputMuted || !m.rt.Output, Busy: c.turnState != turnIdle, Recording: c.recordMode(), Thinking: c.streamingThink,
 		Response: c.streamingAgent, InputLevel: c.inputLevel, OutputLevel: c.outputLevel, Workers: m.rt.Pipeline.Workers(), WorkersEnabled: m.rt.Pipeline.WorkersEnabled()}
+	m.outputState(&state)
 	if m.rt.SessionCfg != nil && m.rt.SessionCfg.GroupParticipationEnabled && m.rt.Participation != nil {
 		settings := m.rt.Participation()
 		state.Participation = &settings

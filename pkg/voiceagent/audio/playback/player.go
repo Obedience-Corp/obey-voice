@@ -51,18 +51,39 @@ const (
 )
 
 // Player handles in-process audio playback through miniaudio.
+type nativeOutput interface {
+	Stop() error
+	Uninit()
+}
+
 type Player struct {
-	recording audio.RecordingFeed
-	mu        sync.Mutex
+	testRoute    func() (string, error)
+	testOpen     func(int) (nativeOutput, int, int, error)
+	openedAt     time.Time
+	routeID      string
+	callbackGaps atomic.Uint64
+	underruns    atomic.Uint64
+	recording    audio.RecordingFeed
+	mu           sync.Mutex
 	// deviceMu serializes native device initialization and teardown. Never hold
 	// mu while calling malgo Start/Stop/Uninit: miniaudio may synchronously call
 	// onData, which also needs mu.
-	deviceMu   sync.Mutex
-	ctx        *malgo.AllocatedContext
-	device     *malgo.Device
-	sampleRate int
-	channels   int // device client channel count (mono TTS is expanded into this)
-	frontend   audio.Frontend
+	deviceMu         sync.Mutex
+	generation       uint64
+	epoch            uint64
+	workers          map[*playbackSegment]context.CancelFunc
+	lifecycleState   string
+	recoveryReason   string
+	lastError        string
+	recoveryAttempts int
+	recoveryCh       chan recoverySignal
+	recoveryDone     chan struct{}
+	lastCallback     atomic.Int64
+	ctx              *malgo.AllocatedContext
+	device           nativeOutput
+	sampleRate       int
+	channels         int // device client channel count (mono TTS is expanded into this)
+	frontend         audio.Frontend
 	// aecIngress receives clock-aligned mono PCM from onData and pushes the
 	// capture-rate far-end reference on a worker (callback-safe).
 	aecIngress       *aecRefIngress
@@ -113,6 +134,8 @@ func NewPlayerWithDevice(deviceName string) *Player {
 // SetFrontend installs an audio front-end that can observe playback
 // reference audio for echo cancellation or similar processing.
 func (p *Player) SetFrontend(frontend audio.Frontend) {
+	p.deviceMu.Lock()
+	defer p.deviceMu.Unlock()
 	p.mu.Lock()
 	old := p.aecIngress
 	p.aecIngress = nil
@@ -142,13 +165,57 @@ func (p *Player) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audi
 		return nil, errors.New("nil pcm stream")
 	}
 
+	producerCtx := ctx
+	ctx, cancel := context.WithCancel(ctx)
 	segment := newPlaybackSegment()
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		cancel()
+		go drainPlaybackStream(producerCtx, stream)
+		return nil, errors.New("audio player is closed")
+	}
+	if generation, bound := audio.PlaybackGeneration(ctx, p); bound && generation != p.epoch {
+		p.mu.Unlock()
+		cancel()
+		go drainPlaybackStream(producerCtx, stream)
+		return nil, context.Canceled
+	}
+	epoch := p.epoch
+	if p.workers == nil {
+		p.workers = make(map[*playbackSegment]context.CancelFunc)
+	}
+	p.workers[segment] = cancel
+	p.mu.Unlock()
 	segment.attempt = audio.PlaybackAttemptFromContext(ctx)
+	go func() {
+		select {
+		case <-segment.finishedCh:
+		case <-ctx.Done():
+		}
+		cancel()
+		segment.mu.Lock()
+		underruns := segment.underruns
+		segment.mu.Unlock()
+		p.underruns.Add(uint64(underruns))
+		if underruns > 0 {
+			p.logLifecycle("segment_underruns", "render_starvation", nil)
+		}
+		p.mu.Lock()
+		delete(p.workers, segment)
+		p.mu.Unlock()
+	}()
 	go runPlaybackWorker(ctx, segment, stream, func() {
-		p.pumpSegment(ctx, segment, stream)
+		defer func() {
+			if ctx.Err() != nil {
+				go drainPlaybackStream(producerCtx, stream)
+			}
+		}()
+		p.pumpSegmentGeneration(ctx, segment, stream, epoch)
 	})
 
 	if err := segment.waitReady(ctx); err != nil {
+		cancel()
 		return nil, err
 	}
 
@@ -159,7 +226,7 @@ func (p *Player) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audi
 		return nil, errors.New("audio player is closed")
 	}
 
-	if ctx.Err() != nil || !segment.attempt.Valid() {
+	if ctx.Err() != nil || epoch != p.epoch || !segment.attempt.Valid() {
 		segment.interrupt()
 		return nil, context.Canceled
 	}
@@ -169,7 +236,12 @@ func (p *Player) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audi
 
 // Stop interrupts current playback and clears any queued audio.
 func (p *Player) Stop() {
+	defer p.logLifecycle("stopped", "intentional_stop", nil)
 	p.mu.Lock()
+	p.epoch++
+	for _, cancel := range p.workers {
+		cancel()
+	}
 	segments := make([]*playbackSegment, 0, len(p.queue)+1)
 	if p.current != nil {
 		segments = append(segments, p.current)
@@ -192,6 +264,7 @@ func (p *Player) IsPlaying() bool {
 
 // Close releases audio resources.
 func (p *Player) Close() error {
+	defer p.logLifecycle("closed", "shutdown", nil)
 	p.Stop()
 
 	p.deviceMu.Lock()
@@ -203,6 +276,11 @@ func (p *Player) Close() error {
 		return nil
 	}
 	p.closed = true
+	p.lifecycleState = "closed"
+	if p.recoveryDone != nil {
+		close(p.recoveryDone)
+		p.recoveryDone = nil
+	}
 	device := p.device
 	p.device = nil
 	ctx := p.ctx
@@ -241,4 +319,17 @@ func (p *Player) Close() error {
 
 func (p *Player) SubscribeRecording(buffer int, enabled func() bool) (<-chan audio.Frame, func() audio.RecordingStats) {
 	return p.recording.SubscribeRecording(buffer, enabled)
+}
+
+func drainPlaybackStream(ctx context.Context, stream *audio.PCMStream) {
+	for {
+		select {
+		case _, ok := <-stream.Frames():
+			if !ok {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }

@@ -19,6 +19,12 @@ ui:
     just dist mac
     python3 scripts/ui-fixture.py
 
+# Isolated real reset/capture controls; no microphone or speaker playback
+[macos]
+audio-output:
+    just dist mac
+    python3 scripts/ui-fixture.py --audio-output
+
 # Isolated persona preview UI: test tones, failure/retry, and cancellation
 [macos]
 persona-preview:

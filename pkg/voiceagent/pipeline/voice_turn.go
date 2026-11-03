@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -83,6 +84,11 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		turn.finish(TurnTimedOut)
 		return "", nil
 	}
+	// Listening does not reserve an output generation: recovery while idle
+	// must still admit the next freshly captured utterance. Inherited
+	// continuation bindings remain fenced by BindPlaybackContext.
+	ctx = audio.BindPlaybackContext(ctx, p.Player)
+
 	nativeConversation := metrics.input != nil && p.Native != nil && p.Native.Controls == "conversation"
 	// Name summon (D5). Ahead of the backchannel on purpose: speech meant for
 	// someone else in the room must not even get an "mm-hm" back.

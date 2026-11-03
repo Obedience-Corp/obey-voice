@@ -84,6 +84,12 @@ pub struct Enrollment {
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct State {
+    pub output_status: Option<OutputStatus>,
+    pub output_capture: Option<OutputCapture>,
+    pub output_action_busy: bool,
+    pub output_message: String,
+    pub output_error: bool,
+    pub output_reset_available: bool,
     #[serde(deserialize_with = "nullable_vec")]
     pub attachments: Vec<crate::app::media::Attachment>,
     pub attachment_busy: bool,
@@ -129,6 +135,22 @@ pub struct State {
     #[serde(deserialize_with = "nullable_vec")]
     pub workers: Vec<Value>,
     pub workers_enabled: bool,
+}
+
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct OutputStatus {
+    pub state: String,
+    pub last_error: String,
+}
+
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct OutputCapture {
+    pub active: bool,
+    pub directory: String,
+    pub dropped_events: u64,
+    pub limit_reason: String,
 }
 impl State {
     pub fn brain_label(&self) -> Option<String> {
@@ -285,6 +307,24 @@ pub fn route_receipt(value: &Value) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn playback_recovery_snapshot_keeps_capture_and_failure_visible() {
+        let state: super::State = serde_json::from_value(serde_json::json!({
+            "session_id":"kept", "output_reset_available":true,
+            "output_status":{"state":"failed","last_error":"Selected output is missing"},
+            "output_capture":{"active":true,"directory":"/tmp/capture","dropped_events":2}
+        }))
+        .unwrap();
+        assert!(state.output_reset_available);
+        assert_eq!(state.session_id, "kept");
+        assert_eq!(state.output_status.unwrap().state, "failed");
+        let capture = state.output_capture.unwrap();
+        assert!(capture.active);
+        assert_eq!(capture.dropped_events, 2);
+        let older: super::State = serde_json::from_str("{}").unwrap();
+        assert!(!older.output_reset_available);
+        assert!(older.output_capture.is_none());
+    }
     use super::*;
     #[test]
     fn active_brain_label_uses_snapshot_and_handles_older_engines() {

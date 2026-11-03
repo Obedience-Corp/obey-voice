@@ -123,6 +123,7 @@ impl VoiceApp {
                 }),
             );
         });
+        self.audio_output_controls(ui);
         self.media_paste(ui);
         self.participation_controls(ui);
         self.work_cue(ui);
