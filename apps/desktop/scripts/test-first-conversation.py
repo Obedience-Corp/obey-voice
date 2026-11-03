@@ -64,7 +64,17 @@ class Companion:
                                         stderr=self.errors, text=True, bufsize=1)
         self.reader = threading.Thread(target=self.read, daemon=True)
         self.reader.start()
-        self.until(lambda row: row.get('event') == 'ready')
+        try:
+            self.until(lambda row: row.get('event') == 'ready')
+        except BaseException as error:
+            # Construction has not returned, so the caller cannot close us.
+            # Keep the readiness error even if cleanup also reports a failure.
+            try:
+                self.close()
+            except Exception as cleanup_error:
+                if hasattr(error, 'add_note'):
+                    error.add_note(f'Companion cleanup: {cleanup_error}')
+            raise
 
     def read(self):
         try:
@@ -104,17 +114,24 @@ class Companion:
         return result.get('result')
 
     def close(self):
-        if self.process.poll() is None:
+        try:
+            if self.process.poll() is None:
+                try:
+                    self.process.stdin.close()
+                except BrokenPipeError:
+                    pass  # The child exited between poll and closing stdin.
+                try:
+                    self.process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait()
+                    raise RuntimeError('Companion did not exit after EOF')
+        finally:
+            self.reader.join(timeout=5)
             self.process.stdin.close()
-            try:
-                self.process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
-                raise RuntimeError('Companion did not exit after EOF')
-        self.reader.join(timeout=5)
-        self.log.close()
-        self.errors.close()
+            self.process.stdout.close()
+            self.log.close()
+            self.errors.close()
         if self.process.returncode:
             raise RuntimeError(f'Companion exited {self.process.returncode}')
 
