@@ -7,6 +7,11 @@
 default:
     @just --list --justfile {{source_file()}}
 
+# License packaging rejects missing notices, new libraries and version/digest drift.
+[no-cd]
+macos-notices-test:
+    python3 -m unittest discover -s scripts -p test_package_macos_notices.py
+
 # Tag and push a release after tests pass. Usage: just release tag v0.1.0
 [no-cd]
 tag version:
@@ -253,6 +258,13 @@ macos-artifact:
         codesign --force --sign - "$libdir/$base"
     done
     codesign --force --sign - "$bin"
+
+    module_dir="$(
+        go list -m -json github.com/k2-fsa/sherpa-onnx-go-macos |
+            awk -F'"' '$2 == "Dir" { print $4; exit }'
+    )"
+    [[ -n "$module_dir" ]] || { echo "cannot locate sherpa-onnx-go-macos module directory" >&2; exit 1; }
+    bash scripts/package-macos-notices.sh "$stage" "$module_dir"
 
     # manifest.json: version + every packaged file's sha256 (computed before the
     # manifest exists so it never lists itself).
