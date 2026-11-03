@@ -7,6 +7,21 @@
 default:
     @just --list --justfile {{source_file()}}
 
+# Validate tracked media coverage and byte-bound review records (not clearance).
+[no-cd]
+media-check:
+    python3 scripts/media_review.py
+
+# Fail until every inventoried asset has a complete public-review record.
+[no-cd]
+media-ready:
+    python3 scripts/media_review.py --require-cleared
+
+# Isolated negative paths for media inventory and clearance checks.
+[no-cd]
+media-test:
+    python3 -m unittest discover -s scripts -p test_media_review.py
+
 # Tag and push a release after tests pass. Usage: just release tag v0.1.0
 [no-cd]
 tag version:
