@@ -192,7 +192,9 @@ func TestPlayStreamSuccessfulBufferedAndIncremental(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			stream := audio.NewPCMStream(ctx)
-			stream.SetSampleRate(24000)
+			if err := stream.SetSampleRate(24000); err != nil {
+				t.Fatal(err)
+			}
 			stream.SetIncremental(incremental)
 			go func() { stream.Write([]float32{.2, .3, .4, .5}); stream.Close() }()
 			playback, err := p.PlayStream(ctx, stream)
@@ -286,7 +288,9 @@ func TestResetDrainsLateProducerWithoutReopening(t *testing.T) {
 	if err := <-result; !errors.Is(err, context.Canceled) {
 		t.Fatalf("late worker result %v", err)
 	}
-	stream.SetSampleRate(24000)
+	if err := stream.SetSampleRate(24000); err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 32; i++ {
 		if err := stream.Write([]float32{.1}); err != nil {
 			t.Fatal("late producer blocked", err)

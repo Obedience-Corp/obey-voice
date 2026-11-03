@@ -193,6 +193,14 @@ func (p *Player) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audi
 		case <-segment.finishedCh:
 		case <-ctx.Done():
 		}
+		// A canceled pump may also close finishedCh; check cancellation even
+		// when that branch wins, before canceling our own worker context.
+		if ctx.Err() != nil {
+			// The producer can finish buffering before playback starts. Its
+			// context still owns this segment until audible completion; cancel
+			// only this attempt, leaving other admitted speech valid.
+			segment.interrupt()
+		}
 		cancel()
 		segment.mu.Lock()
 		underruns := segment.underruns

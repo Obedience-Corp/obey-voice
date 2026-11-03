@@ -456,12 +456,18 @@ func TestApplyPlaybackEventObservesPostSTTLatency(t *testing.T) {
 	}
 }
 
-func TestFirstRealSegmentStopsBackchannelBeforePlayback(t *testing.T) {
+func TestFirstRealSegmentCancelsBackchannelBeforePlayback(t *testing.T) {
 	player := newFakePlayer(15 * time.Millisecond)
 	defer player.Close()
 	p := &Pipeline{TTS: &fakeTTS{}, Player: player, Events: events.NewBus()}
 	p.backchannelMu.Lock()
-	p.backchannelCancel = func() {}
+	var cancellations atomic.Int32
+	p.backchannelCancel = func() {
+		if player.MaxOutstanding() != 0 {
+			t.Error("backchannel canceled after real playback was queued")
+		}
+		cancellations.Add(1)
+	}
 	p.backchannelMu.Unlock()
 	var audioStarted, realAudioQueued atomic.Bool
 	out := make(chan playbackEvent, 4)
@@ -469,16 +475,16 @@ func TestFirstRealSegmentStopsBackchannelBeforePlayback(t *testing.T) {
 	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "hello", 0, &audioStarted, out, nil, &realAudioQueued) {
 		t.Fatal("synthesizeSegment returned false")
 	}
-	if player.StopCount() != 1 {
-		t.Fatalf("Stop count = %d, want 1 before first real playback", player.StopCount())
+	if cancellations.Load() != 1 || player.StopCount() != 0 {
+		t.Fatalf("cancellations=%d global stops=%d, want one scoped cancellation", cancellations.Load(), player.StopCount())
 	}
 	_ = drainPlaybackKinds(t, out, 2)
 
 	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "again", 0, &audioStarted, out, nil, &realAudioQueued) {
 		t.Fatal("second synthesizeSegment returned false")
 	}
-	if player.StopCount() != 1 {
-		t.Fatalf("Stop count = %d after second segment, want no repeated queue flush", player.StopCount())
+	if cancellations.Load() != 1 || player.StopCount() != 0 {
+		t.Fatalf("cancellations=%d global stops=%d after second segment, want no additional cancellation", cancellations.Load(), player.StopCount())
 	}
 	_ = drainPlaybackKinds(t, out, 2)
 }

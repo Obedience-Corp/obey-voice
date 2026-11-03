@@ -168,9 +168,9 @@ func (b *backchannel) pick() (backchannelClip, bool) {
 
 // play sends a filler through the normal Player path.
 //
-// The filler gets its own cancelable context. The first real segment cancels it
-// and stops Player immediately before enqueueing the answer, so a slow or queued
-// filler can never add its duration to response latency.
+// The filler gets its own cancelable context. The first real segment cancels
+// only that playback attempt before enqueueing the answer. A global Player.Stop
+// would revoke the foreground answer's admission generation as well.
 func (p *Pipeline) playBackchannel(ctx context.Context) {
 	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	if p.backchannel == nil || p.Player == nil || !p.backchannel.shouldPlay() {
@@ -213,9 +213,6 @@ func (p *Pipeline) stopBackchannel() {
 		return
 	}
 	cancel()
-	if p.Player != nil {
-		p.Player.Stop()
-	}
 }
 
 // EnableBackchannel synthesizes the filler pool and turns the feature on.

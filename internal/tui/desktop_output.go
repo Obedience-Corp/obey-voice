@@ -49,7 +49,7 @@ func (m *desktopModel) outputAction(kind string) tea.Cmd {
 		}
 		capture, ok := p.Player.(audio.DiagnosticCapturer)
 		if !ok {
-			return desktopOutputResult{err: errors.New("This audio output does not support diagnostic capture")}
+			return desktopOutputResult{err: errors.New("this audio output does not support diagnostic capture")}
 		}
 		if kind == "audio_capture_start" {
 			_, err := capture.StartDiagnosticCapture(ctx)
