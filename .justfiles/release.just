@@ -193,6 +193,11 @@ linux-artifact:
 # artifact; signing happens in the app's release pipeline (delta D5,
 # workflow/design/obey-voice-apps/PROTOCOL_DELTAS.md).
 #
+# License packaging rejects missing notices, new libraries and version/digest drift.
+[no-cd]
+macos-notices-test:
+    python3 -m unittest discover -s scripts -p test_package_macos_notices.py
+
 # Build a relocatable, self-contained macOS arm64 release artifact
 [no-cd]
 macos-artifact:
@@ -268,6 +273,13 @@ macos-artifact:
         codesign --force --sign - "$libdir/$base"
     done
     codesign --force --sign - "$bin"
+
+    module_dir="$(
+        go list -m -json github.com/k2-fsa/sherpa-onnx-go-macos |
+            awk -F'"' '$2 == "Dir" { print $4; exit }'
+    )"
+    [[ -n "$module_dir" ]] || { echo "cannot locate sherpa-onnx-go-macos module directory" >&2; exit 1; }
+    bash scripts/package-macos-notices.sh "$stage" "$module_dir"
 
     # manifest.json: version + every packaged file's sha256 (computed before the
     # manifest exists so it never lists itself).
