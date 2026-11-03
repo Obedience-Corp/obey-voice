@@ -19,10 +19,12 @@ concurrency:
 
 jobs:
   linux-artifact:
-    runs-on: [self-hosted, linux, x64, lance-arch]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
@@ -30,7 +32,9 @@ jobs:
           cache: false
       - uses: extractions/setup-just@v3
       - name: Install artifact tools
-        run: sudo apt-get install --yes patchelf
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes patchelf
       - name: Build relocatable Linux amd64 artifact
         run: just release linux-artifact
       - uses: actions/upload-artifact@v4
@@ -48,9 +52,11 @@ jobs:
 
   macos-artifact:
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           fetch-depth: 0 # git describe needs history/tags for the manifest version
       - uses: actions/setup-go@v5
         with:
