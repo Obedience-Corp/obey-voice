@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,6 +33,7 @@ func (p *Pipeline) startBrainStream(ctx context.Context, input string, opts brai
 	}
 	started := time.Now()
 	result, err := classifier.ClassifyLiveRoute(ctx, brain.LiveRouteRequest{Text: input, Conversation: history, WorkerTiers: opts.WorkerTiers})
+	contextLimited := errors.Is(err, brain.ErrHarnessRouteContextLimit)
 	disposition := "chat"
 	if result.Route != "" {
 		disposition = result.Route
@@ -39,8 +41,12 @@ func (p *Pipeline) startBrainStream(ctx context.Context, input string, opts brai
 	if err != nil {
 		disposition = "failed"
 	}
+	if contextLimited {
+		disposition = "context_limit"
+		result = brain.StreamResult{}
+	}
 	p.emit(events.DecisionEvaluated{Point: "harness_route", Disposition: disposition, Elapsed: time.Since(started), Tier: string(result.RouteTier)})
-	if err != nil {
+	if err != nil && !contextLimited {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -65,6 +71,6 @@ func (p *Pipeline) startBrainStream(ctx context.Context, input string, opts brai
 		_, workerErr := p.Agency.workerProvider()
 		available = available && workerErr == nil
 	}
-	opts.HarnessRouting = &brain.HarnessRouting{WorkersAvailable: available}
+	opts.HarnessRouting = &brain.HarnessRouting{WorkersAvailable: available, ContextLimited: contextLimited}
 	return p.Brain.ThinkStream(ctx, input, opts)
 }

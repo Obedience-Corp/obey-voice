@@ -141,3 +141,83 @@ func TestLiveHarnessRoutesTerminalRequest(t *testing.T) {
 		t.Fatal("admitted terminal request was not persisted")
 	}
 }
+
+func TestLiveHarnessLargeContextKeepsTerminalConversation(t *testing.T) {
+	provider := os.Getenv("OBEY_VOICE_LIVE_HARNESS_PROVIDER")
+	if provider == "" {
+		t.Skip("set OBEY_VOICE_LIVE_HARNESS_PROVIDER to an authenticated harness")
+	}
+	model := os.Getenv("OBEY_VOICE_LIVE_HARNESS_MODEL")
+	cfg := &config.Config{BrainProvider: provider, Persona: "obey", AgentName: "Obey", WorkDir: t.TempDir(), PromptsDir: t.TempDir(), MaxHistory: 20,
+		VoiceToolsEnabled: true, VoiceWorkerProvider: "ollama", CodexModel: model, CodexReasoningEffort: "low", CursorModel: model, GrokModel: model,
+		MuseSparkModel: model, ObeyModel: model, ObeyToolPolicy: "daemon", PersonaRoutingTimeout: 60}
+	live, err := brain.NewProvider(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = brain.CloseProvider(live) }()
+	document := "Opening codeword: blue comet.\n" + strings.Repeat("This is a harmless fixture paragraph.\n", 4096) + "Closing codeword: quiet harbor."
+	live.LoadHistory([]brain.Turn{{Role: "user", Content: document}})
+	p := &pipeline.Pipeline{Brain: live, Events: events.NewBus(), VoiceToolsEnabled: true}
+	p.SetOutputMuted(true)
+	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	defer cancel()
+	jobs := job.NewTable(ctx)
+	defer jobs.Close()
+	pipeline.NewAgency(p, jobs, &routingProofWorker{requests: make(chan string, 2)}, cfg, nil).Wire()
+	store, saved := session.NewStore(t.TempDir()), session.New(provider, model)
+	p.OnTurn = func() {
+		if err := store.Save(saved, live.History()); err != nil {
+			t.Error(err)
+		}
+	}
+	replies := make(chan string, 4)
+	events.Subscribe(p.Events, func(e events.ResponseReady) { replies <- e.Response })
+	decisions := make(chan string, 4)
+	events.Subscribe(p.Events, func(e events.DecisionEvaluated) { decisions <- e.Disposition })
+	input, write := io.Pipe()
+	defer input.Close()
+	defer write.Close()
+	appDone := make(chan error, 1)
+	go func() { appDone <- Run(ctx, p, input, true, true) }()
+	questions := []string{"What are the two codewords at the start and end of the document?", "Repeat only the closing codeword."}
+	for i, question := range questions {
+		if _, err := fmt.Fprintln(write, question); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case reply := <-replies:
+			text := strings.ToLower(reply)
+			if !strings.Contains(text, "quiet harbor") || i == 0 && !strings.Contains(text, "blue comet") {
+				t.Fatalf("lost document context: %s", reply)
+			}
+			t.Logf("large-context terminal reply: %s", reply)
+		case <-ctx.Done():
+			t.Fatal("large history blocked terminal conversation")
+		}
+		select {
+		case decision := <-decisions:
+			if decision != "context_limit" {
+				t.Fatalf("unexpected routing disposition: %s", decision)
+			}
+		case <-ctx.Done():
+			t.Fatal("missing routing outcome")
+		}
+	}
+	if _, err := fmt.Fprintln(write, "quit"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-appDone; err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs.Status()) != 0 {
+		t.Fatal("context-limit recovery admitted worker execution")
+	}
+	loaded, err := store.Load(saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Turns) != 5 || loaded.Turns[0].Content != document || loaded.Turns[1].Content != questions[0] || loaded.Turns[3].Content != questions[1] {
+		t.Fatal("recovery did not persist the original document and both user turns")
+	}
+}

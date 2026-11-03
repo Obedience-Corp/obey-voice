@@ -17,9 +17,10 @@ import (
 
 type harnessFixtureBrain struct {
 	*routedProjectionBrain
-	classify func(context.Context, brain.LiveRouteRequest) (brain.StreamResult, error)
-	requests []brain.LiveRouteRequest
-	chat     []brain.StreamOptions
+	classify   func(context.Context, brain.LiveRouteRequest) (brain.StreamResult, error)
+	requests   []brain.LiveRouteRequest
+	chat       []brain.StreamOptions
+	chatInputs []string
 }
 
 func (b *harnessFixtureBrain) ClassifyLiveRoute(ctx context.Context, r brain.LiveRouteRequest) (brain.StreamResult, error) {
@@ -28,6 +29,7 @@ func (b *harnessFixtureBrain) ClassifyLiveRoute(ctx context.Context, r brain.Liv
 }
 func (b *harnessFixtureBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
 	b.chat = append(b.chat, opts)
+	b.chatInputs = append(b.chatInputs, input)
 	return b.fakeBrain.ThinkStream(ctx, input, opts)
 }
 func harnessPipeline(t *testing.T, tiered bool) (*Pipeline, *harnessFixtureBrain, *job.Table) {

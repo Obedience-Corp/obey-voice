@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -23,14 +24,26 @@ type LiveRouteRequest struct {
 	WorkerTiers  *WorkerTierAvailability
 }
 
+// ErrHarnessRouteContextLimit bounds private routing inference, not the talking
+// provider's supported context. Hosts can continue conversation without routing
+// work when this limit is reached, preserving the complete request and history.
+var ErrHarnessRouteContextLimit = errors.New("harness route context exceeds 128 KiB")
+
 // HarnessRouting is request-local host guidance, never persisted as user text.
-type HarnessRouting struct{ WorkersAvailable bool }
+type HarnessRouting struct {
+	WorkersAvailable bool
+	ContextLimited   bool
+}
 
 func harnessRoutingContext(cfg *config.Config, opts StreamOptions) string {
 	if opts.HarnessRouting == nil {
 		return ""
 	}
-	return "\n\n" + systemPrompt(cfg, "harness-routing-chat", map[string]string{
+	name := "harness-routing-chat"
+	if opts.HarnessRouting.ContextLimited {
+		name = "harness-routing-context-limit"
+	}
+	return "\n\n" + systemPrompt(cfg, name, map[string]string{
 		"workers_available": fmt.Sprint(opts.HarnessRouting.WorkersAvailable),
 	})
 }
@@ -69,9 +82,10 @@ func classifyHarnessRoute(ctx context.Context, cfg *config.Config, req LiveRoute
 	if err != nil {
 		return StreamResult{}, fmt.Errorf("encode route context: %w", err)
 	}
-	// Fail visibly rather than silently discarding earlier user constraints.
+	// Do not silently discard user constraints to admit work. The host handles
+	// this routing-only limit by continuing the normal conversational path.
 	if len(payload) > 128<<10 {
-		return StreamResult{}, fmt.Errorf("harness route context exceeds 128 KiB")
+		return StreamResult{}, ErrHarnessRouteContextLimit
 	}
 	text, err := infer(ctx, BatchRequest{
 		SystemPrompt: systemPrompt(cfg, "harness-routing", map[string]string{"route_description": route.Description, "route_schema": string(schema)}),

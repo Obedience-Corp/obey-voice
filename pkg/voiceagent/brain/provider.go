@@ -14,8 +14,8 @@ import (
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
-	// HarnessRouting is supplied by the host only after a private route decision
-	// selects chat. It is prompt context, not a recorded user instruction.
+	// HarnessRouting describes the host's conversational path after classification
+	// or routing-context recovery. It is never a recorded user instruction.
 	HarnessRouting *HarnessRouting
 	Utterance      *utterance.Finalized
 	AudioRetained  bool
