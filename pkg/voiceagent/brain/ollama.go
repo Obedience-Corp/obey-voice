@@ -158,6 +158,13 @@ func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probe
 	if !found {
 		return nil, fmt.Errorf("model %q not found in ollama — run: ollama pull %s", cfg.OllamaModel, cfg.OllamaModel)
 	}
+	if cfg.IsWorker && cfg.OllamaNumCtx <= 0 {
+		resolved, err := resolveWorkerContext(parent, probe, cfg)
+		if err != nil {
+			return nil, err
+		}
+		cfg = resolved
+	}
 
 	workDir := config.WorkDirFrom(cfg)
 

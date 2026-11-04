@@ -403,7 +403,7 @@ func brainKeys() []KeySpec {
 		{Key: "continuity_compact_filler", Type: TypeBool, Default: false, Group: GroupBrain, Title: "Speak before compacting", Help: "Say a brief filler before automatic conversation compaction. Off by default; the TUI meter is the signal."},
 		{Key: "continuity_recovery_max", Type: TypeInt, Default: 2, Min: num(0), Max: num(2), Group: GroupBrain, Title: "Continuation attempts", Help: "Maximum continuation requests after a truncated Ollama response. Zero disables recovery."},
 		{Key: "continuity_num_ctx_ceil", Type: TypeInt, Default: 32768, Min: num(8192), Max: num(32768), Group: GroupBrain, Title: "Conversation memory ceiling", Help: "Highest talk window under pressure. Keep equal to conversation memory unless you start smaller and want it to grow."},
-		{Key: "voice_worker_num_ctx", Type: TypeInt, Default: 8192, Unit: "tokens", Min: num(0), Max: num(32768), Group: GroupBrain, Title: "Worker memory", Help: "Context window for background jobs. Jobs stay at 8k so they do not steal the talk conversation."},
+		{Key: "voice_worker_num_ctx", Type: TypeInt, Default: 0, Unit: "tokens", Min: num(0), Group: GroupBrain, Title: "Worker memory", Help: "Context window for Ollama background jobs. 0 uses the selected worker model's advertised capacity (128k if unavailable). Set a token count to override it. Workers compact automatically at the continuity soft limit, independently of conversation memory."},
 	}
 }
 

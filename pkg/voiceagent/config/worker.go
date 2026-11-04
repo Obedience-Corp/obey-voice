@@ -64,12 +64,8 @@ func WorkerBrainConfig(cfg *Config) *Config {
 		w.OllamaHost = host
 	}
 	w.WorkerBoundary = WorkerBoundaryFor(cfg)
-	n := cfg.VoiceWorkerNumCtx
-	if n <= 0 {
-		n = 8192
-	}
-	w.OllamaNumCtx = n
-	w.ContinuityNumCtxCeil = n
+	w.OllamaNumCtx = cfg.VoiceWorkerNumCtx
+	w.ContinuityNumCtxCeil = cfg.VoiceWorkerNumCtx
 	return &w
 }
 

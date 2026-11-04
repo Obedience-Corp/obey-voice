@@ -189,8 +189,20 @@ acceptance; they are not implied by these deterministic tests.
 ## Conversation memory and compaction display
 
 Ollama conversations default to a 32k window with a matching 32k ceiling and
-`max_history: 40` as its history setting. Workers use `voice_worker_num_ctx` (8k by
-default). Existing explicit window settings are preserved. Settings → Brain →
+`max_history: 40` as its history setting. Workers use `voice_worker_num_ctx`:
+the default `0` resolves the worker model's advertised window, with a 128k fallback
+when metadata is absent. Positive values select an independent worker window,
+including sizes above 32k. Workers compact between tool rounds at
+`continuity_soft_limit_ratio` (80% by default), preserving the original task,
+summarized progress and completed tool findings without replaying commands. Raw
+tool evidence remains in the canonical transcript. Summary requests use the same
+worker model and count toward its request/output/runtime budgets; incomplete
+summaries fail without replacing the working context.
+
+Existing explicit window settings are preserved, including saved `8192` values
+from older installs. Use `obey-voice config unset voice_worker_num_ctx` to return
+to automatic mode, or set a positive token count to choose your own window.
+The next conversation uses the new setting. Settings → Brain →
 Conversation memory offers 8k, 16k and 32k presets; selecting one writes the
 conversation window and ceiling together in one atomic config update. It takes
 effect in the next conversation.

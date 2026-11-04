@@ -147,6 +147,14 @@ func (o *OllamaBrain) messagesBudgetError(messages []api.Message, tools api.Tool
 	if o.effectiveNumCtx() <= 0 {
 		return nil
 	}
+	est := estimateMessageTokens(messages, tools)
+	if est > o.effectiveNumCtx()*9/10 {
+		return fmt.Errorf("%w (%d estimated tokens, num_ctx=%d); shorten the input or compact the conversation", ErrPromptBudget, est, o.effectiveNumCtx())
+	}
+	return nil
+}
+
+func estimateMessageTokens(messages []api.Message, tools api.Tools) int {
 	bytes := 0
 	for _, m := range messages {
 		bytes += len(m.Content) + 16
@@ -159,11 +167,7 @@ func (o *OllamaBrain) messagesBudgetError(messages []api.Message, tools api.Tool
 		encoded, _ := json.Marshal(tools)
 		bytes += len(encoded)
 	}
-	est := (bytes + 3) / 4
-	if est > o.effectiveNumCtx()*9/10 {
-		return fmt.Errorf("%w (%d estimated tokens, num_ctx=%d); shorten the input or compact the conversation", ErrPromptBudget, est, o.effectiveNumCtx())
-	}
-	return nil
+	return (bytes + 3) / 4
 }
 
 // compactionMessages promotes bounded archive summaries as paired tool data.
