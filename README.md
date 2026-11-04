@@ -92,7 +92,7 @@ Give each persona a voice, model, and prompt. Personas using different brain pro
 - [Pipeline debugging](docs/pipeline-debugging.md): inspect live turns or replay recorded conversations.
 - [All docs](docs/README.md): meeting recording, narration, scenes, configuration, and development.
 
-Built with [Festival](https://github.com/Obedience-Corp/festival), the planning and execution system I use to build with agents. You don't need Festival to run Obey Voice.
+Built with [Festival](https://github.com/Obedience-Corp/festival), with optional festival integration (meeting note routing and persona working directory assignment).
 
 [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/Obedience-Corp/obey-voice/issues) · [AGPL-3.0-only license](LICENSE) · [Contributor agreement](CLA.md) · [Notice](NOTICE)
 
