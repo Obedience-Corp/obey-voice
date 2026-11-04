@@ -284,8 +284,14 @@ func (m personasModel) formRowHelp() string {
 		}
 		return "Model · (default) lets the provider choose"
 	case formRowWorkerProvider:
+		if m.cfg != nil && m.cfg.VoiceWorkers != nil && m.cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
+			return "Tiered workers · edit brain.worker_tiers in persona.yaml; these rows edit legacy defaults"
+		}
 		return "Worker · the brain that runs spawned background jobs · (default) inherits Settings"
 	case formRowWorkerModel:
+		if m.cfg != nil && m.cfg.VoiceWorkers != nil && m.cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
+			return "Tiered models · persona worker_tiers override Settings; legacy model here is inactive"
+		}
 		return "Worker model · (default) lets the worker's provider choose"
 	case formRowTTSProvider:
 		return "TTS provider · (default) inherits Settings"

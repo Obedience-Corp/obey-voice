@@ -19,6 +19,8 @@ import (
 // and re-requests until the model produces a text response.
 func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	ctx = opts.workerBudget().Context(ctx)
+	responseLimit := newResponseBudget(o.cfg, opts)
+	ctx = withResponseBudget(ctx, responseLimit)
 	if err := o.prepareAudioHistory(ctx, opts); err != nil {
 		return nil, err
 	}
@@ -147,6 +149,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				done <- StreamResult{Err: err}
 				return
 			}
+			if err := responseLimit.apply(req); err != nil {
+				done <- StreamResult{Err: err, Recovered: ctx.Err() == nil}
+				return
+			}
 
 			// Accumulate the full response (text + tool calls).
 			var textBuf strings.Builder
@@ -157,6 +163,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			strip := newLabelStripper(o.cfg.AgentName)
 			markers := new(historicalAssistantMarkerFilter)
 			var split textclean.ThinkFilter
+			var toolMarkup textclean.ToolMarkupFilter
 			gate := replyPrefixGate{}
 			if spoken.Len() == 0 && continuation == "" && !repetitionAllowed {
 				gate.prior = priorReply
@@ -209,6 +216,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				chat = o.chatRouteRecovery
 			}
 			err := chat(ctx, req, func(resp api.ChatResponse) error {
+				if resp.Done {
+					prefillTokens, genTokens = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
+					doneReason = resp.DoneReason
+				}
+				if err := responseLimit.observe(resp); err != nil {
+					return err
+				}
 				generatedBytes += len(resp.Message.Content) + len(resp.Message.Thinking)
 				estimate := promptEstimate + (generatedBytes+3)/4
 				// Bound telemetry volume while keeping long replies visibly live.
@@ -235,6 +249,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					}
 					// emitText holds live routing content until its role is
 					// known; ordinary replies and worker preambles stream.
+					speakable = toolMarkup.Feed(speakable)
+					if err := toolMarkup.Err(); err != nil {
+						return err
+					}
 					emit := strip.Feed(markers.Feed(speakable))
 					if restatementSkip(spoken.String(), textBuf.String()) {
 						return nil
@@ -248,10 +266,6 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				if len(resp.Message.ToolCalls) > 0 {
 					toolCalls = append(toolCalls, resp.Message.ToolCalls...)
 				}
-				if resp.Done {
-					prefillTokens, genTokens = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
-					doneReason = resp.DoneReason
-				}
 				return nil
 			})
 			if err == nil && routing && !responseComplete {
@@ -263,6 +277,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				if sendErr := sendChunk(ctx, thinking, heldThink); sendErr != nil && err == nil {
 					err = sendErr
 				}
+			}
+			heldSpeak = toolMarkup.Feed(heldSpeak) + toolMarkup.Flush()
+			if toolErr := toolMarkup.Err(); toolErr != nil && err == nil {
+				err = toolErr
 			}
 			if heldSpeak != "" {
 				emit := strip.Feed(markers.Feed(heldSpeak))
@@ -371,7 +389,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// Preserve only genuine text already sent to the user. Report
 				// failure separately, never as a synthetic assistant utterance.
 				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, emitted.String())); partial != "" {
-					o.appendMessage(api.Message{Role: "assistant", Content: partial}, opts.Identity)
+					o.appendMessage(api.Message{Role: "assistant", Content: partial}, opts.Identity, incompleteDisposition(err))
 					o.trimHistory()
 				}
 				done <- StreamResult{Err: fmt.Errorf("ollama stream: %w", err), Recovered: ctx.Err() == nil}

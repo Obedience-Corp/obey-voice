@@ -254,9 +254,15 @@ func UpdateStack(id string, brain Brain, tts TTS) (*Profile, error) {
 	if err != nil {
 		return nil, err
 	}
+	workerTiers := brain.WorkerTiers
+	// Legacy model/voice editors do not edit tier overrides.
+	if workerTiers == nil {
+		workerTiers = p.Brain.WorkerTiers
+	}
 	p.Brain = Brain{
-		Provider: strings.TrimSpace(brain.Provider),
-		Model:    strings.TrimSpace(brain.Model),
+		WorkerTiers: workerTiers.Clone(),
+		Provider:    strings.TrimSpace(brain.Provider),
+		Model:       strings.TrimSpace(brain.Model),
 		Worker: Worker{
 			Provider:   strings.TrimSpace(brain.Worker.Provider),
 			Model:      strings.TrimSpace(brain.Worker.Model),

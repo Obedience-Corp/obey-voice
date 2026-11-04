@@ -8,6 +8,7 @@ func (cfg *Config) Clone() *Config {
 	c := *cfg
 	c.ConversationDirectories = cfg.ConversationDirectories.Clone()
 	c.VoiceWorkers = cfg.VoiceWorkers.Clone()
+	c.PersonaWorkerTiers = cfg.PersonaWorkerTiers.Clone()
 	c.STTCustomWords = append([]string(nil), cfg.STTCustomWords...)
 	c.NameSummonAliases = append([]string(nil), cfg.NameSummonAliases...)
 	c.PersonaDisplayNames = append([]string(nil), cfg.PersonaDisplayNames...)

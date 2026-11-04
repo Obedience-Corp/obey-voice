@@ -16,6 +16,7 @@ import (
 	personaruntime "github.com/Obedience-Corp/obey-voice/internal/persona/runtime"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
@@ -163,7 +164,7 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 		{Role: "user", Content: "The canonical context is blue comet."},
 		{Role: "assistant", Content: "Samantha stored blue comet.", PersonaID: "samantha", PersonaDisplayName: "Samantha", ResponseID: "seed-samantha-response"},
 	}
-	old := &pauseTerminalBrain{promptHash: "samantha-initial", history: seedHistory}
+	old := &terminalPrivateContextBrain{pauseTerminalBrain: &pauseTerminalBrain{promptHash: "samantha-initial", history: seedHistory}, memory: brain.CapturePersonaContext(brain.ContinuitySnapshot{Canonical: seedHistory, Working: []brain.Turn{{Role: "assistant", Content: "Samantha private compact context"}}, Archive: []continuity.Entry{{ID: "samantha-private-note"}}})}
 	p := &pipeline.Pipeline{Brain: old, Events: events.NewBus(), VoiceToolsEnabled: false}
 	jobs := job.NewTable(t.Context())
 	agency := pipeline.NewAgency(p, jobs, nil, base, nil)
@@ -178,12 +179,12 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		return &pauseTerminalBrain{promptHash: hash}, nil
+		return &terminalPrivateContextBrain{pauseTerminalBrain: &pauseTerminalBrain{promptHash: hash}}, nil
 	}
 	selector, err := personaruntime.NewSelector(personaruntime.SelectionOptions{
 		Base: base, Catalog: catalog, Pipeline: p, SessionID: sess.ID, Initial: initial,
-		Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
-			return store.SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
+		PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
+			return store.SaveSelectionState(sess, turns, selected, contexts)
 		},
 		NewBrain: factory,
 		NewWorker: func(_ context.Context, cfg *config.Config) (brain.Provider, error) {
@@ -204,7 +205,7 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	}()
 	p.AdmitInput = selector.Route
 	p.OnTurn = func() {
-		if err := store.Save(sess, p.Brain.History()); err != nil {
+		if err := store.Save(sess, p.Brain.History(), selector.ContextSnapshots()); err != nil {
 			t.Errorf("save turn: %v", err)
 		}
 	}
@@ -447,6 +448,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if loaded.FormatVersion != 4 || len(loaded.PersonaContexts) != 2 || len(loaded.PersonaContexts["samantha"].Archive) != 1 || loaded.PersonaContexts["samantha"].Archive[0].ID != "samantha-private-note" || len(loaded.PersonaContexts["santa"].Archive) != 0 {
+		t.Fatalf("terminal switch lost private context ownership: %+v", loaded.PersonaContexts)
+	}
 	if loaded.WorkDir != root || loaded.Directories == nil || loaded.Directories.Personas["samantha"].Dir != pinned || loaded.Directories.Personas["santa"].Dir != root {
 		t.Fatalf("durable persona directories = %+v", loaded)
 	}
@@ -472,4 +476,22 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	if got := awaitPauseProof(t, runner.voiceStarts, "post-turn listening"); got != 7 {
 		t.Fatalf("post-turn voice call = %d, want 7", got)
 	}
+}
+
+// Keep the real terminal flow's fixture provider context-capable without
+// changing the simpler pause/cancel fixture used by unrelated harnesses.
+type terminalPrivateContextBrain struct {
+	*pauseTerminalBrain
+	memory brain.PersonaContext
+}
+
+func (b *terminalPrivateContextBrain) ContinuitySnapshot() brain.ContinuitySnapshot {
+	return b.memory.Reconcile(b.History())
+}
+func (b *terminalPrivateContextBrain) ImportContinuity(snapshot brain.ContinuitySnapshot) error {
+	if err := b.ImportHistory(snapshot.Canonical); err != nil {
+		return err
+	}
+	b.memory = brain.CapturePersonaContext(snapshot)
+	return nil
 }

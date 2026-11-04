@@ -209,8 +209,8 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 		metrics.recordSegment(event)
 	}
 
-	select {
-	case <-playback.Started():
+	started, terminal := playback.WaitStart(nil)
+	if started {
 		startedAt = time.Now()
 		p.tracePlayback(metrics, playbackEvent{kind: playbackStarted, index: index, attemptID: observation.attemptID, synthStarted: synthStarted, synthFirstPCM: firstPCMAt(observation.stream), synthEnded: synthesisEnd(observation.stream, audio.PlaybackResult{}), playStarted: startedAt})
 		synthElapsed = elapsedSince(synthStarted)
@@ -238,7 +238,8 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 			started.Elapsed = metrics.elapsedFromEOU(metrics.ttfa)
 		}
 		p.emitResponse(metrics, started)
-	case result := <-playback.Done():
+	} else {
+		result := *terminal
 		if metrics.delivery != nil {
 			metrics.delivery.observe(playbackEvent{kind: playbackFinished, index: index, result: result}, p.sinkKind())
 		}
@@ -261,6 +262,7 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 			engine:        observation.engine,
 			queuedAt:      synthStarted,
 			synthStarted:  synthStarted,
+			synthFirstPCM: firstPCMAt(observation.stream),
 			synthEnded:    synthesisEnd(observation.stream, result),
 			playEnded:     endedAt,
 			textReady:     observation.textReady,
@@ -273,7 +275,12 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 		return
 	}
 
-	result := <-playback.Done()
+	var result audio.PlaybackResult
+	if terminal != nil {
+		result = *terminal
+	} else {
+		result = <-playback.Done()
+	}
 	if metrics.delivery != nil {
 		metrics.delivery.observe(playbackEvent{kind: playbackFinished, index: index, result: result}, p.sinkKind())
 	}
@@ -364,10 +371,11 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallbac
 	// toward the segments that went well.
 	synthElapsed := time.Duration(0)
 
-	select {
-	case <-loopDone:
+	didStart, earlyResult := playback.WaitStart(loopDone)
+	if !didStart && earlyResult == nil {
 		return
-	case <-playback.Started():
+	}
+	if didStart {
 		started.Store(true)
 		startedAt = time.Now()
 		synthElapsed = time.Since(synthStarted)
@@ -391,7 +399,8 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallbac
 		}) {
 			return
 		}
-	case result := <-playback.Done():
+	} else {
+		result := *earlyResult
 		send(playbackEvent{
 			attemptID: observation.attemptID, kind: playbackFinished,
 			sentence:      sentence,
@@ -416,10 +425,14 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallbac
 	}
 
 	var result audio.PlaybackResult
-	select {
-	case <-loopDone:
-		return
-	case result = <-playback.Done():
+	if earlyResult != nil {
+		result = *earlyResult
+	} else {
+		select {
+		case <-loopDone:
+			return
+		case result = <-playback.Done():
+		}
 	}
 	elapsed := time.Duration(0)
 	if !startedAt.IsZero() {

@@ -101,9 +101,10 @@ type CatalogIssue struct {
 // Profiles written before this field existed have the zero value and keep
 // using the app-level brain keys until edited.
 type Brain struct {
-	Provider string `yaml:"provider,omitempty" json:"provider"`
-	Model    string `yaml:"model,omitempty" json:"model"`
-	Worker   Worker `yaml:"worker,omitempty" json:"worker"`
+	WorkerTiers *config.WorkerTierOverrides `yaml:"worker_tiers,omitempty" json:"worker_tiers,omitempty"`
+	Provider    string                      `yaml:"provider,omitempty" json:"provider"`
+	Model       string                      `yaml:"model,omitempty" json:"model"`
+	Worker      Worker                      `yaml:"worker,omitempty" json:"worker"`
 }
 
 // Worker is the persona's async job brain. It is a peer of the live brain,
@@ -171,6 +172,9 @@ func (p *Profile) Validate() error {
 	}
 	if err := validateTier(p.TTS.Tier); err != nil {
 		return fmt.Errorf("persona profile %q: %w", p.ID, err)
+	}
+	if err := p.Brain.WorkerTiers.Validate(); err != nil {
+		return fmt.Errorf("persona %q: %w", p.ID, err)
 	}
 	if err := p.Audio.Validate(); err != nil {
 		return fmt.Errorf("persona profile %q: %w", p.ID, err)
@@ -439,6 +443,7 @@ func applyBrain(cfg *config.Config, b Brain) {
 		// re-run the ollama auto-enable rules against the new provider.
 		config.ApplyOllamaDefaults(cfg)
 	}
+	cfg.PersonaWorkerTiers = b.WorkerTiers.Clone()
 	applyWorker(cfg, b.Worker)
 	model := strings.TrimSpace(b.Model)
 	if model == "" {

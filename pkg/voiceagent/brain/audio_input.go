@@ -90,7 +90,7 @@ func (o *OllamaBrain) prepareAudioHistory(ctx context.Context, opts StreamOption
 			return err
 		}
 	}
-	o.audioProjectionBlocked = false
+	o.audioProjectionBlocked.Store(false)
 	if o.cfg != nil {
 		high, low := o.cfg.MaxHistory*2, o.cfg.MaxHistory
 		if o.cfg.ContinuityArchiveEnabled {

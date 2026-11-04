@@ -28,7 +28,7 @@ func (s *Selector) RecordDiscussionResponse(ctx context.Context, response brain.
 		s.EndDiscussion("failed")
 		return errors.New("discussion completion has mismatched identity")
 	}
-	if err := s.opts.Persist(s.opts.Pipeline.Brain.History(), s.Snapshot()); err != nil {
+	if err := s.persistContexts(s.opts.Pipeline.Brain.History(), s.Snapshot(), s.ContextSnapshots()); err != nil {
 		if !session.WriteCommitted(err) {
 			s.EndDiscussion("failed")
 			return err
@@ -108,7 +108,7 @@ func (s *Selector) proposeDiscussion(ctx context.Context, g *groupRun, initial b
 		if !ok {
 			return pipeline.HandoffProposal{}, false, errors.New("shared continuity unavailable")
 		}
-		persona, err := brain.DiscussionPersona(member.cfg, key, provider.ContinuitySnapshot().Working)
+		persona, err := brain.DiscussionPersona(member.cfg, key, s.ContextSnapshots()[member.id].Reconcile(provider.ContinuitySnapshot().Canonical).Working)
 		if err != nil {
 			return pipeline.HandoffProposal{}, false, err
 		}

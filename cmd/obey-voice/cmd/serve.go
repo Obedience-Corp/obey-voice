@@ -616,7 +616,13 @@ func (s *servePersonaSwitcher) initialize() error {
 	}
 	opts := personaruntime.SelectionOptions{Base: base, Pipeline: s.pipeline, Voices: s.tts,
 		SessionID: s.sessions.id(), Initial: binding,
-		Participation: s.sessions.sess.Participation,
+		Participation:   s.sessions.sess.Participation,
+		InitialContexts: s.sessions.sess.PersonaContexts,
+		PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
+			s.sessions.mu.Lock()
+			defer s.sessions.mu.Unlock()
+			return session.DefaultStore().SaveSelectionState(s.sessions.sess, turns, selected, contexts)
+		},
 		PersistParticipation: func(settings discussion.Settings) error {
 			s.sessions.mu.Lock()
 			defer s.sessions.mu.Unlock()
@@ -638,6 +644,7 @@ func (s *servePersonaSwitcher) initialize() error {
 	if err != nil {
 		return err
 	}
+	s.sessions.contexts = s.selector.ContextSnapshots
 	s.pipeline.AdmitInput = s.selector.Route
 	s.pipeline.RouteHandoff = s.selector.RouteHandoff
 	s.pipeline.EndDiscussion = s.selector.EndDiscussion
@@ -768,6 +775,7 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 		return err
 	}
 	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, cfg.ConversationDirectories)
+	s.selector.RestoreContexts(restored.PersonaContexts)
 	_, err = s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
 	if err != nil && s.pipeline.Events != nil {
 		s.pipeline.Events.Emit(events.Error{Stage: "persona", Message: fmt.Sprintf("Conversation restored; select a valid persona before continuing: %v", err)})
@@ -1005,12 +1013,16 @@ type sessionRef struct {
 	mu         sync.Mutex
 	sess       *session.Session
 	checkpoint *workCheckpoint
+	contexts   func() brain.PersonaContexts
 }
 
 func (r *sessionRef) save(turns []brain.Turn) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.checkpoint.retry()
+	if r.contexts != nil {
+		return r.sess.Save(turns, r.contexts())
+	}
 	return r.sess.Save(turns)
 }
 

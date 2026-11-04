@@ -2,6 +2,8 @@ package config
 
 // Config holds all application configuration.
 type Config struct {
+	// PersonaWorkerTiers is a runtime binding, persisted only in persona.yaml.
+	PersonaWorkerTiers *WorkerTierOverrides `mapstructure:"-" yaml:"-" json:"-"`
 	// VoiceWorkers is nil for an installation that has not explicitly migrated
 	// from the singleton worker. A non-nil value is the complete versioned
 	// tier configuration and is authoritative over the legacy fields below.
@@ -248,6 +250,9 @@ type Config struct {
 	// falls back to the server's model default — which silently truncates
 	// long prompts from the top, eating the system prompt first.
 	OllamaNumCtx int `mapstructure:"ollama_num_ctx"`
+	// OllamaResponseTokens bounds one foreground response across tool rounds
+	// and continuations. Zero uses the default; workers retain their own budgets.
+	OllamaResponseTokens int `mapstructure:"ollama_response_tokens"`
 	// VoiceWorkerNumCtx is the worker Chat window. 0 means 8192 so jobs do
 	// not inherit the talk conversation size.
 	VoiceWorkerNumCtx int `mapstructure:"voice_worker_num_ctx"`

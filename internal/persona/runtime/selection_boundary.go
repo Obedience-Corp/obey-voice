@@ -42,6 +42,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	var inputCleanup func()
 	token := rand.Text()
 	var turns []brain.Turn
+	var stagedContexts brain.PersonaContexts
 	var err, workerErr, durabilityErr error
 	unchanged, installed := false, false
 	defer func() {
@@ -208,35 +209,32 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if canonical, ok := oldBrain.(brain.CanonicalHistoryProvider); ok {
 				turns = canonical.CanonicalHistory()
 			}
+			stagedContexts = s.contexts.Clone()
+			if previous.ConversationEpoch != scope.ConversationEpoch {
+				stagedContexts = make(brain.PersonaContexts)
+			}
+			if !s.requiresSelection {
+				captureContext(stagedContexts, previous.PersonaID, oldBrain)
+			}
+			targetView := stagedContexts[binding.PersonaID].Reconcile(turns)
 			if native != nil {
-				nativeView := turns
-				if source, ok := oldBrain.(brain.ContinuityTransferProvider); ok {
-					nativeView = source.ContinuitySnapshot().Working
-				}
-				if err := brain.ValidateNativeProjection(nativeView); err != nil {
+				if err := brain.ValidateNativeProjection(targetView.Working); err != nil {
 					return err
 				}
-			}
-			if native == nil && s.opts.Native != nil {
-				textView := turns
-				if source, ok := oldBrain.(brain.ContinuityTransferProvider); ok {
-					textView = source.ContinuitySnapshot().Working
-				}
-				if err := brain.ValidateTextProjection(textView); err != nil {
+			} else if s.opts.Native != nil {
+				if err := brain.ValidateTextProjection(targetView.Working); err != nil {
 					return fmt.Errorf("native history needs a ready transcript or explicit summary before Standard mode: %w", err)
 				}
 			}
-			if source, ok := oldBrain.(brain.ContinuityTransferProvider); ok {
-				if target, ok := nextBrain.(brain.ContinuityTransferProvider); ok {
-					if err := target.ImportContinuity(source.ContinuitySnapshot()); err != nil {
-						return fmt.Errorf("transfer conversation continuity: %w", err)
-					}
-				} else if err := projection.ImportHistory(turns); err != nil {
-					return fmt.Errorf("project conversation: %w", err)
+			if target, ok := nextBrain.(brain.ContinuityTransferProvider); ok {
+				if err := target.ImportContinuity(targetView); err != nil {
+					return fmt.Errorf("restore persona continuity: %w", err)
 				}
 			} else if err := projection.ImportHistory(turns); err != nil {
 				return fmt.Errorf("project conversation: %w", err)
 			}
+			captureContext(stagedContexts, binding.PersonaID, nextBrain)
+
 			if s.opts.Voices != nil && native == nil && (s.opts.Native == nil || !s.opts.Native.Silent) {
 				voice, err = prepareResource(ctx, func() (*voiceagent.TTSSet, error) { return s.opts.NewVoice(ctx, cfg) }, func(v *voiceagent.TTSSet) { v.Close() })
 				if err != nil {
@@ -320,7 +318,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if generation != s.generation || oldBrain != p.Brain || scope != p.ConversationScope() || p.ConversationRetired() {
 					return errors.New("persona selection belongs to a retired conversation boundary")
 				}
-				err := s.opts.Persist(turns, next)
+				err := s.persistContexts(turns, next, stagedContexts)
 				if session.WriteCommitted(err) {
 					// The file already contains this selection. Install the same
 					// binding and report uncertainty without pretending rollback.
@@ -356,6 +354,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			s.binding, s.selected = binding, next
 			s.mu.Unlock()
 			s.requiresSelection = false
+			s.contexts = stagedContexts
 			s.publicationMu.Unlock()
 			publicationLocked = false
 			if oldNative != nil {

@@ -77,6 +77,7 @@ type personasModel struct {
 	// and works on a remote CLI is a decision, not a default.
 	workerProviderIdx int
 	workerModel       string
+	workerTiers       *config.WorkerTierOverrides
 	workerOllamaHost  string
 	// Model row picker: discovered models per provider + async scan state.
 	// See personas_models.go; brainModelInput stays the selected value.
