@@ -2,13 +2,13 @@ package speechserve
 
 import (
 	"context"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/qwen"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/qwen"
 )
 
 // The host's own LAN client against the real bridge and a real child worker.
@@ -26,15 +26,32 @@ func hostConfig(addr string) *config.Config {
 	}
 }
 
-func speakThrough(t *testing.T, addr, text string) int {
+func speakThrough(t *testing.T, bridge *testBridge, text string) int {
 	t.Helper()
-	provider, err := qwen.NewQwen3TTS(hostConfig(addr))
+	provider, err := qwen.NewQwen3TTS(hostConfig(bridge.Addr()))
 	if err != nil {
 		t.Fatalf("NewQwen3TTS: %v", err)
 	}
-	// Delete closes the session, which sends shutdown — the line the bridge
-	// must intercept.
-	defer provider.Delete()
+	// Delete sends shutdown and closes the local socket, without acknowledging
+	// the remote slot's release. Wait for this exact server-side connection to
+	// finish before the caller starts the next independent conversation.
+	client := bridge.currentClient()
+	if client == nil {
+		provider.Delete()
+		t.Fatal("provider handshake completed without an active bridge client")
+	}
+	closed := client.conn.(*observedConn).closed
+	defer func() {
+		provider.Delete()
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			t.Fatal("bridge did not finish the departed client's connection")
+		}
+		if bridge.currentClient() == client {
+			t.Fatal("closed bridge connection still owns the client slot")
+		}
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -52,7 +69,7 @@ func speakThrough(t *testing.T, addr, text string) int {
 func TestHostClientSpeaksThroughTheBridge(t *testing.T) {
 	bridge := startTestBridge(t, "0")
 
-	if got := speakThrough(t, bridge.Addr(), "hello from the other computer"); got != 3 {
+	if got := speakThrough(t, bridge, "hello from the other computer"); got != 3 {
 		t.Fatalf("samples=%d want 3", got)
 	}
 	saw := bridge.childSaw(t)
@@ -66,7 +83,7 @@ func TestHostClientSpeaksThroughTheBridge(t *testing.T) {
 	// The provider above was deleted, which sent shutdown. If the bridge had
 	// forwarded it, this second conversation would pay a cold model load — or
 	// find nothing at all.
-	if got := speakThrough(t, bridge.Addr(), "and again, still warm"); got != 3 {
+	if got := speakThrough(t, bridge, "and again, still warm"); got != 3 {
 		t.Fatalf("samples=%d want 3 from the same warm worker", got)
 	}
 	if strings.Contains(bridge.childSaw(t), `"shutdown"`) {

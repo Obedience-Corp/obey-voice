@@ -188,7 +188,16 @@ func TestRemoteInterruptReachesEveryClient(t *testing.T) {
 	defer cancel()
 
 	talker := dialStream(t, ctx, addr, creds)
-	listener := readFrames(t, ctx, dialStream(t, ctx, addr, creds))
+	listenerSocket := dialStream(t, ctx, addr, creds)
+	listener := readFrames(t, ctx, listenerSocket)
+	// Dial completes the HTTP upgrade before handleStream registers the
+	// listener with the hub. A control ACK proves registration has finished
+	// before another connection starts and interrupts the turn. Keep audio
+	// off so this still verifies delivery to an event-only listener.
+	writeControl(t, ctx, listenerSocket, controlMessage{Type: "audio_output", Mode: "off"})
+	if got := listener.await("audio_output_ack", 2*time.Second); !contains(got, "audio_output_ack") {
+		t.Fatalf("listener never became ready; frames = %v", got)
+	}
 
 	writeControl(t, ctx, talker, controlMessage{Type: "text_input", Text: "hello"})
 	select {

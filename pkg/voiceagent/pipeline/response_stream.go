@@ -748,6 +748,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		p.resetEchoState()
 	}
 
+	// Cancellation can lose the select to the final model/playback event,
+	// leaving nothing to drain and bypassing the ctx.Done case. Do not report
+	// that response as completed. A qualified barge-in already owns its
+	// interrupted outcome and intentionally returns without a context error.
+	if err := ctx.Err(); err != nil && !interrupted {
+		return strings.TrimSpace(fullResponse.String()), false, err
+	}
 	return strings.TrimSpace(fullResponse.String()), interrupted, nil
 }
 

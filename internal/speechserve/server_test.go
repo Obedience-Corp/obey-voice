@@ -132,6 +132,7 @@ func startTestBridge(t *testing.T, window string, extra ...string) *testBridge {
 		cancel()
 		t.Fatalf("Start: %v", err)
 	}
+	server.listener = observedListener{server.listener}
 	go func() { _ = server.Serve(ctx) }()
 	t.Cleanup(func() {
 		cancel()
