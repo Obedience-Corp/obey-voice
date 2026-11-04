@@ -87,6 +87,9 @@ func OverriddenKeys(cfg *config.Config, p *Profile) []string {
 			out = append(out, route.key)
 		}
 	}
+	if p.Brain.WorkerTiers.HasOverrides() && cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
+		out = append(out, "brain.worker_tiers")
+	}
 	return out
 }
 

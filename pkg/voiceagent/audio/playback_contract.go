@@ -69,3 +69,35 @@ type Engine interface {
 	IsPlaying() bool
 	Close() error
 }
+
+// WaitStart waits for playback to start, finish without starting, or be canceled.
+// A start that already happened wins over completion, including when both
+// signals become ready before their owner can run. A non-nil terminal result
+// was consumed from Done and must be handled by the caller; nil with started
+// false means canceled. The caller must exclusively own Done; no other consumer may receive
+// from it while this call is running. A nil canceled channel disables cancellation.
+func (p *Playback) WaitStart(canceled <-chan struct{}) (started bool, terminal *PlaybackResult) {
+	select {
+	case <-canceled:
+		return false, nil
+	default:
+	}
+	select {
+	case <-p.started:
+		return true, nil
+	default:
+	}
+	select {
+	case <-canceled:
+		return false, nil
+	case <-p.started:
+		return true, nil
+	case result := <-p.done:
+		select {
+		case <-p.started:
+			started = true
+		default:
+		}
+		return started, &result
+	}
+}

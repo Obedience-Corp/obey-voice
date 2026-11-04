@@ -155,20 +155,9 @@ func WorkerTierAvailabilityForConfig(cfg *config.Config) *WorkerTierAvailability
 		return nil
 	}
 	available := &WorkerTierAvailability{}
-	for name, enabled := range map[config.WorkerTierName]bool{
-		config.WorkerTierSimple:  cfg.VoiceWorkers.Tiers.Simple.Enabled,
-		config.WorkerTierMedium:  cfg.VoiceWorkers.Tiers.Medium.Enabled,
-		config.WorkerTierComplex: cfg.VoiceWorkers.Tiers.Complex.Enabled,
-	} {
-		tier := cfg.VoiceWorkers.Tiers.Simple
-		switch name {
-		case config.WorkerTierMedium:
-			tier = cfg.VoiceWorkers.Tiers.Medium
-		case config.WorkerTierComplex:
-			tier = cfg.VoiceWorkers.Tiers.Complex
-		}
-		_, planErr := config.ResolveWorkerPlan(cfg, name, LocalWorkerCapabilities{})
-		ok := enabled && tier.Assignment != nil && planErr == nil
+	for _, name := range []config.WorkerTierName{config.WorkerTierSimple, config.WorkerTierMedium, config.WorkerTierComplex} {
+		_, err := config.ResolveWorkerPlan(cfg, name, LocalWorkerCapabilities{})
+		ok := err == nil
 		switch name {
 		case config.WorkerTierSimple:
 			available.Simple = ok

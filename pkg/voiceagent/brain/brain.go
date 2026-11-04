@@ -106,6 +106,9 @@ type Turn struct {
 	RoutedInput string `json:"routed_input,omitempty"`
 	Role        string `json:"role"`
 	Content     string `json:"content"`
+	// Disposition marks an incomplete assistant response without rewriting the
+	// authentic transcript. Model projections can bound its unfinished tail.
+	Disposition string `json:"disposition,omitempty"`
 	// Speaker is the stable live label for user turns (speaker-1). Empty for
 	// assistant turns and unlabeled single-user chat. Optional on disk so
 	// older sessions load unchanged.
@@ -767,6 +770,7 @@ func cleanForVoice(s string) string {
 	// the block in teaches the model its reasoning belongs in the reply and
 	// re-bills those tokens on every turn that follows.
 	s = textclean.StripThinkBlocks(s)
+	s, _ = textclean.StripToolMarkup(s)
 	s = chatmedia.ProtectImageExamples(s)
 	s = fillerRE.ReplaceAllString(markdownReplacer.Replace(s), "")
 	// Emoji go here rather than at the synthesis boundary alone, for two reasons.

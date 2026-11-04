@@ -300,7 +300,7 @@ func TestAgentHandoffPreservesTranscriptAndRefusesRepeat(t *testing.T) {
 	}
 }
 
-func TestPersonaRoundTripTransfersCompactedWorkingView(t *testing.T) {
+func TestPersonaRoundTripRestoresOwnCompactedWorkingView(t *testing.T) {
 	f := newSelectorTestFixture(t, testProfile("obey", "Obey", "obey"), testProfile("santa", "Santa", "santa"))
 	defer f.close(t)
 
@@ -331,14 +331,18 @@ func TestPersonaRoundTripTransfersCompactedWorkingView(t *testing.T) {
 	if _, err := f.selector.Select(t.Context(), "obey", "name"); err != nil {
 		t.Fatal(err)
 	}
+	returned := f.pipeline.Brain.(*selectorTestBrain)
+	if len(returned.working) != len(working)+1 || !reflect.DeepEqual(returned.working[:len(working)], working) {
+		t.Fatalf("return lost own compact seed: %#v", returned.working)
+	}
 	if _, err := f.selector.Select(t.Context(), "santa", "name"); err != nil {
 		t.Fatal(err)
 	}
 	last := f.factories[len(f.factories)-1]
 	last.mu.Lock()
 	defer last.mu.Unlock()
-	if len(last.imports) == 0 || len(last.imports[len(last.imports)-1]) != 4 {
-		t.Fatalf("transferred working view = %#v, want compact seed and new message", last.imports)
+	if len(last.imports) == 0 || len(last.imports[len(last.imports)-1]) != len(canonical)+1 {
+		t.Fatalf("transferred working view = %#v, want own full shared context and new message", last.imports)
 	}
 	if got := last.history; len(got) != len(canonical)+1 || got[len(got)-1].Content != "new message" {
 		t.Fatalf("canonical history after round trip = %#v", got)
@@ -395,7 +399,7 @@ func TestHandoffProposalFailuresLeaveSelectionAndDiskUnchanged(t *testing.T) {
 	}
 }
 
-func TestBareNameSwitchAcknowledgementKeepsTransferredCompaction(t *testing.T) {
+func TestBareNameSwitchAcknowledgementDoesNotImportForeignCompaction(t *testing.T) {
 	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 	defer f.close(t)
 	canonical := []brain.Turn{{Role: "user", Content: "old request"}, {Role: "assistant", Content: "old reply"}, {Role: "user", Content: "recent request"}}
@@ -419,7 +423,7 @@ func TestBareNameSwitchAcknowledgementKeepsTransferredCompaction(t *testing.T) {
 	if len(snapshot.Canonical) != len(canonical)+2 || !reflect.DeepEqual(snapshot.Canonical[:len(canonical)], canonical) {
 		t.Fatalf("canonical=%+v", snapshot.Canonical)
 	}
-	if len(snapshot.Working) != len(working)+2 || !reflect.DeepEqual(snapshot.Working[:len(working)], working) {
+	if len(snapshot.Working) != len(canonical)+2 || !reflect.DeepEqual(snapshot.Working[:len(canonical)], canonical) {
 		t.Fatalf("working=%+v", snapshot.Working)
 	}
 	if last := snapshot.Working[len(snapshot.Working)-1]; last.Role != "assistant" || last.PersonaID != "santa" {

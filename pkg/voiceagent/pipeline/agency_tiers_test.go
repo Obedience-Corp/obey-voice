@@ -25,6 +25,10 @@ func tierTestConfig() *config.Config {
 
 func TestTieredQueuePinsPlanAcrossSettingsAndPersonaReplacement(t *testing.T) {
 	cfg := tierTestConfig()
+	assignment := *cfg.VoiceWorkers.Tiers.Simple.Assignment
+	assignment.Model = "persona-first"
+	cfg.WorkDir = "/synthetic/persona-a"
+	cfg.PersonaWorkerTiers = &config.WorkerTierOverrides{Simple: &config.WorkerTierOverride{Assignment: &assignment}}
 	jobs := job.NewTable(context.Background(), job.WithMaxConcurrent(1))
 	defer jobs.Close()
 	p := &Pipeline{Events: events.NewBus()}
@@ -57,7 +61,7 @@ func TestTieredQueuePinsPlanAcrossSettingsAndPersonaReplacement(t *testing.T) {
 	origins := make(chan string, 2)
 	a.planFactory = func(_ context.Context, c *config.Config, plan *config.WorkerPlan) (brain.Provider, error) {
 		plans <- plan
-		origins <- c.ActivePersona
+		origins <- c.ActivePersona + ":" + c.WorkDir
 		return &lifecycleWorker{reply: "finished"}, nil
 	}
 	spawn := func(label string) {
@@ -82,13 +86,15 @@ func TestTieredQueuePinsPlanAcrossSettingsAndPersonaReplacement(t *testing.T) {
 	// policy over the Settings commit, and it cannot relabel the queued job.
 	stalePersona := cfg.Clone()
 	stalePersona.ActivePersona = "santa"
+	stalePersona.WorkDir = "/synthetic/persona-b"
+	stalePersona.PersonaWorkerTiers.Simple.Assignment.Model = "persona-second"
 	a.ReplaceWorker(nil, stalePersona, nil)
 	if a.WorkSnapshot().Scope != originalScope {
 		t.Fatal("persona replacement changed conversation scope")
 	}
 	spawn("inspect the second task")
 	close(block)
-	for i, want := range []string{"first:7b", "second:8b"} {
+	for i, want := range []string{"persona-first", "persona-second"} {
 		select {
 		case plan := <-plans:
 			if plan.Assignment.Model != want || plan.ConfigRevision != int64(7+i) {
@@ -97,7 +103,7 @@ func TestTieredQueuePinsPlanAcrossSettingsAndPersonaReplacement(t *testing.T) {
 		case <-time.After(3 * time.Second):
 			t.Fatal("queued work did not dispatch")
 		}
-		wantPersona := []string{"samantha", "santa"}[i]
+		wantPersona := []string{"samantha:/synthetic/persona-a", "santa:/synthetic/persona-b"}[i]
 		if got := <-origins; got != wantPersona {
 			t.Fatalf("origin %q, want %q", got, wantPersona)
 		}

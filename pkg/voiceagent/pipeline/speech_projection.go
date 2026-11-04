@@ -15,6 +15,8 @@ type SpokenSegment struct {
 	// here is the leak #64/#68 closed, reopening — which is why it is reported
 	// separately from Speakable, whose cleaning would erase the evidence.
 	Filtered string
+	// Err reports rejected raw tool syntax separately from conversational text.
+	Err error
 	// Speakable is the exact text queued for synthesis, and is empty when
 	// nothing of the segment is heard: gated away as tool output or a fenced
 	// block, cleaned to nothing, or a line this turn already spoke.
@@ -46,6 +48,7 @@ func (s SpokenSegment) Heard() bool { return s.Speakable != "" }
 // filter's held prefix span segments, and repeat suppression is turn-scoped.
 type SpeechProjection struct {
 	think               textclean.ThinkFilter
+	tools               textclean.ToolMarkupFilter
 	gate                voiceGate
 	spoken              map[string]struct{}
 	agentMentionControl func(string) bool
@@ -85,7 +88,7 @@ func (p *SpeechProjection) Flush() SpokenSegment {
 }
 
 func (p *SpeechProjection) project(text string) SpokenSegment {
-	seg := SpokenSegment{Filtered: text}
+	seg := SpokenSegment{Filtered: text, Err: p.Err()}
 	if text == "" {
 		return seg
 	}
@@ -104,10 +107,15 @@ func (p *SpeechProjection) filterThink(segment string) string {
 	if segment == "" {
 		return ""
 	}
-	return p.think.Feed(segment)
+	return p.tools.Feed(p.think.Feed(segment))
 }
 
-func (p *SpeechProjection) flushThink() string { return p.think.Flush() }
+func (p *SpeechProjection) flushThink() string {
+	return p.tools.Feed(p.think.Flush()) + p.tools.Flush()
+}
+
+// Err reports invalid invocation text, which must be shown as an error rather than spoken.
+func (p *SpeechProjection) Err() error { return p.tools.Err() }
 
 // gateSegment advances the turn's voice gate over one think-filtered segment
 // and returns the speakable remainder plus the lines it suppressed. Call it for

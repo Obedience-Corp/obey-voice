@@ -123,11 +123,13 @@ func (m *personasModel) formWorker() persona.Worker {
 // prefillWorker seeds the Worker rows from a profile (nil = inherit).
 func (m *personasModel) prefillWorker(p *persona.Profile) {
 	if p == nil {
+		m.workerTiers = nil
 		m.workerProviderIdx = 0
 		m.workerModel = ""
 		m.workerOllamaHost = ""
 		return
 	}
+	m.workerTiers = p.Brain.WorkerTiers.Clone()
 	m.workerProviderIdx = providerIndex(stackWorkerProviders(), p.Brain.Worker.Provider)
 	m.workerModel = strings.TrimSpace(p.Brain.Worker.Model)
 	m.workerOllamaHost = strings.TrimSpace(p.Brain.Worker.OllamaHost)

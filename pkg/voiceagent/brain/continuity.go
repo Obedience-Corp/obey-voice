@@ -138,7 +138,7 @@ func (o *OllamaBrain) contextBudgetError(skillCtx string, tools api.Tools) error
 }
 
 func (o *OllamaBrain) messagesBudgetError(messages []api.Message, tools api.Tools) error {
-	if o.audioProjectionBlocked {
+	if o.audioProjectionBlocked.Load() {
 		return ErrAudioProjection
 	}
 	if o.audioResolver != nil {

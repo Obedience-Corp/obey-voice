@@ -26,7 +26,7 @@ import (
 // a 404) without string-matching an error message.
 var ErrSessionNotFound = errors.New("session: not found")
 
-const CurrentFormatVersion = 3
+const CurrentFormatVersion = 4
 const StandardFormatVersion = 2
 
 var ErrUnsupportedSessionVersion = errors.New("session: unsupported future format version")
@@ -58,19 +58,20 @@ var ErrWorkScopeConflict = errors.New("session: work scope conflict")
 
 // Session represents a saved conversation.
 type Session struct {
-	Selection     *SelectionState                 `json:"selection,omitempty"`
-	Participation *discussion.Settings            `json:"participation,omitempty"`
-	Directories   *config.ConversationDirectories `json:"directories,omitempty"`
-	WorkDir       string                          `json:"work_dir,omitempty"`
-	WorkDirSource string                          `json:"work_dir_source,omitempty"`
-	FormatVersion int                             `json:"format_version,omitempty"`
-	ID            string                          `json:"id"`
-	CreatedAt     time.Time                       `json:"created_at"`
-	UpdatedAt     time.Time                       `json:"updated_at"`
-	Provider      string                          `json:"provider"`
-	Model         string                          `json:"model"`
-	Turns         []brain.Turn                    `json:"turns"`
-	Summary       string                          `json:"summary"` // first user message, for display
+	Selection       *SelectionState                 `json:"selection,omitempty"`
+	Participation   *discussion.Settings            `json:"participation,omitempty"`
+	Directories     *config.ConversationDirectories `json:"directories,omitempty"`
+	WorkDir         string                          `json:"work_dir,omitempty"`
+	WorkDirSource   string                          `json:"work_dir_source,omitempty"`
+	FormatVersion   int                             `json:"format_version,omitempty"`
+	ID              string                          `json:"id"`
+	CreatedAt       time.Time                       `json:"created_at"`
+	UpdatedAt       time.Time                       `json:"updated_at"`
+	Provider        string                          `json:"provider"`
+	Model           string                          `json:"model"`
+	PersonaContexts brain.PersonaContexts           `json:"persona_contexts,omitempty"`
+	Turns           []brain.Turn                    `json:"turns"`
+	Summary         string                          `json:"summary"` // first user message, for display
 	// Work is the canonical durable background-work snapshot. It is optional so
 	// sessions written before work persistence was introduced remain compatible.
 	Work                       *work.Snapshot `json:"work,omitempty"`
@@ -92,8 +93,8 @@ func New(provider, model string) *Session {
 }
 
 // Save persists the session to disk.
-func (s *Session) Save(turns []brain.Turn) error {
-	return DefaultStore().Save(s, turns)
+func (s *Session) Save(turns []brain.Turn, contexts ...brain.PersonaContexts) error {
+	return DefaultStore().Save(s, turns, contexts...)
 }
 
 // SaveBackup writes the given turns to a sibling <id>.pre-compact.json so one
@@ -117,6 +118,9 @@ func (s *Session) saveBackupTo(dir string, turns []brain.Turn) error {
 		return err
 	}
 	backup.FormatVersion = requiredFormatVersion(s.FormatVersion, turns, s.Selection)
+	if len(backup.PersonaContexts) > 0 {
+		backup.FormatVersion = CurrentFormatVersion
+	}
 	if err := validateAudioTurns(dir, s.ID, turns); err != nil {
 		return err
 	}
@@ -179,6 +183,9 @@ func saveSessionWithFailures(dir string, s *Session, turns []brain.Turn, snapsho
 		return fmt.Errorf("%w: %d", ErrUnsupportedSessionVersion, next.FormatVersion)
 	}
 	next.FormatVersion = requiredFormatVersion(next.FormatVersion, turns, next.Selection)
+	if len(next.PersonaContexts) > 0 {
+		next.FormatVersion = CurrentFormatVersion
+	}
 	if err := validateAudioTurns(dir, s.ID, turns); err != nil {
 		return err
 	}
@@ -310,6 +317,9 @@ func loadFrom(dir, id string) (*Session, error) {
 	}
 	if requiredFormatVersion(StandardFormatVersion, s.Turns, s.Selection) > StandardFormatVersion && s.FormatVersion < 3 {
 		return nil, errors.New("audio evidence requires session format 3")
+	}
+	if len(s.PersonaContexts) > 0 && s.FormatVersion < 4 {
+		return nil, errors.New("persona contexts require session format 4")
 	}
 	if err := validateSelectionState(s.Selection); err != nil {
 		return nil, err
@@ -471,7 +481,7 @@ func (st *Store) WorkDir(id string) (string, error) {
 // Save writes the session's turns while preserving the newest durable work
 // snapshot. It uses the same keyed lock as SaveWork so a result arriving
 // between user turns cannot be overwritten by a stale turn save.
-func (st *Store) Save(s *Session, turns []brain.Turn) error {
+func (st *Store) Save(s *Session, turns []brain.Turn, contexts ...brain.PersonaContexts) error {
 	sessionWriteMu.Lock()
 	defer sessionWriteMu.Unlock()
 	current, err := loadFrom(st.dir, s.ID)
@@ -485,6 +495,7 @@ func (st *Store) Save(s *Session, turns []brain.Turn) error {
 		candidate.SelectedPersonaDisplayName = current.SelectedPersonaDisplayName
 		candidate.SelectedPersonaPromptHash = current.SelectedPersonaPromptHash
 		candidate.Selection = cloneSelection(current.Selection)
+		candidate.PersonaContexts = current.PersonaContexts.Clone()
 		candidate.WorkDir, candidate.WorkDirSource = current.WorkDir, current.WorkDirSource
 		candidate.Directories = current.Directories.Clone()
 	}
@@ -495,6 +506,9 @@ func (st *Store) Save(s *Session, turns []brain.Turn) error {
 		if s.Work == nil || current.Work.Revision >= s.Work.Revision {
 			snapshot = current.Work
 		}
+	}
+	if len(contexts) > 0 {
+		candidate.PersonaContexts = contexts[0].Clone()
 	}
 	if err := saveSessionWithFailures(st.dir, &candidate, turns, snapshot, st.failBeforeRename, st.failAfterRename); err != nil {
 		return err

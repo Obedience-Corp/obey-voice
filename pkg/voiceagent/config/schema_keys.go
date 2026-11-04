@@ -353,6 +353,11 @@ func brainKeys() []KeySpec {
 			Help: "How much of this conversation the talk model sees (8k / 16k / 32k). 32k is a real session. 0 uses the server's size and can drop the persona from the top.",
 		},
 		{
+			Key: "ollama_response_tokens", Type: TypeInt, Default: 4096, Unit: "tokens", Min: num(1), Max: num(131072),
+			Group: GroupBrain, Title: "Maximum response size",
+			Help: "Limits a foreground Ollama response, including reasoning and tool rounds. Stops runaway generation without automatically continuing. Workers use their own budgets.",
+		},
+		{
 			Key: "ollama_num_batch", Type: TypeInt, Default: 128, Unit: "tokens", Min: num(0), Max: num(4096),
 			Group: GroupBrain, Title: "Prompt batch size",
 			Help: "How much of the prompt is re-read each turn. Smaller lets Ollama reuse more of an unchanged conversation, which is a large win to the first word on qwen3.8-class models, and costs a little on brand-new prompts. 0 lets Ollama choose.",

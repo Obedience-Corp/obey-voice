@@ -424,8 +424,12 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			selector, err = personaruntime.NewSelector(personaruntime.SelectionOptions{
 				Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
 				Native: recordings.hooks(p, textMode, noVoice), InitialNative: recordings.initial,
-				UseDefaults:   sessionBindID == appTUI.StartDefaultsID,
-				Participation: sess.Participation,
+				UseDefaults:     sessionBindID == appTUI.StartDefaultsID,
+				Participation:   sess.Participation,
+				InitialContexts: sess.PersonaContexts,
+				PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
+					return session.DefaultStore().SaveSelectionState(sess, turns, selected, contexts)
+				},
 				PersistParticipation: func(settings discussion.Settings) error {
 					return session.DefaultStore().SaveParticipation(sess, settings)
 				},
@@ -461,9 +465,16 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			p.CompleteDiscussion = selector.RecordDiscussionResponse
 		}
 
+		saveConversation := func() error {
+			if selector != nil {
+				return sess.Save(p.Brain.History(), selector.ContextSnapshots())
+			}
+			return sess.Save(p.Brain.History())
+		}
+
 		p.OnTurn = func() {
 			checkpoint.retry()
-			if err := sess.Save(p.Brain.History()); err != nil {
+			if err := saveConversation(); err != nil {
 				bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
 			}
 		}
@@ -562,7 +573,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				return recordings.replay(ctx, p, cfg.OutputDevice, id, epoch)
 			},
 			Persist: func() {
-				if err := sess.Save(p.Brain.History()); err != nil {
+				if err := saveConversation(); err != nil {
 					fmt.Fprintf(os.Stderr, "  warning: failed to save session %s: %v\n", sess.ID, err)
 				}
 			},
@@ -581,7 +592,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				}
 				// Final flush after drain: a turn that finished during shutdown
 				// is kept even if Persist ran before it landed.
-				if err := sess.Save(p.Brain.History()); err != nil {
+				if err := saveConversation(); err != nil {
 					fmt.Fprintf(os.Stderr, "  warning: failed to save session %s: %v\n", sess.ID, err)
 				}
 				liveTTS.Close()

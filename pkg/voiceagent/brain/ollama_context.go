@@ -64,7 +64,7 @@ func (o *OllamaBrain) dropOldestBeforeLastUser(skillCtx string, limit int) bool 
 			break
 		}
 		if ValidateTextProjection(o.effectiveTurns(o.working[:min(start, len(o.working))])) != nil {
-			o.audioProjectionBlocked = true
+			o.audioProjectionBlocked.Store(true)
 			break
 		}
 		o.archiveMessages(o.history[:start])

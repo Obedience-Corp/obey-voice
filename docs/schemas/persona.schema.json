@@ -47,6 +47,461 @@
           "type": "string",
           "description": "Provider-specific model id, routed to ollama_model, grok_model, or cursor_model. Claude has no app-level model key, so a persona-level Claude model is recorded but not routed."
         },
+        "worker_tiers": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "simple": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "assignment": {
+                  "anyOf": [
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "endpoint_ref": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "account_ref": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "billing": {
+                      "type": "string",
+                      "enum": [
+                        "local",
+                        "subscription",
+                        "metered",
+                        "unknown"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "provider",
+                    "model",
+                    "billing"
+                  ]
+                },
+                "limits": {
+                  "anyOf": [
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "runtime_seconds": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "model_requests": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "tool_calls": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "transport_retries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "output_tokens": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "charge_micro_usd": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "runtime_seconds",
+                    "model_requests",
+                    "tool_calls",
+                    "transport_retries"
+                  ]
+                },
+                "allow_uncapped": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "medium": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "assignment": {
+                  "anyOf": [
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "endpoint_ref": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "account_ref": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "billing": {
+                      "type": "string",
+                      "enum": [
+                        "local",
+                        "subscription",
+                        "metered",
+                        "unknown"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "provider",
+                    "model",
+                    "billing"
+                  ]
+                },
+                "limits": {
+                  "anyOf": [
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "runtime_seconds": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "model_requests": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "tool_calls": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "transport_retries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "output_tokens": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "charge_micro_usd": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "runtime_seconds",
+                    "model_requests",
+                    "tool_calls",
+                    "transport_retries"
+                  ]
+                },
+                "allow_uncapped": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "complex": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "assignment": {
+                  "anyOf": [
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "endpoint_ref": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "account_ref": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "billing": {
+                      "type": "string",
+                      "enum": [
+                        "local",
+                        "subscription",
+                        "metered",
+                        "unknown"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "provider",
+                    "model",
+                    "billing"
+                  ]
+                },
+                "limits": {
+                  "anyOf": [
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "runtime_seconds": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "model_requests": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "tool_calls": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "transport_retries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "output_tokens": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "charge_micro_usd": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "runtime_seconds",
+                    "model_requests",
+                    "tool_calls",
+                    "transport_retries"
+                  ]
+                },
+                "allow_uncapped": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "description": "Per-persona tier overrides in installation tiered mode. Omitted tiers/fields inherit Settings; assignment and limits replace whole groups. Installation policy cannot be overridden. Null restores inheritance."
+        },
         "worker": {
           "type": "object",
           "additionalProperties": false,

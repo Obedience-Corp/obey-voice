@@ -133,3 +133,32 @@ func TestWorkerSelectionSurvivesSaveReloadAndApply(t *testing.T) {
 		}
 	}
 }
+
+func TestPersonaTierOverridesSurviveSaveAndUnrelatedStackEdit(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	p := &Profile{Schema: Schema, ID: "guide", DisplayName: "Guide", Prompts: PromptRefs{Persona: "guide"}, Brain: Brain{WorkerTiers: &config.WorkerTierOverrides{Simple: &config.WorkerTierOverride{Assignment: &config.WorkerAssignment{Provider: "ollama", Model: "private-worker", Billing: config.WorkerBillingLocal}}}}}
+	if err := Write(p, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UpdateStack("guide", Brain{Provider: "ollama", Model: "new-live"}, TTS{}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load("guide")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(loaded.Brain.WorkerTiers, p.Brain.WorkerTiers) {
+		t.Fatal("unrelated edit lost worker tiers")
+	}
+	w := config.DefaultVoiceWorkers()
+	w.Mode = config.WorkerModeTiered
+	cfg := &config.Config{VoiceWorkers: w}
+	Apply(cfg, loaded)
+	if cfg.PersonaWorkerTiers.Simple.Assignment.Model != "private-worker" || cfg.VoiceWorkers.Tiers.Simple.Assignment != nil {
+		t.Fatal("persona tier contaminated defaults or was ignored")
+	}
+	Apply(cfg, &Profile{ID: "other"})
+	if cfg.PersonaWorkerTiers != nil {
+		t.Fatal("previous persona override leaked")
+	}
+}

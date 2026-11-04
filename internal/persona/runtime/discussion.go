@@ -328,7 +328,7 @@ func (s *Selector) recordGroupInput(ctx context.Context, input string) error {
 	if err := provider.ImportContinuity(next); err != nil {
 		return err
 	}
-	if err := s.opts.Persist(next.Canonical, s.Snapshot()); err != nil {
+	if err := s.persistContexts(next.Canonical, s.Snapshot(), s.ContextSnapshots()); err != nil {
 		if session.WriteCommitted(err) {
 			s.warnPersistence(err)
 			return nil
