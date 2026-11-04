@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -315,12 +316,12 @@ func (n *Narrator) playLoop(ctx context.Context, cancel context.CancelFunc) {
 		}
 		n.waitForTurnGap(ctx)
 
-		unit, span, ok := n.currentSpan()
-		if !ok {
+		if n.waitIfPaused(ctx) {
 			return
 		}
 
-		if n.waitIfPaused(ctx) {
+		unit, span, unitIdx, spanIdx, ok := n.currentSpan()
+		if !ok {
 			return
 		}
 
@@ -329,25 +330,28 @@ func (n *Narrator) playLoop(ctx context.Context, cancel context.CancelFunc) {
 			if !n.waitSilence(ctx, span.Duration) {
 				return
 			}
-			n.advanceSpan(len(unit.spans))
+			n.advanceSpan(unitIdx, spanIdx, len(unit.spans))
 		case render.SpanSpeech:
 			text := strings.TrimSpace(span.Text)
 			if text == "" {
-				n.advanceSpan(len(unit.spans))
+				n.advanceSpan(unitIdx, spanIdx, len(unit.spans))
 				continue
 			}
 			cleaned := brain.CleanForVoice(text)
 			if !speakableSegment(cleaned) {
-				n.advanceSpan(len(unit.spans))
+				n.advanceSpan(unitIdx, spanIdx, len(unit.spans))
 				continue
 			}
-			_ = n.pipeline.speakStandalone(ctx, nil, nil, cleaned)
+			err := n.pipeline.speakStandalone(ctx, nil, nil, cleaned)
 			if ctx.Err() != nil {
 				return
 			}
-			n.advanceSpan(len(unit.spans))
+			if errors.Is(err, errPlaybackInterrupted) {
+				continue
+			}
+			n.advanceSpan(unitIdx, spanIdx, len(unit.spans))
 		default:
-			n.advanceSpan(len(unit.spans))
+			n.advanceSpan(unitIdx, spanIdx, len(unit.spans))
 		}
 	}
 }
@@ -393,23 +397,26 @@ func (n *Narrator) waitSilence(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func (n *Narrator) currentSpan() (narrateUnit, render.RenderSpan, bool) {
+func (n *Narrator) currentSpan() (narrateUnit, render.RenderSpan, int, int, bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	for n.unitIdx < len(n.units) {
 		unit := n.units[n.unitIdx]
 		if n.spanIdx < len(unit.spans) {
-			return unit, unit.spans[n.spanIdx], true
+			return unit, unit.spans[n.spanIdx], n.unitIdx, n.spanIdx, true
 		}
 		n.unitIdx++
 		n.spanIdx = 0
 	}
-	return narrateUnit{}, render.RenderSpan{}, false
+	return narrateUnit{}, render.RenderSpan{}, 0, 0, false
 }
 
-func (n *Narrator) advanceSpan(unitLen int) {
+func (n *Narrator) advanceSpan(unitIdx, spanIdx, unitLen int) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.unitIdx != unitIdx || n.spanIdx != spanIdx {
+		return
+	}
 	n.spanIdx++
 	if n.spanIdx >= unitLen {
 		n.unitIdx++

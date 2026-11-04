@@ -440,8 +440,11 @@ func drainOrder(ch <-chan string) string {
 func TestDoneCallbackCompletesBeforeNextJobRuns(t *testing.T) {
 	t.Parallel()
 	table := NewTable(context.Background())
+	table.SetWorkerLimits(1, 1)
 	order := make(chan string, 8)
 	release := make(chan struct{})
+	releaseDone := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseDone)
 	table.OnDone(func(id string, _ State, _ string, _ error) {
 		order <- "done:" + id
 		if id == "job-1" {
@@ -452,20 +455,28 @@ func TestDoneCallbackCompletesBeforeNextJobRuns(t *testing.T) {
 		order <- "run:" + IDFromContext(ctx)
 		return "ok", nil
 	}
-	for _, task := range []string{"first", "second"} {
-		if _, err := table.Start(context.Background(), Spec{Task: task, Run: run}); err != nil {
-			t.Fatalf("Start(%s): %v", task, err)
-		}
+	if _, err := table.Start(context.Background(), Spec{Task: "first", Run: run}); err != nil {
+		t.Fatal(err)
 	}
-
 	awaitOrder(t, order, "run:job-1")
 	awaitOrder(t, order, "done:job-1")
-	select {
-	case got := <-order:
-		t.Fatalf("job-2 produced %q while job-1's done callback was still running", got)
-	case <-time.After(50 * time.Millisecond):
+	// Force admission during the terminal callback instead of relying on the
+	// scheduler to place Start between the terminal state and callback return.
+	second, err := table.Start(context.Background(), Spec{Task: "second", Run: run})
+	if err != nil {
+		t.Fatal(err)
 	}
-	close(release)
+	// Updating limits is another entry point that pumps the same queue.
+	table.SetWorkerLimits(1, 1)
+	for _, info := range table.Status() {
+		if info.ID == second && info.State != StateQueued {
+			t.Fatalf("second job state = %s while first done callback is blocked, want queued", info.State)
+		}
+	}
+	if _, err := table.Start(context.Background(), Spec{Task: "third", Run: run}); err == nil {
+		t.Fatal("terminal callback released its slot early and bypassed the queue limit")
+	}
+	releaseDone()
 	awaitOrder(t, order, "run:job-2")
 	awaitOrder(t, order, "done:job-2")
 }

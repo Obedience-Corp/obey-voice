@@ -13,6 +13,8 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
+var errPlaybackInterrupted = errors.New("playback interrupted")
+
 // logDegradedTurn writes the underlying error to stderr with a timestamp and
 // stage. Under the TUI fd 2 is redirected to native-diagnostics.log, so this
 // is the durable record for degraded turns (bus Error flashes and can vanish).
@@ -148,7 +150,10 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 		}
 		p.handlePlaybackLifecycle(sentence, usedFallback, observation, playback, metrics)
 	} else {
-		<-playback.Done()
+		result := <-playback.Done()
+		if result.Interrupted {
+			return errPlaybackInterrupted
+		}
 	}
 	return nil
 }
