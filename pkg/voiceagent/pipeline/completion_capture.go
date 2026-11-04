@@ -139,7 +139,9 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 		}
 		// Resume transferred the retained utterance from the yielded owner;
 		// consume the one-turn keep flag so a later fresh session does not
-		// replay the same retained audio.
+		// replay the same retained audio, even if cancellation now prevents
+		// this resumed session from being adopted.
+		p.keepCapture.Store(false)
 		p.captureMu.Lock()
 		resumeErr := ctx.Err()
 		if p.captureBoundary != nil || p.captureGeneration != generation {
@@ -153,7 +155,6 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 			p.finishCaptureSession(session, generation, false)
 			return nil, 0, resumeErr
 		}
-		p.keepCapture.Store(false)
 		return session, generation, nil
 	}
 	if err := ctx.Err(); err != nil {

@@ -52,16 +52,24 @@ func TestCaptureCancellationAfterResumeReleasesReader(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	reader := &cancelOnResumeSession{captureReuseSession: newCaptureReuseSession(), cancel: cancel}
-	p := &Pipeline{STT: idleBoundaryProvider(), captureSession: reader, captureGeneration: 1, captureYielded: true}
+	capture := &resetCapture{}
+	p := &Pipeline{STT: idleBoundaryProvider(), Capture: capture, captureSession: reader, captureGeneration: 1, captureYielded: true}
+	p.keepCapture.Store(true)
 	if _, _, err := p.startCaptureSession(ctx); !errors.Is(err, context.Canceled) || errors.Is(err, ErrInputTransition) {
 		t.Fatalf("canceled resume = %v, want cancellation without binding transition", err)
 	}
 	if reader.closes.Load() != 1 {
 		t.Fatalf("resumed reader closed %d times", reader.closes.Load())
 	}
+	if p.keepCapture.Load() {
+		t.Fatal("canceled resume left the transferred retention claim set")
+	}
 	session, generation, err := p.startCaptureSession(t.Context())
 	if err != nil {
 		t.Fatalf("next reader remained fenced: %v", err)
 	}
 	p.finishCaptureSession(session, generation, false)
+	if got := capture.resets.Load(); got != 1 {
+		t.Fatalf("next fresh reader reset capture %d times, want 1", got)
+	}
 }
