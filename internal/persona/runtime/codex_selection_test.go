@@ -92,11 +92,12 @@ func TestCodexSelectorInitialSwitchReloadAndRestore(t *testing.T) {
 	if _, err := selector.Select(ctx, "samantha", "explicit"); err != nil {
 		t.Fatal(err)
 	}
+	sharedSnapshot := brain.ContinuitySnapshot{Canonical: snapshot.Canonical, Working: snapshot.Canonical}
 	assertContinuity := func() {
 		t.Helper()
 		got := p.Brain.(brain.ContinuityTransferProvider).ContinuitySnapshot()
-		if !reflect.DeepEqual(got, snapshot) {
-			t.Fatalf("selection lost continuity: got=%+v want=%+v", got, snapshot)
+		if !reflect.DeepEqual(got, sharedSnapshot) {
+			t.Fatalf("selection lost continuity: got=%+v want=%+v", got, sharedSnapshot)
 		}
 	}
 	assertContinuity()
@@ -154,7 +155,7 @@ func TestCodexSelectorInitialSwitchReloadAndRestore(t *testing.T) {
 	if len(prompts) != 3 || len(systems) != 3 {
 		t.Fatalf("unexpected model calls: prompts=%v systems=%v", prompts, systems)
 	}
-	if !strings.Contains(systems[0], "You are Santa.") || !strings.Contains(systems[1], "You are Samantha. Use concise replies.") || !strings.Contains(prompts[1], "Shared summary: Santa remembers cobalt.") || !strings.Contains(prompts[2], `"persona":"Santa"`) || !strings.Contains(prompts[2], `"persona":"Samantha"`) {
+	if !strings.Contains(systems[0], "You are Santa.") || !strings.Contains(systems[1], "You are Samantha. Use concise replies.") || strings.Contains(prompts[1], "Shared summary: Santa remembers cobalt.") || !strings.Contains(prompts[1], `"persona":"Santa"`) || !strings.Contains(prompts[2], `"persona":"Santa"`) || !strings.Contains(prompts[2], `"persona":"Samantha"`) {
 		t.Fatalf("wire lost current persona or historical context: systems=%v prompts=%v", systems, prompts)
 	}
 }

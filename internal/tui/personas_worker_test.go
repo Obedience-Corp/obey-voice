@@ -175,3 +175,29 @@ func TestPersonaWorkerFormPersistsCreationAndEdit(t *testing.T) {
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
 	check("ollama", "fixture-local", "http://worker:11434")
 }
+
+func TestPersonaFormPreservesTierOverridesAndReportsOwnership(t *testing.T) {
+	enabled := true
+	p := &persona.Profile{ID: "jarvis", DisplayName: "Jarvis", Brain: persona.Brain{WorkerTiers: &config.WorkerTierOverrides{Simple: &config.WorkerTierOverride{Enabled: &enabled}}}}
+	w := config.DefaultVoiceWorkers()
+	w.Mode = config.WorkerModeTiered
+	m := newPickerPersonas(t, &config.Config{BrainProvider: "ollama", VoiceWorkers: w}, p)
+	m.prefillStack(p)
+	got := m.formBrain().WorkerTiers
+	if got == nil || got.Simple.Enabled == nil || !*got.Simple.Enabled {
+		t.Fatal("editor discarded override")
+	}
+	*got.Simple.Enabled = false
+	if !*p.Brain.WorkerTiers.Simple.Enabled || !*m.workerTiers.Simple.Enabled {
+		t.Fatal("editor shares profile or returned patch")
+	}
+	m.formMode = "edit"
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "persona overrides + Settings") || !strings.Contains(view, "legacy selection") {
+		t.Fatalf("ownership missing from rendered form: %s", view)
+	}
+	m.formRow = formRowWorkerProvider
+	if !strings.Contains(m.formRowHelp(), "brain.worker_tiers") {
+		t.Fatal("UI claims legacy worker applies in tiered mode")
+	}
+}

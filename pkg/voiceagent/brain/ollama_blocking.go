@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/ollama/ollama/api"
 )
 
@@ -18,6 +19,8 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	// history even after a failed or transient request.
 	defer func() { o.maybeEmitContinuityBudget("") }()
 	ctx = opts.workerBudget().Context(ctx)
+	responseLimit := newResponseBudget(o.cfg, opts)
+	ctx = withResponseBudget(ctx, responseLimit)
 	if err := o.prepareAudioHistory(ctx, opts); err != nil {
 		return "", err
 	}
@@ -142,6 +145,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if err := o.applyOutputBudget(req, opts.workerBudget()); err != nil {
 			return "", err
 		}
+		if err := responseLimit.apply(req); err != nil {
+			return "", err
+		}
 
 		var response api.Message
 		var doneReason string
@@ -169,7 +175,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				}
 				opts.OnWorkerUsage(u)
 			}
-			return nil
+			return responseLimit.observe(resp)
 		})
 		if err != nil {
 			o.history = restore
@@ -178,6 +184,12 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			return "", fmt.Errorf("ollama error: %w", err)
 		}
 
+		var thoughtFilter textclean.ThinkFilter
+		speakable, _ := thoughtFilter.FeedSplit(response.Content)
+		tail, _ := thoughtFilter.FlushSplit()
+		if _, err := textclean.StripToolMarkup(speakable + tail); err != nil {
+			return "", fmt.Errorf("ollama reply: %w", err)
+		}
 		if doneReason == "length" {
 			o.history = restore
 			o.canonical = restoreCanonical

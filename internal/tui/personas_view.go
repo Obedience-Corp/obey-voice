@@ -242,11 +242,19 @@ func (m personasModel) stackLines() []string {
 	}
 	workerProvider := stackWorkerProviders()[m.workerProviderIdx]
 	workerRow := row(formRowWorkerProvider, "Worker", "‹ "+workerProvider+" ›")
-	if workerProvider == stackDefaultLabel && m.cfg != nil && !config.WorkerSelected(m.cfg) {
+	if workerProvider == stackDefaultLabel && m.cfg != nil && !config.WorkerSelected(m.cfg) && (m.cfg.VoiceWorkers == nil || m.cfg.VoiceWorkers.Mode != config.WorkerModeTiered) {
 		// "(default)" is only honest when Settings actually holds a choice.
 		workerRow += dimStyle.Render("  (Settings has no worker yet — inherits " + config.VoiceWorkerProviderOf(m.cfg) + ")")
 	}
 	workerModelRow := row(formRowWorkerModel, "Worker model", "‹ "+m.workerModelLabel()+" ›")
+	if m.cfg != nil && m.cfg.VoiceWorkers != nil && m.cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
+		owner := "inherits Settings"
+		if m.workerTiers.HasOverrides() {
+			owner = "persona overrides + Settings"
+		}
+		workerRow += dimStyle.Render("  (legacy selection; tiered jobs use brain.worker_tiers)")
+		workerModelRow += dimStyle.Render("  (tiered: " + owner + "; edit persona.yaml)")
+	}
 	if strings.EqualFold(m.effectiveStackWorkerProvider(), "claude") && strings.TrimSpace(m.workerModel) != "" {
 		workerModelRow += dimStyle.Render("  (model saved, not routed for claude yet)")
 	}

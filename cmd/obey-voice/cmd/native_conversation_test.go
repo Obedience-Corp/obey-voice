@@ -107,7 +107,7 @@ func TestNativeProductHostStartsSwitchesAndRestartsWithoutStandardAssets(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.Selection == nil || saved.Selection.AudioMode != persona.AudioNative || saved.FormatVersion != 3 || len(saved.Turns) != 2 {
+	if saved.Selection == nil || saved.Selection.AudioMode != persona.AudioNative || saved.FormatVersion != 4 || len(saved.Turns) != 2 {
 		encoded, _ := json.Marshal(saved)
 		t.Fatalf("native selection/history not persisted: %s", encoded)
 	}

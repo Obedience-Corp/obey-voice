@@ -395,7 +395,7 @@ func (o *OllamaBrain) projectTurnWithAudio(t Turn, all []Turn, index int, shared
 	}
 	// Contaminated replies and synthetic summaries are always quoted.
 	shared := !own || legacy || (sharedUnowned && index == 0 && owner == "")
-	content := t.Content
+	content := modelTurnContent(t)
 	if role == "assistant" {
 		content = stripLegacyHistoricalHeader(content)
 	}
@@ -486,8 +486,11 @@ func deepCopyTurns(in []Turn) []Turn {
 // appendMessage is the single ownership point for live Ollama history. The
 // native message is projected for the next request while the canonical turn
 // retains identity and is never trimmed with that projection.
-func (o *OllamaBrain) appendMessage(m api.Message, identity *TurnIdentity) {
+func (o *OllamaBrain) appendMessage(m api.Message, identity *TurnIdentity, disposition ...string) {
 	t := Turn{Role: m.Role, Content: m.Content, ToolName: m.ToolName, ToolCallID: m.ToolCallID, At: time.Now().UTC()}
+	if len(disposition) > 0 {
+		t.Disposition = disposition[0]
+	}
 	if m.Role == "user" {
 		t.Speaker, t.Content = decodeOllamaUser(m.Content)
 	}

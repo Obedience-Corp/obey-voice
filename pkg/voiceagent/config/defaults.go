@@ -185,6 +185,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("skills_similarity_threshold", 0.55)
 	v.SetDefault("ollama_host", "http://localhost:11434")
 	v.SetDefault("ollama_num_ctx", 32768)
+	v.SetDefault("ollama_response_tokens", 4096)
 	v.SetDefault("ollama_num_batch", 128)
 	v.SetDefault("ollama_keep_alive", "10m")
 	// auto: qwen3-family models get Think:true so CoT lands in Message.Thinking

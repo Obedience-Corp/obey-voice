@@ -327,10 +327,11 @@ func ResolveWorkerPlan(cfg *Config, name WorkerTierName, capabilities WorkerCapa
 	if cfg.VoiceWorkers.Mode != WorkerModeTiered {
 		return nil, errors.New("worker tiers are not enabled")
 	}
-	if err := cfg.VoiceWorkers.Validate(); err != nil {
+	workers, err := cfg.EffectiveVoiceWorkers()
+	if err != nil {
 		return nil, err
 	}
-	t := cfg.VoiceWorkers.tier(name)
+	t := workers.tier(name)
 	if t == nil {
 		return nil, fmt.Errorf("unknown worker tier %q", name)
 	}
@@ -347,17 +348,17 @@ func ResolveWorkerPlan(cfg *Config, name WorkerTierName, capabilities WorkerCapa
 		return nil, fmt.Errorf("worker assignment is unavailable: %w", err)
 	}
 	clonedTier := cloneTier(*t)
-	policy := cfg.VoiceWorkers.Policy
+	policy := workers.Policy
 	policy.DailyChargeMicroUSD = cloneInt64(policy.DailyChargeMicroUSD)
-	p := &WorkerPlan{Tier: name, ConfigRevision: cfg.VoiceWorkers.Revision, Revision: clonedTier.Revision, Assignment: *clonedTier.Assignment, Limits: clonedTier.Limits, Policy: policy, AllowUncapped: clonedTier.AllowUncapped}
+	p := &WorkerPlan{Tier: name, ConfigRevision: workers.Revision, Revision: clonedTier.Revision, Assignment: *clonedTier.Assignment, Limits: clonedTier.Limits, Policy: policy, AllowUncapped: clonedTier.AllowUncapped}
 	if reporter, ok := capabilities.(WorkerCapabilityReporter); ok {
 		p.Capabilities = reporter.WorkerCapabilities(p.Assignment)
 	}
 	if t.Assignment.Billing != WorkerBillingLocal {
-		if cfg.VoiceWorkers.Policy.ChargePolicy == "strict" {
+		if workers.Policy.ChargePolicy == "strict" {
 			return nil, errors.New("strict charge cap unavailable: adapter cannot bound all billable requests and tools")
 		}
-		if !cfg.VoiceWorkers.Policy.PaidEnabled {
+		if !workers.Policy.PaidEnabled {
 			return nil, errors.New("paid worker dispatch is disabled; enable paid workers explicitly")
 		}
 		if !t.AllowUncapped {

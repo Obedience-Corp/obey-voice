@@ -1291,6 +1291,23 @@
       "editable": true
     },
     {
+      "key": "ollama_response_tokens",
+      "type": "int",
+      "default": 4096,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Maximum response size",
+      "help": "Limits a foreground Ollama response, including reasoning and tool rounds. Stops runaway generation without automatically continuing. Workers use their own budgets.",
+      "unit": "tokens",
+      "min": 1,
+      "max": 131072,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OLLAMA_RESPONSE_TOKENS",
+      "editable": true
+    },
+    {
       "key": "ollama_think",
       "type": "enum",
       "default": "auto",

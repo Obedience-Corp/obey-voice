@@ -34,19 +34,21 @@ type SelectionOptions struct {
 	PersistParticipation func(discussion.Settings) error
 	// UseDefaults preserves the launcher's Settings stack until an explicit
 	// persona selection; the default profile still supplies identity/prompt.
-	UseDefaults   bool
-	Base          *config.Config
-	Catalog       persona.Catalog
-	Pipeline      *pipeline.Pipeline
-	Voices        *voiceagent.LiveTTSManager
-	SessionID     string
-	Initial       *persona.SessionBinding
-	Persist       func([]brain.Turn, events.PersonaSelection) error
-	NewBrain      func(context.Context, *config.Config) (brain.Provider, error)
-	NewWorker     func(context.Context, *config.Config) (brain.Provider, error)
-	NewVoice      func(context.Context, *config.Config) (*voiceagent.TTSSet, error)
-	Native        *NativeSelectionHooks
-	InitialNative *voiceagent.NativeCandidate
+	UseDefaults     bool
+	Base            *config.Config
+	Catalog         persona.Catalog
+	Pipeline        *pipeline.Pipeline
+	Voices          *voiceagent.LiveTTSManager
+	SessionID       string
+	Initial         *persona.SessionBinding
+	Persist         func([]brain.Turn, events.PersonaSelection) error
+	InitialContexts brain.PersonaContexts
+	PersistContexts func([]brain.Turn, events.PersonaSelection, brain.PersonaContexts) error
+	NewBrain        func(context.Context, *config.Config) (brain.Provider, error)
+	NewWorker       func(context.Context, *config.Config) (brain.Provider, error)
+	NewVoice        func(context.Context, *config.Config) (*voiceagent.TTSSet, error)
+	Native          *NativeSelectionHooks
+	InitialNative   *voiceagent.NativeCandidate
 }
 
 // Selector replaces response resources at the host's serialized boundary. It
@@ -71,11 +73,12 @@ type Selector struct {
 	selected            events.PersonaSelection
 	binding             *persona.SessionBinding
 	generation          uint64
+	contexts            brain.PersonaContexts
 	requiresSelection   bool // explicit restore may have no usable saved persona
 }
 
 func NewSelector(opts SelectionOptions) (*Selector, error) {
-	if opts.Base == nil || opts.Pipeline == nil || opts.Pipeline.Brain == nil || opts.Initial == nil || opts.SessionID == "" || opts.Persist == nil {
+	if opts.Base == nil || opts.Pipeline == nil || opts.Pipeline.Brain == nil || opts.Initial == nil || opts.SessionID == "" || (opts.Persist == nil && opts.PersistContexts == nil) {
 		return nil, errors.New("persona selection requires base settings, pipeline, binding, session, and persistence")
 	}
 	if _, ok := opts.Pipeline.Brain.(brain.HistoryProjectionProvider); !ok {
@@ -145,10 +148,28 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		return nil, errors.New("prepared native startup does not match Standard selection")
 	}
 	opts.Pipeline.GroupParticipationEnabled = opts.Base.GroupParticipationEnabled
-	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text()}
+	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: opts.InitialContexts.Clone()}
 	hash := freezer.FreezePersonaPrompt()
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
-	if err := opts.Persist(opts.Pipeline.Brain.History(), s.selected); err != nil {
+	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok {
+		if state, exists := s.contexts[opts.Initial.PersonaID]; exists {
+			restored := state.Reconcile(opts.Pipeline.Brain.History())
+			if opts.InitialNative != nil {
+				if err := brain.ValidateNativeProjection(restored.Working); err != nil {
+					return nil, err
+				}
+			} else if opts.Native != nil {
+				if err := brain.ValidateTextProjection(restored.Working); err != nil {
+					return nil, err
+				}
+			}
+			if err := owner.ImportContinuity(restored); err != nil {
+				return nil, fmt.Errorf("restore persona context: %w", err)
+			}
+		}
+	}
+	captureContext(s.contexts, opts.Initial.PersonaID, opts.Pipeline.Brain)
+	if err := s.persistContexts(opts.Pipeline.Brain.History(), s.selected, s.contexts); err != nil {
 		if !session.WriteCommitted(err) {
 			return nil, fmt.Errorf("persist initial persona: %w", err)
 		}
@@ -329,8 +350,9 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.generation++
 	s.opts.SessionID = sessionID
 	s.opts.UseDefaults = false
-	s.requiresSelection = true
 	s.mu.Lock()
+	s.requiresSelection = true
+	s.contexts = make(brain.PersonaContexts)
 	s.selected = events.PersonaSelection{
 		WorkDir: s.opts.Base.WorkDir, WorkDirSource: s.opts.Base.WorkDirSource, Directories: s.opts.Base.ConversationDirectories.Clone(),
 		SessionID: sessionID, ConversationEpoch: s.opts.Pipeline.ConversationScope().ConversationEpoch,

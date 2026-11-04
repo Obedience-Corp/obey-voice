@@ -142,6 +142,9 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			if budgetErr := o.messagesBudgetError(repaired.Messages, repaired.Tools); budgetErr != nil {
 				return budgetErr
 			}
+			if err := responseBudgetFromContext(ctx).repair(&repaired); err != nil {
+				return err
+			}
 			req = &repaired
 			parseRetryPending = true
 			continue

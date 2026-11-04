@@ -66,7 +66,7 @@ func validateSelectionState(state *SelectionState) error {
 
 // SaveSelectionState atomically persists the effective selection, preserving the
 // same before/after-rename semantics and latest work snapshot as SaveSelection.
-func (st *Store) SaveSelectionState(s *Session, turns []brain.Turn, selected events.PersonaSelection) error {
+func (st *Store) SaveSelectionState(s *Session, turns []brain.Turn, selected events.PersonaSelection, contexts ...brain.PersonaContexts) error {
 	mode := selected.AudioMode
 	if mode == "" {
 		mode = "standard"
@@ -77,7 +77,11 @@ func (st *Store) SaveSelectionState(s *Session, turns []brain.Turn, selected eve
 	}
 	sessionWriteMu.Lock()
 	defer sessionWriteMu.Unlock()
-	return st.saveSelection(s, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, state, selected.Directories)
+	var owned brain.PersonaContexts
+	if len(contexts) > 0 {
+		owned = contexts[0].Clone()
+	}
+	return st.saveSelection(s, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, state, owned, selected.Directories)
 }
 
 // SaveSelection preserves the legacy Standard-only API. New selector hosts use
@@ -85,9 +89,9 @@ func (st *Store) SaveSelectionState(s *Session, turns []brain.Turn, selected eve
 func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string, directories ...*config.ConversationDirectories) error {
 	sessionWriteMu.Lock()
 	defer sessionWriteMu.Unlock()
-	return st.saveSelection(s, turns, personaID, displayName, promptHash, nil, directories...)
+	return st.saveSelection(s, turns, personaID, displayName, promptHash, nil, nil, directories...)
 }
-func (st *Store) saveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string, state *SelectionState, directories ...*config.ConversationDirectories) error {
+func (st *Store) saveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string, state *SelectionState, contexts brain.PersonaContexts, directories ...*config.ConversationDirectories) error {
 	current, err := loadFrom(st.dir, s.ID)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("load session before selection save: %w", err)
@@ -95,6 +99,9 @@ func (st *Store) saveSelection(s *Session, turns []brain.Turn, personaID, displa
 	candidate := *s
 	if err == nil {
 		candidate = *current
+	}
+	if contexts != nil {
+		candidate.PersonaContexts = contexts.Clone()
 	}
 	candidate.Turns = normalizeTurns(turns)
 	candidate.SelectedPersonaID, candidate.SelectedPersonaDisplayName, candidate.SelectedPersonaPromptHash = personaID, displayName, promptHash

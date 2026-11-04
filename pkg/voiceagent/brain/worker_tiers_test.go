@@ -152,3 +152,22 @@ func ExampleLocalWorkerCapabilities() {
 	fmt.Println(err != nil)
 	// Output: true
 }
+
+func TestPersonaWorkerTierAvailabilityUsesOverrides(t *testing.T) {
+	w := config.DefaultVoiceWorkers()
+	w.Mode = config.WorkerModeTiered
+	yes := true
+	no := false
+	host := "http://127.0.0.1:11434"
+	cfg := &config.Config{VoiceWorkers: w, PersonaWorkerTiers: &config.WorkerTierOverrides{Simple: &config.WorkerTierOverride{Enabled: &yes, Assignment: &config.WorkerAssignment{Provider: "ollama", Model: "persona-worker", Billing: config.WorkerBillingLocal, EndpointRef: &host}}}}
+	if got := WorkerTierAvailabilityForConfig(cfg); got == nil || !got.Simple {
+		t.Fatal("persona-enabled tier hidden")
+	}
+	cfg.PersonaWorkerTiers.Simple.Enabled = &no
+	if got := WorkerTierAvailabilityForConfig(cfg); got == nil || got.Simple {
+		t.Fatal("persona-disabled tier advertised")
+	}
+	if w.Tiers.Simple.Enabled || w.Tiers.Simple.Assignment != nil {
+		t.Fatal("availability mutated global settings")
+	}
+}

@@ -589,9 +589,10 @@ func (m *personasModel) setFormRow(row int) {
 // formBrain returns the stack step's brain selection ("" fields = inherit).
 func (m *personasModel) formBrain() persona.Brain {
 	return persona.Brain{
-		Provider: providerAt(stackBrainProviders(), m.brainProviderIdx),
-		Model:    strings.TrimSpace(m.brainModelInput.Value()),
-		Worker:   m.formWorker(),
+		WorkerTiers: m.workerTiers.Clone(),
+		Provider:    providerAt(stackBrainProviders(), m.brainProviderIdx),
+		Model:       strings.TrimSpace(m.brainModelInput.Value()),
+		Worker:      m.formWorker(),
 	}
 }
 

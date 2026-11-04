@@ -19,7 +19,7 @@ func cliHistoryRecord(t Turn, names SpeakerNames) string {
 		ToolCalls   []TurnToolCall  `json:"tool_calls,omitempty"`
 		ToolName    string          `json:"tool_name,omitempty"`
 		ToolCallID  string          `json:"tool_call_id,omitempty"`
-	}{Attachments: t.Attachments, Role: t.Role, Content: t.Content, ToolCalls: t.ToolCalls, ToolName: t.ToolName, ToolCallID: t.ToolCallID}
+	}{Attachments: t.Attachments, Role: t.Role, Content: modelTurnContent(t), ToolCalls: t.ToolCalls, ToolName: t.ToolName, ToolCallID: t.ToolCallID}
 	if t.Role == "user" {
 		record.Speaker = UserSpeakerLabel(t.Speaker, names)
 	}

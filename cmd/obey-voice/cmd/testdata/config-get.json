@@ -302,6 +302,10 @@
       "value": 32768,
       "source": "default"
     },
+    "ollama_response_tokens": {
+      "value": 4096,
+      "source": "default"
+    },
     "ollama_think": {
       "value": "auto",
       "source": "default"

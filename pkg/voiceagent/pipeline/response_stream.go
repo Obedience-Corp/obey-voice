@@ -461,6 +461,15 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// included. The idle case calls it too: a follower that arrived in the same
 	// round as the timer must win, or the beat the timer was holding is spoken
 	// without it.
+	markupReported := false
+	reportProjectionError := func() {
+		if err := proj.Err(); err != nil && !markupReported {
+			markupReported = true
+			metrics.degraded = true
+			p.emit(events.Error{Stage: "brain", Message: err.Error()})
+			logDegradedTurn("brain", err)
+		}
+	}
 	takeSentence := func(sentence string, ok bool) {
 		if !ok {
 			sentences = nil
@@ -475,6 +484,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// than drops so that if the hold ever carries content, the loop
 			// judges it by the same predicate as every other segment.
 			routeSegment(proj.flushThink(), false)
+			reportProjectionError()
 			// Nothing followed the markers the projection was holding, so they
 			// were the reply, not a list's numbering: "Let me check. 4."
 			if markers := proj.releaseMarkers(); markers != "" && !interrupted {
@@ -511,6 +521,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			p.emit(events.Error{Stage: "think", Message: "think markup leaked onto the speech bus"})
 		}
 		routeSegment(proj.filterThink(sentence), paragraphStart)
+		reportProjectionError()
 	}
 
 	for i := 0; i < synthWorkers; i++ {

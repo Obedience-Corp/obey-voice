@@ -229,3 +229,24 @@ func TestNativeControlPolicyAndActivationFence(t *testing.T) {
 		t.Fatalf("failed activation wrote config: %v", err)
 	}
 }
+
+func TestNativeAudioRetainsPersonaTierAssignment(t *testing.T) {
+	p := audioProfile()
+	p.Audio = &Audio{Mode: AudioNative, Model: "live-audio"}
+	yes := true
+	host := "http://127.0.0.1:11434"
+	p.Brain.WorkerTiers = &config.WorkerTierOverrides{Simple: &config.WorkerTierOverride{Enabled: &yes, Assignment: &config.WorkerAssignment{Provider: "ollama", Model: "separate-worker", Billing: config.WorkerBillingLocal, EndpointRef: &host}}}
+	w := config.DefaultVoiceWorkers()
+	w.Mode = config.WorkerModeTiered
+	candidate, _, err := ResolveAudioConfig(&config.Config{OllamaHost: host, VoiceWorkers: w}, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := candidate.EffectiveVoiceWorkers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Tiers.Simple.Assignment.Model != "separate-worker" || candidate.OllamaModel != "live-audio" {
+		t.Fatal("native model leaked into worker assignment")
+	}
+}
