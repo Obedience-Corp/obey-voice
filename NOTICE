@@ -17,3 +17,26 @@ pkg/voiceagent/onnxrt/include/onnxruntime_ep_c_api.h
 
 Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 Copied verbatim from https://github.com/microsoft/onnxruntime at tag v1.27.0.
+
+--------------------------------------------------------------------------------
+Benchmark source attribution
+
+docs/benchmarks/t3b/ contains short speech-recognition excerpts and derived
+speaker/timing evidence from GitLab Unfiltered's publicly posted
+"Product Marketing Meeting (weekly) 2021-06-28":
+https://www.youtube.com/watch?v=lBVtvOpU80Q
+See that directory's README for the retained technical benchmark use and limits.
+The source audio is not bundled. No source license grant is asserted.
+
+docs/audio-jobs/evidence/ contains generated failed-conversion outputs using
+AMI ES2002a meeting input. Preserve the source attribution and CC BY 4.0 record
+in that directory's README: https://groups.inf.ed.ac.uk/ami/corpus/ .
+Source license: https://creativecommons.org/licenses/by/4.0/ . The generated
+outputs alter the original recording; no AMI endorsement is implied.
+These third-party benchmark source materials are not relicensed by the project's
+AGPL notice; their respective rights and applicable use conditions remain.
+
+Synthetic Kokoro fixture source pack: Apache-2.0,
+https://huggingface.co/csukuangfj/kokoro-multi-lang-v1_0/blob/main/LICENSE .
+Generation details and byte hashes: docs/audio/public-fixtures.json.
+Model weights are not bundled in these generated fixture WAV files.

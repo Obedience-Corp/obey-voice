@@ -1,5 +1,9 @@
 # Development utilities (imported flat into root)
 
+# Regenerate public synthetic audio controls without personal config or playback.
+public-audio-fixtures MODELS_DIR:
+    python3 scripts/generate_public_audio_fixtures.py --models-dir "{{MODELS_DIR}}"
+
 # Lint and format (golangci-lint enabled set lives in .golangci.yml)
 lint:
     #!/usr/bin/env bash

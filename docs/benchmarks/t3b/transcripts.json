@@ -1,5 +1,5 @@
 {
-  "privacy_redaction": "Local fixture paths replaced with synthetic paths; original measurements and transcript text retained. Rights review remains pending.",
+  "privacy_redaction": "Local paths are synthetic; original transcript text and timing retained. Owner chose attributed technical benchmark retention on 2026-11-04; no source license grant has been verified.",
   "fixture": "/home/demo/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav",
   "stt_provider": "parakeet",
   "stt_mode": "offline",

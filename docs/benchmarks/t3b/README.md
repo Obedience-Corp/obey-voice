@@ -18,10 +18,17 @@ set, and every one calls the shipped code (`meeting.AttributeTranscript`,
 
 ## Publication status
 
-Local fixture paths are synthetic replacements. Transcript text, timing and
-speaker evidence remain original. Source and redistribution rights are unverified;
-retain privately until the [release gates](../../public-release-checklist.md) are
-resolved. Path redaction does not turn meeting content into synthetic data.
+Retained as a short attributed technical benchmark by the project owner's decision
+on 2026-11-04. The source is GitLab Unfiltered's public
+[Product Marketing Meeting (weekly), 2021-06-28](https://www.youtube.com/watch?v=lBVtvOpU80Q).
+Only 25 transcript segments from the first ~90 seconds are committed; the source
+audio is fetched separately and is not distributed in this repository.
+
+The purpose is speech/speaker-attribution evaluation, not republishing the meeting.
+The owner accepts that narrow use; an explicit source license grant has not been
+verified. This is a recorded use rationale, not a claim that public availability
+confers a license. Source transcript content, timings and derived measurements
+remain unchanged; local fixture paths are synthetic replacements.
 
 ## Regenerate
 
