@@ -11,6 +11,12 @@ read-only `GITHUB_TOKEN` to query public release metadata. Jobs have a 45-minute
 limit. Release upload permission remains confined to the separate manual/tag
 workflow; PR jobs do not download or promote artifacts from that workflow.
 
+The full Go race suite has an explicit 20-minute per-package timeout. Its
+echo-cancellation simulations exceeded Go's default 10-minute package budget
+on hosted hardware while still making progress through the test cases. All
+tests, signal-quality assertions and race instrumentation remain enabled;
+the enclosing CI job still has a 45-minute limit.
+
 ## Required repository and organization settings
 
 Changing `runs-on` is not a complete access boundary: a contributor can change

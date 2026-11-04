@@ -56,7 +56,10 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -race ./...
+        # The race-instrumented echo-cancellation simulations can exceed Go's
+        # default 10-minute package budget on hosted runners. Keep every test
+        # and race detection, with a bounded budget below the job's 45 minutes.
+        run: go test -race -timeout 20m ./...
 
   # Enforcing gate for the linters whose findings are already at zero
   # (govet, ineffassign, unused — see .golangci.yml). errcheck and staticcheck

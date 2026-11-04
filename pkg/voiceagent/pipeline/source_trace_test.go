@@ -114,7 +114,15 @@ func TestTracePipelineEmitSites(t *testing.T) {
 	for _, mode := range []string{"normal", "rejected", "fallback", "interrupted"} {
 		t.Run(mode, func(t *testing.T) {
 			bus := events.NewBus()
-			player := newFakePlayer(10 * time.Millisecond)
+			var player audio.Engine
+			if mode == "interrupted" {
+				// Complete only after the SpeakingStarted subscriber requests
+				// interruption. A short timer can finish before the watcher is
+				// scheduled, legitimately omitting SpeakingStarted altogether.
+				player = &traceInterruptPlayer{}
+			} else {
+				player = newFakePlayer(10 * time.Millisecond)
+			}
 			defer player.Close()
 			p := &Pipeline{STT: &fakeSTT{text: "hello"}, Brain: &fakeBrain{chunks: []string{"This is a controlled spoken answer."}}, TTS: &fakeTTS{delay: time.Millisecond}, Player: player, Events: bus}
 			if err := p.BeginConversationIdentity("trace-" + mode); err != nil {
@@ -132,13 +140,21 @@ func TestTracePipelineEmitSites(t *testing.T) {
 				p.TTS = &errTTS{err: &tts.ProviderError{Provider: "primary", Kind: tts.ProviderErrorWorker, Err: errors.New("controlled primary failure")}}
 				p.TTSFallback = &fakeTTS{delay: time.Millisecond}
 			}
+			interruptionRequested := false
 			if mode == "interrupted" {
-				events.Subscribe(bus, func(e events.SpeakingStarted) { cancel(); player.Stop() })
+				events.Subscribe(bus, func(e events.SpeakingStarted) {
+					interruptionRequested = true
+					cancel()
+					player.Stop()
+				})
 			}
 			var mu sync.Mutex
 			var spans []events.PipelineTrace
 			events.Subscribe(bus, func(e events.PipelineTrace) { mu.Lock(); spans = append(spans, e); mu.Unlock() })
 			_, _ = p.RunTurn(ctx)
+			if mode == "interrupted" && !interruptionRequested {
+				t.Fatal("speaking-start interruption was not exercised")
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			stages := map[string]bool{}
@@ -191,6 +207,21 @@ func TestTracePipelineEmitSites(t *testing.T) {
 			}
 		})
 	}
+}
+
+// This player announces playback but has no completion timer. Stop releases
+// its Done channel, so the interrupted case cannot become a normal short turn
+// when the runner is busy.
+type traceInterruptPlayer struct{ stallPlayer }
+
+func (p *traceInterruptPlayer) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audio.Playback, error) {
+	playback, err := p.stallPlayer.PlayStream(ctx, stream)
+	if err != nil {
+		return nil, err
+	}
+	started := make(chan struct{})
+	close(started)
+	return audio.NewPlayback(started, playback.Done()), nil
 }
 
 type delayedTraceSTT struct {
