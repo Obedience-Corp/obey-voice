@@ -24,6 +24,7 @@ func (p *Pipeline) BackgroundCaptureReady() bool {
 // withCompletionLease binds generation and all PCM segments to the same
 // revocable attempt. Worker callbacks never invoke this host-only operation.
 func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Context, work.CompletionLease, []work.ResultView) error) (resultErr error) {
+	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	c := p.WorkCoordinator()
 	if c == nil || p.HasCapturedInput() || p.OutputMuted() {
 		return nil

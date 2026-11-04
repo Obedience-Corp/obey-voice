@@ -2,6 +2,9 @@
 
 [Back to README](../README.md)
 
+Release reviewers: use [first-conversation acceptance](first-conversation-acceptance.md)
+for isolated setup checks and the separate clean-machine audio procedure.
+
 ## Requirements
 
 - Go 1.26+

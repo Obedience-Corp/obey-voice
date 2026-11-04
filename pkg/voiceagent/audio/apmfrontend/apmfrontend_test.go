@@ -270,3 +270,26 @@ func TestCloseReleasesTheShim(t *testing.T) {
 		t.Error("Close did not reach the shim")
 	}
 }
+
+func TestPlaybackReferenceResetKeepsCaptureFraming(t *testing.T) {
+	shim := &fakeShim{}
+	f := &Frontend{apm: shim, agc: audio.NewAGC(audio.DefaultAGCTargetRMS, audio.DefaultAGCMinGain, audio.DefaultAGCMaxGain)}
+	f.PushPlaybackReference([]float32{.9, .8})
+	f.capture.pending = []float32{.4}
+	f.ResetPlaybackReference()
+	if len(f.render.pending) != 0 {
+		t.Fatal("old partial render frame survived reset")
+	}
+	if len(f.capture.pending) != 1 || f.capture.pending[0] != .4 {
+		t.Fatal("playback reset changed microphone framing")
+	}
+	f.PushPlaybackReference(make([]float32, frameSamples))
+	if len(shim.renderFrames) != 1 {
+		t.Fatalf("rendered frames = %d", len(shim.renderFrames))
+	}
+	for _, sample := range shim.renderFrames[0] {
+		if sample != 0 {
+			t.Fatal("old reference PCM entered fresh frame")
+		}
+	}
+}

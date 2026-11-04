@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -40,6 +41,7 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 }
 
 func (p *Pipeline) runTextTurn(ctx context.Context, input string, background bool) error {
+	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	p.incActiveTurn()
 	defer p.decActiveTurn()
 	p.bindBrainInfo()

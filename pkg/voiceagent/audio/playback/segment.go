@@ -20,6 +20,7 @@ type playbackSegment struct {
 	err          error
 	started      sync.Once
 	done         sync.Once
+	finishedCh   chan struct{}
 	ready        chan struct{}
 	startedCh    chan struct{}
 	doneCh       chan audio.PlaybackResult
@@ -40,9 +41,10 @@ type playbackSegment struct {
 
 func newPlaybackSegment() *playbackSegment {
 	return &playbackSegment{
-		ready:     make(chan struct{}),
-		startedCh: make(chan struct{}),
-		doneCh:    make(chan audio.PlaybackResult, 1),
+		finishedCh: make(chan struct{}),
+		ready:      make(chan struct{}),
+		startedCh:  make(chan struct{}),
+		doneCh:     make(chan audio.PlaybackResult, 1),
 	}
 }
 
@@ -264,6 +266,7 @@ func (s *playbackSegment) finish(result audio.PlaybackResult) {
 		result.Interrupted = true
 	}
 	s.done.Do(func() {
+		close(s.finishedCh)
 		s.doneCh <- result
 		close(s.doneCh)
 	})

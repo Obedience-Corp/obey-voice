@@ -19,6 +19,12 @@ ui:
     just dist mac
     python3 scripts/ui-fixture.py
 
+# Isolated real reset/capture controls; no microphone or speaker playback
+[macos]
+audio-output:
+    just dist mac
+    python3 scripts/ui-fixture.py --audio-output
+
 # Isolated persona preview UI: test tones, failure/retry, and cancellation
 [macos]
 persona-preview:
@@ -40,6 +46,11 @@ work:
 # Real routing adapter with temporary config, bundle, and a fake camp importer
 routing:
     python3 scripts/test-routing.py
+
+# Real companion setup, text reply, saved session and process restart; no audio/models
+[positional-arguments]
+first-conversation *args:
+    python3 scripts/test-first-conversation.py "$@"
 
 # Start native setup with no saved config; local test provider, no microphone automation
 [macos]

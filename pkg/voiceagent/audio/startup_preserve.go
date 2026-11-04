@@ -255,3 +255,17 @@ func PadStartupListen(samples []float32) []float32 {
 	copy(out, aligned)
 	return out
 }
+
+// ResetPlaybackReference resets both echo-reference paths without resetting
+// the microphone preservation decision or captured residuals.
+func (f *startupPreserveFrontend) ResetPlaybackReference() {
+	if f == nil {
+		return
+	}
+	if resetter, ok := f.preserve.(PlaybackReferenceResetter); ok {
+		resetter.ResetPlaybackReference()
+	}
+	if resetter, ok := f.primary.(PlaybackReferenceResetter); ok {
+		resetter.ResetPlaybackReference()
+	}
+}

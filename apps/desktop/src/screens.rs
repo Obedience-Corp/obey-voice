@@ -1,4 +1,5 @@
 //! Screen routing and shared controls. Each workflow owns its rendering module.
+mod audio_output;
 mod chat;
 mod diagnostics;
 mod dialogs;

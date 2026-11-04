@@ -80,3 +80,10 @@ func (p *PassthroughFrontend) Close() error {
 // interpretable against the window the filter can actually span, and the probe
 // lives outside this package.
 func EchoCancellerTaps() int { return echoCancellerTaps }
+
+// PlaybackReferenceResetter discards buffered playback reference PCM at a
+// device discontinuity without restarting capture or closing the frontend.
+// The output owner must first stop and join its old reference producer.
+type PlaybackReferenceResetter interface {
+	ResetPlaybackReference()
+}
