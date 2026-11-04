@@ -3,8 +3,10 @@
 The inventory in [media-review.json](media-review.json) records content and
 redistribution decisions for tracked assets. A SHA-256 binds each record to its
 current bytes; it does **not** establish ownership, consent, or license clearance.
-All 91 records remain blocked at this review baseline. No voice or persona was
-removed, and no asset was cleared by adding it to the inventory.
+The 2026-11-03 follow-up records actual review methods and remaining actions in
+[review evidence](media-review-evidence.md). Use the commands below for current
+counts. No voice or persona was removed; adding an inventory entry alone does
+not clear it.
 
 ## Commands
 
@@ -48,14 +50,16 @@ in the private release audit. Removing current files does not clear history.
 | Asset group | Existing evidence | Work needed |
 | --- | --- | --- |
 | Veronica and VeronicaDesk reference WAVs | Adjacent metadata identifies `imagine-clip`, source clip names and reference text; `qwen/shipped.go` embeds both. | Owner supplies generation/source and applicable redistribution/cloning permission evidence, or selects replacement/removal. Decide Her-inspired persona presentation separately. Metadata alone is not permission. |
-| Native setup WAV | `pkg/voiceagent/nativeaudio/assets/README.md` identifies macOS Samantha synthesis, text, original and canonical hashes; `setup.go` embeds it. | Review the audio and applicable generated-audio distribution terms, or replace with a cleared equivalent that preserves the setup contract. |
-| Acoustic keyword WAVs | `testdata/kws/README.md` identifies macOS Samantha/Daniel and Kokoro generation, commands and text. | Review each output and relevant voice/model/output permissions; synthetic origin alone does not close this gate. |
+| Native setup WAV | `pkg/voiceagent/nativeaudio/assets/README.md` identifies macOS Samantha synthesis, text, original and canonical hashes; `setup.go` embeds it. | Current Apple System Voice terms restrict public redistribution. Replace with a redistributable equivalent preserving the setup contract, unless a separate applicable grant exists. |
+| Acoustic keyword WAVs | `testdata/kws/README.md` identifies macOS Samantha/Daniel and Kokoro generation, commands and text. | Eight Apple-voice samples have the same replacement need as setup. Kokoro output terms support routine use; verify actual audio content. |
 | t3b transcript | `docs/benchmarks/t3b/README.md` describes 25 replayed meeting transcript records. Fixture docs name the public source video. | Establish permission to redistribute the retained transcript and any intended source recording, or replace the corpus and regenerate dependent measurements. Public availability alone is not evidence of permission. |
-| Desktop logos/icons | Three SVG sources were missing from the old inventory; PNG derivatives were listed. | Confirm source ownership and review both source and derived variants. |
-| Screenshots, GIFs, golden/audio-job evidence | Existing inventory records selective synthetic fixture regeneration; golden audio has adjacent provenance. | Review retained content, fonts, voices, embedded source material and applicable permissions; preserve existing review notes without treating them as blanket clearance. |
+| Desktop logos/icons | All 15 variants trace to the companion app's corporate assets; visual content reviewed. | One owner confirmation of corporate ownership/control and authority for public use covers this family. |
+| Screenshots and GIFs | Visual inspection, source recipes and selective synthetic fixture regeneration are recorded per asset. | Follow each entry's actual coverage and decision; source review or sampled frames must not be described as every-frame inspection. |
+| Golden/audio-job and voiceflow WAVs | Golden samples have Kokoro provenance and supported routine output terms. Audio-job receipts identify separate failed reproduction trials. Voiceflow source remains unresolved. | Actual audio review remains outstanding. Establish voiceflow origin or replace; verify audio-job outputs against their own receipts. |
 
-Four missing files are now inventoried: the three desktop SVGs and embedded
-native setup WAV. The 87 existing records retain their dispositions and notes.
+The inventory includes the three desktop SVGs and embedded native setup WAV
+previously omitted from the original 87-file list. Review updates preserve
+asset identity and distinguish source evidence from verified audible content.
 
 ## Coordinated replacement/removal design
 

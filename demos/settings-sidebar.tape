@@ -26,76 +26,41 @@ Type "export HOME=/tmp/obey-voice-settings-demo MODELS=/tmp/obey-voice-settings-
 Type "demos/fixtures/fake-qwen-native $MODELS" Enter
 Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<EOF" Enter
 Type "brain_provider: ollama" Enter
-Type "ollama_host: http://localhost:11434" Enter
+Type "ollama_host: http://127.0.0.1:1" Enter
 Type "ollama_model: demo-model" Enter
 Type "tts_provider: kokoro" Enter
 Type "tts_voice: af_heart" Enter
+Type "openai_speech_url: http://127.0.0.1:1/v1" Enter
 Type "models_dir: $MODELS" Enter
 Type "agent_name: Samantha" Enter
 Type "EOF" Enter
+Hide
+Type "cd /tmp/obey-voice-settings-demo" Enter
 Type "clear" Enter
 Show
 
-# Launcher → Settings (New conversation, Personas, Meeting, Remote, Library,
-# Audiobook, Settings: six down). Settings opens on Brain: providers and
+# Launcher → Settings (New conversation, Personas, Workers, Meeting, Remote,
+# Library, Audiobook, Settings: seven down). Settings opens on Brain: providers and
 # models on one screen, the sidebar naming every section.
 Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 1800ms
-Down@180ms 6
+Down@180ms 7
 Sleep 600ms
 Enter
 Sleep 2200ms
 
-# ↓ moves through the lists; headings are skipped.
-Down@350ms 3
+# Browse these sections by their digit shortcuts without changing settings.
+Type "2"
 Sleep 1300ms
-
-# → is the next section; a digit jumps straight to one.
-Right
-Sleep 1300ms
-Right
+Type "3"
 Sleep 1300ms
 Type "4"
 Sleep 1800ms
-
-# Voice: engines, then the voices of the active engine. Choosing the
-# installed Qwen engine swaps in its presets; ↓ to Ryan, enter chooses.
-Down
-Sleep 700ms
-Enter
-Sleep 1800ms
-Down@200ms 7
-Sleep 900ms
-Enter
-Sleep 1700ms
-
-# Audio: microphone and speaker lists, then the volume slider (- / +). The
-# cursor stops at the end, however many devices the machine has.
-Type "8"
-Sleep 1500ms
-Down@40ms 60
-Sleep 700ms
-Type "-"
-Sleep 500ms
-Type "-"
-Sleep 900ms
-Type "+"
-Sleep 1300ms
 
 # Meeting: toggles, the engine list, choice rows with every option on the
 # row, destinations. enter on a choice row moves it on.
 Type "9"
 Sleep 1900ms
-Down@250ms 4
-Sleep 700ms
-Enter
-Sleep 1500ms
-
-# ← goes back a section.
-Left
-Sleep 1000ms
-Left
-Sleep 1500ms
 
 Escape
 Sleep 1200ms

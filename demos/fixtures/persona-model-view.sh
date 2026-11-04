@@ -2,13 +2,17 @@
 # Launch the real TUI with a disposable catalog. No model, audio, or credentials.
 set -euo pipefail
 persona_demo_dir="$(mktemp -d "${TMPDIR:-/tmp}/obey-persona-models.XXXXXX")"
+persona_demo_work_dir="/tmp/obey-voice-demo-workspace-wi-3200c0"
 trap 'rm -rf "$persona_demo_dir"' EXIT
 persona_demo_config="$persona_demo_dir/.obey/agents/voice/obey-voice"
+mkdir -p "$persona_demo_work_dir"
 mkdir -p "$persona_demo_config/personas"
 cat > "$persona_demo_config/config.yaml" <<'YAML'
 brain_provider: ollama
 ollama_host: http://127.0.0.1:1
 ollama_model: qwen3:8b
+user_display_name: Alex
+work_dir: /tmp/obey-voice-demo-workspace-wi-3200c0
 grok_model: grok-4-1-fast-reasoning
 cursor_model: auto
 tts_provider: kokoro
@@ -44,5 +48,6 @@ write_persona veronica Veronica ollama qwen3:8b af_bella
 write_persona santa Santa ollama qwen3:4b am_santa
 # Isolate only the child application's home; retain the calling shell environment.
 env -i HOME="$persona_demo_dir" PATH="$PATH" TERM=xterm-256color \
+    OBEY_VOICE_WORK_DIR="$persona_demo_work_dir" \
     COLORTERM=truecolor CLICOLOR_FORCE=1 FORCE_COLOR=1 OBEY_VOICE_COLOR_PROFILE=truecolor \
     ./bin/obey-voice -t -n

@@ -1,4 +1,5 @@
-# Persona form: p previews the voice; Tab lists {variables}.
+# Persona form: show the voice preview affordance without playing audio;
+# Tab in the prompt editor lists {variables}.
 #
 # From repo root after `just build`:
 #   just demo-persona-form-ux
@@ -22,15 +23,18 @@ Type "unset NO_COLOR; unset CLICOLOR; export CLICOLOR_FORCE=1 FORCE_COLOR=1" Ent
 Type "export TERM=xterm-256color COLORFGBG=15\;0" Enter
 Type "export OBEY_VOICE_COLOR_PROFILE=ansi SAMANTHA_COLOR_PROFILE=ansi" Enter
 Type "export HOME=/tmp/obey-voice-persona-form-ux-demo-$$" Enter
+Type "export OBEY_VOICE_WORK_DIR=/tmp/obey-voice-demo-workspace-wi-3200c0" Enter
+Type "mkdir -p /tmp/obey-voice-demo-workspace-wi-3200c0" Enter
 Type "export PATH=$PWD/bin:$PATH" Enter
 Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/obey-voice/personas/samantha $HOME/.obey/agents/voice/obey-voice/sessions" Enter
 Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<'EOF'" Enter
 Type "brain_provider: ollama" Enter
-Type "ollama_host: http://localhost:11434" Enter
+Type "ollama_host: http://127.0.0.1:1" Enter
+Type "work_dir: /tmp/obey-voice-demo-workspace-wi-3200c0" Enter
 Type "ollama_model: demo-model" Enter
 Type "tts_provider: kokoro" Enter
 Type "tts_voice: af_heart" Enter
-Type "user_display_name: Lance" Enter
+Type "user_display_name: Alex" Enter
 Type "agent_name: Samantha" Enter
 Type "active_persona: samantha" Enter
 Type "persona: samantha" Enter
@@ -59,26 +63,19 @@ Sleep 1200ms
 
 Type "n"
 Sleep 800ms
-Down
-Sleep 200ms
-Down
-Sleep 200ms
-Down
-Sleep 200ms
-Down
+Down@250ms 6
 Sleep 1400ms
-Type "p"
-Sleep 2s
-Down
-Sleep 200ms
-Down
-Sleep 400ms
+Up@250ms 7
+Sleep 500ms
 Enter
 Sleep 800ms
 Tab
 Sleep 3s
+Hide
 Escape
 Sleep 400ms
+Escape
+Sleep 300ms
 Type ":q"
 Enter
 Sleep 600ms
