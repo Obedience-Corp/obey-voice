@@ -52,7 +52,7 @@ func startupTickCmd(reduced bool) tea.Cmd {
 // startupState is what the screen knows about a build in flight.
 type startupState struct {
 	active bool
-	label  string
+	label  string // meeting title; conversation startup uses the product title
 	stage  BuildStage
 	// done is the steps already finished, oldest first.
 	done  []string
@@ -60,8 +60,8 @@ type startupState struct {
 	frame int
 }
 
-// begin puts the state into the waiting state. label is what is being started,
-// when the caller knows it.
+// begin puts the state into the waiting state. Conversation startup uses the
+// product identity; meeting startup uses the label as its recording title.
 func (s *startupState) begin(label string) {
 	// The opening stage carries no label: it is a placeholder for the first
 	// real step, and retiring it would put "✓ Preparing" in a list of steps
@@ -95,9 +95,9 @@ func (s *startupState) tick() bool {
 	return true
 }
 
-// beginStartup puts the screen into the waiting state. name is what the
-// session is being started as, when the caller knows it — the runtime's own
-// identity is not resolved until the build finishes.
+// beginStartup puts the screen into the waiting state. name is retained at the
+// call boundary because the runtime builder still uses it for persona binding;
+// the startup screen itself is branded as Obey Voice.
 func (m *conversationModel) beginStartup(name string) tea.Cmd {
 	m.startup.begin(name)
 	return startupTickCmd(m.reducedMotion)
@@ -161,14 +161,7 @@ func (m conversationModel) startupView() string {
 }
 
 func (m conversationModel) startupTitle() string {
-	name := m.startup.label
-	if name == "" {
-		name = m.agentName
-	}
-	if name == "" {
-		return "Starting a conversation"
-	}
-	return "Starting " + name
+	return "Starting Obey Voice"
 }
 
 // view renders the whole waiting screen. It belongs to the state rather than
