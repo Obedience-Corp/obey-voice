@@ -36,6 +36,13 @@ func runPlaybackWorker(ctx context.Context, segment *playbackSegment, stream *au
 }
 
 func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream) {
+	p.mu.Lock()
+	epoch := p.epoch
+	p.mu.Unlock()
+	p.pumpSegmentGeneration(ctx, segment, stream, epoch)
+}
+
+func (p *Player) pumpSegmentGeneration(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream, epoch uint64) {
 	// A stalled engine has to surface as a segment failure rather than an
 	// unbounded wait: the pipeline can only switch to the fallback voice if
 	// this call returns. The budget measures the gap between frame batches,
@@ -58,7 +65,7 @@ func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stre
 		return
 	}
 
-	outputRate, err := p.ensureDevice(inputRate)
+	outputRate, err := p.ensureDeviceGeneration(inputRate, &epoch)
 	if err != nil {
 		segment.fail(err)
 		return
@@ -186,16 +193,9 @@ func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *audi
 	silence := newSilenceTimer(budget)
 	defer silence.stop()
 
-	// The debug recorder writes one WAV per captured source, so the chunks are
-	// rejoined and handed over once, on every exit path. Capturing per chunk
-	// would scatter a single sentence across dozens of files and make the
-	// capture useless for hearing the joins — the thing it would be opened to
-	// check. A partial utterance is still worth writing: a segment that
-	// stalled or was cancelled is exactly when someone goes looking.
-	var captured []float32
-	if debug != nil {
-		defer func() { debug.captureSource(inputRate, captured) }()
-	}
+	// Enqueue source chunks immediately so a reset or capture deadline retains
+	// the affected sentence prefix, joined by the writer under one stable ID.
+	sourceID := debug.newSourceID()
 
 	for {
 		select {
@@ -214,7 +214,7 @@ func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *audi
 				continue
 			}
 			if debug != nil {
-				captured = append(captured, frames...)
+				debug.captureSourceChunk(sourceID, inputRate, frames)
 			}
 			// Duration is measured at the input rate and accumulated per
 			// chunk: nothing here ever sees the whole utterance at once.

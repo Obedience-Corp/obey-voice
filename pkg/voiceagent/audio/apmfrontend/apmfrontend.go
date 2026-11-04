@@ -176,3 +176,12 @@ func (f *Frontend) Close() error {
 	defer f.mu.Unlock()
 	return f.apm.Close()
 }
+
+// ResetPlaybackReference discards the partial reverse-stream frame. Capture
+// framing, gain and the running APM instance remain intact. The installed APM
+// shim exposes no independent reset of its internal reverse-stream history.
+func (f *Frontend) ResetPlaybackReference() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.render.Reset()
+}

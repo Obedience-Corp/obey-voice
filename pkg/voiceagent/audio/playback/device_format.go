@@ -118,3 +118,21 @@ func choosePlaybackChannels(nativeChannels uint32) uint32 {
 		return 2
 	}
 }
+
+// playbackRouteID compares backend identities rather than display names: two
+// outputs can advertise the same name while representing different routes.
+func playbackRouteID(ctx malgo.Context, name string) (string, error) {
+	infos, err := ctx.Devices(malgo.Playback)
+	if err != nil {
+		return "", err
+	}
+	for i := range infos {
+		if (name != "" && infos[i].Name() == name) || (name == "" && infos[i].IsDefault != 0) {
+			return infos[i].ID.String(), nil
+		}
+	}
+	if name == "" && len(infos) > 0 {
+		return infos[0].ID.String(), nil
+	}
+	return "", fmt.Errorf("audio device %q is not available", name)
+}

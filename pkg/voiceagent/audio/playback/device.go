@@ -1,9 +1,12 @@
 package playback
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"log/slog"
+	"time"
 
 	"github.com/gen2brain/malgo"
 )
@@ -60,10 +63,29 @@ func (p *Player) applyReferenceDelay() {
 }
 
 func (p *Player) ensureDevice(sampleRate int) (int, error) {
+	return p.ensureDeviceGeneration(sampleRate, nil)
+}
+
+func (p *Player) ensureDeviceGeneration(sampleRate int, epoch *uint64) (rate int, resultErr error) {
 	p.deviceMu.Lock()
 	defer p.deviceMu.Unlock()
-
+	defer func() {
+		if resultErr != nil && !errors.Is(resultErr, context.Canceled) {
+			p.mu.Lock()
+			if !p.closed {
+				p.lifecycleState = "failed"
+				p.lastError = resultErr.Error()
+			}
+			generation := p.generation
+			p.mu.Unlock()
+			slog.Warn("playback lifecycle", "event", "open_failed", "generation", generation, "error", resultErr)
+		}
+	}()
 	p.mu.Lock()
+	if epoch != nil && *epoch != p.epoch {
+		p.mu.Unlock()
+		return 0, context.Canceled
+	}
 	if p.closed {
 		p.mu.Unlock()
 		return 0, errors.New("audio player is closed")
@@ -73,9 +95,32 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 		p.mu.Unlock()
 		return rate, nil
 	}
+	p.generation++
+	generation := p.generation
+	p.lifecycleState = "opening"
+	p.startRecoveryWorkerLocked()
 	debugRoot := p.debugRoot
+	existingDebug := p.debug
+	testOpen := p.testOpen
 	p.mu.Unlock()
 
+	if testOpen != nil {
+		device, rate, channels, err := testOpen(sampleRate)
+		if err != nil {
+			return 0, err
+		}
+		p.mu.Lock()
+		p.device = device
+		p.sampleRate = rate
+		p.channels = channels
+		p.clientRate = sampleRate
+		p.lifecycleState = "ready"
+		p.openedAt = time.Now()
+		p.lastError = ""
+		p.mu.Unlock()
+		p.lastCallback.Store(time.Now().UnixNano())
+		return rate, nil
+	}
 	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
 	if err != nil {
 		return 0, err
@@ -106,7 +151,17 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	// advertise 8ch) crackled when CoreAudio invented a mono upmix.
 	channels := choosePlaybackChannels(nativeChannels)
 
-	device, openedRate, openedChannels, err := openPlaybackDevice(ctx.Context, deviceConfig, channels, nativeChannels, sampleRate, preferredRate, p.onData)
+	device, openedRate, openedChannels, err := openPlaybackDevice(ctx.Context, deviceConfig, channels, nativeChannels, sampleRate, preferredRate, func(out, in []byte, frames uint32) {
+		p.mu.Lock()
+		valid := p.generation == generation && !p.closed
+		p.mu.Unlock()
+		if !valid {
+			clearBytes(out)
+			return
+		}
+		p.observeCallback(time.Now())
+		p.onData(out, in, frames)
+	}, func() { p.signalRecovery(generation, "unexpected_stop") })
 	if err != nil {
 		_ = ctx.Uninit()
 		ctx.Free()
@@ -121,14 +176,17 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	if deviceChannels <= 0 {
 		deviceChannels = openedChannels
 	}
+	if existingDebug != nil {
+		existingDebug.configureFormat(actualDeviceName, sampleRate, deviceRate, deviceChannels)
+	}
 	if err := p.startPlaybackDevice(deviceRate, deviceChannels, device.Start); err != nil {
 		device.Uninit()
 		_ = ctx.Uninit()
 		ctx.Free()
 		return 0, err
 	}
-	var debug *playerDebugRecorder
-	if debugRoot != "" {
+	debug := existingDebug
+	if debug == nil && debugRoot != "" {
 		debug, err = newPlayerDebugRecorder(debugRoot, actualDeviceName, sampleRate, deviceRate, deviceChannels)
 		if err != nil {
 			_ = device.Stop()
@@ -140,16 +198,23 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 		}
 	}
 
+	routeID, _ := playbackRouteID(ctx.Context, p.deviceName)
 	p.mu.Lock()
 	p.ctx = ctx
 	p.device = device
+	p.routeID = routeID
 	p.actualDeviceName = actualDeviceName
 	p.clientRate = sampleRate
 	p.clientChannels = int(channels)
 	p.sampleRate = deviceRate
 	p.channels = deviceChannels
 	p.debug = debug
+	p.lifecycleState = "ready"
+	p.openedAt = time.Now()
+	p.lastError = ""
+	p.lastCallback.Store(time.Now().UnixNano())
 	p.mu.Unlock()
+	slog.Info("playback lifecycle", "event", "opened", "generation", generation, "requested_device", p.deviceName, "selected_device", actualDeviceName, "source_rate", sampleRate, "client_rate", deviceRate, "client_channels", deviceChannels, "backend_format", "unknown", "observed_period_frames", p.observedPeriodFrames.Load(), "gain", p.volumeHundredths.Load())
 	// Refresh the initial offset using the period observed during device start.
 	p.applyReferenceDelay()
 	return deviceRate, nil
@@ -207,6 +272,7 @@ func openPlaybackDevice(
 	sourceRate int,
 	preferredRate uint32,
 	onData func([]byte, []byte, uint32),
+	onStop ...func(),
 ) (*malgo.Device, int, int, error) {
 	rateCandidates := playbackRateCandidates(sourceRate, preferredRate)
 	channelCandidates := []uint32{channels}
@@ -223,7 +289,11 @@ func openPlaybackDevice(
 			cfg := base
 			cfg.Playback.Channels = ch
 			cfg.SampleRate = rate
-			dev, err := malgo.InitDevice(ctx, cfg, malgo.DeviceCallbacks{Data: onData})
+			callbacks := malgo.DeviceCallbacks{Data: onData}
+			if len(onStop) > 0 {
+				callbacks.Stop = onStop[0]
+			}
+			dev, err := malgo.InitDevice(ctx, cfg, callbacks)
 			if err != nil {
 				lastErr = err
 				continue

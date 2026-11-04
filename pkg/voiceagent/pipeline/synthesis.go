@@ -87,6 +87,7 @@ type synthesisObservation struct {
 }
 
 func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-chan struct{}, work synthWork, gate *orderGate, audioStarted *atomic.Bool, out chan<- playbackEvent, stickFallback *fallbackLatch, realAudioQueued ...*atomic.Bool) segmentSynthesisOutcome {
+	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	sentence, index := work.sentence, work.index
 	ctx = withSegmentTrace(ctx, index)
 	trace := events.TraceFromContext(ctx)
@@ -360,6 +361,7 @@ func (p *Pipeline) playFallback(ctx context.Context, text string, primaryErr err
 // carries the same joinBeats decision the primary synthesis was given: a group
 // the loop joined stays joined when the fallback speaks it mid-turn.
 func (p *Pipeline) playFallbackObserved(ctx context.Context, text string, primaryErr error, stickFallback *fallbackLatch, joinBeats bool) (*audio.Playback, bool, synthesisObservation, error) {
+	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	primary, fallback := p.responseTTS(ctx)
 	if !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(primaryErr) {
 		return nil, false, p.observeProvider(primary), primaryErr

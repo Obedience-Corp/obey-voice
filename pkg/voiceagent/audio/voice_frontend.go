@@ -436,3 +436,15 @@ func (f *VoiceFrontend) refsSnapshot() []float64 {
 	defer f.mu.Unlock()
 	return append([]float64(nil), f.refs.samples...)
 }
+
+// ResetPlaybackReference drops the old output timeline while retaining the
+// microphone high-pass, noise estimate, gain and learned acoustic coefficients.
+func (f *VoiceFrontend) ResetPlaybackReference() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	clear(f.refs.samples)
+	f.refs.samples = f.refs.samples[:0]
+	clear(f.aec.hist)
+	f.aec.pos = 0
+	f.refTail = 0
+}

@@ -55,6 +55,7 @@ func (p *Pipeline) RecordingAvailable(id string, epoch uint64) bool {
 // A supplied software engine supports quiet verification; production may open
 // an engine only after the user's explicit Replay action.
 func (p *Pipeline) ReplayRecording(ctx context.Context, id string, epoch uint64, player audio.Engine) error {
+	ctx = audio.BindPlaybackContext(ctx, player)
 	if err := ctx.Err(); err != nil {
 		return err
 	}

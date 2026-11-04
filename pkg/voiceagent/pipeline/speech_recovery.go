@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"os"
 	"strings"
 	"time"
@@ -49,6 +50,7 @@ func speakablePartialResponse(partial string) string {
 // speakBestEffort plays a progress utterance, such as a compaction notice.
 // Failures are reported as text-only errors.
 func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics *turnMetrics, turn *turnConductor) {
+	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	if p.OutputMuted() || p.Player == nil || !p.ttsReady() {
 		return
 	}
@@ -98,6 +100,7 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 // speakStandalone synthesizes one short utterance outside the streaming path.
 // turn may be nil for idle job summaries.
 func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, metrics *turnMetrics, sentence string) error {
+	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	sentence = strings.TrimSpace(sentence)
 	if sentence != "" && metrics != nil && metrics.routedSpeech != nil {
 		*metrics.routedSpeech = append(*metrics.routedSpeech, sentence)

@@ -27,8 +27,9 @@ parser.add_argument('--group-participation', action='store_true', help='Enable i
 parser.add_argument("--images", action="store_true", help="Enable isolated image/GIF import and vision request checks")
 parser.add_argument("--agent-images", action="store_true", help="Return image/GIF files as agent attachments")
 parser.add_argument("--recorded-input", action="store_true", help="Seed a retained synthetic input and replay through a software PCM sink")
+parser.add_argument("--audio-output", action="store_true", help="Exercise real playback reset/capture controls without opening devices")
 args = parser.parse_args()
-args.native_audio = args.native_audio or args.recorded_input
+args.native_audio = args.native_audio or args.recorded_input or args.audio_output
 args.images = args.images or args.agent_images
 root = pathlib.Path(__file__).resolve().parent.parent
 fixture_root = pathlib.Path(tempfile.mkdtemp(prefix='obey-desktop-ui-'))
@@ -182,6 +183,7 @@ int main(void) {
 ''', text=True, check=True)
     info['CFBundleExecutable'] = 'fixture-launcher'
 info['LSEnvironment'] = {'OBEY_VOICE_REPLAY_FIXTURE': '1' if args.recorded_input else '0', 'OBEY_VOICE_TEST_CONFIG': str(config_dir), 'OBEY_VOICE_LOG_DIR': str(fixture_root / 'logs')}
+info['LSEnvironment']['OBEY_VOICE_OUTPUT_FIXTURE'] = '1' if args.audio_output else '0'
 with plist_path.open('wb') as f:
     plistlib.dump(info, f)
 subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(fixture_app)], check=True)
