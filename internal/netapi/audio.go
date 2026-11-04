@@ -160,21 +160,29 @@ func (a *AudioFanout) PlayStream(ctx context.Context, stream *audio.PCMStream) (
 
 	go a.pump(ctx, stream, localStream, localReady, sampleRate, segID, generation, identity, seg)
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-started:
-	case result := <-done:
-		if result.Err != nil {
-			return nil, result.Err
+	playback := audio.NewPlayback(started, done)
+	didStart, terminal := playback.WaitStart(ctx.Done())
+	if !didStart {
+		if terminal == nil {
+			return nil, ctx.Err()
 		}
-		if result.Interrupted {
+		if terminal.Err != nil {
+			return nil, terminal.Err
+		}
+		if terminal.Interrupted {
 			return nil, context.Canceled
 		}
 		return nil, errors.New("pcm stream produced no samples")
 	}
-
-	return audio.NewPlayback(started, done), nil
+	if terminal != nil {
+		// WaitStart observed completion while checking a simultaneous start. Keep
+		// that exact terminal receipt available to the returned handle's owner.
+		receipt := make(chan audio.PlaybackResult, 1)
+		receipt <- *terminal
+		close(receipt)
+		playback = audio.NewPlayback(started, receipt)
+	}
+	return playback, nil
 }
 
 type localStart struct {

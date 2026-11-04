@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -23,11 +24,12 @@ import (
 
 // OllamaBrain implements Provider using the Ollama API with tool calling.
 type OllamaBrain struct {
-	inputTranscripts       sync.Map
-	audioResolver          utterance.Resolver
-	nativeContextIdentity  NativeContextIdentity
-	audioProjection        map[string][]byte
-	audioProjectionBlocked bool
+	inputTranscripts      sync.Map
+	audioResolver         utterance.Resolver
+	nativeContextIdentity NativeContextIdentity
+	audioProjection       map[string][]byte
+	// Warmup checks admission concurrently with foreground history preparation.
+	audioProjectionBlocked atomic.Bool
 	retiredDelegations     sync.WaitGroup
 	backgroundDelivered    string
 	delegation             *delegation.Runtime

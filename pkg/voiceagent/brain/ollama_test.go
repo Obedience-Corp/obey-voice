@@ -981,6 +981,11 @@ func TestWarmupDoesNotRaceTheConversationLoop(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		o.LoadHistory(nil)
 		o.setFullSystemPrompt(fmt.Sprintf("You are Samantha, take %d.", i))
+		// The first foreground turn also resets audio projection admission,
+		// which chat checks on the concurrent warmup request.
+		if err := o.prepareAudioHistory(context.Background(), StreamOptions{}); err != nil {
+			t.Error(err)
+		}
 	}
 	wg.Wait()
 	o.retiredDelegations.Wait()

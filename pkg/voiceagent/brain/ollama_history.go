@@ -602,7 +602,7 @@ func (o *OllamaBrain) trimHistory() {
 	}
 	if start := historyWindowStart(o.history, low); start > 0 {
 		if ValidateTextProjection(o.effectiveTurns(o.working[:min(start, len(o.working))])) != nil {
-			o.audioProjectionBlocked = true
+			o.audioProjectionBlocked.Store(true)
 			return
 		}
 		o.archiveMessages(o.history[:start])

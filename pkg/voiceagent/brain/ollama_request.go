@@ -91,7 +91,7 @@ func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 // before any response is delivered. Required routing tools return a compatibility
 // error when unsupported. Legacy tools and thinking retain their logged fallback.
 func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
-	if o.audioProjectionBlocked {
+	if o.audioProjectionBlocked.Load() {
 		return ErrAudioProjection
 	}
 	budget := workerBudgetFromContext(ctx)
