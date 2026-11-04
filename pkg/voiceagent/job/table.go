@@ -117,7 +117,9 @@ type Table struct {
 	queue    []string
 	// running holds the jobs whose run function is live; runOrder keeps them
 	// in the order they started, for status.
-	running       map[string]struct{}
+	running map[string]struct{}
+	// completing reserves running slots until their terminal callbacks return.
+	completing    int
 	runOrder      []string
 	maxConcurrent int
 	maxQueued     int
@@ -234,7 +236,7 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		t.mu.Unlock()
 		return "", ErrDisabled
 	}
-	if t.maxQueued > 0 && len(t.running) >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
+	if t.maxQueued > 0 && len(t.running)+t.completing >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
 		t.mu.Unlock()
 		return "", errors.New("worker queue limit reached")
 	}
@@ -361,18 +363,27 @@ func (t *Table) complete(id string, state State, result string, err error) {
 	if e.info.State == StateQueued {
 		t.removeFromQueueLocked(id)
 	}
+	_, heldSlot := t.running[id]
+	if heldSlot {
+		t.completing++
+	}
 	cb := t.finishLocked(id, state, result, err)
 	cancel := e.cancel
 	t.mu.Unlock()
+	defer func() {
+		t.mu.Lock()
+		if heldSlot {
+			t.completing--
+		}
+		t.pumpLocked()
+		t.mu.Unlock()
+	}()
 	if cancel != nil {
 		cancel()
 	}
 	if cb != nil {
 		cb(id, state, result, err)
 	}
-	t.mu.Lock()
-	t.pumpLocked()
-	t.mu.Unlock()
 }
 
 // Status returns all known jobs: running first in start order, then queued in
@@ -407,7 +418,7 @@ func (t *Table) Close() {
 // is never skipped: if it is not announced yet, its own Start pumps once the
 // queued callback has run.
 func (t *Table) pumpLocked() {
-	for len(t.running) < t.maxConcurrent && len(t.queue) > 0 {
+	for len(t.running)+t.completing < t.maxConcurrent && len(t.queue) > 0 {
 		id := t.queue[0]
 		e := t.jobs[id]
 		if !e.announced {

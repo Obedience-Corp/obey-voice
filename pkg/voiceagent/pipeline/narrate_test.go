@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/render"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -22,6 +24,66 @@ func testNarrateUnits(lines ...string) []narrateUnit {
 		spans = append(spans, render.RenderSpan{Kind: render.SpanSpeech, Text: line})
 	}
 	return []narrateUnit{{spans: spans}}
+}
+
+type gatedNarratePlayer struct {
+	calls         atomic.Int32
+	playing       atomic.Bool
+	started       chan struct{}
+	stopRequested chan struct{}
+	release       chan struct{}
+	stopOnce      sync.Once
+	releaseOnce   sync.Once
+}
+
+func newGatedNarratePlayer() *gatedNarratePlayer {
+	return &gatedNarratePlayer{
+		started: make(chan struct{}, 1), stopRequested: make(chan struct{}), release: make(chan struct{}),
+	}
+}
+
+func (p *gatedNarratePlayer) PlayStream(_ context.Context, stream *audio.PCMStream) (*audio.Playback, error) {
+	go func() {
+		for range stream.Frames() {
+		}
+	}()
+	started := make(chan struct{})
+	done := make(chan audio.PlaybackResult, 1)
+	call := p.calls.Add(1)
+	if call == 1 { // narration acknowledgement
+		close(started)
+		done <- audio.PlaybackResult{}
+		close(done)
+		return audio.NewPlayback(started, done), nil
+	}
+	if call > 2 { // later narration units complete normally
+		close(started)
+		done <- audio.PlaybackResult{}
+		close(done)
+		return audio.NewPlayback(started, done), nil
+	}
+	p.playing.Store(true)
+	close(started)
+	select {
+	case p.started <- struct{}{}:
+	default:
+	}
+	go func() {
+		<-p.release
+		p.playing.Store(false)
+		done <- audio.PlaybackResult{Interrupted: true}
+		close(done)
+	}()
+	return audio.NewPlayback(started, done), nil
+}
+
+func (p *gatedNarratePlayer) Stop() {
+	p.stopOnce.Do(func() { close(p.stopRequested) })
+}
+func (p *gatedNarratePlayer) IsPlaying() bool { return p.playing.Load() }
+func (*gatedNarratePlayer) Close() error      { return nil }
+func (p *gatedNarratePlayer) releasePlayback() {
+	p.releaseOnce.Do(func() { close(p.release) })
 }
 
 func TestLiveNarratePlaysPlannedSpans(t *testing.T) {
@@ -334,13 +396,14 @@ func TestNarratePauseResumeSkip(t *testing.T) {
 	}
 
 	provider := &progressiveFakeTTS{}
-	player := newFakePlayer(50 * time.Millisecond)
-	defer player.Close()
+	player := newGatedNarratePlayer()
+	defer player.releasePlayback()
 
 	jobs := job.NewTable(context.Background())
 	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
 	agency := NewAgency(p, jobs, nil, &config.Config{WorkDir: dir}, nil)
 	agency.Wire()
+	defer agency.narrator.handleStop()
 	agency.narrator.planSource = func(context.Context, string) ([]narrateUnit, error) {
 		return []narrateUnit{
 			{spans: []render.RenderSpan{{Kind: render.SpanSpeech, Text: "Unit one."}}},
@@ -357,17 +420,21 @@ func TestNarratePauseResumeSkip(t *testing.T) {
 		Source:     "test",
 	})
 	waitForTTS(t, provider, 2, 3*time.Second)
+	select {
+	case <-player.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("first narration unit never started playback")
+	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		agency.narrator.HandleRoute(ctx, turn, metrics, RouteDecision{Kind: RouteNarratePause, Transcript: "pause", Source: "test"})
-		time.Sleep(20 * time.Millisecond)
-		agency.narrator.HandleRoute(ctx, turn, metrics, RouteDecision{Kind: RouteNarrateResume, Transcript: "resume", Source: "test"})
-		agency.narrator.HandleRoute(ctx, turn, metrics, RouteDecision{Kind: RouteNarrateSkip, Transcript: "skip", Source: "test"})
-	}()
-	wg.Wait()
+	agency.narrator.HandleRoute(ctx, turn, metrics, RouteDecision{Kind: RouteNarratePause, Transcript: "pause", Source: "test"})
+	select {
+	case <-player.stopRequested:
+	case <-time.After(3 * time.Second):
+		t.Fatal("pause did not stop the active playback")
+	}
+	agency.narrator.HandleRoute(ctx, turn, metrics, RouteDecision{Kind: RouteNarrateResume, Transcript: "resume", Source: "test"})
+	agency.narrator.HandleRoute(ctx, turn, metrics, RouteDecision{Kind: RouteNarrateSkip, Transcript: "skip", Source: "test"})
+	player.releasePlayback()
 
 	deadline := time.After(3 * time.Second)
 	for {
