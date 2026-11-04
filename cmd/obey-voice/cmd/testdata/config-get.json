@@ -707,7 +707,7 @@
       "source": "default"
     },
     "voice_worker_num_ctx": {
-      "value": 8192,
+      "value": 0,
       "source": "default"
     },
     "voice_worker_ollama_host": {

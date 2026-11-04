@@ -70,8 +70,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ContinuityNumCtxCeil != 32768 {
 		t.Errorf("ContinuityNumCtxCeil = %d, want 32768", cfg.ContinuityNumCtxCeil)
 	}
-	if cfg.VoiceWorkerNumCtx != 8192 {
-		t.Errorf("VoiceWorkerNumCtx = %d, want 8192", cfg.VoiceWorkerNumCtx)
+	if cfg.VoiceWorkerNumCtx != 0 {
+		t.Errorf("VoiceWorkerNumCtx = %d, want automatic model capacity", cfg.VoiceWorkerNumCtx)
 	}
 	if cfg.ContinuityCompactFiller {
 		t.Error("ContinuityCompactFiller = true, want false")

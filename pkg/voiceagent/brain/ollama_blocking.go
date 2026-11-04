@@ -100,6 +100,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			tools = sess.tools()
 		}
 
+		if err := o.prepareWorkerContext(ctx, skillCtx, tools, opts); err != nil {
+			return "", err
+		}
 		if err := o.contextBudgetError(skillCtx, tools); err != nil {
 			o.history = restore
 			o.canonical = restoreCanonical

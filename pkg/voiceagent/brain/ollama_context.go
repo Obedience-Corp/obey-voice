@@ -23,6 +23,9 @@ const toolResultTruncationMarker = "... (truncated to fit context)"
 // instead of dropped, because Ollama 0.32.14 + qwen3.8 500s when
 // truncation leaves no plain user message (ollama#17778).
 func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
+	if o.cfg != nil && o.cfg.IsWorker {
+		return // Workers summarize completed tool exchanges before the next request.
+	}
 	if o.audioResolver != nil {
 		return
 	} // Native refuses pressure instead of silently trimming evidence.

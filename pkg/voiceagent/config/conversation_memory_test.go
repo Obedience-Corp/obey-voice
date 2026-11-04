@@ -20,7 +20,7 @@ func TestConversationMemoryPreservesConfigAndSetsBothLimits(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.OllamaNumCtx != n || cfg.ContinuityNumCtxCeil != n || cfg.VoiceWorkerNumCtx != 8192 {
+		if cfg.OllamaNumCtx != n || cfg.ContinuityNumCtxCeil != n || cfg.VoiceWorkerNumCtx != 0 {
 			t.Fatalf("limits=%d/%d worker=%d", cfg.OllamaNumCtx, cfg.ContinuityNumCtxCeil, cfg.VoiceWorkerNumCtx)
 		}
 	}

@@ -253,8 +253,8 @@ type Config struct {
 	// OllamaResponseTokens bounds one foreground response across tool rounds
 	// and continuations. Zero uses the default; workers retain their own budgets.
 	OllamaResponseTokens int `mapstructure:"ollama_response_tokens"`
-	// VoiceWorkerNumCtx is the worker Chat window. 0 means 8192 so jobs do
-	// not inherit the talk conversation size.
+	// VoiceWorkerNumCtx is the worker Chat window. 0 uses the worker model's
+	// advertised context capacity, independently of the voice conversation.
 	VoiceWorkerNumCtx int `mapstructure:"voice_worker_num_ctx"`
 	// OllamaNumBatch is how many prompt tokens Ollama reads per pass. Left
 	// unset, Ollama picks it mainly from the context window — 512 at or below

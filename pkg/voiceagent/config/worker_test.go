@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -94,14 +95,41 @@ func TestWorkerBrainConfigGrokModelPin(t *testing.T) {
 	}
 }
 
-func TestWorkerBrainConfigKeepsJobWindowAt8k(t *testing.T) {
-	cfg := &Config{OllamaNumCtx: 32768, ContinuityNumCtxCeil: 32768}
-	got := WorkerBrainConfig(cfg)
-	if got.OllamaNumCtx != 8192 || got.ContinuityNumCtxCeil != 8192 {
-		t.Fatalf("worker window = %d/%d, want 8192/8192", got.OllamaNumCtx, got.ContinuityNumCtxCeil)
+func TestWorkerBrainConfigUsesIndependentModelWindow(t *testing.T) {
+	for _, window := range []int{0, 8192, 131072, 262144} {
+		cfg := &Config{OllamaNumCtx: 32768, ContinuityNumCtxCeil: 32768, VoiceWorkerNumCtx: window}
+		got := WorkerBrainConfig(cfg)
+		if got.OllamaNumCtx != window || got.ContinuityNumCtxCeil != window {
+			t.Fatalf("worker window = %d/%d, want %d", got.OllamaNumCtx, got.ContinuityNumCtxCeil, window)
+		}
+		if cfg.OllamaNumCtx != 32768 || cfg.ContinuityNumCtxCeil != 32768 {
+			t.Fatal("worker changed the voice window")
+		}
 	}
-	if cfg.OllamaNumCtx != 32768 {
-		t.Fatal("live window must stay 32768")
+}
+
+func TestWorkerMemorySettingPersistsLargeWindow(t *testing.T) {
+	SetConfigDirForTest(t, t.TempDir())
+	if _, err := LoadWithoutHooks(); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{"262144", "8192", "0"} {
+		if _, err := SetKeyFile("voice_worker_num_ctx", raw); err != nil {
+			t.Fatalf("setting worker context %s: %v", raw, err)
+		}
+		cfg, err := LoadWithoutHooks()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fmt.Sprint(WorkerBrainConfig(cfg).OllamaNumCtx); got != raw {
+			t.Fatalf("persisted context=%s want=%s", got, raw)
+		}
+		if cfg.OllamaNumCtx != 32768 {
+			t.Fatal("setting worker context changed the voice context")
+		}
+	}
+	if _, err := SetKeyFile("voice_worker_num_ctx", "-1"); err == nil {
+		t.Fatal("negative worker window accepted")
 	}
 }
 

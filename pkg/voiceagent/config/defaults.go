@@ -215,9 +215,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("continuity_soft_limit_ratio", 0.80)
 	v.SetDefault("continuity_compact_filler", false)
 	v.SetDefault("continuity_recovery_max", 2)
-	// Talk is a conversation (32k). Workers stay on 8k via voice_worker_num_ctx.
+	// Voice latency and worker task capacity are configured independently.
 	v.SetDefault("continuity_num_ctx_ceil", 32768)
-	v.SetDefault("voice_worker_num_ctx", 8192)
+	v.SetDefault("voice_worker_num_ctx", 0)
 	v.SetDefault("tool_command_timeout", 30)
 	v.SetDefault("delegation_enabled", false)
 	v.SetDefault("delegation_binary", "obey")

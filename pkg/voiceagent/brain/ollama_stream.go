@@ -105,6 +105,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				tools = sess.tools()
 			}
 
+			if err := o.prepareWorkerContext(ctx, skillCtx, tools, opts); err != nil {
+				done <- StreamResult{Err: err}
+				return
+			}
 			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil)
 			if imageResultRetry {
 				messages[0].Content += "\n\n" + systemPrompt(o.cfg, "image-result-repair", nil)
