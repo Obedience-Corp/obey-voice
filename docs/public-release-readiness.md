@@ -16,6 +16,8 @@ changing visibility or rewriting shared history.
   tests pass. The nine-case clean/noisy benchmark records its confusable false
   match rather than hiding it. Offline ASR checked generated content; it is not
   human listening, speaker-identity verification or speech-quality acceptance.
+- Three remaining legacy benchmark workspace/cache paths were replaced with
+  portable examples; structured comparison verified only path strings changed.
 - The owner retains the short attributed GitLab transcript as a technical
   benchmark. README/NOTICE explain the purpose and unverified source license;
   the text, timings and derived measurements are unchanged.

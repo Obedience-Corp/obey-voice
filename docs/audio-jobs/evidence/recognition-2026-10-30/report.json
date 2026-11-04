@@ -7,7 +7,7 @@
     "schema": "obey-voice.speech-config/v1",
     "provider": "parakeet",
     "model": "tdt-0.6b-v2",
-    "models_dir": "/Users/lancerogers/.cache/obey-voice/models",
+    "models_dir": "/home/demo/.cache/obey-voice/models",
     "language": "en"
   },
   "audio_config": {

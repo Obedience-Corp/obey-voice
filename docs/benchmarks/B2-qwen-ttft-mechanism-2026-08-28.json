@@ -5,7 +5,7 @@
   "criteria_doc": "docs/benchmarks/B2-qwen-ttft-mechanism-criteria.md",
   "generated_at": "2026-08-29T02:07:03-06:00",
   "harness": "scripts/ttft_probe",
-  "command": "/private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/ttft_probe -models qwen3.8-uncensored:27b -controls gemma4:26b,qwen3:8b -reps 5 -rewarm qwen3.8-uncensored:27b -out docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.json",
+  "command": "/tmp/obey-benchmark/ttft_probe -models qwen3.8-uncensored:27b -controls gemma4:26b,qwen3:8b -reps 5 -rewarm qwen3.8-uncensored:27b -out docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.json",
   "provenance": {
     "branch": "bench/qwen-ttft-mechanism",
     "commit": "b4ceb259fed179bc2cf779bba38fc73c31e75d1b",
@@ -17395,31 +17395,31 @@
   "runs": [
     {
       "generated_at": "2026-08-29T02:07:03-06:00",
-      "command": "/private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/ttft_probe -models qwen3.8-uncensored:27b -controls gemma4:26b,qwen3:8b -reps 5 -rewarm qwen3.8-uncensored:27b -out docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.json"
+      "command": "/tmp/obey-benchmark/ttft_probe -models qwen3.8-uncensored:27b -controls gemma4:26b,qwen3:8b -reps 5 -rewarm qwen3.8-uncensored:27b -out docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.json"
     },
     {
       "generated_at": "2026-08-29T03:24:42-06:00",
-      "command": "/private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/ttft_probe -models qwen3.8-uncensored:27b -controls gemma4:26b,qwen3:8b -reps 5 -cases batch-1024,batch-512,batch-256,batch-128,batch-64,batch-32,coldbatch-1024,coldbatch-512,coldbatch-256,coldbatch-128,coldbatch-64,coldbatch-32 -rewarm qwen3.8-uncensored:27b -out /private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/b2r-batch.json"
+      "command": "/tmp/obey-benchmark/ttft_probe -models qwen3.8-uncensored:27b -controls gemma4:26b,qwen3:8b -reps 5 -cases batch-1024,batch-512,batch-256,batch-128,batch-64,batch-32,coldbatch-1024,coldbatch-512,coldbatch-256,coldbatch-128,coldbatch-64,coldbatch-32 -rewarm qwen3.8-uncensored:27b -out /tmp/obey-benchmark/b2r-batch.json"
     },
     {
       "generated_at": "2026-08-29T03:33:47-06:00",
-      "command": "/private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/ttft_probe2 -models qwen3.8-uncensored:27b,gemma4:26b,qwen3:8b -controls  -reps 5 -cases coldbatch-1024,coldbatch-512,coldbatch-256,coldbatch-128,coldbatch-64,coldbatch-32 -rewarm qwen3.8-uncensored:27b -out /private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/b2r-cold.json"
+      "command": "/tmp/obey-benchmark/ttft_probe2 -models qwen3.8-uncensored:27b,gemma4:26b,qwen3:8b -controls  -reps 5 -cases coldbatch-1024,coldbatch-512,coldbatch-256,coldbatch-128,coldbatch-64,coldbatch-32 -rewarm qwen3.8-uncensored:27b -out /tmp/obey-benchmark/b2r-cold.json"
     },
     {
       "generated_at": "2026-08-29T02:35:15-06:00",
-      "command": "/private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/ttft_probe -models qwen3.8-uncensored:27b -controls  -reps 5 -cases gen-batch-1024,gen-batch-512,gen-batch-256,gen-batch-128,gen-batch-64 -rewarm qwen3.8-uncensored:27b -out /private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/b2-gen.json"
+      "command": "/tmp/obey-benchmark/ttft_probe -models qwen3.8-uncensored:27b -controls  -reps 5 -cases gen-batch-1024,gen-batch-512,gen-batch-256,gen-batch-128,gen-batch-64 -rewarm qwen3.8-uncensored:27b -out /tmp/obey-benchmark/b2-gen.json"
     },
     {
       "generated_at": "2026-08-29T02:22:21-06:00",
-      "command": "/private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/ttft_probe -models qwen3.8-uncensored:27b -controls gemma4:26b,qwen3:8b -reps 5 -cases batch-1024-6k,batch-256-6k,batch-64-6k,batch-1024,batch-256,batch-64 -rewarm qwen3.8-uncensored:27b -out /private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/b2-batch-verify.json"
+      "command": "/tmp/obey-benchmark/ttft_probe -models qwen3.8-uncensored:27b -controls gemma4:26b,qwen3:8b -reps 5 -cases batch-1024-6k,batch-256-6k,batch-64-6k,batch-1024,batch-256,batch-64 -rewarm qwen3.8-uncensored:27b -out /tmp/obey-benchmark/b2-batch-verify.json"
     },
     {
       "generated_at": "2026-08-29T03:58:08-06:00",
-      "command": "/private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/ttft_probe3 -models qwen3.8-uncensored:27b -controls  -reps 5 -cases coldbatch-1024,coldbatch-512 -rewarm qwen3.8-uncensored:27b -out /private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/b2r-cold2.json"
+      "command": "/tmp/obey-benchmark/ttft_probe3 -models qwen3.8-uncensored:27b -controls  -reps 5 -cases coldbatch-1024,coldbatch-512 -rewarm qwen3.8-uncensored:27b -out /tmp/obey-benchmark/b2r-cold2.json"
     },
     {
       "generated_at": "2026-08-29T04:00:38-06:00",
-      "command": "/private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/ttft_probe4 -models qwen3.8-uncensored:27b -controls  -reps 4 -cases flushcold-1024,flushcold-512,flushcold-256,flushcold-128 -rewarm qwen3.8-uncensored:27b -out /private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/fd70f340-00a1-4222-877c-863fa77b08de/scratchpad/b2r-flush.json"
+      "command": "/tmp/obey-benchmark/ttft_probe4 -models qwen3.8-uncensored:27b -controls  -reps 4 -cases flushcold-1024,flushcold-512,flushcold-256,flushcold-128 -rewarm qwen3.8-uncensored:27b -out /tmp/obey-benchmark/b2r-flush.json"
     }
   ],
   "product_path": {
