@@ -229,58 +229,62 @@
     {
       "path": "demos/agent-images.gif",
       "source": "Project-produced UI recording. Deterministic provider and generated geometric image fixtures.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "6b7febb645b3712bd1e89388dadf9446b7a296254973734f6b9a101ff776b8dc",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 17 one-second timeline snapshots and 3 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Deterministic provider and generated geometric image fixtures."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/chat-images.gif",
       "source": "Project-produced UI recording. Deterministic provider and generated geometric image fixtures.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "a32cdec559b2f6fa24e5d5116e4043bdb557b4bf4fb2115a6bd12037e838afd7",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 16 one-second timeline snapshots and 2 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Deterministic provider and generated geometric image fixtures."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/context-meter.gif",
       "source": "Project-produced UI recording. Loopback scripted provider and fictional story; no live model or audio.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "170e5fafda83434f1549fe9e3223f912481584be9cdc9bb52a6eb50d917af9f5",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 20 one-second timeline snapshots and 21 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Loopback scripted provider and fictional story; no live model or audio."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/conversation-record.gif",
       "source": "Project-produced UI recording. Scripted capture collision; shown /tmp capture paths and terminal commands belong to the disposable fixture.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "def27db135322bed93e2e9f0ff9c650cf600417ba3b2bfc422d46934ebd7cab6",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 27 one-second timeline snapshots and 11 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted capture collision; shown /tmp capture paths and terminal commands belong to the disposable fixture."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/frames/agent-images-draft.png",
@@ -292,7 +296,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic terminal UI and colored rectangle attachment preview; tape recipe demos/agent-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic terminal UI and colored rectangle attachment preview; tape recipe demos/agent-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -306,7 +310,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic terminal UI and colored rectangle attachment/thread preview; tape recipe demos/agent-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic terminal UI and colored rectangle attachment/thread preview; tape recipe demos/agent-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -320,7 +324,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic terminal UI and colored rectangle attachment preview; tape recipe demos/chat-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic terminal UI and colored rectangle attachment preview; tape recipe demos/chat-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -334,7 +338,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic terminal UI and colored rectangle attachment/thread preview; tape recipe demos/chat-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic terminal UI and colored rectangle attachment/thread preview; tape recipe demos/chat-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -348,7 +352,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic scripted chat/tool-call transcript; tape recipe demos/tool-calls.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic scripted chat/tool-call transcript; tape recipe demos/tool-calls.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -362,7 +366,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -376,7 +380,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice-short.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice-short.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -390,7 +394,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice-short.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice-short.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -404,7 +408,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -418,7 +422,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic terminal launcher; source is demos/tool-calls.tape or demo launcher tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic terminal launcher; source is demos/tool-calls.tape or demo launcher tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -432,7 +436,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures.",
+        "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored UI and synthetic fixture content distributed as repository documentation."
       }
     },
@@ -446,7 +450,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures.",
+        "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored UI and synthetic fixture content distributed as repository documentation."
       }
     },
@@ -460,7 +464,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures.",
+        "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored UI and synthetic fixture content distributed as repository documentation."
       }
     },
@@ -474,21 +478,21 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures.",
+        "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored UI and synthetic fixture content distributed as repository documentation."
       }
     },
     {
       "path": "demos/frames/persona-variable-picker.png",
-      "source": "Project-produced UI screenshot; source recipes/fixtures in demos/README.md or the desktop screenshot workflow.",
+      "source": "Final variable-picker scene extracted from the corrected demos/persona-form-ux.gif; demo-persona-form-ux recipe refreshes this still.",
       "disposition": "retain_public",
       "public_release": "cleared",
       "content_review": "complete",
-      "sha256": "f73b5c7998a12a48f60da07b50719e6162f0a5f3e4ae432d8c70545c4075cd4b",
+      "sha256": "6a9523e40a6ebd7553d4c06f46ccb77ff35ae63701edb8ec61291d4f603923d3",
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic prompt-variable picker and sample values; persona creation tape fixture. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Independent review found that the previously cleared screenshot still showed the owner name. Replaced from corrected GIF and individually inspected: user_name now resolves to Alex. See docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -502,7 +506,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic voice-row UI; no user transcript or identity visible in inspected still. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic voice-row UI; no user transcript or identity visible in inspected still. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -516,7 +520,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic voice-row UI; no user transcript or identity visible in inspected still. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic voice-row UI; no user transcript or identity visible in inspected still. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -530,7 +534,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic settings UI for meeting routing; demos/meeting-route-speaker.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic settings UI for meeting routing; demos/meeting-route-speaker.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -544,7 +548,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic settings UI and seeded campaign routes; demos/meeting-route-speaker.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic settings UI and seeded campaign routes; demos/meeting-route-speaker.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -558,7 +562,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic settings UI for speaker attribution; demos/meeting-route-speaker.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic settings UI for speaker attribution; demos/meeting-route-speaker.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -572,7 +576,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic scripted chat response; demos/think-blocks.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic scripted chat response; demos/think-blocks.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -586,7 +590,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic scripted chat/thinking response; demos/think-blocks.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic scripted chat/thinking response; demos/think-blocks.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -600,7 +604,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic scripted chat/thinking response; demos/think-blocks.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic scripted chat/thinking response; demos/think-blocks.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -614,7 +618,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic voice-meter/meeting UI; demos/meeting.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic voice-meter/meeting UI; demos/meeting.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -628,7 +632,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic scripted work cue and task; demos/work-cue.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic scripted work cue and task; demos/work-cue.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -642,7 +646,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic scripted work cue and task; demos/work-cue.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic scripted work cue and task; demos/work-cue.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -656,7 +660,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic scripted work cue and task; demos/work-cue.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic scripted work cue and task; demos/work-cue.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -670,191 +674,204 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Synthetic fixture worker output and weather lookup JSON; demos/workers.tape and internal/tui/demo_workers.go. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Synthetic fixture worker output and weather lookup JSON; demos/workers.tape and internal/tui/demo_workers.go. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
     {
       "path": "demos/launcher-notice-short.gif",
       "source": "Project-produced UI recording. Test-only terminal entry point with synthetic notice and campaign paths.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "ee7855e14e77e898a61da225da2ce6dbd287eac0dbd991af276a2c2b435257a9",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 6 one-second timeline snapshots and 3 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Test-only terminal entry point with synthetic notice and campaign paths."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/launcher-notice.gif",
       "source": "Project-produced UI recording. Test-only terminal entry point with synthetic notice and campaign paths.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "d4a58ebbffc124857a54e779fc6fe0878f838ce5b05f024c6316bc465876db7a",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 5 one-second timeline snapshots and 2 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Test-only terminal entry point with synthetic notice and campaign paths."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/library.gif",
       "source": "Project-produced UI recording. Fake calibredb catalog with project-written short descriptions, title/author labels and synthetic paths; no book covers or full books shown.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "59bfe112fef61182363e2dccde9068094033d687374d52a0ec99206f84a51ebe",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 23 one-second timeline snapshots and 11 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Fake calibredb catalog with project-written short descriptions, title/author labels and synthetic paths; no book covers or full books shown."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/meeting-route-speaker.gif",
       "source": "Project-produced UI recording. Fake campaign CLI and scripted meeting speech events with generic example title/note.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "5c096709c6cca4af9af173586ddf8f07302c5b95c9f2c9c35b3111a2ae74cc9b",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 40 one-second timeline snapshots and 19 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Fake campaign CLI and scripted meeting speech events with generic example title/note."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/meeting-speakers.gif",
       "source": "Project-produced UI recording. Source-defined generic speaker dialogue; not the real meeting audio corpus.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "849c2747a49be168806b755c0c4ef4911f71a4878ae13fc5c3e301b1b0c32ada",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 20 one-second timeline snapshots and 19 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Source-defined generic speaker dialogue; not the real meeting audio corpus."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/meeting.gif",
       "source": "Project-produced UI recording. Scripted meeting speech events, title, note and bookmark; no live microphone.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "46f327843c38e9632e2791c74a75da6b50ba3e111fae77a2e073bed56506bb02",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 22 one-second timeline snapshots and 27 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted meeting speech events, title, note and bookmark; no live microphone."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/persona-create.gif",
       "source": "Project-produced UI recording. Scripted Research Buddy persona and prompt edits.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "2372ae9b2d833d055cff08c54eeebe1fee6177b3021f1ae99db6164e6a1c8beb",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 32 one-second timeline snapshots and 12 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted Research Buddy persona and prompt edits."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/persona-form-ux.gif",
       "source": "Project-produced recording from the updated VHS tape and disposable synthetic configuration.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "14252f652bf57a06216901e6eea0afd2c8549269f9f7154337aac9bd8cecec3b",
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Persona form regenerated; current navigation reaches prompt variable picker and visibly resolves user_name to Alex; voice playback omitted. Source tape and regenerated scenes reviewed; not every-frame inspection. See docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and synthetic fixture content, retained as repository documentation."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/persona-model-view.gif",
       "source": "Project-produced recording from the updated VHS tape and disposable synthetic configuration.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "f2cb4ca6154a6c4e1fef24b384d210075cfac132bf8ad07b0068be6eaee2d839",
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Persona model UI and four settled PNGs regenerated; editor shows only disposable temporary directory. Source tape and regenerated scenes reviewed; not every-frame inspection. See docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and synthetic fixture content, retained as repository documentation."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/persona-switch.gif",
       "source": "Project-produced UI recording. Disposable seeded persona profiles; no personal configuration.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "ec431668ee08852ba1214676baa3433d4f6ecb321f54139da0e8b60b816258ac",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 15 one-second timeline snapshots and 5 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Disposable seeded persona profiles; no personal configuration."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/qwen-voices.gif",
       "source": "Project-produced UI recording. Fake package fixture; only interface/voice labels, no model download or inference.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "46df94a275fae22f5d2d3bf9a8c209e54a470fa1b04914cf5de437ea3a0df7dc",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 22 one-second timeline snapshots and 14 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Fake package fixture; only interface/voice labels, no model download or inference."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/settings-sidebar.gif",
       "source": "Project UI settings capture regenerated from updated VHS tape; disposable configuration and working directory, unavailable loopback providers, no host device-list scene.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "d4eb6f577d3a280d2b13a1d710d6bc1e3b2079714a9e1f4790373191ee874caf",
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Source tape and eight evenly spaced final frames inspected; Brain/Workers/Tools/Voice/Meeting browsing, no named devices or real campaign destinations. Provider/voice values unchanged. Sampling, not every-frame inspection. See docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and disposable demo configuration retained as repository documentation."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/think-blocks.gif",
       "source": "Project-produced UI recording. Scripted fictional response and thinking events.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "9a5b4a4a146de621bea756370e121d25699af282b5d0a8834719a8a2fdf8c82e",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 28 one-second timeline snapshots and 8 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted fictional response and thinking events."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/tool-calls.gif",
@@ -874,44 +891,47 @@
     {
       "path": "demos/voice-meter.gif",
       "source": "Project-produced UI recording. Scripted event-bus animation with disposable configuration.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "ac93d449a89e181d8fb48fb3c2a908b848780bae245826c5d7c289eb14437db3",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 25 one-second timeline snapshots and 10 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted event-bus animation with disposable configuration."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/work-cue.gif",
       "source": "Project-produced UI recording. Scripted worker/weather example with no live model or microphone.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "5ac5f0c2c65ee3c6327d70a8beb8358d34d91c8134c01ba0f7e0e8eee21dbdb2",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 18 one-second timeline snapshots and 9 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted worker/weather example with no live model or microphone."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "demos/workers.gif",
       "source": "Project-produced UI recording. Injected fixture search job; generic synthetic weather result.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "0993bd66bf5294dcd964a1fe69af7c354e3aac5b6942d32e197664d4c877133a",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 11 one-second timeline snapshots and 6 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Injected fixture search job; generic synthetic weather result."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "docs/audio-jobs/evidence/direct-output.wav",
@@ -1058,7 +1078,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Static desktop UI mock/screenshot with generic sample conversation; no identity, credentials, personal-data or inappropriate content visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Static desktop UI mock/screenshot with generic sample conversation; no identity, credentials, personal-data or inappropriate content visible. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -1072,7 +1092,7 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Static desktop UI mock/screenshot with generic home screen content; no identity, credentials or personal-data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Static desktop UI mock/screenshot with generic home screen content; no identity, credentials or personal-data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
@@ -1086,23 +1106,24 @@
       "review": {
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
-        "content_evidence": "Static desktop UI mock/screenshot with generic settings; no identity, credentials, device names or personal-data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
+        "content_evidence": "Static desktop UI mock/screenshot with generic settings; no identity, credentials, device names or personal-data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
     },
     {
       "path": "docs/images/tui.gif",
       "source": "Project-produced UI recording. Loopback scripted multi-persona conversation and temporary session store.",
-      "disposition": "retain_public",
-      "public_release": "cleared",
-      "content_review": "complete",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "sampled_pending_complete_timeline_review",
       "sha256": "9cb7d31ffc0dd5192a678e8b898916b62ea56c603e9e47de73cb4e21aefb63d6",
       "review": {
         "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "Inspected initial eight-frame sample, 32 one-second timeline snapshots and 12 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Loopback scripted multi-persona conversation and temporary session store."
-      }
+      },
+      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
     },
     {
       "path": "pkg/voiceagent/nativeaudio/assets/setup.wav",
@@ -1130,9 +1151,9 @@
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#veronica-reference-clips.",
-        "rights_evidence": "Generation/input provenance and applicable terms pending; do not infer performer identity from filename or persona name."
+        "rights_evidence": "Generation/input provenance and applicable terms pending. Current Grok Consumer Terms section 4 also contains Output permission/attribution language referring to Brand Guidelines; applicability to extracted audio and historical clips needs resolution. Ownership language alone is insufficient. No performer identity inferred."
       },
-      "next_action": "Obtain owner source/generation facts, applicable input permissions if any, and actual audio content review; coordinate replacements with embedded voice behavior if needed."
+      "next_action": "Obtain source/generation facts and applicable input/output permissions and attribution requirements, plus audio review. Coordinate any replacement with embedded voice behavior."
     },
     {
       "path": "pkg/voiceagent/qwen/voices/veronicadesk/ref.wav",
@@ -1145,9 +1166,9 @@
         "reviewer": "GPT-6 Luna; consolidated by Codex",
         "reviewed_at": "2026-11-03",
         "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#veronica-reference-clips.",
-        "rights_evidence": "Generation/input provenance and applicable terms pending; do not infer performer identity from filename or persona name."
+        "rights_evidence": "Generation/input provenance and applicable terms pending. Current Grok Consumer Terms section 4 also contains Output permission/attribution language referring to Brand Guidelines; applicability to extracted audio and historical clips needs resolution. Ownership language alone is insufficient. No performer identity inferred."
       },
-      "next_action": "Obtain owner source/generation facts, applicable input permissions if any, and actual audio content review; coordinate replacements with embedded voice behavior if needed."
+      "next_action": "Obtain source/generation facts and applicable input/output permissions and attribution requirements, plus audio review. Coordinate any replacement with embedded voice behavior."
     },
     {
       "path": "testdata/kws/bare.wav",

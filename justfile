@@ -175,6 +175,8 @@ demo-persona-form-ux: build
         TERM=xterm-256color COLORTERM=truecolor \
         vhs demos/persona-form-ux.tape
     just _optimize-demo-gif demos/persona-form-ux.gif
+    # Keep the documented variable-picker still in sync with the sanitized GIF.
+    ffmpeg -y -loglevel error -sseof -0.2 -i demos/persona-form-ux.gif -frames:v 1 demos/frames/persona-variable-picker.png
     ls -lh demos/persona-form-ux.gif
 
 # Personas → Create: boxed form wizard + vim system-prompt editor.

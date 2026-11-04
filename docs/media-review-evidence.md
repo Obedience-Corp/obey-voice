@@ -8,8 +8,12 @@ It does not clear historical copies, downloaded models or release archives.
 
 ## Remaining publication actions
 
-After this follow-up, 52 visual assets are cleared and 39 records remain blocked.
-The remaining records are grouped below; they are not 39 confirmed defects.
+After independent verification, 31 screenshots are cleared and 60 records remain
+blocked. The remaining records are grouped below; they are not 60 confirmed defects.
+The original 52-clearance count was overstated: 21 GIF decisions relied on
+sampling, and a cleared variable-picker still retained the owner's first name.
+That still is now regenerated and verified; sampled GIFs remain pending complete
+timeline review. All 31 retained screenshot PNGs were individually re-inspected.
 
 | Group | Records | Next action |
 | --- | ---: | --- |
@@ -21,6 +25,7 @@ The remaining records are grouped below; they are not 39 confirmed defects.
 | Voiceflow WAVs | 2 | Establish source and content, or replace with documented controls. |
 | Meeting transcript | 1 | Resolve source permission or replace the corpus and regenerate dependent results. |
 | Legacy tool-call GIF | 1 | Review the complete recording or regenerate with deterministic provider/filesystem fixtures. |
+| Other GIFs | 21 | Complete the timeline review; preserve sampled/source evidence without treating it as final clearance. |
 
 ## Project UI captures
 
@@ -37,8 +42,9 @@ inventory entries state the review method and any remaining limitation.
 
 The 19 unchanged GIFs received an additional one-second timeline sample and
 scene-change sample (image-difference threshold 0.03), checked against source
-recipes. Eighteen have sufficient synthetic fixture/source evidence for routine
-clearance with the stated sampling limits. `demos/tool-calls.gif` remains pending:
+recipes. Eighteen have supporting synthetic fixture/source evidence, but these
+samples do not establish the contents of every retained scene. All GIFs remain
+pending complete timeline review. `demos/tool-calls.gif` has an additional gap:
 its tape uses live Ollama output, a real filesystem tool and an existing user
 model cache. No private disclosure was found in its samples, but its source
 does not support describing it as deterministic synthetic content. Review the
@@ -46,7 +52,7 @@ complete recording or regenerate it against a deterministic provider/filesystem.
 
 The initial pass found the owner's first name in the persona form/model demos
 and named host devices in the settings demo. These are reproducibility/privacy
-issues in the demo fixtures, not exposed credentials. The three GIFs and four
+issues in the demo fixtures, not exposed credentials. The three GIFs and five
 persona stills were regenerated with a synthetic display name and disposable
 working directory, omitting voice playback and the host device-list segment.
 VHS navigation was updated for the current launcher and persona form. Reviewed
@@ -54,6 +60,14 @@ scenes include the prompt variable picker resolving the user name to Alex and
 the model editor displaying only a temporary path. Source changes alone do not
 clear old image bytes. Unrelated occurrences of first names in unit-test data
 are outside this asset review.
+
+Independent verification found that `persona-variable-picker.png` had been
+mistakenly described as synthetic despite visibly retaining the owner's name.
+It is now extracted from the corrected GIF's final variable-picker scene, where
+the value is Alex. The demo recipe refreshes this still with the GIF. No other
+additional privacy finding appeared in the individual screenshot recheck. This
+review concerns publication content, not whether every legacy screenshot shows
+the latest UI or accurately illustrates its filename.
 
 ## Corporate icons
 
@@ -116,9 +130,15 @@ Owner confirmation is needed about whether each clip was entirely generated
 in the owner's Imagine account or used uploaded/third-party material, and about
 the generation date/product. If a real person's recording or likeness was used,
 the applicable permission must cover the intended cloning and redistribution.
-The current [xAI Consumer Terms, section 4](https://x.ai/legal/terms-of-service)
-address user content/output ownership and require sufficient input rights;
-they do not prove the historical account, terms or input provenance. Keep the
+The current [Grok Consumer Terms, section 4](https://x.ai/legal/terms-of-service)
+(SpaceXSI, updated October 27, 2026) address content ownership and input rights,
+but also expressly discuss permission and attribution when using Output and
+refer to [Brand Guidelines](https://x.ai/legal/brand-guidelines). Those guidelines
+specifically describe text/image attribution; they do not clearly resolve the
+extracted audio/voice-reference case. Ownership wording alone is not a complete
+output-use grant. Check the terms applicable to these clips and their intended
+use, including permission/attribution requirements. Current pages do not prove
+the historical account, terms or input provenance. Keep the
 two references blocked until that specific source question and audio review
 are resolved. Do not infer a performer identity from the persona name.
 
