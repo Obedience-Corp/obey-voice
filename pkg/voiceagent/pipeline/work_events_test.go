@@ -243,19 +243,25 @@ func TestQueuedJobKeepsItsOwnIdentity(t *testing.T) {
 				return
 			}
 			line = "tool:" + ev.JobID
-			select {
-			case firstTool <- struct{}{}:
-			default:
-			}
 		case events.JobFinished:
 			line = "finished:" + ev.ID
-			finished <- struct{}{}
 		default:
 			return
 		}
 		mu.Lock()
 		trail = append(trail, line)
 		mu.Unlock()
+		// Release the test only after its observed event is recorded. Signaling
+		// first lets it enqueue another job or inspect an incomplete trail.
+		switch e.(type) {
+		case events.ToolCallStarted:
+			select {
+			case firstTool <- struct{}{}:
+			default:
+			}
+		case events.JobFinished:
+			finished <- struct{}{}
+		}
 	})
 
 	release := make(chan struct{})
