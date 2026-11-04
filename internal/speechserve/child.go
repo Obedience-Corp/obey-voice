@@ -49,7 +49,10 @@ type child struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout *bufio.Reader
-	wait   chan error
+	// Closing done publishes waitErr to every observer. Startup and cleanup
+	// must both be able to observe exit without consuming each other's result.
+	done    chan struct{}
+	waitErr error
 
 	writeMu sync.Mutex
 
@@ -102,8 +105,11 @@ func startChild(ctx context.Context, spec ChildSpec, readyTimeout time.Duration)
 		return nil, fmt.Errorf("start speech worker: %w", err)
 	}
 
-	c := &child{cmd: cmd, stdin: stdin, stdout: bufio.NewReader(stdout), wait: make(chan error, 1)}
-	go func() { c.wait <- cmd.Wait() }()
+	c := &child{cmd: cmd, stdin: stdin, stdout: bufio.NewReader(stdout), done: make(chan struct{})}
+	go func() {
+		c.waitErr = cmd.Wait()
+		close(c.done)
+	}()
 
 	if err := c.readReady(ctx, readyTimeout); err != nil {
 		c.Close()
@@ -143,8 +149,8 @@ func (c *child) readReady(ctx context.Context, timeout time.Duration) error {
 		return nil
 	case err := <-errs:
 		return fmt.Errorf("speech worker ready: %w", err)
-	case err := <-c.wait:
-		return fmt.Errorf("speech worker exited during startup: %v", err)
+	case <-c.done:
+		return fmt.Errorf("speech worker exited during startup: %v", c.waitErr)
 	case <-timer.C:
 		return fmt.Errorf("speech worker did not become ready within %s", timeout)
 	case <-ctx.Done():
@@ -179,10 +185,10 @@ func (c *child) Close() {
 			return
 		}
 		select {
-		case <-c.wait:
+		case <-c.done:
 		case <-time.After(3 * time.Second):
 			_ = c.cmd.Process.Kill()
-			<-c.wait
+			<-c.done
 		}
 	})
 }
