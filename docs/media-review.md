@@ -3,7 +3,7 @@
 The inventory in [media-review.json](media-review.json) records content and
 redistribution decisions for tracked assets. A SHA-256 binds each record to its
 current bytes; it does **not** establish ownership, consent, or license clearance.
-The 2026-11-03 follow-up records actual review methods and remaining actions in
+The 2026-11-04 follow-up records actual review methods and remaining actions in
 [review evidence](media-review-evidence.md). Use the commands below for current
 counts. No voice or persona was removed; adding an inventory entry alone does
 not clear it.
@@ -50,12 +50,12 @@ in the private release audit. Removing current files does not clear history.
 | Asset group | Existing evidence | Work needed |
 | --- | --- | --- |
 | Veronica and VeronicaDesk reference WAVs | Adjacent metadata identifies `imagine-clip`, source clip names and reference text; `qwen/shipped.go` embeds both. | Owner supplies generation/source and applicable redistribution/cloning permission evidence, or selects replacement/removal. Decide Her-inspired persona presentation separately. Metadata alone is not permission. |
-| Native setup WAV | `pkg/voiceagent/nativeaudio/assets/README.md` identifies macOS Samantha synthesis, text, original and canonical hashes; `setup.go` embeds it. | Current Apple System Voice terms restrict public redistribution. Replace with a redistributable equivalent preserving the setup contract, unless a separate applicable grant exists. |
-| Acoustic keyword WAVs | `testdata/kws/README.md` identifies macOS Samantha/Daniel and Kokoro generation, commands and text. | Eight Apple-voice samples have the same replacement need as setup. Kokoro output terms support routine use; verify actual audio content. |
-| t3b transcript | `docs/benchmarks/t3b/README.md` describes 25 replayed meeting transcript records. Fixture docs name the public source video. | Establish permission to redistribute the retained transcript and any intended source recording, or replace the corpus and regenerate dependent measurements. Public availability alone is not evidence of permission. |
+| Native setup WAV | `pkg/voiceagent/nativeaudio/assets/README.md` records current Kokoro synthesis and links its pinned provenance; `setup.go` embeds it. | Replaced with pinned Kokoro output; canonical-byte forwarding and setup/cancellation checks pass. Historical copies remain a separate publication-history decision. |
+| Acoustic keyword WAVs | `testdata/kws/README.md` records Kokoro generation, exact prompts and the British-accent control. | Eight Apple-voice samples replaced with pinned Kokoro controls. Offline ASR and native keyword tests recorded; all nine-case clean/noisy benchmark results are retained. |
+| t3b transcript | `docs/benchmarks/t3b/README.md` describes 25 replayed meeting transcript records. Fixture docs name the public source video. | Owner chose short attributed technical benchmark retention; rationale and unverified source license are explicit. Source audio is not bundled. |
 | Desktop logos/icons | All 15 variants trace to the companion app's corporate assets; visual content reviewed. | One owner confirmation of corporate ownership/control and authority for public use covers this family. |
 | Screenshots and GIFs | Visual inspection, source recipes and selective synthetic fixture regeneration are recorded per asset. | Follow each entry's actual coverage and decision; source review or sampled frames must not be described as every-frame inspection. |
-| Golden/audio-job and voiceflow WAVs | Golden samples have Kokoro provenance and supported routine output terms. Audio-job receipts identify separate failed reproduction trials. Voiceflow source remains unresolved. | Actual audio review remains outstanding. Establish voiceflow origin or replace; verify audio-job outputs against their own receipts. |
+| Golden/audio-job and voiceflow WAVs | Golden samples have Kokoro provenance and supported routine output terms. Audio-job receipts identify separate failed reproduction trials. Voiceflow now uses documented synthetic replacements. | Offline ASR/source checks recorded. Voiceflow recordings replaced with documented synthetic controls. Audio-job outputs retained as attributed failed-conversion evidence. |
 
 The inventory includes the three desktop SVGs and embedded native setup WAV
 previously omitted from the original 87-file list. Review updates preserve
@@ -80,10 +80,8 @@ protocol's expected format and behavior; rerun native setup/cancellation tests.
 New text/voice choices may require corresponding readiness assertions to change.
 
 Downloaded voice/model packs and native runtime libraries are outside this
-tracked-media inventory. Inspect their exact versions, licenses, notices and
-packaging separately for each distributed binary. In particular, the Linux
-artifact recipe copies native notices, while the reviewed baseline's macOS CLI
-artifact recipe lacked an equivalent license-copy step.
-[PR #334](https://github.com/Obedience-Corp/obey-voice/pull/334) fixes that packaging
-gap with verified notices and archive checks; include it in the release candidate.
-That fix does not clear embedded assets or the separate desktop app distribution.
+tracked-media inventory. Verify their exact versions, licenses, notices and
+packaging separately for each distributed binary. The macOS CLI artifact now
+copies and checks native notices through `scripts/package-macos-notices.sh`
+(merged PR #334); its four negative-path tests pass. The separate desktop bundle
+and any published model packs retain their own distribution requirements.

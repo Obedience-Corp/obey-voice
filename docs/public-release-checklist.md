@@ -1,5 +1,8 @@
 # Public release gates
 
+Current evidence and the focused remaining decisions are in
+[public-source readiness](public-release-readiness.md).
+
 The current-tree cleanup for WI-3200c0 does not approve publication. Keep the
 repository and release artifacts private until the owner records these decisions
 and the exact intended public refs and artifacts pass review.
@@ -27,12 +30,16 @@ close a gate. Recheck changed content after the final merge.
   reference clips in `pkg/voiceagent/qwen/voices/veronica/` and `veronicadesk/`.
   Metadata is provenance information, not evidence of permission. If uncleared,
   replace them or remove them together with catalog/default/migration changes.
-- Establish source and redistribution permission for the t3b meeting transcript
-  and source recording. Its local fixture path is now synthetic; the 25 transcript
-  records and timing evidence remain original and are not cleared for publication.
-- Review every retained media asset listed in [media disposition](media-review.json).
-  Documented synthetic generation is not blanket distribution clearance. Unreviewed
-  content is blocked for public release, including assets embedded in binaries.
+- Retain the short t3b excerpt as the owner's chosen attributed technical benchmark;
+  its README and NOTICE record source, purpose, and the unverified license grant.
+  The source recording is not bundled. No replacement is required by default.
+- Review retained assets using proportionate source/privacy evidence in
+  [media disposition](media-review.json). Documented synthetic fixtures and project
+  demos do not require blanket every-frame or listening sweeps. Record the method,
+  actual findings and limitations; resolve specific restrictions or imported voices.
+- Nine Apple System Voice WAVs and two undocumented voiceflow recordings are now
+  replaced with pinned Kokoro controls. Their old bytes remain in Git history;
+  the owner's publication history strategy must address those historical copies.
 - Verify model, voice, font and other bundled third-party asset license obligations
   alongside `LICENSE` and `NOTICE`. Tests and metadata do not establish rights.
 

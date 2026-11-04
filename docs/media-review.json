@@ -1,5 +1,5 @@
 {
-  "policy": "Publication clearance is per asset and bound to its SHA-256. Blocked records identify remaining content or source decisions; see media-review-evidence.md. Inventory integrity alone is not release readiness.",
+  "policy": "Byte-bound review decisions use proportionate source/privacy evidence. Recorded review methods are not exhaustive inspection or legal warranties. Specific unresolved source families remain blocked; see media-review-evidence.md.",
   "assets": [
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_128x128.png",
@@ -229,62 +229,58 @@
     {
       "path": "demos/agent-images.gif",
       "source": "Project-produced UI recording. Deterministic provider and generated geometric image fixtures.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "6b7febb645b3712bd1e89388dadf9446b7a296254973734f6b9a101ff776b8dc",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 17 one-second timeline snapshots and 3 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Deterministic provider and generated geometric image fixtures."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 17 one-second timeline snapshots and 3 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/chat-images.gif",
       "source": "Project-produced UI recording. Deterministic provider and generated geometric image fixtures.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "a32cdec559b2f6fa24e5d5116e4043bdb557b4bf4fb2115a6bd12037e838afd7",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 16 one-second timeline snapshots and 2 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Deterministic provider and generated geometric image fixtures."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 16 one-second timeline snapshots and 2 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/context-meter.gif",
       "source": "Project-produced UI recording. Loopback scripted provider and fictional story; no live model or audio.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "170e5fafda83434f1549fe9e3223f912481584be9cdc9bb52a6eb50d917af9f5",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 20 one-second timeline snapshots and 21 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Loopback scripted provider and fictional story; no live model or audio."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 20 one-second timeline snapshots and 21 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/conversation-record.gif",
       "source": "Project-produced UI recording. Scripted capture collision; shown /tmp capture paths and terminal commands belong to the disposable fixture.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "def27db135322bed93e2e9f0ff9c650cf600417ba3b2bfc422d46934ebd7cab6",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 27 one-second timeline snapshots and 11 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted capture collision; shown /tmp capture paths and terminal commands belong to the disposable fixture."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 27 one-second timeline snapshots and 11 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/frames/agent-images-draft.png",
@@ -294,8 +290,8 @@
       "content_review": "complete",
       "sha256": "17bd947d04a57c33f711803c36d345f79a617320389e0eb49a9a053fee642f07",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic terminal UI and colored rectangle attachment preview; tape recipe demos/agent-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -308,8 +304,8 @@
       "content_review": "complete",
       "sha256": "65298eec07c3e831ea5c247ecc82cc9b00a85a4aa5097ea07f5d447bf5d28006",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic terminal UI and colored rectangle attachment/thread preview; tape recipe demos/agent-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -322,8 +318,8 @@
       "content_review": "complete",
       "sha256": "17bd947d04a57c33f711803c36d345f79a617320389e0eb49a9a053fee642f07",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic terminal UI and colored rectangle attachment preview; tape recipe demos/chat-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -336,8 +332,8 @@
       "content_review": "complete",
       "sha256": "7ef8f5aa00b0a7a86d8176915d774b65e22fead987b9c449c422aa318e693d94",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic terminal UI and colored rectangle attachment/thread preview; tape recipe demos/chat-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -350,8 +346,8 @@
       "content_review": "complete",
       "sha256": "65a885b94942852e4f512295df7d759f614a18c3fe4ec9ed1295e243a503fc4e",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic scripted chat/tool-call transcript; tape recipe demos/tool-calls.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -364,8 +360,8 @@
       "content_review": "complete",
       "sha256": "f8844896a125a777498eb59efd44cc7edc3c3e427c84a80b4230d515058acd4a",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -378,8 +374,8 @@
       "content_review": "complete",
       "sha256": "cf65c0d1a8e1fd3feae944466eef17270099e886596ee7c7cd22b354d045b35f",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice-short.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -392,8 +388,8 @@
       "content_review": "complete",
       "sha256": "1832e0ae1158accaa32eda13466af8bdcd48a82d07acc30fc133fddbf1696b06",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice-short.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -406,8 +402,8 @@
       "content_review": "complete",
       "sha256": "85cd805bbf035588ac8811268ae524cb76ae0f16492e492793c6bda1a3a8eb30",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic terminal UI and seeded notice records; demos/launcher-notice.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -420,8 +416,8 @@
       "content_review": "complete",
       "sha256": "98b403609f5bdf001e25d12390783460a3761c2771ae3510d733b52d4ec3a5f0",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic terminal launcher; source is demos/tool-calls.tape or demo launcher tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -434,8 +430,8 @@
       "content_review": "complete",
       "sha256": "5f54c70e7ec688bb0848dafa4e3dfdf6ec52bdc6a6e9262fae9669f2b8cda437",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored UI and synthetic fixture content distributed as repository documentation."
       }
@@ -448,8 +444,8 @@
       "content_review": "complete",
       "sha256": "47648f6728701858184a440a2765998227091f14aa0c1b4e1e6382688e0ef831",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored UI and synthetic fixture content distributed as repository documentation."
       }
@@ -462,8 +458,8 @@
       "content_review": "complete",
       "sha256": "41be5089afffdf5ef0bc0f5a429a1f0eef844de9b6e0d898e4179036dd57a44f",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored UI and synthetic fixture content distributed as repository documentation."
       }
@@ -476,8 +472,8 @@
       "content_review": "complete",
       "sha256": "ccfeaa16790b5849699794e2fe4f57e884325b555b8a24a7cae4882eaa5fbf77",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Regenerated screenshot inspected; model editor uses a disposable temporary directory rather than the real worktree. Synthetic Alex display name is seeded. See docs/media-review-evidence.md#project-ui-captures. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored UI and synthetic fixture content distributed as repository documentation."
       }
@@ -490,8 +486,8 @@
       "content_review": "complete",
       "sha256": "6a9523e40a6ebd7553d4c06f46ccb77ff35ae63701edb8ec61291d4f603923d3",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Independent review found that the previously cleared screenshot still showed the owner name. Replaced from corrected GIF and individually inspected: user_name now resolves to Alex. See docs/media-review-evidence.md#project-ui-captures.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -504,8 +500,8 @@
       "content_review": "complete",
       "sha256": "2ceabfb0689f7e6c6cc77ca0300650c26077843c527b74768903bacf8c5ba799",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic voice-row UI; no user transcript or identity visible in inspected still. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -518,8 +514,8 @@
       "content_review": "complete",
       "sha256": "2af49198d06c28e3413415ec39d38531dd23bdf17c4a9631542481fc94b8edea",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic voice-row UI; no user transcript or identity visible in inspected still. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -532,8 +528,8 @@
       "content_review": "complete",
       "sha256": "e179f3f313f5a5a1d3cc627a7888dd0433ca76f56efe793732e0f0cbe5a61092",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic settings UI for meeting routing; demos/meeting-route-speaker.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -546,8 +542,8 @@
       "content_review": "complete",
       "sha256": "0e5674a2affe1869b593a21de6df8879b31810aaf84347b35aa5c063bac6b5b8",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic settings UI and seeded campaign routes; demos/meeting-route-speaker.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -560,8 +556,8 @@
       "content_review": "complete",
       "sha256": "7e993a36d549d0c82a616f814064190f636bd507f9789197f5acc0606e5567d6",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic settings UI for speaker attribution; demos/meeting-route-speaker.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -574,8 +570,8 @@
       "content_review": "complete",
       "sha256": "34e3034bfc0d41b5e3874543d705b701ab37e76cd59a877a8c8e2383a4d8a194",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic scripted chat response; demos/think-blocks.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -588,8 +584,8 @@
       "content_review": "complete",
       "sha256": "cc528394c92aec260a1570c588c27a5fbfdd4fd5fc996503d65a5566b8cad2e8",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic scripted chat/thinking response; demos/think-blocks.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -602,8 +598,8 @@
       "content_review": "complete",
       "sha256": "9a6c6a28931ee3821f86345bfdd7da722209d054dbe8f59b39f879c156aa0b22",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic scripted chat/thinking response; demos/think-blocks.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -616,8 +612,8 @@
       "content_review": "complete",
       "sha256": "bc7b0c3a26ce4c68e0e27c4f8e85031eefffcd34b470db276d0cdf0c40c9b72a",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic voice-meter/meeting UI; demos/meeting.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -630,8 +626,8 @@
       "content_review": "complete",
       "sha256": "d700ad9a251de53659522a5b044945418a9d9814ca57fdfe4436fb309137f6ab",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic scripted work cue and task; demos/work-cue.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -644,8 +640,8 @@
       "content_review": "complete",
       "sha256": "f164c23c5cc06497cf39b50d5bc5b9fce5dcda8fc38d09b1f51b55712be9e36c",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic scripted work cue and task; demos/work-cue.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -658,8 +654,8 @@
       "content_review": "complete",
       "sha256": "abd33b9acf59902c6aa9c404f61916bccf8649d3dbaeed5234965dfb5674f51a",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic scripted work cue and task; demos/work-cue.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -672,8 +668,8 @@
       "content_review": "complete",
       "sha256": "4ec3a3b77df8c55209063a5b34d3da224456473e98af2f7e524d33e9af0814eb",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Synthetic fixture worker output and weather lookup JSON; demos/workers.tape and internal/tui/demo_workers.go. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -681,392 +677,366 @@
     {
       "path": "demos/launcher-notice-short.gif",
       "source": "Project-produced UI recording. Test-only terminal entry point with synthetic notice and campaign paths.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "ee7855e14e77e898a61da225da2ce6dbd287eac0dbd991af276a2c2b435257a9",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 6 one-second timeline snapshots and 3 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Test-only terminal entry point with synthetic notice and campaign paths."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 6 one-second timeline snapshots and 3 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/launcher-notice.gif",
       "source": "Project-produced UI recording. Test-only terminal entry point with synthetic notice and campaign paths.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "d4a58ebbffc124857a54e779fc6fe0878f838ce5b05f024c6316bc465876db7a",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 5 one-second timeline snapshots and 2 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Test-only terminal entry point with synthetic notice and campaign paths."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 5 one-second timeline snapshots and 2 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/library.gif",
       "source": "Project-produced UI recording. Fake calibredb catalog with project-written short descriptions, title/author labels and synthetic paths; no book covers or full books shown.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "59bfe112fef61182363e2dccde9068094033d687374d52a0ec99206f84a51ebe",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 23 one-second timeline snapshots and 11 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Fake calibredb catalog with project-written short descriptions, title/author labels and synthetic paths; no book covers or full books shown."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 23 one-second timeline snapshots and 11 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/meeting-route-speaker.gif",
       "source": "Project-produced UI recording. Fake campaign CLI and scripted meeting speech events with generic example title/note.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "5c096709c6cca4af9af173586ddf8f07302c5b95c9f2c9c35b3111a2ae74cc9b",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 40 one-second timeline snapshots and 19 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Fake campaign CLI and scripted meeting speech events with generic example title/note."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 40 one-second timeline snapshots and 19 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/meeting-speakers.gif",
       "source": "Project-produced UI recording. Source-defined generic speaker dialogue; not the real meeting audio corpus.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "849c2747a49be168806b755c0c4ef4911f71a4878ae13fc5c3e301b1b0c32ada",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 20 one-second timeline snapshots and 19 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Source-defined generic speaker dialogue; not the real meeting audio corpus."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 20 one-second timeline snapshots and 19 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/meeting.gif",
       "source": "Project-produced UI recording. Scripted meeting speech events, title, note and bookmark; no live microphone.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "46f327843c38e9632e2791c74a75da6b50ba3e111fae77a2e073bed56506bb02",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 22 one-second timeline snapshots and 27 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted meeting speech events, title, note and bookmark; no live microphone."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 22 one-second timeline snapshots and 27 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/persona-create.gif",
       "source": "Project-produced UI recording. Scripted Research Buddy persona and prompt edits.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "2372ae9b2d833d055cff08c54eeebe1fee6177b3021f1ae99db6164e6a1c8beb",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 32 one-second timeline snapshots and 12 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted Research Buddy persona and prompt edits."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 32 one-second timeline snapshots and 12 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/persona-form-ux.gif",
       "source": "Project-produced recording from the updated VHS tape and disposable synthetic configuration.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "14252f652bf57a06216901e6eea0afd2c8549269f9f7154337aac9bd8cecec3b",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Persona form regenerated; current navigation reaches prompt variable picker and visibly resolves user_name to Alex; voice playback omitted. Source tape and regenerated scenes reviewed; not every-frame inspection. See docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and synthetic fixture content, retained as repository documentation."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Persona form regenerated; current navigation reaches prompt variable picker and visibly resolves user_name to Alex; voice playback omitted. Source tape and regenerated scenes reviewed; not every-frame inspection. See docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/persona-model-view.gif",
       "source": "Project-produced recording from the updated VHS tape and disposable synthetic configuration.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "f2cb4ca6154a6c4e1fef24b384d210075cfac132bf8ad07b0068be6eaee2d839",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Persona model UI and four settled PNGs regenerated; editor shows only disposable temporary directory. Source tape and regenerated scenes reviewed; not every-frame inspection. See docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and synthetic fixture content, retained as repository documentation."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Persona model UI and four settled PNGs regenerated; editor shows only disposable temporary directory. Source tape and regenerated scenes reviewed; not every-frame inspection. See docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/persona-switch.gif",
       "source": "Project-produced UI recording. Disposable seeded persona profiles; no personal configuration.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "ec431668ee08852ba1214676baa3433d4f6ecb321f54139da0e8b60b816258ac",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 15 one-second timeline snapshots and 5 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Disposable seeded persona profiles; no personal configuration."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 15 one-second timeline snapshots and 5 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/qwen-voices.gif",
       "source": "Project-produced UI recording. Fake package fixture; only interface/voice labels, no model download or inference.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "46df94a275fae22f5d2d3bf9a8c209e54a470fa1b04914cf5de437ea3a0df7dc",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 22 one-second timeline snapshots and 14 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Fake package fixture; only interface/voice labels, no model download or inference."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 22 one-second timeline snapshots and 14 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/settings-sidebar.gif",
       "source": "Project UI settings capture regenerated from updated VHS tape; disposable configuration and working directory, unavailable loopback providers, no host device-list scene.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "d4eb6f577d3a280d2b13a1d710d6bc1e3b2079714a9e1f4790373191ee874caf",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Source tape and eight evenly spaced final frames inspected; Brain/Workers/Tools/Voice/Meeting browsing, no named devices or real campaign destinations. Provider/voice values unchanged. Sampling, not every-frame inspection. See docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and disposable demo configuration retained as repository documentation."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source tape and eight evenly spaced final frames inspected; Brain/Workers/Tools/Voice/Meeting browsing, no named devices or real campaign destinations. Provider/voice values unchanged. Sampling, not every-frame inspection. See docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/think-blocks.gif",
       "source": "Project-produced UI recording. Scripted fictional response and thinking events.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "9a5b4a4a146de621bea756370e121d25699af282b5d0a8834719a8a2fdf8c82e",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 28 one-second timeline snapshots and 8 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted fictional response and thinking events."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 28 one-second timeline snapshots and 8 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/tool-calls.gif",
       "source": "Legacy project UI capture using a live Ollama provider and real list_files tool; source tape links an existing user model cache.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_legacy_capture_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "3532eeb5391a300715ebbf513bf07390d17e0a81703aaf6c6d9b968d27abbaea",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Initial eight-frame sample plus 30 one-second and four scene-change snapshots showed generic directory names and response; no confirmed private disclosure. Capture source is live/variable, unlike the deterministic demos.",
-        "rights_evidence": "Project UI capture; no imported artwork identified in sampled frames. Content provenance still needs closure; see docs/media-review-evidence.md#project-ui-captures."
-      },
-      "next_action": "Review the complete legacy recording or regenerate with a deterministic provider and synthetic filesystem; do not call the live-source tape an isolated synthetic fixture."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Initial eight-frame sample plus 30 one-second and four scene-change snapshots showed generic directory names and response; no confirmed private disclosure. Capture source is live/variable, unlike the deterministic demos. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/voice-meter.gif",
       "source": "Project-produced UI recording. Scripted event-bus animation with disposable configuration.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "ac93d449a89e181d8fb48fb3c2a908b848780bae245826c5d7c289eb14437db3",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 25 one-second timeline snapshots and 10 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted event-bus animation with disposable configuration."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 25 one-second timeline snapshots and 10 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/work-cue.gif",
       "source": "Project-produced UI recording. Scripted worker/weather example with no live model or microphone.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "5ac5f0c2c65ee3c6327d70a8beb8358d34d91c8134c01ba0f7e0e8eee21dbdb2",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 18 one-second timeline snapshots and 9 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Scripted worker/weather example with no live model or microphone."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 18 one-second timeline snapshots and 9 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "demos/workers.gif",
       "source": "Project-produced UI recording. Injected fixture search job; generic synthetic weather result.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "0993bd66bf5294dcd964a1fe69af7c354e3aac5b6942d32e197664d4c877133a",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 11 one-second timeline snapshots and 6 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Injected fixture search job; generic synthetic weather result."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 11 one-second timeline snapshots and 6 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "docs/audio-jobs/evidence/direct-output.wav",
       "source": "LFM3 direct/staged reproduction trials using AMI ES2002a input; see adjacent receipts and README, separate from fixed-script narration trial.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "73edc8adba7fbb7a2e72903b633965c41419a0dedf8e73dee212071cdccb7935",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#other-wav-evidence.",
-        "rights_evidence": "Source attribution recorded; exact generated output correspondence/content and applicable model terms remain to be verified."
-      },
-      "next_action": "Review actual output audio against each receipt and preserve AMI attribution; do not claim source-voice absence from narration documentation."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source receipts and actual offline Parakeet ASR reviewed on 2026-11-04. Kokoro prompts match with filler/number variation; audio-job outputs correspond to failed direct/staged conversion receipts, including real meeting speech in staged output. No listening, identity or voice-similarity claim. See docs/media-review-evidence.md#existing-synthetic-and-benchmark-wavs.",
+        "rights_evidence": "Retained short attributed technical benchmark output, with source AMI ES2002a CC BY 4.0 attribution and LFM3 failed-conversion receipts in adjacent README/NOTICE. No claim of source-voice absence or blanket performer/likeness clearance."
+      }
     },
     {
       "path": "docs/audio-jobs/evidence/recorded-staged-output.wav",
       "source": "LFM3 direct/staged reproduction trials using AMI ES2002a input; see adjacent receipts and README, separate from fixed-script narration trial.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "d3479db6e61213847da350f2bb7c7ead45f7cb9ca8fa1232029a689834af79a1",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#other-wav-evidence.",
-        "rights_evidence": "Source attribution recorded; exact generated output correspondence/content and applicable model terms remain to be verified."
-      },
-      "next_action": "Review actual output audio against each receipt and preserve AMI attribution; do not claim source-voice absence from narration documentation."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source receipts and actual offline Parakeet ASR reviewed on 2026-11-04. Kokoro prompts match with filler/number variation; audio-job outputs correspond to failed direct/staged conversion receipts, including real meeting speech in staged output. No listening, identity or voice-similarity claim. See docs/media-review-evidence.md#existing-synthetic-and-benchmark-wavs.",
+        "rights_evidence": "Retained short attributed technical benchmark output, with source AMI ES2002a CC BY 4.0 attribution and LFM3 failed-conversion receipts in adjacent README/NOTICE. No claim of source-voice absence or blanket performer/likeness clearance."
+      }
     },
     {
       "path": "docs/audio/golden/N2/after.wav",
       "source": "Locally synthesized Kokoro af_heart; adjacent provenance JSON or testdata/kws/README.md records text and generation details.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "ddd1ce05d77ceb30663a52e20cd43868f41777c662135bfc3a41803306dcebc6",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#kokoro-synthetic-audio.",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source receipts and actual offline Parakeet ASR reviewed on 2026-11-04. Kokoro prompts match with filler/number variation; audio-job outputs correspond to failed direct/staged conversion receipts, including real meeting speech in staged output. No listening, identity or voice-similarity claim. See docs/media-review-evidence.md#existing-synthetic-and-benchmark-wavs.",
         "rights_evidence": "Routine generated-output use supported by published Apache-2.0 pack/model terms; see media-review-evidence.md#kokoro-synthetic-audio."
-      },
-      "next_action": "Verify actual audible content against documented synthetic text; keep quality listening checks separate."
+      }
     },
     {
       "path": "docs/audio/golden/N2/before.wav",
       "source": "Locally synthesized Kokoro af_heart; adjacent provenance JSON or testdata/kws/README.md records text and generation details.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "0b0b23d6002c1803929d0a156f8196a8cf1544459e67306b6bb19cf0fb1eb4d7",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#kokoro-synthetic-audio.",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source receipts and actual offline Parakeet ASR reviewed on 2026-11-04. Kokoro prompts match with filler/number variation; audio-job outputs correspond to failed direct/staged conversion receipts, including real meeting speech in staged output. No listening, identity or voice-similarity claim. See docs/media-review-evidence.md#existing-synthetic-and-benchmark-wavs.",
         "rights_evidence": "Routine generated-output use supported by published Apache-2.0 pack/model terms; see media-review-evidence.md#kokoro-synthetic-audio."
-      },
-      "next_action": "Verify actual audible content against documented synthetic text; keep quality listening checks separate."
+      }
     },
     {
       "path": "docs/audio/golden/N3/after.wav",
       "source": "Locally synthesized Kokoro af_heart; adjacent provenance JSON or testdata/kws/README.md records text and generation details.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "bf426088b3e2dcb08f515d72968af18315dcd66980ec66a01e5030b0ef67ee9c",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#kokoro-synthetic-audio.",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source receipts and actual offline Parakeet ASR reviewed on 2026-11-04. Kokoro prompts match with filler/number variation; audio-job outputs correspond to failed direct/staged conversion receipts, including real meeting speech in staged output. No listening, identity or voice-similarity claim. See docs/media-review-evidence.md#existing-synthetic-and-benchmark-wavs.",
         "rights_evidence": "Routine generated-output use supported by published Apache-2.0 pack/model terms; see media-review-evidence.md#kokoro-synthetic-audio."
-      },
-      "next_action": "Verify actual audible content against documented synthetic text; keep quality listening checks separate."
+      }
     },
     {
       "path": "docs/audio/golden/N3/before.wav",
       "source": "Locally synthesized Kokoro af_heart; adjacent provenance JSON or testdata/kws/README.md records text and generation details.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "6ef6b7941cbb34fa2fce14cba4de5770bf0a26196ce7f1851598b2df3a1f132b",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#kokoro-synthetic-audio.",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source receipts and actual offline Parakeet ASR reviewed on 2026-11-04. Kokoro prompts match with filler/number variation; audio-job outputs correspond to failed direct/staged conversion receipts, including real meeting speech in staged output. No listening, identity or voice-similarity claim. See docs/media-review-evidence.md#existing-synthetic-and-benchmark-wavs.",
         "rights_evidence": "Routine generated-output use supported by published Apache-2.0 pack/model terms; see media-review-evidence.md#kokoro-synthetic-audio."
-      },
-      "next_action": "Verify actual audible content against documented synthetic text; keep quality listening checks separate."
+      }
     },
     {
       "path": "docs/audio/golden/N6/after.wav",
       "source": "Locally synthesized Kokoro af_heart; adjacent provenance JSON or testdata/kws/README.md records text and generation details.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "fda4b1a173d619fd6e6047905283d574457379092ec70cc916aa2290ed33eb4d",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#kokoro-synthetic-audio.",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source receipts and actual offline Parakeet ASR reviewed on 2026-11-04. Kokoro prompts match with filler/number variation; audio-job outputs correspond to failed direct/staged conversion receipts, including real meeting speech in staged output. No listening, identity or voice-similarity claim. See docs/media-review-evidence.md#existing-synthetic-and-benchmark-wavs.",
         "rights_evidence": "Routine generated-output use supported by published Apache-2.0 pack/model terms; see media-review-evidence.md#kokoro-synthetic-audio."
-      },
-      "next_action": "Verify actual audible content against documented synthetic text; keep quality listening checks separate."
+      }
     },
     {
       "path": "docs/audio/golden/N6/before.wav",
       "source": "Locally synthesized Kokoro af_heart; adjacent provenance JSON or testdata/kws/README.md records text and generation details.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "59c3455f30251b62f9949ea1dd129eb38dee47f56d73559fbfbd420ccba6f9ad",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#kokoro-synthetic-audio.",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source receipts and actual offline Parakeet ASR reviewed on 2026-11-04. Kokoro prompts match with filler/number variation; audio-job outputs correspond to failed direct/staged conversion receipts, including real meeting speech in staged output. No listening, identity or voice-similarity claim. See docs/media-review-evidence.md#existing-synthetic-and-benchmark-wavs.",
         "rights_evidence": "Routine generated-output use supported by published Apache-2.0 pack/model terms; see media-review-evidence.md#kokoro-synthetic-audio."
-      },
-      "next_action": "Verify actual audible content against documented synthetic text; keep quality listening checks separate."
+      }
     },
     {
       "path": "docs/benchmarks/t3b/transcripts.json",
-      "source": "25 records derived from public YouTube Product Marketing Meeting (weekly) 2021-06-28, lBVtvOpU80Q; see tests/fixtures/meetings/README.md.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "source": "25 transcript segments from first ~90 seconds of GitLab Unfiltered Product Marketing Meeting (weekly) 2021-06-28; URL and purpose in adjacent README and NOTICE.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
-      "sha256": "c45181734603ebda4aff9aa5124356957336da79137efdf3ceedb148257a3d6e",
+      "sha256": "a04f8d1152627b146025d1b219410e5a350c66b221e3abd5350979b2f3b1d805",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "All 25 retained records read; no email-, phone- or URL-like strings found. Text and timings remain source-derived, not synthetic. See docs/media-review-evidence.md#meeting-transcript.",
-        "rights_evidence": "Public availability does not establish redistribution permission; owner source-license or replacement decision pending."
-      },
-      "next_action": "Confirm source redistribution basis or replace corpus and regenerate dependent attribution/timing outputs."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "All 25 records individually read; text/timing unchanged. Retained as an attributed speech/speaker-attribution benchmark by owner decision on 2026-11-04.",
+        "rights_evidence": "Owner accepts narrow technical benchmark retention with a plausible fair-use rationale; explicit source license grant has not been verified. Public availability is not treated as permission. Source material is not relicensed under the repository AGPL notice."
+      }
     },
     {
       "path": "docs/images/desktop-conversation.png",
@@ -1076,8 +1046,8 @@
       "content_review": "complete",
       "sha256": "fa713c71d7ca95208912cecb467dc6c05704079ebd004eb4b490b4e290ae2721",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Static desktop UI mock/screenshot with generic sample conversation; no identity, credentials, personal-data or inappropriate content visible. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -1090,8 +1060,8 @@
       "content_review": "complete",
       "sha256": "77111da8e8d4a1baa7fa8bfecbf2ca782ac63765a9eccdbfa00966aa94bc9e8f",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Static desktop UI mock/screenshot with generic home screen content; no identity, credentials or personal-data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -1104,8 +1074,8 @@
       "content_review": "complete",
       "sha256": "4adaae858fd3723af096894032a9de8fd7ca7e77bd8062b457e892a168957de4",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Static desktop UI mock/screenshot with generic settings; no identity, credentials, device names or personal-data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
         "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
       }
@@ -1113,32 +1083,30 @@
     {
       "path": "docs/images/tui.gif",
       "source": "Project-produced UI recording. Loopback scripted multi-persona conversation and temporary session store.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "sampled_pending_complete_timeline_review",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "9cb7d31ffc0dd5192a678e8b898916b62ea56c603e9e47de73cb4e21aefb63d6",
       "review": {
-        "reviewer": "GPT-6 Luna visual and provenance reviewers; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "Inspected initial eight-frame sample, 32 one-second timeline snapshots and 12 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures.",
-        "rights_evidence": "Project-authored UI and documented synthetic demo content; ordinary repository documentation. Loopback scripted multi-persona conversation and temporary session store."
-      },
-      "next_action": "Complete retained GIF timeline review before publication. Existing sampled-frame/source evidence is preliminary, not a final content clearance."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Inspected initial eight-frame sample, 32 one-second timeline snapshots and 12 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
+        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+      }
     },
     {
       "path": "pkg/voiceagent/nativeaudio/assets/setup.wav",
-      "source": "macOS System Voice synthesis; exact text and Samantha/Daniel voice recorded in adjacent README.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "fdc8158aebc935a488991d208fc19130a0d8f612cf7e58c36c13474e9b4fb5cb",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "2c7314e34fa7a7294aedb0171b31c365b55f44c6d1db3f11026ae423c6a9e072",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#macos-system-voice-fixtures.",
-        "rights_evidence": "Current macOS Tahoe SLA section 2F restricts public redistribution of System Voice recordings; historical accepted terms/separate permission not documented."
-      },
-      "next_action": "Replace with documented redistributable synthetic speech and rerun affected acoustic/setup checks, unless a separate applicable grant exists."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "pkg/voiceagent/qwen/voices/veronica/ref.wav",
@@ -1172,168 +1140,157 @@
     },
     {
       "path": "testdata/kws/bare.wav",
-      "source": "macOS System Voice synthesis; exact text and Samantha/Daniel voice recorded in adjacent README.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "ce5a6a804b058b7f16208b9e19ee1c3315331619c20f73002439ec1f6b1b5cbc",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "e800831710179d11dbac08982e86371db828a53058450fc7d1dfeecb444f33b0",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#macos-system-voice-fixtures.",
-        "rights_evidence": "Current macOS Tahoe SLA section 2F restricts public redistribution of System Voice recordings; historical accepted terms/separate permission not documented."
-      },
-      "next_action": "Replace with documented redistributable synthetic speech and rerun affected acoustic/setup checks, unless a separate applicable grant exists."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "testdata/kws/british.wav",
-      "source": "macOS System Voice synthesis; exact text and Samantha/Daniel voice recorded in adjacent README.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "8d0ebca9ce601c27f9e11317b1e03bb7bc902a267957bc446bf75a93dff35a9b",
+      "source": "Locally generated Kokoro bm_george control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "29c388a1741e5cbc85543a096ccd7dbc548d59d6cb93dc1a052b59c56be967a2",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#macos-system-voice-fixtures.",
-        "rights_evidence": "Current macOS Tahoe SLA section 2F restricts public redistribution of System Voice recordings; historical accepted terms/separate permission not documented."
-      },
-      "next_action": "Replace with documented redistributable synthetic speech and rerun affected acoustic/setup checks, unless a separate applicable grant exists."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "testdata/kws/confusable.wav",
-      "source": "macOS System Voice synthesis; exact text and Samantha/Daniel voice recorded in adjacent README.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "d77c00301d7b33c428835c153e16ffcc586549db054df72a0d3dc830fa92803e",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "ca9797640bf63ee37b2a565c7efd24c0fc2cb7ba4736431ffdfcba41e9921772",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#macos-system-voice-fixtures.",
-        "rights_evidence": "Current macOS Tahoe SLA section 2F restricts public redistribution of System Voice recordings; historical accepted terms/separate permission not documented."
-      },
-      "next_action": "Replace with documented redistributable synthetic speech and rerun affected acoustic/setup checks, unless a separate applicable grant exists."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "testdata/kws/kokoro.wav",
       "source": "Locally synthesized Kokoro af_heart; adjacent provenance JSON or testdata/kws/README.md records text and generation details.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
       "sha256": "3853c9ebe0b98d9d6f0a98d52b7a707479e90e9b995c77b2b35eb7b0d553b473",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#kokoro-synthetic-audio.",
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Source receipts and actual offline Parakeet ASR reviewed on 2026-11-04. Kokoro prompts match with filler/number variation; audio-job outputs correspond to failed direct/staged conversion receipts, including real meeting speech in staged output. No listening, identity or voice-similarity claim. See docs/media-review-evidence.md#existing-synthetic-and-benchmark-wavs.",
         "rights_evidence": "Routine generated-output use supported by published Apache-2.0 pack/model terms; see media-review-evidence.md#kokoro-synthetic-audio."
-      },
-      "next_action": "Verify actual audible content against documented synthetic text; keep quality listening checks separate."
+      }
     },
     {
       "path": "testdata/kws/mention.wav",
-      "source": "macOS System Voice synthesis; exact text and Samantha/Daniel voice recorded in adjacent README.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "09dd5273b38bf3e77ae1e896dc2b10f6d412776e682f11635a1d5c7e7536f1b7",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "ed689db4f19ebc852f73739e7bcf4016ff6c15c000b9234ef03ae9b721309329",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#macos-system-voice-fixtures.",
-        "rights_evidence": "Current macOS Tahoe SLA section 2F restricts public redistribution of System Voice recordings; historical accepted terms/separate permission not documented."
-      },
-      "next_action": "Replace with documented redistributable synthetic speech and rerun affected acoustic/setup checks, unless a separate applicable grant exists."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "testdata/kws/negative.wav",
-      "source": "macOS System Voice synthesis; exact text and Samantha/Daniel voice recorded in adjacent README.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "1551e8c55c4b795113d568085f8e116b652c4939c44153d0a33af501128390f3",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "3ceaaa5be4dfecef442abadd098146bfed8d560497e96747b59209294bba15d4",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#macos-system-voice-fixtures.",
-        "rights_evidence": "Current macOS Tahoe SLA section 2F restricts public redistribution of System Voice recordings; historical accepted terms/separate permission not documented."
-      },
-      "next_action": "Replace with documented redistributable synthetic speech and rerun affected acoustic/setup checks, unless a separate applicable grant exists."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "testdata/kws/other-keyword.wav",
-      "source": "macOS System Voice synthesis; exact text and Samantha/Daniel voice recorded in adjacent README.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "0038cd5576b41f190cf4f63a76e462f11890affa119f1a790d3cb20ad40bc3f0",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "edce43017edaf685f6a71b4ba6c03ccee78634e161db49c86c3f78b20f5b945c",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#macos-system-voice-fixtures.",
-        "rights_evidence": "Current macOS Tahoe SLA section 2F restricts public redistribution of System Voice recordings; historical accepted terms/separate permission not documented."
-      },
-      "next_action": "Replace with documented redistributable synthetic speech and rerun affected acoustic/setup checks, unless a separate applicable grant exists."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "testdata/kws/positive.wav",
-      "source": "macOS System Voice synthesis; exact text and Samantha/Daniel voice recorded in adjacent README.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "99c5bcb84f6b62e82bb68c4bbe2a1c2d82a99d70af1f6e91b377bd19f86dc368",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "b3b8cd3fa367079ffa7bc13680c1af50d778d686033049ff5e708d8aa473bacb",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#macos-system-voice-fixtures.",
-        "rights_evidence": "Current macOS Tahoe SLA section 2F restricts public redistribution of System Voice recordings; historical accepted terms/separate permission not documented."
-      },
-      "next_action": "Replace with documented redistributable synthetic speech and rerun affected acoustic/setup checks, unless a separate applicable grant exists."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "testdata/kws/verb.wav",
-      "source": "macOS System Voice synthesis; exact text and Samantha/Daniel voice recorded in adjacent README.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "18b8a6cf8a89ee91ea58edcb1422e5ab01ae9723eb8fa986493d27cbc5ad06c0",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "36e37134d5742cdea43c7bf95cbc1e7eb74c8d23dfbcfd2ae6e453624dacffac",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#macos-system-voice-fixtures.",
-        "rights_evidence": "Current macOS Tahoe SLA section 2F restricts public redistribution of System Voice recordings; historical accepted terms/separate permission not documented."
-      },
-      "next_action": "Replace with documented redistributable synthetic speech and rerun affected acoustic/setup checks, unless a separate applicable grant exists."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "tests/voiceflow/testdata/barge_in.wav",
-      "source": "Voiceflow replay fixture introduced in 8fb92ef9; fake STT expected output is not source provenance.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "970c89ea66a4de6958d0b1c9913cdaa50580bb7fc08be315f75f9b4f79d78e7c",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "2dee37f5751508c56673eb2f90ed17dc3c5ca7294a4ff2106155eeb130bf592a",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#other-wav-evidence.",
-        "rights_evidence": "Original recording/synthesis source not established."
-      },
-      "next_action": "Establish origin and review actual audio, or replace with documented synthetic controls and verify voiceflow behavior."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     },
     {
       "path": "tests/voiceflow/testdata/utterance.wav",
-      "source": "Voiceflow replay fixture introduced in 8fb92ef9; fake STT expected output is not source provenance.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
-      "sha256": "514d15318033b31ef28e17643d3a5fdeaa9b325ed389dce924ca77c445a5a8a0",
+      "source": "Locally generated Kokoro af_heart control; pinned source pack, prompt, samples and WAV hash in docs/audio/public-fixtures.json. No imported performer recording.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "a598c70799d1071dd1dbeea0135ca1ad62393372e18ebd8f3f9eaa9515a3fdcf",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#other-wav-evidence.",
-        "rights_evidence": "Original recording/synthesis source not established."
-      },
-      "next_action": "Establish origin and review actual audio, or replace with documented synthetic controls and verify voiceflow behavior."
+        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
+        "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
     }
   ]
 }

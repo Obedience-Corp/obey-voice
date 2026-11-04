@@ -1,0 +1,117 @@
+{
+  "generator": "cmd/golden-tts",
+  "provider": "kokoro",
+  "pack": "sherpa-multi-lang-v1_0",
+  "speed": 0.95,
+  "sample_rate": 16000,
+  "sample_width_bytes": 2,
+  "channels": 1,
+  "archive_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2",
+  "archive_sha256": "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298",
+  "model_sha256": "b40f62b166ac8164b0627ef48a0b358eda0985e272fb03ef5252e7206305da11",
+  "voices_sha256": "1c5a5b983d3d50d8586d437a51f3faa2da7919ce76a013c081e65671a3447c29",
+  "license": "Apache-2.0",
+  "license_url": "https://huggingface.co/csukuangfj/kokoro-multi-lang-v1_0/blob/main/LICENSE",
+  "files": [
+    {
+      "path": "testdata/kws/bare.wav",
+      "voice": "af_heart",
+      "text": "Obey.",
+      "samples": 11532,
+      "sha256": "e800831710179d11dbac08982e86371db828a53058450fc7d1dfeecb444f33b0",
+      "pcm_sha256": "8b0d6ae1f4f12711c89fe397467c9f0b3613d5bfce4e23569be4bbbd98773168"
+    },
+    {
+      "path": "testdata/kws/positive.wav",
+      "voice": "af_heart",
+      "text": "Hey Obey, tell me the weather.",
+      "samples": 29056,
+      "sha256": "b3b8cd3fa367079ffa7bc13680c1af50d778d686033049ff5e708d8aa473bacb",
+      "pcm_sha256": "13c85ee8fd4f1eff93a1c96ec250d8c66989fe7d8231c9134e985cec9ff16236"
+    },
+    {
+      "path": "testdata/kws/british.wav",
+      "voice": "bm_george",
+      "text": "Obey, can you help me?",
+      "samples": 27994,
+      "sha256": "29c388a1741e5cbc85543a096ccd7dbc548d59d6cb93dc1a052b59c56be967a2",
+      "pcm_sha256": "1af85016d780873a18ba179dc9eb58465bd06194b879c551d9f25ad929ea3804"
+    },
+    {
+      "path": "testdata/kws/verb.wav",
+      "voice": "af_heart",
+      "text": "You must obey the rules.",
+      "samples": 23799,
+      "sha256": "36e37134d5742cdea43c7bf95cbc1e7eb74c8d23dfbcfd2ae6e453624dacffac",
+      "pcm_sha256": "1f3cea8587a76df81b69dd5972d99d72ed10041df1a5bf3094fa489cce309905"
+    },
+    {
+      "path": "testdata/kws/mention.wav",
+      "voice": "af_heart",
+      "text": "Tell me about Obey.",
+      "samples": 18979,
+      "sha256": "ed689db4f19ebc852f73739e7bcf4016ff6c15c000b9234ef03ae9b721309329",
+      "pcm_sha256": "c6c3876efe51c8d76945901b2efb93787c3f98dd6cbdbc780bf1da5c3e06b2b3"
+    },
+    {
+      "path": "testdata/kws/negative.wav",
+      "voice": "af_heart",
+      "text": "Okay, tell me the weather.",
+      "samples": 25091,
+      "sha256": "3ceaaa5be4dfecef442abadd098146bfed8d560497e96747b59209294bba15d4",
+      "pcm_sha256": "6a7e57bf85eb323ec89ec84b1a75b7e37be6a11922503e610a78f22a7f980a1c"
+    },
+    {
+      "path": "testdata/kws/other-keyword.wav",
+      "voice": "af_heart",
+      "text": "I will love you forever.",
+      "samples": 21150,
+      "sha256": "edce43017edaf685f6a71b4ba6c03ccee78634e161db49c86c3f78b20f5b945c",
+      "pcm_sha256": "1649eefb8a80791514b4425a7cd08507f0da144a80b1a4e064d41ab28a86d0e7"
+    },
+    {
+      "path": "testdata/kws/confusable.wav",
+      "voice": "af_heart",
+      "text": "Oh baby, what a beautiful day.",
+      "samples": 31427,
+      "sha256": "ca9797640bf63ee37b2a565c7efd24c0fc2cb7ba4736431ffdfcba41e9921772",
+      "pcm_sha256": "441f732b061a6027350752414f327f386cc27d18eb95d63a85d281d6d3f35ce4"
+    },
+    {
+      "path": "pkg/voiceagent/nativeaudio/assets/setup.wav",
+      "voice": "af_heart",
+      "text": "What is seven plus eight? Reply with only the answer.",
+      "samples": 49893,
+      "sha256": "2c7314e34fa7a7294aedb0171b31c365b55f44c6d1db3f11026ae423c6a9e072",
+      "pcm_sha256": "da85cbdf1e2485279e8b6892da15d0a62f2158f5d826b2707f45bc7f01cca3aa"
+    },
+    {
+      "path": "tests/voiceflow/testdata/utterance.wav",
+      "voice": "af_heart",
+      "text": "Hello Samantha.",
+      "samples": 18794,
+      "sha256": "a598c70799d1071dd1dbeea0135ca1ad62393372e18ebd8f3f9eaa9515a3fdcf",
+      "pcm_sha256": "943e885b5a3b90c4449ec9ea9b6a5835a9022cbc2cf837bbf24409624f5846bc"
+    },
+    {
+      "path": "tests/voiceflow/testdata/barge_in.wav",
+      "voice": "af_heart",
+      "text": "Okay.",
+      "samples": 11672,
+      "sha256": "2dee37f5751508c56673eb2f90ed17dc3c5ca7294a4ff2106155eeb130bf592a",
+      "pcm_sha256": "1a4ca6968cb7a6ff6acf2f9d2baa7d961524fb850558652abd3067cb505dc9bc"
+    }
+  ],
+  "reproduction_note": "Source inputs and native stack are pinned; floating-point synthesis may change PCM bytes or sample counts across runs. Every regeneration requires new byte-bound review; bit-identical regeneration is not promised.",
+  "auxiliary_sha256": {
+    "tokens.txt": "6ebb6bb288f20f3ae8d004d3c2ca27697da27c037d75e81a60e2a6a663f95425",
+    "espeak-ng-data": "e9c56f8c7cc79f16b1a2dc482074ed777e5b881da2a215a6f99630284dc4b3b8",
+    "lexicon-us-en.txt": "7daaab53a181be9885b853a8582bf1838186317e5dadacbcef9c426d6fa0da14",
+    "lexicon-gb-en.txt": "c4cbb37316f62210dff52718a7afcaae24f50c032cc75ab47ae67b831d1049e7",
+    "lexicon-zh.txt": "902bc2d20ac7c449c5ecbbbb23c89d12119c03ed5b8ed27f114f0260c9e35229",
+    "dict": "f2c6cdac281ed6bf4fedc985cdc147220c3c23d9253d3055fc4e7f63ad0c5f6e",
+    "date-zh.fst": "eb8aa079ae3cb81d8f4404992f39d61a0cb990947512b5b8d1e54d1f6980e718",
+    "number-zh.fst": "743f402181fcfebf76cc2f0546b71fa26476e626fbe4e460fb7b4c3a7a8bd5bd"
+  },
+  "directory_hash_method": "SHA-256 over sorted relative POSIX file names, NUL separator, and each file raw SHA-256 digest; no directory metadata."
+}

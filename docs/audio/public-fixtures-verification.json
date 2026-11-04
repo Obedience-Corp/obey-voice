@@ -1,0 +1,161 @@
+{
+  "method": "Explicit native KWS model; all nine labeled WAVs, clean and deterministic 10 dB white noise. No microphone/playback.",
+  "source_commit": "15f4ae2b525d1ae8043f3dab8f7b6535ffddd297",
+  "replacement_counts": {
+    "10dB white noise": {
+      "hits": 6,
+      "misses": 0,
+      "false_matches": 1,
+      "correct_negatives": 2
+    },
+    "clean": {
+      "hits": 6,
+      "misses": 0,
+      "false_matches": 1,
+      "correct_negatives": 2
+    }
+  },
+  "previous_fixture_counts": {
+    "10dB white noise": {
+      "hits": 3,
+      "misses": 3,
+      "false_matches": 0,
+      "correct_negatives": 3
+    },
+    "clean": {
+      "hits": 5,
+      "misses": 1,
+      "false_matches": 1,
+      "correct_negatives": 2
+    }
+  },
+  "limitation": "Different recordings: these counts characterize these fixtures, not a model accuracy improvement. Confusable Oh baby falsely matches Obey in both replacement conditions; acoustic evidence alone must not authorize routing.",
+  "replacement_results": [
+    {
+      "file": "bare.wav",
+      "spoken": "Obey.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey"
+    },
+    {
+      "file": "bare.wav",
+      "spoken": "Obey.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "Obey"
+    },
+    {
+      "file": "positive.wav",
+      "spoken": "Hey Obey, tell me the weather.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey"
+    },
+    {
+      "file": "positive.wav",
+      "spoken": "Hey Obey, tell me the weather.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "Obey"
+    },
+    {
+      "file": "british.wav",
+      "spoken": "Obey, can you help me?",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey"
+    },
+    {
+      "file": "british.wav",
+      "spoken": "Obey, can you help me?",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "Obey"
+    },
+    {
+      "file": "kokoro.wav",
+      "spoken": "Hey Obey, tell me the weather.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey"
+    },
+    {
+      "file": "kokoro.wav",
+      "spoken": "Hey Obey, tell me the weather.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "Obey"
+    },
+    {
+      "file": "verb.wav",
+      "spoken": "You must obey the rules.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey"
+    },
+    {
+      "file": "verb.wav",
+      "spoken": "You must obey the rules.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "Obey"
+    },
+    {
+      "file": "mention.wav",
+      "spoken": "Tell me about Obey.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey"
+    },
+    {
+      "file": "mention.wav",
+      "spoken": "Tell me about Obey.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "Obey"
+    },
+    {
+      "file": "negative.wav",
+      "spoken": "Okay, tell me the weather.",
+      "want_keyword": false,
+      "condition": "clean",
+      "keyword": ""
+    },
+    {
+      "file": "negative.wav",
+      "spoken": "Okay, tell me the weather.",
+      "want_keyword": false,
+      "condition": "10dB white noise",
+      "keyword": ""
+    },
+    {
+      "file": "other-keyword.wav",
+      "spoken": "I will love you forever.",
+      "want_keyword": false,
+      "condition": "clean",
+      "keyword": ""
+    },
+    {
+      "file": "other-keyword.wav",
+      "spoken": "I will love you forever.",
+      "want_keyword": false,
+      "condition": "10dB white noise",
+      "keyword": ""
+    },
+    {
+      "file": "confusable.wav",
+      "spoken": "Oh baby, what a beautiful day.",
+      "want_keyword": false,
+      "condition": "clean",
+      "keyword": "Obey"
+    },
+    {
+      "file": "confusable.wav",
+      "spoken": "Oh baby, what a beautiful day.",
+      "want_keyword": false,
+      "condition": "10dB white noise",
+      "keyword": "Obey"
+    }
+  ]
+}

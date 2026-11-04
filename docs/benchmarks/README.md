@@ -409,5 +409,9 @@ go run ./scripts/bench_redact < private-benchmark.json > shared-benchmark.json
 The filter is deliberately narrow: it is not a secret scanner, arbitrary-prose
 anonymizer, media review or rights check. Console diagnostics can remain private;
 review new artifacts before sharing them. Other benchmark generators still require
-manual review. The t3b transcript and reference voice clips have unresolved rights;
-see [public release gates](../public-release-checklist.md).
+targeted review. The owner retains the short attributed t3b transcript as a
+technical benchmark; its README records the use rationale and unverified license.
+Reference voice provenance remains pending; see [public release gates](../public-release-checklist.md).
+Archived benchmark commands/artifact paths may use portable example paths instead
+of local workspace/cache paths. Measurements, model IDs, settings and transcript
+text are preserved; changing an example path does not constitute a new measurement.
