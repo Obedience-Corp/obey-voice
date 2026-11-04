@@ -141,11 +141,17 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 		// consume the one-turn keep flag so a later fresh session does not
 		// replay the same retained audio.
 		p.captureMu.Lock()
-		valid := p.captureBoundary == nil && p.captureGeneration == generation && ctx.Err() == nil
+		resumeErr := ctx.Err()
+		if p.captureBoundary != nil || p.captureGeneration != generation {
+			resumeErr = ErrInputTransition
+		}
 		p.captureMu.Unlock()
-		if !valid {
-			_ = session.Close()
-			return nil, 0, ErrInputTransition
+		if resumeErr != nil {
+			// A canceled resume still owns the old session unless a binding
+			// transition detached it. Release that ownership before closing it
+			// so a later turn does not see a closed, non-yielded reader.
+			p.finishCaptureSession(session, generation, false)
+			return nil, 0, resumeErr
 		}
 		p.keepCapture.Store(false)
 		return session, generation, nil
@@ -194,10 +200,16 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 		binder.BindCompletionCoordinator(coordinator)
 	}
 	p.captureMu.Lock()
-	if p.captureBoundary != nil || p.captureGeneration != generation || ctx.Err() != nil {
+	// An adapter may return a newly opened reader after caller cancellation.
+	// Close it either way, but only a changed binding is a transition error.
+	adoptionErr := ctx.Err()
+	if p.captureBoundary != nil || p.captureGeneration != generation {
+		adoptionErr = ErrInputTransition
+	}
+	if adoptionErr != nil {
 		p.captureMu.Unlock()
 		_ = session.Close()
-		return nil, 0, ErrInputTransition
+		return nil, 0, adoptionErr
 	}
 	p.captureCancel = cancelStart
 	adopted = true
