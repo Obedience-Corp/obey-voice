@@ -27,8 +27,8 @@ func TestStartPipelineShowsTheStartingScreen(t *testing.T) {
 		t.Fatal("no command returned; the spinner would never tick")
 	}
 	view := stripANSI(app.conversation.View())
-	if !strings.Contains(view, "Starting Uncle Fu") {
-		t.Fatalf("starting screen does not name the session:\n%s", view)
+	if !strings.Contains(view, "Starting Obey Voice") {
+		t.Fatalf("starting screen does not show the product title:\n%s", view)
 	}
 	if !strings.Contains(view, "Preparing…") {
 		t.Fatalf("starting screen shows no stage:\n%s", view)
@@ -172,7 +172,7 @@ func TestStartingScreenRespectsReducedMotion(t *testing.T) {
 	if !strings.Contains(first, "0:00") {
 		t.Fatalf("reduced motion dropped the elapsed clock:\n%s", first)
 	}
-	if !strings.Contains(first, "Starting Samantha") {
+	if !strings.Contains(first, "Starting Obey Voice") {
 		t.Fatalf("reduced motion dropped the screen:\n%s", first)
 	}
 }
@@ -191,7 +191,7 @@ func TestRuntimeReadyClearsTheStartingScreen(t *testing.T) {
 	if app.conversation.startingUp() {
 		t.Fatal("the starting screen outlived the build")
 	}
-	if strings.Contains(stripANSI(app.conversation.View()), "Starting Uncle Fu") {
+	if strings.Contains(stripANSI(app.conversation.View()), "Starting Obey Voice") {
 		t.Fatal("starting screen still rendered after ready")
 	}
 }
