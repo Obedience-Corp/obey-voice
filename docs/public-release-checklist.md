@@ -24,13 +24,12 @@ close a gate. Recheck changed content after the final merge.
 
 ## Assets and provenance
 
-- Confirm the intended identity and behavior of the Her-inspired Veronica persona.
-  The functional persona remains unchanged pending that decision.
-- Owner confirms both embedded Veronica references were entirely Imagine-generated
-  in their account without real-person input; offline ASR matches the metadata.
-  Attribution is included. Resolve applicable provider output permission for
-  redistribution/Qwen reference use, or coordinate catalog/default/migration
-  changes with any replacement. See the focused review evidence.
+- Owner retains the current Veronica personas and exact embedded references.
+  Both references are entirely Imagine-generated in their account without
+  real-person input; offline ASR matches the metadata and attribution is present.
+  The owner reviewed the provider-terms question and chose public retention.
+  This is a completed project decision; no replacement or additional provider
+  permission gate is required by this checklist.
 - Retain the short t3b excerpt as the owner's chosen attributed technical benchmark;
   its README and NOTICE record source, purpose, and the unverified license grant.
   The source recording is not bundled. No replacement is required by default.

@@ -27,18 +27,13 @@ publication approval and does not certify later commits automatically.
 
 ## Narrow remaining choices
 
-**Veronica:** owner confirms wholly Imagine-generated references, no real-person
-input; offline ASR matches their phrases and Grok attribution is present.
-The [Consumer FAQ](https://x.ai/legal/faq) permits output reuse including
-commercial use. However, the
-[Acceptable Use Policy](https://x.ai/legal/acceptable-use-policy) restricts using
-outputs to develop competing models, products or services, directly or indirectly.
-Applying that restriction to this voice assistant is an unresolved interpretation,
-not a confirmed violation. Attribution alone does not settle it. Recommendation:
-replace the two embedded references with documented synthetic references while
-preserving persona IDs and behavior; their voice sound would change. Owner choice
-is pending. Keeping the exact voices instead needs an applicable permission basis.
-Any replacement also needs a disposition for old embedded copies in history.
+**Veronica — retained by owner decision:** both references are wholly
+Imagine-generated without real-person input; offline ASR matches their phrases
+and Grok attribution is present. The owner reviewed the provider-terms question
+and explicitly chose to retain the exact references for public project use.
+That closes this retention decision. No voice replacement or further provider
+permission gate is planned. Source links and review limits remain in
+[review evidence](media-review-evidence.md#veronica-reference-clips).
 
 **Historical System Voice audio:** nine known Apple-generated WAV blobs from
 baseline `15f4ae2b525d1ae8043f3dab8f7b6535ffddd297` total 500,384 bytes.
@@ -67,8 +62,9 @@ No rewrite, remote deletion or publication occurred.
 
 ## Final operational steps
 
-1. Resolve the two audio-source dispositions above; do not restart blanket media
-   review. The current inventory remains 89 cleared and two pending.
+1. Resolve the historical System Voice audio disposition above, preserving the
+   owner's development-history preference. Current-tree media is fully cleared:
+   91 records and zero pending. Do not restart blanket media review.
 2. Record the physical fresh-setup check: permissions, actual downloads/inference,
    audible response, interruption and session relaunch. Existing software fixtures
    passed but cannot establish these physical observations. Owner answer pending.

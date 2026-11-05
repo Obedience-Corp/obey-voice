@@ -59,32 +59,27 @@ Public-fork approval and branch/ruleset controls remain private-plan dependent;
 verify the intended public policy during the approved visibility transition
 before enabling external workflows. See the dated candidate record for scope.
 
-The current asset checker reports **89 approved records and 2 pending**. The
+The current asset checker reports **91 approved records and 0 pending**. The
 fifteen corporate variants are cleared by owner authority confirmation. Both
-Veronica refs have confirmed synthetic-only inputs and matching offline ASR;
-only provider output permission remains pending. These are two files in one
-source family, not two confirmed violations.
+Veronica refs have confirmed synthetic-only inputs, matching offline ASR and
+Grok attribution. The owner explicitly chose to retain their exact voices after
+reviewing the provider-terms question; that is a completed retention decision.
 
 ## Remaining decisions and acceptance
 
-1. **Veronica output terms:** input/source and targeted content review are complete.
-   “Created with Grok” attribution is included. Resolve the applicable provider
-   output permission for extracted-audio redistribution and Qwen reference use;
-   [review evidence](media-review-evidence.md#veronica-reference-clips) records
-   current and historical terms. No real-person input is asserted.
-2. **Retained history:** the owner prefers keeping existing history. Continue with
+1. **Retained history:** the owner prefers keeping existing history. Continue with
    that publication strategy; no rewrite, remote deletion or publication has
    occurred. Old Apple WAVs remain reachable, so current fixture replacement does
    not settle their historical redistribution question. Resolve that specific
    issue and record dispositions for retained refs/outputs before publication;
    do not reopen the history-strategy choice absent a concrete need.
-3. **CI:** merged main at `3cbe9d9d` passes all six hosted jobs. The debugstream
+2. **CI:** merged main at `3cbe9d9d` passes all six hosted jobs. The debugstream
    and journal corrections are included. Three other intermittent failures from
    the PR runs remain tracked; a successful run does not prove those repaired.
-4. **Administrator settings:** browser inspection verifies shared runners exclude
+3. **Administrator settings:** browser inspection verifies shared runners exclude
    public repositories. Recheck at publication, and verify public-fork approval
    and intended branch rules before external workflows execute.
-5. **Physical first conversation:** follow the existing
+4. **Physical first conversation:** follow the existing
    [acceptance procedure](first-conversation-acceptance.md) on a disposable
    account/machine: fresh install/downloads, microphone denial/grant, audible
    reply, interruption and session relaunch. Record observed results. The
