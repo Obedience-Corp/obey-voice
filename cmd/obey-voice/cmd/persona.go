@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -67,6 +66,7 @@ func personaListCmd() *cobra.Command {
 			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 				type row struct {
 					Audio             *persona.Audio `json:"audio,omitempty"`
+					Brain             persona.Brain  `json:"brain"`
 					StartingDirectory string         `json:"starting_directory"`
 					ID                string         `json:"id"`
 					DisplayName       string         `json:"display_name"`
@@ -83,6 +83,7 @@ func personaListCmd() *cobra.Command {
 				for _, p := range list {
 					out = append(out, row{
 						Audio:             p.Audio,
+						Brain:             p.Brain,
 						StartingDirectory: p.StartingDirectory,
 						ID:                p.ID,
 						DisplayName:       p.DisplayName,
@@ -105,27 +106,36 @@ func personaListCmd() *cobra.Command {
 				return nil
 			}
 			active := persona.ActiveID(cfg)
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 2, 2, ' ', 0)
-			fmt.Fprintln(w, "  ID\tNAME\tPROVIDER\tVOICE\tPROMPT\tSTATUS")
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "\n  %s\n", titleStyle.Render("Personas"))
 			for _, p := range list {
-				mark := ""
+				status := ""
 				if p.ID == active {
-					mark = "*"
+					status = " " + activeStyle.Render("active")
 				}
-				status := mark
 				if p.Inactive {
-					status = "inactive"
+					status += " " + dimStyle.Render("inactive")
 				}
-				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n",
-					p.ID, p.DisplayName, p.TTS.Provider, p.TTS.Voice, p.Prompts.Persona, status)
+				fmt.Fprintf(out, "\n  %s %s%s\n", sectionStyle.Render(p.DisplayName), dimStyle.Render("("+p.ID+")"), status)
+				fmt.Fprintf(out, "    %s  %s / %s\n", keyStyle.Render("Brain "), personaListValue(p.Brain.Provider), personaListValue(p.Brain.Model))
+				fmt.Fprintf(out, "    %s  %s / %s\n", keyStyle.Render("Worker"), personaListValue(p.Brain.Worker.Provider), personaListValue(p.Brain.Worker.Model))
+				fmt.Fprintf(out, "    %s  %s / %s\n", keyStyle.Render("Voice "), personaListValue(p.TTS.Provider), personaListValue(p.TTS.Voice))
+				fmt.Fprintf(out, "    %s  %s\n", keyStyle.Render("Prompt"), p.Prompts.Persona)
 			}
-			_ = w.Flush()
-			fmt.Fprintf(cmd.OutOrStdout(), "\n  Profiles dir: %s\n", persona.Dir())
+			fmt.Fprintf(out, "\n  %s %s\n", dimStyle.Render("Profiles dir:"), persona.Dir())
 			return nil
 		},
 	}
 	cmd.Flags().Bool("json", false, "Emit JSON")
 	return cmd
+}
+
+// An empty override uses the applicable app or provider default.
+func personaListValue(value string) string {
+	if value == "" {
+		return dimStyle.Render("default")
+	}
+	return value
 }
 
 func personaShowCmd() *cobra.Command {
