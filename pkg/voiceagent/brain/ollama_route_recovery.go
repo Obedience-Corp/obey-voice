@@ -74,15 +74,21 @@ func (o *OllamaBrain) chatRouteRecovery(ctx context.Context, original *api.ChatR
 	}
 	args, decodeErr := decodeRouteRecovery(response, route.Parameters)
 	if decodeErr != nil {
-		decodeErr = fmt.Errorf("%w (done=%t, reason=%q, generated_tokens=%d, reply_bytes=%d, thinking_bytes=%d, tool_calls=%d)",
+		decodeErr = fmt.Errorf("%w (done=%t, reason=%q, generated_tokens=%d, reply_bytes=%d, json_complete=%t, thinking_bytes=%d, tool_calls=%d)",
 			decodeErr, response.Done, response.DoneReason, response.EvalCount,
-			len(response.Message.Content), len(response.Message.Thinking), len(response.Message.ToolCalls))
+			len(response.Message.Content), json.Valid([]byte(response.Message.Content)), len(response.Message.Thinking), len(response.Message.ToolCalls))
 	}
 	// Forward usage/completion metadata even for a rejected decision, but never
 	// expose the private JSON (or a server's unexpected prose) as speech.
 	response.Message = api.Message{Role: "assistant"}
 	if decodeErr == nil {
 		response.Message.ToolCalls = []api.ToolCall{{Function: api.ToolCallFunction{Name: "route", Arguments: args}}}
+		// The private decision is complete even if the server kept generating
+		// whitespace until num_predict. Downstream loops must see a completed
+		// route, not mistake it for a truncated conversational answer.
+		if response.DoneReason == "length" {
+			response.DoneReason = "stop"
+		}
 	}
 	if err := fn(response); err != nil {
 		return err
@@ -93,13 +99,16 @@ func (o *OllamaBrain) chatRouteRecovery(ctx context.Context, original *api.ChatR
 	return nil
 }
 
-func decodeRouteRecovery(response api.ChatResponse, schema api.ToolFunctionParameters) (api.ToolCallFunctionArguments, error) {
-	args := api.NewToolCallFunctionArguments()
+func decodeRouteRecovery(response api.ChatResponse, schema api.ToolFunctionParameters) (args api.ToolCallFunctionArguments, resultErr error) {
+	args = api.NewToolCallFunctionArguments()
+	defer func() {
+		if resultErr != nil && response.DoneReason == "length" {
+			resultErr = fmt.Errorf("route response exhausted its output budget: %w", resultErr)
+		}
+	}()
 	switch {
 	case !response.Done:
 		return args, errors.New("route response ended without completion")
-	case response.DoneReason == "length":
-		return args, errors.New("route response exhausted its output budget")
 	case len(response.Message.ToolCalls) != 0:
 		return args, errors.New("route response returned tool calls instead of a JSON decision")
 	case len(response.Message.Content) > 4096:
