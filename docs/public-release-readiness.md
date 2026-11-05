@@ -59,7 +59,7 @@ Public-fork approval and branch/ruleset controls remain private-plan dependent;
 verify the intended public policy during the approved visibility transition
 before enabling external workflows. See the dated candidate record for scope.
 
-The current asset checker reports **91 approved records and 0 pending**. The
+The current asset checker reports **92 approved records and 0 pending**. The
 fifteen corporate variants are cleared by owner authority confirmation. Both
 Veronica refs have confirmed synthetic-only inputs, matching offline ASR and
 Grok attribution. The owner explicitly chose to retain their exact voices after
