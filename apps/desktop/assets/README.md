@@ -23,3 +23,10 @@ alpha artwork for macOS adaptive tinting; Linux uses cyan/white artwork.
 Generate the checked-in 32-pixel PNGs with `rsvg-convert -w 32 -h 32` and `-o`.
 The Rust tray artwork module adds live microphone, meeting, pause, and error
 badges. Native status text also reports these states.
+
+## Public source use
+
+On 2026-11-04 the owner confirmed corporate ownership/control and authority
+for public project use of this shared mark family, covering all fifteen tracked
+SVG/PNG variants. This records project-use authority; it does not add a separate
+trademark license or imply third-party endorsement.

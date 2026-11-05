@@ -3,7 +3,7 @@
 The inventory in [media-review.json](media-review.json) records content and
 redistribution decisions for tracked assets. A SHA-256 binds each record to its
 current bytes; it does **not** establish ownership, consent, or license clearance.
-The 2026-11-04 follow-up records actual review methods and remaining actions in
+The 2026-11-04 follow-up records owner confirmations, actual review methods and remaining actions in
 [review evidence](media-review-evidence.md). Use the commands below for current
 counts. No voice or persona was removed; adding an inventory entry alone does
 not clear it.
@@ -49,11 +49,11 @@ in the private release audit. Removing current files does not clear history.
 
 | Asset group | Existing evidence | Work needed |
 | --- | --- | --- |
-| Veronica and VeronicaDesk reference WAVs | Adjacent metadata identifies `imagine-clip`, source clip names and reference text; `qwen/shipped.go` embeds both. | Owner supplies generation/source and applicable redistribution/cloning permission evidence, or selects replacement/removal. Decide Her-inspired persona presentation separately. Metadata alone is not permission. |
+| Veronica and VeronicaDesk reference WAVs | Owner confirms entirely Imagine-generated in their account without real-person input; offline ASR matches metadata text; `qwen/shipped.go` embeds both. | Input/content questions resolved. Attribution added; establish applicable provider output permission for extracted-audio redistribution/reference use, or coordinate replacement. |
 | Native setup WAV | `pkg/voiceagent/nativeaudio/assets/README.md` records current Kokoro synthesis and links its pinned provenance; `setup.go` embeds it. | Replaced with pinned Kokoro output; canonical-byte forwarding and setup/cancellation checks pass. Historical copies remain a separate publication-history decision. |
 | Acoustic keyword WAVs | `testdata/kws/README.md` records Kokoro generation, exact prompts and the British-accent control. | Eight Apple-voice samples replaced with pinned Kokoro controls. Offline ASR and native keyword tests recorded; all nine-case clean/noisy benchmark results are retained. |
 | t3b transcript | `docs/benchmarks/t3b/README.md` describes 25 replayed meeting transcript records. Fixture docs name the public source video. | Owner chose short attributed technical benchmark retention; rationale and unverified source license are explicit. Source audio is not bundled. |
-| Desktop logos/icons | All 15 variants trace to the companion app's corporate assets; visual content reviewed. | One owner confirmation of corporate ownership/control and authority for public use covers this family. |
+| Desktop logos/icons | All 15 variants trace to the companion app's corporate assets; visual content reviewed. | Owner confirmed corporate ownership/control and public project-use authority on 2026-11-04; all 15 records cleared. |
 | Screenshots and GIFs | Visual inspection, source recipes and selective synthetic fixture regeneration are recorded per asset. | Follow each entry's actual coverage and decision; source review or sampled frames must not be described as every-frame inspection. |
 | Golden/audio-job and voiceflow WAVs | Golden samples have Kokoro provenance and supported routine output terms. Audio-job receipts identify separate failed reproduction trials. Voiceflow now uses documented synthetic replacements. | Offline ASR/source checks recorded. Voiceflow recordings replaced with documented synthetic controls. Audio-job outputs retained as attributed failed-conversion evidence. |
 
