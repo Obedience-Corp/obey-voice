@@ -59,3 +59,37 @@ func TestSystemRuntimeDataIsNotInterpretedAsAnotherTemplate(t *testing.T) {
 		t.Fatalf("runtime data was reinterpreted: %q, %v", got, err)
 	}
 }
+
+func TestWorkerContinuationPromptOverrides(t *testing.T) {
+	for _, name := range []string{"worker-continuation", "worker-truncated-tools"} {
+		t.Run(name, func(t *testing.T) {
+			packaged, err := RenderSystem("", name, nil)
+			if err != nil || packaged == "" {
+				t.Fatalf("packaged prompt=%q err=%v", packaged, err)
+			}
+			dir := t.TempDir()
+			if _, err := Seed(dir); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "system", name+".yaml")
+			for _, marker := range []string{"First continuation edit", "Second continuation edit"} {
+				body := "schema: obey-voice.prompt.v1\nprompt:\n  name: " + name + "\n  kind: system\n  system_prompt: '" + marker + "'\n"
+				if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := Seed(dir); err != nil {
+					t.Fatal(err)
+				}
+				if got, err := RenderSystem(dir, name, nil); err != nil || got != marker {
+					t.Fatalf("override did not reload: %q %v", got, err)
+				}
+			}
+			if err := os.WriteFile(path, []byte("prompt: [unfinished"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := RenderSystem(dir, name, nil); err == nil || got != packaged {
+				t.Fatalf("malformed override did not fall back: %q %v", got, err)
+			}
+		})
+	}
+}

@@ -93,6 +93,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	routedChat := false
 	imageResultRetry := false
 	routeRetried := false
+	continuations := 0
 	for i := 0; i <= maxToolIterations; i++ {
 		finalAnswer := i == maxToolIterations
 		var tools api.Tools
@@ -152,34 +153,11 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			return "", err
 		}
 
-		var response api.Message
-		var doneReason string
-		var responseComplete bool
 		chat := o.chat
 		if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && !imageResultRetry {
 			chat = o.chatRouteRecovery
 		}
-		err := chat(ctx, req, func(resp api.ChatResponse) error {
-			responseComplete = responseComplete || resp.Done
-			response = resp.Message
-			doneReason = resp.DoneReason
-			if opts.OnUsage != nil {
-				opts.OnUsage(resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount)
-			}
-			if opts.OnWorkerUsage != nil {
-				u := WorkerUsage{}
-				if resp.Metrics.PromptEvalCount > 0 {
-					in := resp.Metrics.PromptEvalCount
-					u.InputTokens = &in
-				}
-				if resp.Metrics.EvalCount > 0 {
-					out := resp.Metrics.EvalCount
-					u.OutputTokens = &out
-				}
-				opts.OnWorkerUsage(u)
-			}
-			return responseLimit.observe(resp)
-		})
+		response, responseComplete, err := o.chatFullWithContinuation(ctx, req, opts, responseLimit, &continuations, chat)
 		if err != nil {
 			o.history = restore
 			o.canonical = restoreCanonical
@@ -192,12 +170,6 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		tail, _ := thoughtFilter.FlushSplit()
 		if _, err := textclean.StripToolMarkup(speakable + tail); err != nil {
 			return "", fmt.Errorf("ollama reply: %w", err)
-		}
-		if doneReason == "length" {
-			o.history = restore
-			o.canonical = restoreCanonical
-			o.working = restoreWorking
-			return "", fmt.Errorf("ollama full response truncated")
 		}
 		routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
 		missingRoute := routing && len(response.ToolCalls) == 0

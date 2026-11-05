@@ -1,0 +1,16 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: worker-truncated-tools
+  kind: system
+  system_prompt: |-
+    The host is continuing the same worker task after the previous response
+    reached its generation limit while composing tool calls. No tool calls
+    from that truncated response were executed. Reissue any needed calls in
+    full using the supplied tool definitions. Earlier completed tool calls and
+    their results remain in context: do not repeat those completed actions.
+    Retain the original task and constraints. This is a private host
+    continuation, not a new human request. Do not claim completion until the
+    tool evidence supports it.
+metadata:
+  version: 1
+  description: Private recovery for unexecuted tool calls in a truncated generation.
