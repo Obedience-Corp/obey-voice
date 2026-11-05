@@ -347,18 +347,20 @@ func (p *Pipeline) ttsReady() bool {
 // StopPlayback aborts audible TTS immediately. Used by the TUI when the user
 // types to barge in so speech does not continue until the turn context drains.
 // A stop that lands mid-playback is a barge-in and stamps the active turn's
-// metrics; the turn itself keeps streaming.
+// metrics. The remainder of this turn's speech is canceled while reply text
+// keeps streaming, including when the stop arrives before the first audio.
 func (p *Pipeline) StopPlayback() {
 	if p == nil || p.Player == nil {
 		return
 	}
-	if p.Player.IsPlaying() {
-		p.activeMu.Lock()
-		if m := p.activeMetrics; m != nil {
+	p.activeMu.Lock()
+	if m := p.activeMetrics; m != nil {
+		m.stopSpeech()
+		if p.Player.IsPlaying() {
 			m.markBargeIn(time.Now())
 		}
-		p.activeMu.Unlock()
 	}
+	p.activeMu.Unlock()
 	p.Player.Stop()
 }
 

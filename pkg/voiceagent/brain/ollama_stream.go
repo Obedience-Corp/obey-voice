@@ -174,7 +174,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 			var emitted strings.Builder
 			outputChecked := false
-			forward := func(text string) error {
+			runaway := newRunawayTextGuard(latestMessage)
+			deliver := func(text string) error {
 				if opts.Discussion != nil {
 					if err := opts.Discussion.State.Context().Err(); err != nil {
 						return err
@@ -195,6 +196,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				spoken.WriteString(text)
 				emitted.WriteString(text)
 				return nil
+			}
+			forward := func(text string) error {
+				text, err := runaway.feed(text)
+				if sendErr := deliver(text); sendErr != nil {
+					return sendErr
+				}
+				return err
 			}
 			// Until a live routing response finishes, its content might be
 			// untagged planning followed by a tool call. It cannot be taken
@@ -388,6 +396,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 			if err == nil {
 				err = forward(gate.release())
+			}
+			if tail := runaway.flush(); tail != "" {
+				if sendErr := deliver(tail); err == nil {
+					err = sendErr
+				}
 			}
 			if err != nil {
 				// Preserve only genuine text already sent to the user. Report

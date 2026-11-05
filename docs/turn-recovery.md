@@ -13,6 +13,19 @@ can still be marked `completed (degraded)` so the conversation remains usable.
 Narration failures and automatic worker failure/budget notifications are also
 text-only; asking for job status still produces a normal spoken response.
 
+Typing to stop speech cancels synthesis and queued audio for that turn while
+allowing its reply text to finish. This is an interrupted output, including when
+typing happens before the first audio; it does not produce playback cancellation
+errors. The next turn can speak normally. Actual playback failures remain errors
+and mark the turn degraded.
+
+An Ollama response stuck repeating a syllable inside an exceptionally long prose
+word is stopped before it can flood chat and speech. Normal deltas, code blocks
+and explicit literal-repetition requests are preserved. A repetition or output
+limit stops queued speech immediately and reports the failure as text, without
+automatically restarting the generation. Already displayed partial output remains
+in the transcript and is marked incomplete for future model context.
+
 For Ollama, Activity records per-request `prefill N tok · gen M tok`. Prefill
 tracks the size of your new turn, not the whole transcript, and is bounded by
 `ollama_num_ctx` (default `32768`). Workers have a separate window:
