@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -142,7 +143,9 @@ func TestReaderLimitAndSlowConsumerDoNotBlockBus(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for range 4000 {
+		// Exercise a full retained window for the unread HTTP clients. The
+		// blocked-writer test below deterministically verifies write isolation.
+		for range historyRecords + 1 {
 			bus.Emit(events.ResponseDelta{Text: strings.Repeat("x", 4096), Trace: &trace})
 		}
 	}()
@@ -150,5 +153,80 @@ func TestReaderLimitAndSlowConsumerDoNotBlockBus(t *testing.T) {
 	case <-done:
 	case <-ctx.Done():
 		t.Fatal("slow readers stalled bus")
+	}
+}
+
+type blockedStreamWriter struct {
+	header  http.Header
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (w *blockedStreamWriter) Header() http.Header { return w.header }
+func (w *blockedStreamWriter) WriteHeader(int)     {}
+func (w *blockedStreamWriter) Flush()              {}
+func (w *blockedStreamWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.started) })
+	<-w.release
+	return len(p), nil
+}
+
+func TestBlockedStreamWriteDoesNotBlockBusOrHistory(t *testing.T) {
+	bus := events.NewBus()
+	trace := events.TraceContext{RuntimeID: "runtime"}
+	s, err := Start(t.TempDir(), "fixture", bus, trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, s.Descriptor().Endpoint+"/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &blockedStreamWriter{header: make(http.Header), started: make(chan struct{}), release: make(chan struct{})}
+	streamDone := make(chan struct{})
+	go func() {
+		defer close(streamDone)
+		s.stream(w, request)
+	}()
+	defer func() {
+		close(w.release)
+		cancel()
+		<-streamDone
+	}()
+	select {
+	case <-w.started: // The stream is blocked writing the initial header.
+	case <-ctx.Done():
+		t.Fatal("stream did not reach the blocked write", ctx.Err())
+	}
+
+	const eventCount = 100
+	busDone := make(chan struct{})
+	go func() {
+		defer close(busDone)
+		for range eventCount {
+			bus.Emit(events.ResponseDelta{Text: "small event", Trace: &trace})
+		}
+	}()
+	select {
+	case <-busDone:
+	case <-ctx.Done():
+		t.Fatal("blocked stream write stalled event bus", ctx.Err())
+	}
+
+	for {
+		packets, changed := s.ring.after(-1)
+		if len(packets) == eventCount {
+			break
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			t.Fatalf("history stopped while stream write was blocked: got %d events", len(packets))
+		}
 	}
 }

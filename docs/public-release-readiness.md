@@ -76,10 +76,12 @@ source family, not two confirmed violations.
    not settle their historical redistribution question. Resolve that specific
    issue and record dispositions for retained refs/outputs before publication;
    do not reopen the history-strategy choice absent a concrete need.
-3. **CI:** merged PR #341's Linux race run failed
-   `TestReaderLimitAndSlowConsumerDoNotBlockBus` after five seconds. A passing local
-   build does not clear that hosted failure; investigate the debug-stream path
-   and verify the correction before treating CI as ready.
+3. **CI:** the PR #343 corrections are included in this branch: a bounded
+   debug-stream stress window plus deterministic blocked-write coverage, and a
+   journal failure assertion synchronized with completed flush processing. The
+   journal regression passes 100 race-enabled repetitions; debugstream,
+   workjournal, transcript and events pass ten repetitions together. Updated
+   hosted checks must still pass before treating CI as ready.
 4. **Administrator settings:** verify shared runner access and public-fork policy
    when preparing visibility. Record any plan/visibility-dependent protection.
 5. **Physical first conversation:** follow the existing
