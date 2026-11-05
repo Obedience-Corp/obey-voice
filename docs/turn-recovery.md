@@ -13,6 +13,13 @@ can still be marked `completed (degraded)` so the conversation remains usable.
 Narration failures and automatic worker failure/budget notifications are also
 text-only; asking for job status still produces a normal spoken response.
 
+Ollama's private route recovery validates the complete JSON decision even when
+the server reports a token-limit stop. A finished, schema-valid object is usable;
+incomplete JSON, trailing content and invalid route fields remain failures. The
+256-token recovery cap, retry limit and usage accounting still apply. Rejected
+decisions report `json_complete` alongside completion and usage metadata without
+exposing private routing content.
+
 For Ollama, Activity records per-request `prefill N tok · gen M tok`. Prefill
 tracks the size of your new turn, not the whole transcript, and is bounded by
 `ollama_num_ctx` (default `32768`). Workers have a separate window:

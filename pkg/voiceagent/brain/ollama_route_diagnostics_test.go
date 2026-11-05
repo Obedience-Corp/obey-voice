@@ -21,7 +21,10 @@ func TestRouteRecoveryExplainsRejectedResponsesWithoutLeakingPrivateOutput(t *te
 		change     func(*api.ChatResponse)
 	}{
 		{"unfinished", "ended without completion", func(r *api.ChatResponse) { r.Done = false }},
-		{"budget", "exhausted its output budget", func(r *api.ChatResponse) { r.DoneReason = "length" }},
+		{"budget", "exhausted its output budget", func(r *api.ChatResponse) {
+			r.DoneReason = "length"
+			r.Message.Content = `{"kind":"chat"`
+		}},
 		{"tools", "tool calls instead of a JSON decision", func(r *api.ChatResponse) {
 			r.Message.ToolCalls = []api.ToolCall{{Function: api.ToolCallFunction{Name: "private_tool"}}}
 		}},
@@ -61,6 +64,7 @@ func TestRouteRecoveryExplainsRejectedResponsesWithoutLeakingPrivateOutput(t *te
 			for _, want := range []string{
 				fmt.Sprintf("done=%t", response.Done), fmt.Sprintf("reason=%q", response.DoneReason),
 				"generated_tokens=256", fmt.Sprintf("reply_bytes=%d", len(response.Message.Content)),
+				fmt.Sprintf("json_complete=%t", json.Valid([]byte(response.Message.Content))),
 				fmt.Sprintf("thinking_bytes=%d", len(response.Message.Thinking)),
 				fmt.Sprintf("tool_calls=%d", len(response.Message.ToolCalls)),
 			} {
