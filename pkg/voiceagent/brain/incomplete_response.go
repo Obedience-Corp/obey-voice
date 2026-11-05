@@ -7,6 +7,9 @@ import (
 )
 
 func incompleteDisposition(err error) string {
+	if errors.Is(err, ErrResponseRepetition) {
+		return "repetition"
+	}
 	if errors.Is(err, ErrResponseLimit) {
 		return "output_limit"
 	}

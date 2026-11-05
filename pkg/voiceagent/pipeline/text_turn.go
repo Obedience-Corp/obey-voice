@@ -19,9 +19,15 @@ import (
 // for session auto-save. Every degraded and mute short-circuit must use this
 // so finish logic cannot drift across early returns.
 func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, response string) {
-	p.finishOrdinaryCompletion(metrics, response, false)
-	p.emitResponse(metrics, events.ResponseReady{Response: response, Degraded: metrics.degraded})
-	turn.finish(TurnCompleted)
+	interrupted := metrics.speechStopped()
+	metrics.interrupted = metrics.interrupted || interrupted
+	p.finishOrdinaryCompletion(metrics, response, interrupted)
+	p.emitResponse(metrics, events.ResponseReady{Response: response, Degraded: metrics.degraded, Interrupted: interrupted})
+	if interrupted {
+		turn.finish(TurnInterrupted)
+	} else {
+		turn.finish(TurnCompleted)
+	}
 	if p.OnTurn != nil {
 		p.OnTurn()
 	}
@@ -235,7 +241,9 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	// and predicate the progressive path uses, so a typed turn and a spoken one
 	// say the same thing.
 	speakable := ""
-	if !p.OutputMuted() && p.Player != nil && p.ttsReady() {
+	speechCtx, cancelSpeech := metrics.speechContext(ctx)
+	defer cancelSpeech()
+	if !metrics.speechStopped() && !p.OutputMuted() && p.Player != nil && p.ttsReady() {
 		speakable = speakableFromResponse(p.gateForSpeech(response, metrics), responseMentionControl(ctx))
 	}
 	if speakable != "" {
@@ -261,13 +269,17 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		synthStarted := time.Now()
 		// The whole reply is one string here: no group was assembled from a
 		// held beat, so its sentence punctuation is spoken as written.
-		ctx = withSegmentTrace(ctx, 0)
+		ctx = withSegmentTrace(speechCtx, 0)
 		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil, false)
 		if errors.Is(err, errNothingToSpeak) {
 			p.completeTextTurn(turn, metrics, response)
 			return nil
 		}
 		if err != nil {
+			if metrics.speechStopped() && errors.Is(err, context.Canceled) {
+				p.completeTextTurn(turn, metrics, response)
+				return nil
+			}
 			// Voice is best-effort in text mode: the text response still
 			// completed, so the turn is completed (degraded), not failed.
 			metrics.degraded = true
@@ -304,6 +316,10 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 		playback, err := p.Player.PlayStream(ctx, stream)
 		if err != nil {
+			if metrics.speechStopped() && errors.Is(err, context.Canceled) {
+				p.completeTextTurn(turn, metrics, response)
+				return nil
+			}
 			if !usedFallback {
 				var fallbackObservation synthesisObservation
 				var fallbackUsed bool
@@ -344,7 +360,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		// PlayStream waits for the complete sentence buffer. Output may have
 		// been muted while it was waiting, after SetOutputMuted's first Stop
 		// saw an empty queue. Stop again so that late-enqueued audio cannot play.
-		if p.OutputMuted() {
+		if p.OutputMuted() || metrics.speechStopped() {
 			p.Player.Stop()
 			p.completeTextTurn(turn, metrics, response)
 			return nil

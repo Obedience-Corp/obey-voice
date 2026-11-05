@@ -260,6 +260,7 @@ func synthesisFailureEvent(sentence string, index int, observation synthesisObse
 	}
 	if err != nil {
 		event.error = err.Error()
+		event.result = audio.PlaybackResult{Err: err, Interrupted: errors.Is(err, context.Canceled)}
 	}
 	return event
 }

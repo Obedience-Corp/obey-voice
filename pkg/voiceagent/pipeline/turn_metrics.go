@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"sort"
@@ -66,12 +67,14 @@ type turnMetrics struct {
 	ttfa               time.Time
 	audibleSink        string
 	sinkAtArm          string
-	// bargeInMu guards bargeIn: the voice watcher stamps it from the turn
-	// goroutine, keystroke barge-in from the TUI goroutine.
-	bargeInMu   sync.Mutex
-	bargeIn     time.Time
-	interrupted bool
-	degraded    bool
+	// bargeInMu guards bargeIn and speech cancellation shared by the turn and
+	// the TUI's out-of-band keystroke stop.
+	bargeInMu    sync.Mutex
+	bargeIn      time.Time
+	speechStop   bool
+	speechCancel context.CancelFunc
+	interrupted  bool
+	degraded     bool
 	// toolLeakLines counts lines the voice gate stripped from speech this
 	// turn (WI-dc9e33 B4). Written only from the turn's own goroutine.
 	toolLeakLines int
@@ -106,6 +109,36 @@ type turnMetrics struct {
 	// thinkLeak counts think tags that still reached filterThink after the
 	// brain split. Must stay 0 on the product path.
 	thinkLeak int
+}
+
+// Speech has its own lifetime: typing stops output while the model continues
+// to finish the text reply. Protect registration against a stop during thinking.
+func (m *turnMetrics) speechContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	m.bargeInMu.Lock()
+	m.speechCancel = cancel
+	stopped := m.speechStop
+	m.bargeInMu.Unlock()
+	if stopped {
+		cancel()
+	}
+	return ctx, cancel
+}
+
+func (m *turnMetrics) stopSpeech() {
+	m.bargeInMu.Lock()
+	m.speechStop = true
+	cancel := m.speechCancel
+	m.bargeInMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (m *turnMetrics) speechStopped() bool {
+	m.bargeInMu.Lock()
+	defer m.bargeInMu.Unlock()
+	return m.speechStop
 }
 
 func newTurnMetrics() *turnMetrics {
