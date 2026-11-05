@@ -5,6 +5,9 @@ recorded on 2026-11-04; their follow-up PR records the full candidate commit and
 hosted checks. Security evidence below retains its explicitly stated audit scope.
 This document does not approve changing visibility or rewriting shared history.
 
+Current merged-main evidence, exact scan scope and next actions are in
+[publication candidate](publication-candidate.md).
+
 ## Completed preparation
 
 - Nine Apple System Voice recordings replaced with documented Kokoro synthesis.
@@ -49,42 +52,34 @@ Ubuntu runners, release jobs hosted Ubuntu/macOS. There are 54 unexpired Linux
 Actions artifacts (about 1.56 GiB); they were inventoried, not downloaded or
 executed. No actual disclosure in them was identified by this inventory.
 
-Organization runner-group access returns 403 without `admin:org`; private-plan
-branch/ruleset access is unavailable. Repository runner absence alone does not
-prove absence of shared organization runners. Browser inspection was unavailable
-in this session. Before public PR execution, an administrator must confirm the
-[runner-group repository access](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/manage-access)
-and intended public fork/branch policies. This is unverified configuration,
-not a confirmed unsafe runner assignment. No policy was changed by the audit.
+The runner-group API still requires `admin:org`, but authenticated browser
+inspection now verifies the organization has one group and it excludes public
+repositories. Two shared runners are in that group; no settings were changed.
+Public-fork approval and branch/ruleset controls remain private-plan dependent;
+verify the intended public policy during the approved visibility transition
+before enabling external workflows. See the dated candidate record for scope.
 
-The current asset checker reports **89 approved records and 2 pending**. The
+The current asset checker reports **91 approved records and 0 pending**. The
 fifteen corporate variants are cleared by owner authority confirmation. Both
-Veronica refs have confirmed synthetic-only inputs and matching offline ASR;
-only provider output permission remains pending. These are two files in one
-source family, not two confirmed violations.
+Veronica refs have confirmed synthetic-only inputs, matching offline ASR and
+Grok attribution. The owner explicitly chose to retain their exact voices after
+reviewing the provider-terms question; that is a completed retention decision.
 
 ## Remaining decisions and acceptance
 
-1. **Veronica output terms:** input/source and targeted content review are complete.
-   “Created with Grok” attribution is included. Resolve the applicable provider
-   output permission for extracted-audio redistribution and Qwen reference use;
-   [review evidence](media-review-evidence.md#veronica-reference-clips) records
-   current and historical terms. No real-person input is asserted.
-2. **Retained history:** the owner prefers keeping existing history. Continue with
+1. **Retained history:** the owner prefers keeping existing history. Continue with
    that publication strategy; no rewrite, remote deletion or publication has
    occurred. Old Apple WAVs remain reachable, so current fixture replacement does
    not settle their historical redistribution question. Resolve that specific
    issue and record dispositions for retained refs/outputs before publication;
    do not reopen the history-strategy choice absent a concrete need.
-3. **CI:** the PR #343 corrections are included in this branch: a bounded
-   debug-stream stress window plus deterministic blocked-write coverage, and a
-   journal failure assertion synchronized with completed flush processing. The
-   journal regression passes 100 race-enabled repetitions; debugstream,
-   workjournal, transcript and events pass ten repetitions together. Updated
-   hosted checks must still pass before treating CI as ready.
-4. **Administrator settings:** verify shared runner access and public-fork policy
-   when preparing visibility. Record any plan/visibility-dependent protection.
-5. **Physical first conversation:** follow the existing
+2. **CI:** merged main at `3cbe9d9d` passes all six hosted jobs. The debugstream
+   and journal corrections are included. Three other intermittent failures from
+   the PR runs remain tracked; a successful run does not prove those repaired.
+3. **Administrator settings:** browser inspection verifies shared runners exclude
+   public repositories. Recheck at publication, and verify public-fork approval
+   and intended branch rules before external workflows execute.
+4. **Physical first conversation:** follow the existing
    [acceptance procedure](first-conversation-acceptance.md) on a disposable
    account/machine: fresh install/downloads, microphone denial/grant, audible
    reply, interruption and session relaunch. Record observed results. The

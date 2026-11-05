@@ -1096,32 +1096,30 @@
     {
       "path": "pkg/voiceagent/qwen/voices/veronica/ref.wav",
       "source": "Owner confirmed on 2026-11-04: entirely generated in their Imagine account with no real-person input. Adjacent meta.json identifies clip name and reference text; original source video/receipt is not bundled.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "c7f9d546cbeb43e994cb24c1441daf2109548e166faf3c165feb77401790f8ed",
       "review": {
-        "reviewer": "Codex, recording owner source confirmation and prior offline ASR",
+        "reviewer": "Codex, recording explicit owner retention decision and prior source/ASR review",
         "reviewed_at": "2026-11-04",
         "content_evidence": "Offline ASR matches adjacent reference text; owner confirms synthetic-only generation without real-person input. This supports source/content review, not human listening or voice-identity verification. See docs/media-review-evidence.md#veronica-reference-clips.",
-        "rights_evidence": "Owner generation/input facts confirmed. Created with Grok (Imagine); attribution added to NOTICE and adjacent voice README. Current and June 26, 2026 Consumer Terms contain Output permission/attribution language. Brand Guidelines cover text/images but do not explicitly resolve extracted audio redistribution or cloning use; no applicable permission grant has been established. See docs/media-review-evidence.md#veronica-reference-clips."
-      },
-      "next_action": "Resolve applicability of Grok Output permission terms to redistribution and Qwen reference use of these extracted synthetic audio clips; retain or coordinate replacement based on that result. Owner input facts and targeted ASR review are complete."
+        "rights_evidence": "Owner confirms entirely Imagine-generated references in their own account without real-person input, and explicitly elects to retain the exact references for public project use after reviewing the provider-terms question. Created with Grok attribution is preserved. Consumer FAQ, terms and AUP sources remain documented in docs/media-review-evidence.md#veronica-reference-clips. Clearance records the owner retention decision; no separate provider grant is asserted."
+      }
     },
     {
       "path": "pkg/voiceagent/qwen/voices/veronicadesk/ref.wav",
       "source": "Owner confirmed on 2026-11-04: entirely generated in their Imagine account with no real-person input. Adjacent meta.json identifies clip name and reference text; original source video/receipt is not bundled.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "992cff600bd8c2635fcad8bd218169168220abfbdfac4deca7b8e666ac184ce6",
       "review": {
-        "reviewer": "Codex, recording owner source confirmation and prior offline ASR",
+        "reviewer": "Codex, recording explicit owner retention decision and prior source/ASR review",
         "reviewed_at": "2026-11-04",
         "content_evidence": "Offline ASR matches adjacent reference text; owner confirms synthetic-only generation without real-person input. This supports source/content review, not human listening or voice-identity verification. See docs/media-review-evidence.md#veronica-reference-clips.",
-        "rights_evidence": "Owner generation/input facts confirmed. Created with Grok (Imagine); attribution added to NOTICE and adjacent voice README. Current and June 26, 2026 Consumer Terms contain Output permission/attribution language. Brand Guidelines cover text/images but do not explicitly resolve extracted audio redistribution or cloning use; no applicable permission grant has been established. See docs/media-review-evidence.md#veronica-reference-clips."
-      },
-      "next_action": "Resolve applicability of Grok Output permission terms to redistribution and Qwen reference use of these extracted synthetic audio clips; retain or coordinate replacement based on that result. Owner input facts and targeted ASR review are complete."
+        "rights_evidence": "Owner confirms entirely Imagine-generated references in their own account without real-person input, and explicitly elects to retain the exact references for public project use after reviewing the provider-terms question. Created with Grok attribution is preserved. Consumer FAQ, terms and AUP sources remain documented in docs/media-review-evidence.md#veronica-reference-clips. Clearance records the owner retention decision; no separate provider grant is asserted."
+      }
     },
     {
       "path": "testdata/kws/bare.wav",
