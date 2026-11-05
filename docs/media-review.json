@@ -4,227 +4,212 @@
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_128x128.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "d3a4ffcaeba1114396bc5c378e4683550939384a75c3e337871f90441a0a5beb",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_128x128@2x.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "c9851bfad19ab7a0fe831ba2891ed5b272580e552cd81b9715991d92c95d508a",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_16x16.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "1684b3d0ce5acf82fb42717977255109892b770f6549606a7273c80c1cc09881",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_16x16@2x.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "f212cad7d5a6f0a2cf685252e631d448c51f53d433232d2d13165b2d87a806ee",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_256x256.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "c9851bfad19ab7a0fe831ba2891ed5b272580e552cd81b9715991d92c95d508a",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_256x256@2x.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "f7da38b75190f900547f65af68c068fab13159d86712e2298944309d8f8cb684",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_32x32.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "be37125b8413dda57deca80326a07977620fa477d85dfb904c9f0e647a658d55",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_32x32@2x.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "467d636c6741bb41ffad5bc9eed5551c047a527fc87b3a9a3ba6090504f295d3",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_512x512.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "f7da38b75190f900547f65af68c068fab13159d86712e2298944309d8f8cb684",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/AppIcon.iconset/icon_512x512@2x.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "b4c4bd55fa88a89b0e174a0f8444aa6b9b8dbb6c695c2f763b3183a9af2da2a9",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Repeated/raster-size app icon showing the project C-mark in cyan/white on dark ground. Group with the other AppIcon.iconset PNGs; no embedded text or personal data visible. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/obediencecorp-logo-dark.svg",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "2d2a05f47f49bf65d91dc4f4d7342673564ccb2924f794bf2d06a0cc569b1a2f",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Current vector is a simple project-branded concentric C-mark. Git history identifies the desktop app import; no third-party imagery apparent. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/tray-color.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "b84f5fe38222a8fe7593054bd8a07ee5f15c084416d8d00cb1ec59f9c973e274",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "PNG tray icon is a raster derivative of the matching project C-mark SVG; visually matches source variant and contains no personal data. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/tray-color.svg",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "9644f63611afffe9989ecd73e6116a9f6e3ead954df245ae2963dc0da81aeeb1",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Current vector is the project C-mark in cyan/white; tracked in imported desktop app history. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/tray-template.png",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "5a5f3fe64a365c16ee9c74dff87095a5bdbb1a2fff3c5a05d8e60b645efc9493",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "PNG tray icon is a raster derivative of the matching project C-mark SVG; visually matches source variant and contains no personal data. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "apps/desktop/assets/tray-template.svg",
       "source": "Corporate SVG mark and companion macOS appiconset; see apps/desktop/assets/README.md at source revision 77ad42ac4482ea54ea75511014b224587250797c.",
-      "disposition": "retained_private_pending_review",
-      "public_release": "blocked",
+      "disposition": "retain_public",
+      "public_release": "cleared",
       "content_review": "complete",
       "sha256": "837dd4d3cb02521fd96d2b344facab58dad21fe878eb20216d945cf87ef6c28f",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
+        "reviewer": "Codex, recording owner confirmation and prior visual review",
+        "reviewed_at": "2026-11-04",
         "content_evidence": "Current vector is the same project C-mark in monochrome; tracked in imported desktop app history. See docs/media-review-evidence.md#project-ui-captures for method and limits.",
-        "rights_evidence": "Corporate source lineage established; owner confirmation of ownership/control and public use remains pending."
-      },
-      "next_action": "Confirm corporate ownership/control and public project use once for this 15-file family."
+        "rights_evidence": "Owner confirmed corporate ownership/control and authority for public project use on 2026-11-04. This covers the shared 15-file mark family; source lineage is recorded in apps/desktop/assets/README.md. No trademark license or endorsement beyond that confirmation is asserted."
+      }
     },
     {
       "path": "demos/agent-images.gif",
@@ -1110,33 +1095,33 @@
     },
     {
       "path": "pkg/voiceagent/qwen/voices/veronica/ref.wav",
-      "source": "Imagine clip identified in adjacent meta.json; original source clip and generation receipt absent. Real-human versus entirely synthetic source is not established.",
+      "source": "Owner confirmed on 2026-11-04: entirely generated in their Imagine account with no real-person input. Adjacent meta.json identifies clip name and reference text; original source video/receipt is not bundled.",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "content_review": "complete",
       "sha256": "c7f9d546cbeb43e994cb24c1441daf2109548e166faf3c165feb77401790f8ed",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#veronica-reference-clips.",
-        "rights_evidence": "Generation/input provenance and applicable terms pending. Current Grok Consumer Terms section 4 also contains Output permission/attribution language referring to Brand Guidelines; applicability to extracted audio and historical clips needs resolution. Ownership language alone is insufficient. No performer identity inferred."
+        "reviewer": "Codex, recording owner source confirmation and prior offline ASR",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Offline ASR matches adjacent reference text; owner confirms synthetic-only generation without real-person input. This supports source/content review, not human listening or voice-identity verification. See docs/media-review-evidence.md#veronica-reference-clips.",
+        "rights_evidence": "Owner generation/input facts confirmed. Created with Grok (Imagine); attribution added to NOTICE and adjacent voice README. Current and June 26, 2026 Consumer Terms contain Output permission/attribution language. Brand Guidelines cover text/images but do not explicitly resolve extracted audio redistribution or cloning use; no applicable permission grant has been established. See docs/media-review-evidence.md#veronica-reference-clips."
       },
-      "next_action": "Obtain source/generation facts and applicable input/output permissions and attribution requirements, plus audio review. Coordinate any replacement with embedded voice behavior."
+      "next_action": "Resolve applicability of Grok Output permission terms to redistribution and Qwen reference use of these extracted synthetic audio clips; retain or coordinate replacement based on that result. Owner input facts and targeted ASR review are complete."
     },
     {
       "path": "pkg/voiceagent/qwen/voices/veronicadesk/ref.wav",
-      "source": "Imagine clip identified in adjacent meta.json; original source clip and generation receipt absent. Real-human versus entirely synthetic source is not established.",
+      "source": "Owner confirmed on 2026-11-04: entirely generated in their Imagine account with no real-person input. Adjacent meta.json identifies clip name and reference text; original source video/receipt is not bundled.",
       "disposition": "retained_private_pending_review",
       "public_release": "blocked",
-      "content_review": "source_text_reviewed_audio_pending",
+      "content_review": "complete",
       "sha256": "992cff600bd8c2635fcad8bd218169168220abfbdfac4deca7b8e666ac184ce6",
       "review": {
-        "reviewer": "GPT-6 Luna; consolidated by Codex",
-        "reviewed_at": "2026-11-03",
-        "content_evidence": "WAV metadata and adjacent source records reviewed; no listening or ASR pass. Expected text is not a verified transcript. See docs/media-review-evidence.md#veronica-reference-clips.",
-        "rights_evidence": "Generation/input provenance and applicable terms pending. Current Grok Consumer Terms section 4 also contains Output permission/attribution language referring to Brand Guidelines; applicability to extracted audio and historical clips needs resolution. Ownership language alone is insufficient. No performer identity inferred."
+        "reviewer": "Codex, recording owner source confirmation and prior offline ASR",
+        "reviewed_at": "2026-11-04",
+        "content_evidence": "Offline ASR matches adjacent reference text; owner confirms synthetic-only generation without real-person input. This supports source/content review, not human listening or voice-identity verification. See docs/media-review-evidence.md#veronica-reference-clips.",
+        "rights_evidence": "Owner generation/input facts confirmed. Created with Grok (Imagine); attribution added to NOTICE and adjacent voice README. Current and June 26, 2026 Consumer Terms contain Output permission/attribution language. Brand Guidelines cover text/images but do not explicitly resolve extracted audio redistribution or cloning use; no applicable permission grant has been established. See docs/media-review-evidence.md#veronica-reference-clips."
       },
-      "next_action": "Obtain source/generation facts and applicable input/output permissions and attribution requirements, plus audio review. Coordinate any replacement with embedded voice behavior."
+      "next_action": "Resolve applicability of Grok Output permission terms to redistribution and Qwen reference use of these extracted synthetic audio clips; retain or coordinate replacement based on that result. Owner input facts and targeted ASR review are complete."
     },
     {
       "path": "testdata/kws/bare.wav",

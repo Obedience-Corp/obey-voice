@@ -26,10 +26,11 @@ close a gate. Recheck changed content after the final merge.
 
 - Confirm the intended identity and behavior of the Her-inspired Veronica persona.
   The functional persona remains unchanged pending that decision.
-- Establish source, redistribution and voice-cloning permission for both embedded
-  reference clips in `pkg/voiceagent/qwen/voices/veronica/` and `veronicadesk/`.
-  Metadata is provenance information, not evidence of permission. If uncleared,
-  replace them or remove them together with catalog/default/migration changes.
+- Owner confirms both embedded Veronica references were entirely Imagine-generated
+  in their account without real-person input; offline ASR matches the metadata.
+  Attribution is included. Resolve applicable provider output permission for
+  redistribution/Qwen reference use, or coordinate catalog/default/migration
+  changes with any replacement. See the focused review evidence.
 - Retain the short t3b excerpt as the owner's chosen attributed technical benchmark;
   its README and NOTICE record source, purpose, and the unverified license grant.
   The source recording is not bundled. No replacement is required by default.
@@ -39,7 +40,8 @@ close a gate. Recheck changed content after the final merge.
   actual findings and limitations; resolve specific restrictions or imported voices.
 - Nine Apple System Voice WAVs and two undocumented voiceflow recordings are now
   replaced with pinned Kokoro controls. Their old bytes remain in Git history;
-  the owner's publication history strategy must address those historical copies.
+  retained-history publication must resolve the specific historical redistribution
+  question. The owner prefers preserving history; no rewrite is authorized.
 - Verify model, voice, font and other bundled third-party asset license obligations
   alongside `LICENSE` and `NOTICE`. Tests and metadata do not establish rights.
 
@@ -49,8 +51,10 @@ close a gate. Recheck changed content after the final merge.
   repository, refs and artifacts to publish before scanning; record their hashes.
 - Review reachable history, deleted blobs, all refs (including PR refs), tags,
   releases, Actions artifacts/logs, issues/PR discussions, archives and external
-  copies. A cleanup of HEAD does not remove historical disclosure. The owner must
-  select a history strategy before any rewrite, remote deletion or publication.
+  copies. A cleanup of HEAD does not remove historical disclosure. The owner
+  prefers keeping history; follow that strategy and record concrete findings
+  and dispositions. Any rewrite, remote deletion or publication needs a separate
+  explicit decision.
 - Scan the exact public tree, history and release artifacts for secrets; inspect
   findings privately and rotate any confirmed exposed credentials. A redacted
   current-directory scan is not a history or binary-content audit. Retained media

@@ -40,3 +40,14 @@ Synthetic Kokoro fixture source pack: Apache-2.0,
 https://huggingface.co/csukuangfj/kokoro-multi-lang-v1_0/blob/main/LICENSE .
 Generation details and byte hashes: docs/audio/public-fixtures.json.
 Model weights are not bundled in these generated fixture WAV files.
+
+--------------------------------------------------------------------------------
+Synthetic Veronica reference audio
+
+pkg/voiceagent/qwen/voices/veronica/ref.wav
+pkg/voiceagent/qwen/voices/veronicadesk/ref.wav
+Created with Grok (Imagine). The owner confirms synthetic-only generation in
+their account, without real-person input. See the adjacent voices/README.md and
+docs/media-review-evidence.md for source facts and the unresolved provider
+output-permission question. This attribution does not assert provider endorsement
+or an established redistribution/cloning grant.

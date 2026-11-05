@@ -105,15 +105,13 @@ func TestJournalStalledWriteDoesNotBlockObserveAndCountsInflight(t *testing.T) {
 }
 
 func TestJournalFailedBatchRetainsGapAndLatestSnapshot(t *testing.T) {
-	st := &journalStoreFake{started: make(chan struct{}), release: make(chan struct{}), err: errors.New("disk full"), failNext: true}
-	close(st.release)
-	j := testJournal(t, st, Options{SyncInterval: 5 * time.Millisecond})
+	st := &journalStoreFake{err: errors.New("disk full"), failNext: true}
+	// Exercise the failed-batch projection synchronously. A Write-start signal
+	// precedes its result and cannot establish that flush has updated health.
+	// Keep the background timer out of this explicitly driven flush.
+	j := testJournal(t, st, Options{SyncInterval: time.Hour})
 	j.record(Record{Type: "failed"}, j.coordinator.Scope(), nil)
-	select {
-	case <-st.started:
-	case <-time.After(time.Second):
-		t.Fatal("flush did not start")
-	}
+	j.flush()
 	h := j.Health()
 	if !h.Incomplete || len(h.Gaps) == 0 {
 		t.Fatalf("health=%+v", h)

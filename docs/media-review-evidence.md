@@ -20,18 +20,24 @@ The earlier blanket requirement for complete GIF timelines and listening to all
 synthetic fixtures has been removed. Every method and residual limit remains
 explicit in the inventory. Actual byte changes still invalidate old digests.
 
-## Remaining source decisions
+## Owner source decisions — 2026-11-04
 
-- Two embedded Veronica references: owner source facts remain pending. Determine
-  whether these were entirely Imagine-generated or used a real person's input,
-  and which generation/input/output terms apply to redistribution and cloning.
-- Fifteen corporate icon derivatives: source lineage is recorded in
-  `apps/desktop/assets/README.md`; one owner confirmation of ownership/control
-  and public-project authority covers the family.
+The owner confirmed corporate ownership/control and authority for public use of
+all fifteen icon derivatives from the source family in
+`apps/desktop/assets/README.md`. Those records are now cleared.
 
-These are two source families, not seventeen confirmed violations. The repo's
-separate history, runner-control and install/physical-acceptance records remain
-in the release checklist. Removing current files does not remove historical bytes.
+The owner confirmed both Veronica references were entirely generated in their
+Imagine account without real-person input. This resolves the source-input
+question. Offline ASR already matched the metadata phrases. Only the provider
+output-permission question below remains pending for those two records.
+
+The inventory now records **89 cleared and 2 pending**, with unchanged asset
+bytes. These are review decisions, not a claim of exhaustive inspection.
+
+The owner prefers preserving existing Git history. Work will proceed on that
+basis; no rewrite, ref deletion or visibility change is authorized by that
+preference. Historical findings and external outputs remain separate from the
+current-tree media decisions.
 
 ## Replacement synthetic audio
 
@@ -70,8 +76,10 @@ Acoustic matching alone must never authorize a persona switch.
 The former Apple recordings' source READMEs identified System Voice synthesis.
 [macOS Tahoe SLA section 2F](https://www.apple.com/legal/sla/docs/macOSTahoe.pdf)
 contains a specific public-redistribution restriction. The new current-tree fixtures
-resolve that source issue; old copies remain in Git history until the owner chooses
-a publication history strategy. No shared history was rewritten by this change.
+resolve that source issue in the current tree. The owner prefers retaining history,
+so old copies remain a specific historical redistribution question to resolve
+before publication. Selecting retained history does not itself establish permission
+for those copies. No shared history was rewritten by this change.
 
 ## Existing synthetic and benchmark WAVs
 
@@ -120,16 +128,30 @@ relicensed under AGPL. No actual privacy or redistribution violation was identif
 
 ## Veronica reference clips
 
-The two Qwen refs identify Imagine clip names and text in adjacent metadata. Offline
-ASR matches those reference phrases; it establishes neither a real person's identity
-nor permission to use their voice. The source clips and generation receipts are absent.
-The name `human-talk.mp4` is not evidence of a real performer.
+The owner confirmed both references were entirely generated in their Imagine
+account without real-person input. The two Qwen refs identify source clip names
+and text in adjacent metadata; offline ASR matches those phrases. Original videos
+and generation receipts are not bundled. The filename `human-talk.mp4` does not
+establish a real performer, and no real-person input is now asserted.
 
-Current [Grok Consumer Terms section 4](https://x.ai/legal/terms-of-service) addresses
-input rights and output permission/attribution, referring to [Brand Guidelines](https://x.ai/legal/brand-guidelines).
-Historical terms/account/feature and applicability to these extracted voice references
-still need the source facts. Do not claim ownership language alone clears cloning.
-No voice or persona has been removed or changed by this fixture work.
+Both clips first appear in August 2026 repository history. The official
+[June 26, 2026 Consumer Terms](https://x.ai/legal/terms-of-service/previous-2026-06-26#user-content)
+precede those commits; the next published version is August 24. This establishes
+a useful historical reference, not the exact generation date, account agreement
+or feature-specific terms. That version and the
+[current Consumer Terms](https://x.ai/legal/terms-of-service) contain a requirement
+for permission and attribution when using Output, referring to
+[Brand Guidelines](https://x.ai/legal/brand-guidelines). The guidelines explicitly
+address generated text/images and mark use, without an explicit extracted-audio
+redistribution or Qwen reference-use grant identified in this review.
+
+“Created with Grok” attribution is now in NOTICE and the adjacent voice README.
+That addresses attribution without claiming it alone satisfies permission. The
+remaining action is narrowly to establish applicable output permission for the
+two extracted synthetic references, or choose coordinated replacement. The source
+confirmation does not require further real-person consent paperwork. No actual
+impersonation or terms violation was established by this review. No voice or
+persona was removed or changed.
 
 ## Scope limits
 
