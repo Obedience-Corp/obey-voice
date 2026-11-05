@@ -147,8 +147,12 @@ redistribution or Qwen reference-use grant identified in this review.
 
 “Created with Grok” attribution is now in NOTICE and the adjacent voice README.
 That addresses attribution without claiming it alone satisfies permission. The
-remaining action is narrowly to establish applicable output permission for the
-two extracted synthetic references, or choose coordinated replacement. The source
+[Consumer FAQ](https://x.ai/legal/faq) permits output reuse, including commercial
+use, but the [Acceptable Use Policy](https://x.ai/legal/acceptable-use-policy)
+restricts using outputs to develop competing models, products or services. Its
+application to this voice assistant remains unresolved, not a confirmed violation.
+The remaining action is to establish an applicable permission basis or choose
+coordinated replacement of the two references. The source
 confirmation does not require further real-person consent paperwork. No actual
 impersonation or terms violation was established by this review. No voice or
 persona was removed or changed.
