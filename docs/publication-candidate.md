@@ -64,7 +64,9 @@ No rewrite, remote deletion or publication occurred.
 
 1. Resolve the historical System Voice audio disposition above, preserving the
    owner's development-history preference. Current-tree media is fully cleared:
-   91 records and zero pending. Do not restart blanket media review.
+   92 records and zero pending after adding the isolated persona-list demo.
+   Its tape/fixture and one-second samples were reviewed on 2026-11-05.
+   Do not restart blanket media review.
 2. Record the physical fresh-setup check: permissions, actual downloads/inference,
    audible response, interruption and session relaunch. Existing software fixtures
    passed but cannot establish these physical observations. Owner answer pending.

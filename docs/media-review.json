@@ -772,6 +772,20 @@
       }
     },
     {
+      "path": "demos/persona-list.gif",
+      "source": "Project-produced VHS terminal demo introduced in 461a0796; demos/persona-list.tape sources demos/fixtures/persona-list.sh, which creates disposable synthetic persona configuration.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "25497376f7960e43dd16d6796655e5224c455b4517fff87c5031cbd2a3bac919",
+      "review": {
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-05",
+        "content_evidence": "Reviewed tape and fixture source plus eight one-second samples across the 7.8-second GIF. Shows synthetic Jarvis/Obey/Samantha/Santa/Veronica profiles, provider/model/voice labels and a temporary /tmp fixture path. No private-content finding. Source review plus sampling, not every-frame inspection. No playback or model inference is captured.",
+        "rights_evidence": "Project-authored terminal recording from disposable synthetic fixture, retained as project documentation under the existing proportionate review policy. No imported performer recording or third-party artwork identified."
+      }
+    },
+    {
       "path": "demos/persona-model-view.gif",
       "source": "Project-produced recording from the updated VHS tape and disposable synthetic configuration.",
       "disposition": "retain_public",
