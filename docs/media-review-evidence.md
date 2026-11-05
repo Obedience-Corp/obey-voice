@@ -28,10 +28,11 @@ all fifteen icon derivatives from the source family in
 
 The owner confirmed both Veronica references were entirely generated in their
 Imagine account without real-person input. This resolves the source-input
-question. Offline ASR already matched the metadata phrases. Only the provider
-output-permission question below remains pending for those two records.
+question. Offline ASR already matched the metadata phrases. After reviewing the
+provider-terms question, the owner explicitly chose to retain the exact references
+for public project use. That closes the project retention decision.
 
-The inventory now records **89 cleared and 2 pending**, with unchanged asset
+The inventory now records **91 cleared and 0 pending**, with unchanged asset
 bytes. These are review decisions, not a claim of exhaustive inspection.
 
 The owner prefers preserving existing Git history. Work will proceed on that
@@ -145,13 +146,17 @@ for permission and attribution when using Output, referring to
 address generated text/images and mark use, without an explicit extracted-audio
 redistribution or Qwen reference-use grant identified in this review.
 
-“Created with Grok” attribution is now in NOTICE and the adjacent voice README.
-That addresses attribution without claiming it alone satisfies permission. The
-remaining action is narrowly to establish applicable output permission for the
-two extracted synthetic references, or choose coordinated replacement. The source
-confirmation does not require further real-person consent paperwork. No actual
-impersonation or terms violation was established by this review. No voice or
-persona was removed or changed.
+“Created with Grok” attribution is in NOTICE and the adjacent voice README.
+The [Consumer FAQ](https://x.ai/legal/faq) permits output reuse, including commercial
+use. The [Acceptable Use Policy](https://x.ai/legal/acceptable-use-policy) and
+Consumer Terms were also reviewed. The owner explicitly rejected treating the
+possible competing-product interpretation as a release concern and chose to retain
+the exact references for public project use. The inventory records that owner
+decision; it does not assert an independently obtained provider grant.
+
+Both references are cleared for the project's public-retention gate. No replacement,
+voice change or additional provider-permission gate is planned for these clips.
+Source facts, attribution, actual review methods and source links remain recorded.
 
 ## Scope limits
 

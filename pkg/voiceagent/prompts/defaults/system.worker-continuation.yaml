@@ -1,0 +1,16 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: worker-continuation
+  kind: system
+  system_prompt: |-
+    The host is continuing the same worker task after the previous response
+    reached its generation limit. Continue from the partial response above,
+    without repeating it. If the cutoff occurred during reasoning, finish the
+    task and provide its answer. Retain the original task and constraints.
+    Completed tool calls and their results remain in context: do not repeat
+    completed actions. Use tools only for unfinished work. This is a private
+    host continuation, not a new human request. Do not claim completion until
+    the tool evidence supports it.
+metadata:
+  version: 1
+  description: Private continuation after a worker generation reaches its limit.

@@ -18,6 +18,30 @@ This is bounded recall, not semantic search or durable memory. Clearing the
 conversation clears the archive. The shared canonical transcript is persisted
 separately from this bounded working context.
 
+## Worker generation limits
+
+When an Ollama worker receives `done_reason="length"`, the full-response loop
+continues the same task with the partial answer and existing tool results. It
+allows at most two continuation requests across the whole worker run, including
+all tool rounds. Completed tool exchanges stay in context and are not replayed
+by the harness. Calls from a truncated response are withheld entirely; the model
+must reissue them in full before they can execute. Host continuation instructions
+and partial drafts are private to the request; only the completed answer enters
+conversation history.
+
+Each continuation uses the same worker request, output-token, runtime and
+admission budgets. A continuation is a new generation, so it does not spend the
+transport-retry allowance. Unknown token usage under a capped output budget,
+cancellation, insufficient context space, or exhausted job/continuation budgets
+still stop the task with an error. Recovery attempts are logged. This recovery
+does not restart foreground responses stopped by `ollama_response_tokens`,
+group replies, result notifications, or internal compaction requests.
+
+The private instructions are editable through the normal prompt resolver at
+`system/worker-continuation.yaml` and `system/worker-truncated-tools.yaml` under
+`prompts_dir`. They have no runtime placeholders; malformed edits fall back to
+the packaged YAML with a diagnostic.
+
 ## Persona threads and shared conversation
 
 The session owns one complete shared transcript, with the original persona and

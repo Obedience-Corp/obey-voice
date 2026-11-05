@@ -77,6 +77,9 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 	switch event.kind {
 	case playbackNotEnqueued:
 		if event.error != "" {
+			if !event.result.Interrupted && !errors.Is(event.result.Err, context.Canceled) {
+				metrics.degraded = true
+			}
 			metrics.recordSegment(event)
 		}
 		return true
@@ -173,6 +176,7 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 			return true
 		}
 		if event.result.Err != nil && !errors.Is(event.result.Err, context.Canceled) {
+			metrics.degraded = true
 			p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", event.result.Err)})
 		}
 		p.emitResponse(metrics, complete)

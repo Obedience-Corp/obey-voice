@@ -121,10 +121,18 @@ func TestOllamaToolLimitFinalAnswer(t *testing.T) {
 					}
 					return
 				}
-				if calls != maxToolIterations+1 {
+				wantCalls := maxToolIterations + 1
+				if !streaming && mode == "truncated" {
+					wantCalls += maxWorkerContinuations
+				}
+				if calls != wantCalls {
 					t.Fatalf("requests=%d", calls)
 				}
-				if len(final.Tools) != 0 || final.Messages[len(final.Messages)-1].Content != toolLimitAnswerInstruction {
+				foundFinalInstruction := false
+				for _, m := range final.Messages {
+					foundFinalInstruction = foundFinalInstruction || m.Content == toolLimitAnswerInstruction
+				}
+				if len(final.Tools) != 0 || !foundFinalInstruction {
 					t.Fatalf("missing tools-free final instruction: %+v", final)
 				}
 				results := 0

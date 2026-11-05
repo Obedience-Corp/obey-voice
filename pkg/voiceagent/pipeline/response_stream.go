@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -18,6 +19,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	speechCtx, cancelSpeech := metrics.speechContext(streamCtx)
+	defer cancelSpeech()
 
 	// loopDone closes when this function returns — the moment the loop stops
 	// draining playbackEvents. Playback watchers select on it so their sends
@@ -265,6 +268,12 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	armHold := func() { hold.Reset(holdAfter) }
 	stopHold := func() { hold.Stop() }
 	flushVoiceBatch := func() {
+		if speechCtx.Err() != nil {
+			voiceBatch = nil
+			stopIdle()
+			stopHold()
+			return
+		}
 		if len(voiceBatch) == 0 {
 			return
 		}
@@ -286,7 +295,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			metrics.sinkAtArm = p.sinkKind()
 			metrics.audibleSink = metrics.sinkAtArm
 			p.warnNoSinkSynth(metrics.sinkAtArm)
-			go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout, len(text), metrics.sinkAtArm == audio.SinkNone)
+			go p.watchPlaybackStall(speechCtx, &audioStarted, cancel, stalled, stallTimeout, len(text), metrics.sinkAtArm == audio.SinkNone)
 		}
 		pending++
 		if metrics.delivery != nil {
@@ -414,7 +423,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			return
 		}
 
-		if interrupted || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
+		if interrupted || speechCtx.Err() != nil || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
 			if metrics.delivery != nil && strings.TrimSpace(text) != "" {
 				metrics.delivery.skipped = true
 			}
@@ -527,7 +536,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	for i := 0; i < synthWorkers; i++ {
 		go func() {
 			for work := range synthQueue {
-				outcome := p.synthesizeSegmentObserved(streamCtx, loopDone, work, gate, &audioStarted, playbackEvents, &stickFallback, &realAudioQueued)
+				outcome := p.synthesizeSegmentObserved(speechCtx, loopDone, work, gate, &audioStarted, playbackEvents, &stickFallback, &realAudioQueued)
 				if !outcome.enqueued {
 					// No playback was enqueued: release the pending slot so the
 					// loop's accounting and the intake gate stay correct.
@@ -694,6 +703,15 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				}
 			}
 			if result.Err != nil && !interrupted {
+				if errors.Is(result.Err, brain.ErrResponseLimit) || errors.Is(result.Err, brain.ErrResponseRepetition) {
+					cancelSpeech()
+					if p.Player != nil {
+						p.Player.Stop()
+					}
+					voiceBatch = nil
+					stopIdle()
+					stopHold()
+				}
 				if result.Recovered {
 					// Drain genuine partial speech, complete degraded, and
 					// report the failure separately as text.
@@ -765,6 +783,10 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// interrupted outcome and intentionally returns without a context error.
 	if err := ctx.Err(); err != nil && !interrupted {
 		return strings.TrimSpace(fullResponse.String()), false, err
+	}
+	if metrics.speechStopped() {
+		interrupted = true
+		metrics.interrupted = true
 	}
 	return strings.TrimSpace(fullResponse.String()), interrupted, nil
 }
