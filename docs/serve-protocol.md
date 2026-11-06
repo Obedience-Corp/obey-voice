@@ -195,6 +195,39 @@ Response (legacy / no device_name):
 
 Store token (Keychain / localStorage). Pin `fingerprint` for TOFU if desired.
 
+### Host settings and persona permission
+
+Editing persistent host settings and personas requires a separate grant for a
+named paired device. It is denied by default. The browser's **Host settings
+and personas** panel displays its device ID and the host command to grant it:
+
+```sh
+obey-voice serve devices list
+obey-voice serve devices grant DEVICE_ID
+obey-voice serve devices revoke DEVICE_ID
+```
+
+The grant survives a serve restart; revocation takes effect for subsequent
+requests without restarting. A shared primary token cannot receive this grant.
+Older browser pairings using that token can continue conversations; pair again
+with a fresh code to obtain a named device token. To get a fresh code, restart
+serve. The browser and Stage share the token saved for the same origin.
+
+Only give this permission to trusted devices: settings may affect programs,
+provider endpoints, and other host behavior. Secret settings and the
+`remote_tools_enabled` switch cannot be read or changed through this editor.
+Remote tool access is a separate host setting; if enabled, conversation
+clients may direct tools that can themselves change host files. This permission
+is not an operating-system sandbox. Structured or embedded persona prompts
+are not editable in the browser. Settings may be overridden by environment
+variables, and changes can require a new conversation or server restart.
+
+`GET /v1/config-access` reports the requesting device's ID and grant status.
+Granted devices can use `GET/PATCH /v1/manage/settings` and
+`GET/PATCH /v1/manage/personas/{id}`. Each PATCH takes one string-valued
+`field` and `value`; validation uses the same rules as the host CLI. These
+endpoints never grant permissions themselves.
+
 ### Devices (D2)
 
 ```http

@@ -160,16 +160,14 @@ func (s *deviceStore) delete(id string) (token string, ok bool, err error) {
 		return "", false, fmt.Errorf("missing device id")
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	rec, exists := s.byID[id]
 	if !exists {
-		s.mu.Unlock()
 		return "", false, nil
 	}
 	token = rec.Token
 	delete(s.byID, id)
 	delete(s.byToken, rec.Token)
-	s.mu.Unlock()
-
 	path := filepath.Join(s.dir, id+".json")
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return token, true, fmt.Errorf("remove device token file: %w", err)
@@ -189,22 +187,19 @@ const lastSeenMinInterval = 30 * time.Second
 
 func (s *deviceStore) touch(token string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	rec, ok := s.byToken[token]
 	if !ok {
-		s.mu.Unlock()
 		return
 	}
 	now := time.Now().UTC()
 	if now.Sub(rec.LastSeen) < lastSeenMinInterval {
-		s.mu.Unlock()
 		return
 	}
 	rec.LastSeen = now
-	// Copy for write outside lock after unlocking map.
-	cp := *rec
-	s.mu.Unlock()
-	// Best-effort persistence; auth path must not fail on disk hiccups.
-	_ = s.write(&cp)
+	// Serialize this write with deletion so a late last-seen update cannot
+	// recreate a revoked token on disk for the next server restart.
+	_ = s.write(rec)
 }
 
 // clearAll deletes every device token file and empties the in-memory maps.

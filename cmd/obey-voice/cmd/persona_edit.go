@@ -250,8 +250,10 @@ func mergePersonaStack(cmd *cobra.Command, cfg *config.Config, p *persona.Profil
 	// comparing a raw on-disk value against a trimmed one would report a field
 	// as changed for an edit that never touched it.
 	base := persona.Brain{
-		Provider: strings.TrimSpace(p.Brain.Provider),
-		Model:    strings.TrimSpace(p.Brain.Model),
+		Provider:    strings.TrimSpace(p.Brain.Provider),
+		Model:       strings.TrimSpace(p.Brain.Model),
+		Worker:      p.Brain.Worker,
+		WorkerTiers: p.Brain.WorkerTiers,
 	}
 	baseTTS := persona.TTS{
 		Provider: strings.TrimSpace(p.TTS.Provider),

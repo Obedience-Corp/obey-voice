@@ -136,6 +136,12 @@
     #activity { max-height: 14rem; overflow-y: auto; }
     .activity-entry { padding: 0.4rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; font-size: 0.85rem; }
     .activity-entry:last-child { border-bottom: 0; }
+    .manage-entry { display: grid; gap: 0.45rem; padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
+    .manage-entry[hidden] { display: none; }
+    .manage-entry select { max-width: none; width: 100%; }
+    .manage-entry label { margin: 0; color: var(--fg); font-weight: 600; }
+    .manage-entry button { justify-self: start; }
+    #manageStatus { white-space: pre-wrap; overflow-wrap: anywhere; }
     button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     @media (max-width: 520px) { main { padding: 0.75rem; } header { padding: 0.8rem; } .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     #status {
@@ -175,6 +181,18 @@
       </div>
     </details>
     <details id="activityPanel"><summary id="activitySummary">Work and activity</summary><p class="hint">Current work and updates while connected.</p><div id="activity" aria-live="polite"></div></details>
+    <details id="managePanel">
+      <summary>Host settings and personas</summary>
+      <div class="setup-fields">
+        <p class="hint">This changes files on the host. The host must grant this paired device separate access. Some changes apply to a new conversation or after restart.</p>
+        <button id="manageRefresh" class="secondary" type="button">Check access and refresh</button>
+        <p id="manageStatus" class="hint" role="status">Pair this device, then check access.</p>
+        <div id="manageContent" hidden>
+          <h3>Persona</h3><label for="managePersona">Choose a persona</label><select id="managePersona"></select><div id="managePersonaFields"></div>
+          <h3>Settings</h3><label for="manageSearch">Find a setting</label><input id="manageSearch" type="text" placeholder="Search settings" /><div id="manageSettings"></div>
+        </div>
+      </div>
+    </details>
     <div id="log" role="log" aria-label="Conversation" aria-live="polite"></div>
     <div class="composer">
       <label for="input">Message</label>
@@ -189,5 +207,6 @@
     </div>
   </main>
   <script src="/app.js"></script>
+  <script src="/settings.js"></script>
 </body>
 </html>

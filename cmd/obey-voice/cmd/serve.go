@@ -163,7 +163,7 @@ func init() {
 	serveCmd.Flags().StringVar(&serveWorkDir, "work-dir", "", "Directory the agent's file and shell tools operate in (default: the work_dir setting)")
 	serveCmd.Flags().StringVar(&serveLogFile, "log-file", "", "Append human/diagnostic output to this file (created 0600) instead of the console; stdout still carries the --banner-json lines")
 	serveCmd.Flags().BoolVar(&serveOpen, "open", false, "Open Stage in the default browser after listen; voice plays in the orb")
-	serveCmd.AddCommand(serveControlCmd("stop"), serveControlCmd("restart"))
+	serveCmd.AddCommand(serveControlCmd("stop"), serveControlCmd("restart"), serveDevicesCmd())
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -413,6 +413,7 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 	server := netapi.New(netapi.Options{
 		SetParticipation:  setParticipation,
 		SetPersonaContext: switcher.applyContext,
+		ConfigManagement:  newServeConfigManagement(),
 		ListPersonas: func() ([]netapi.PersonaSummary, error) {
 			if switcher.selector != nil {
 				return servePersonaList(switcher.selector.Config())()

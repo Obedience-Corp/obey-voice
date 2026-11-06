@@ -61,6 +61,9 @@ type Options struct {
 	// worse than no list. Return usable rows with *PersonaListIssues when only
 	// individual profiles are unavailable; the route includes their warnings.
 	ListPersonas func() ([]PersonaSummary, error)
+	// ConfigManagement exposes persistent changes only after an independent
+	// per-device authorization granted on the host.
+	ConfigManagement *ConfigManagement
 
 	// WorkDir is the directory the agent's file and shell tools operate in.
 	// Reported by GET /v1/status so a client can show where a tool call lands.
@@ -311,6 +314,13 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// PROTOCOL_DELTAS D2: per-device token list / revoke.
 	mux.HandleFunc("GET /v1/devices", s.handleDevices)
 	mux.HandleFunc("DELETE /v1/devices/{id}", s.handleDeviceDelete)
+	mux.HandleFunc("GET /v1/config-access", s.handleConfigAccess)
+	if s.opts.ConfigManagement != nil {
+		mux.HandleFunc("GET /v1/manage/settings", s.handleManagedSettings)
+		mux.HandleFunc("PATCH /v1/manage/settings", s.handleManagedSettingEdit)
+		mux.HandleFunc("GET /v1/manage/personas/{id}", s.handleManagedPersona)
+		mux.HandleFunc("PATCH /v1/manage/personas/{id}", s.handleManagedPersonaEdit)
+	}
 	// PROTOCOL_DELTAS D3: intent capture + targets.
 	mux.HandleFunc("POST /v1/intent", s.handleIntent)
 	mux.HandleFunc("GET /v1/intent/targets", s.handleIntentTargets)
@@ -332,6 +342,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.Handle("GET /{$}", web)
 	mux.Handle("GET /index.html", web)
 	mux.Handle("GET /app.js", web)
+	mux.Handle("GET /settings.js", web)
 	mux.Handle("GET /stage.html", web)
 	mux.Handle("GET /stage.js", web)
 
