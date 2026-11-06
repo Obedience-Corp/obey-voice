@@ -715,7 +715,7 @@
     fetch("/v1/pair", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: code }),
+      body: JSON.stringify({ code: code, device_name: "Browser" }),
     })
       .then(async (resp) => {
         const body = await resp.json().catch(() => ({}));

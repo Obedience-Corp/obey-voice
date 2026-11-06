@@ -71,7 +71,22 @@ func SetKeyFile(key, raw string) (SetResult, error) {
 	if err != nil {
 		return SetResult{}, err
 	}
-	return writeKeyToFile(spec, value)
+	return writeKeyToFile(spec, value, true)
+}
+
+// SetKeyFileOnDisk validates and persists a user-editable value without
+// installing a process-wide Viper override. Long-running hosts can reload the
+// file normally and retain environment precedence.
+func SetKeyFileOnDisk(key, raw string) (SetResult, error) {
+	spec, err := resolveSpec(key, true)
+	if err != nil {
+		return SetResult{}, err
+	}
+	value, err := coerceToSpec(spec, raw)
+	if err != nil {
+		return SetResult{}, err
+	}
+	return writeKeyToFile(spec, value, false)
 }
 
 // SetKeyFileValue is SetKeyFile for in-process callers that already hold a
@@ -94,7 +109,7 @@ func SetKeyFileValue(key string, value any) (SetResult, error) {
 	if err != nil {
 		return SetResult{}, err
 	}
-	return writeKeyToFile(spec, normalized)
+	return writeKeyToFile(spec, normalized, true)
 }
 
 // resolveSpec resolves key to a spec the caller is allowed to write.
@@ -158,10 +173,9 @@ func SuggestKeys(key string) []string {
 	return out
 }
 
-// writeKeyToFile performs the read-modify-write: lock, parse, compare, patch,
-// back up, replace atomically, then refresh the in-process viper so a later Get
-// in the same process agrees with the file.
-func writeKeyToFile(spec KeySpec, value any) (SetResult, error) {
+// writeKeyToFile locks, parses, compares, patches, backs up and replaces the
+// file atomically. When requested, it also refreshes the in-process value.
+func writeKeyToFile(spec KeySpec, value any, refresh bool) (SetResult, error) {
 	fileWriteMu.Lock()
 	defer fileWriteMu.Unlock()
 
@@ -198,7 +212,7 @@ func writeKeyToFile(spec KeySpec, value any) (SetResult, error) {
 		return result, nil
 	}
 
-	backupPath, err := patchAndReplace(data, doc, segments, value, path, existed, spec)
+	backupPath, err := patchAndReplace(data, doc, segments, value, path, existed, spec, refresh)
 	if err != nil {
 		return SetResult{}, err
 	}
@@ -208,7 +222,7 @@ func writeKeyToFile(spec KeySpec, value any) (SetResult, error) {
 }
 
 // patchAndReplace edits the source text, checks the edit landed, writes it, and
-// refreshes the in-process value.
+// optionally refreshes the in-process value.
 //
 // The refresh comes from the patched text rather than from the Go value, so a
 // later Get in this process sees exactly what a fresh Load would, including for
@@ -216,7 +230,7 @@ func writeKeyToFile(spec KeySpec, value any) (SetResult, error) {
 // own check that what it produced still parses and still holds what it was asked
 // to write — a text edit that did not land is refused here instead of being
 // saved over the user's config.
-func patchAndReplace(data []byte, doc *yaml.Node, segments []string, value any, path string, existed bool, spec KeySpec) (string, error) {
+func patchAndReplace(data []byte, doc *yaml.Node, segments []string, value any, path string, existed bool, spec KeySpec, refresh bool) (string, error) {
 	patched, err := patchConfigSource(data, doc, segments, value)
 	if err != nil {
 		return "", writeOrShapeFailed(spec.Key, "updating config", err)
@@ -229,7 +243,9 @@ func patchAndReplace(data []byte, doc *yaml.Node, segments []string, value any, 
 	if err != nil {
 		return "", err
 	}
-	Set(spec.Key, refreshed)
+	if refresh {
+		Set(spec.Key, refreshed)
+	}
 	return backupPath, nil
 }
 
