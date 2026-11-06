@@ -142,7 +142,9 @@ impl VoiceApp {
                     }
                     self.setting_editor(ui, spec);
                 }
-                if self.group == "brain" && provider == "ollama" && self.search.is_empty() {
+                if provider == "ollama"
+                    && keys.iter().any(|spec| spec.key == "ollama_model")
+                {
                     self.ollama_model_picker(ui);
                 }
                 if !claude.is_empty() {

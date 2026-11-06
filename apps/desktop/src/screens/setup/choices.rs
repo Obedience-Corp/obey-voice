@@ -58,7 +58,8 @@ impl VoiceApp {
         if provider == "ollama" {
             self.ollama_model_picker(ui);
         }
-        if let Some(model_key) = model_key
+        if provider != "ollama"
+            && let Some(model_key) = model_key
             && let Some(models) = self
                 .setup
                 .provider

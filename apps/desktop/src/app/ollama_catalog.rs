@@ -4,18 +4,23 @@ use eframe::egui;
 use serde_json::{Value, json};
 
 impl VoiceApp {
+    fn ollama_host_draft_unsaved(&self) -> bool {
+        self.drafts.get("ollama_host").is_some_and(|draft| {
+            draft
+                != self.values["ollama_host"]["value"]
+                    .as_str()
+                    .unwrap_or_default()
+        })
+    }
     fn ollama_key(&self) -> String {
         format!(
             "{}\n{}",
             self.values["brain_provider"]["value"]
                 .as_str()
                 .unwrap_or("ollama"),
-            self.drafts
-                .get("ollama_host")
-                .map(String::as_str)
-                .unwrap_or_else(|| self.values["ollama_host"]["value"]
-                    .as_str()
-                    .unwrap_or_default())
+            self.values["ollama_host"]["value"]
+                .as_str()
+                .unwrap_or_default()
         )
     }
     pub(crate) fn refresh_ollama_catalog(&mut self) {
@@ -31,6 +36,7 @@ impl VoiceApp {
         );
         self.ollama_catalog_request = Some((id, key));
         self.ollama_catalog = Value::Null;
+        self.ollama_catalog_key = None;
     }
     pub(super) fn ollama_catalog_result(
         &mut self,
@@ -42,22 +48,40 @@ impl VoiceApp {
             return;
         }
         self.ollama_catalog_request = None;
-        if key != self.ollama_key() || self.values["brain_provider"]["value"] != "ollama" {
+        if key != self.ollama_key()
+            || self.values["brain_provider"]["value"] != "ollama"
+            || self.ollama_host_draft_unsaved()
+        {
+            self.invalidate_ollama_catalog();
             return;
         }
         self.ollama_catalog = result.unwrap_or_else(|error| json!({"problem":error}));
+        self.ollama_catalog_key = Some(key);
     }
     pub(crate) fn ollama_model_picker(&mut self, ui: &mut egui::Ui) {
+        let key = self.ollama_key();
         if self
             .ollama_catalog_request
             .as_ref()
-            .is_some_and(|(_, key)| key != &self.ollama_key())
+            .is_some_and(|(_, request_key)| request_key != &key)
+            || self
+                .ollama_catalog_key
+                .as_ref()
+                .is_some_and(|catalog_key| catalog_key != &key)
         {
             self.invalidate_ollama_catalog();
         }
         if self.values["brain_provider"]["value"] != "ollama" {
             self.invalidate_ollama_catalog();
             return;
+        }
+        if self.ollama_host_draft_unsaved() {
+            self.invalidate_ollama_catalog();
+            ui.label("Save the Ollama server address before choosing a model.");
+            return;
+        }
+        if self.ollama_catalog.is_null() && self.ollama_catalog_request.is_none() && !self.demo {
+            self.refresh_ollama_catalog();
         }
         ui.horizontal(|ui| {
             let loading = self.ollama_catalog_request.is_some();
@@ -75,6 +99,25 @@ impl VoiceApp {
                 self.refresh_ollama_catalog();
             }
         });
+        let saved = self.values["ollama_model"]["value"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        let catalog_loaded = self.ollama_catalog.as_array().is_some();
+        let available = self.ollama_catalog.as_array().is_some_and(|models| {
+            models
+                .iter()
+                .any(|model| model.as_str() == Some(saved.as_str()))
+        });
+        if !saved.is_empty() && !available {
+            if catalog_loaded {
+                ui.label(format!(
+                    "Saved model: {saved} (not available on this server)"
+                ));
+            } else {
+                ui.label(format!("Saved model: {saved}"));
+            }
+        }
         if let Some(problem) = self.ollama_catalog["problem"].as_str() {
             ui.label(format!("Could not load Ollama models: {problem}"));
         }
@@ -82,10 +125,6 @@ impl VoiceApp {
             if models.is_empty() {
                 ui.label("No models are installed on this Ollama server.");
             }
-            let saved = self.values["ollama_model"]["value"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned();
             egui::ComboBox::from_id_salt("ollama_model_catalog")
                 .selected_text(if saved.is_empty() {
                     "Choose an installed model"
@@ -116,6 +155,7 @@ impl VoiceApp {
     }
     pub(super) fn invalidate_ollama_catalog(&mut self) {
         self.ollama_catalog = Value::Null;
+        self.ollama_catalog_key = None;
         self.ollama_catalog_request = None;
     }
 }
@@ -148,12 +188,19 @@ mod tests {
         assert_eq!(app.ollama_catalog, json!(["available-model"]));
         assert_eq!(app.values["ollama_model"]["value"], "removed-model");
 
+        app.drafts.insert("ollama_host".into(), "http://new".into());
+        assert!(app.ollama_host_draft_unsaved());
+        app.invalidate_ollama_catalog();
+        assert!(app.ollama_catalog.is_null());
+
+        app.drafts.remove("ollama_host");
         app.ollama_catalog_request = Some((8, "ollama\nhttp://old".into()));
         app.drafts.insert("ollama_host".into(), "http://new".into());
         app.ollama_catalog_result(8, "ollama\nhttp://old".into(), Ok(json!(["stale"])));
-        assert_eq!(app.ollama_catalog, json!(["available-model"]));
+        assert!(app.ollama_catalog.is_null());
         assert_eq!(app.ollama_catalog_request, None);
 
+        app.drafts.remove("ollama_host");
         app.ollama_catalog_request = Some((9, app.ollama_key()));
         app.ollama_catalog_result(9, app.ollama_key(), Err("server unavailable".into()));
         assert_eq!(app.ollama_catalog["problem"], "server unavailable");

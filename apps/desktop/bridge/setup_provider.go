@@ -111,6 +111,9 @@ func probeOllama(ctx context.Context, host, model string) providerCheck {
 			d.Models = append(d.Models, name)
 		}
 	}
+	if len(d.Models) == 0 {
+		d.Models = []string{}
+	}
 	if strings.TrimSpace(model) == "" {
 		d.Detail = "Choose an installed Ollama model"
 		d.Remediation = "Select a model below, save your choice, then check again."

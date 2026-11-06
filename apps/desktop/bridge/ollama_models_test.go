@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -31,6 +32,12 @@ func TestListOllamaModels(t *testing.T) {
 			}
 			if !tc.fails && len(models.([]string)) != tc.want {
 				t.Fatalf("models = %#v, want count %d", models, tc.want)
+			}
+			if tc.name == "empty" {
+				encoded, err := json.Marshal(models)
+				if err != nil || string(encoded) != "[]" {
+					t.Fatalf("empty catalog JSON = %q, err = %v; want []", encoded, err)
+				}
 			}
 		})
 	}
