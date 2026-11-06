@@ -255,6 +255,7 @@ pub enum Purpose {
     WorkerConfig,
     SettingsValues,
     ObeyCatalog(String),
+    OllamaCatalog(String),
     SettingSave(String),
     Mutation(String),
     Library,

@@ -5,6 +5,7 @@ mod events;
 pub(crate) mod media;
 mod media_view;
 mod obey_catalog;
+mod ollama_catalog;
 mod persona_audio;
 mod persona_directory;
 mod persona_preview;
@@ -25,6 +26,8 @@ pub struct VoiceApp {
     pub setup: crate::setup::Setup,
     pub obey_catalog: Value,
     pub obey_catalog_request: Option<u64>,
+    pub ollama_catalog: Value,
+    pub ollama_catalog_request: Option<(u64, String)>,
     pub backend: Backend,
     pub demo: bool,
     pub dark: bool,
@@ -120,6 +123,8 @@ impl VoiceApp {
             setup: crate::setup::Setup::default(),
             obey_catalog: Value::Null,
             obey_catalog_request: None,
+            ollama_catalog: Value::Null,
+            ollama_catalog_request: None,
             backend: Backend::new(ctx.clone(), demo),
             demo,
             dark,

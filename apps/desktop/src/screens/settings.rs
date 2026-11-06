@@ -136,10 +136,14 @@ impl VoiceApp {
                 }
                 let claude: Vec<_> = keys.iter().filter(|s| self.search.is_empty() && self.group == "advanced" && s.key.starts_with("claude_")).cloned().collect();
                 for spec in keys.iter().filter(|s| !claude.iter().any(|c| c.key == s.key)) {
+                    if provider == "ollama" && spec.key == "ollama_model" { continue; }
                     if !self.search.is_empty() {
                         ui.label(RichText::new(layout::title(layout::section(spec))).small().color(muted(ui)));
                     }
                     self.setting_editor(ui, spec);
+                }
+                if self.group == "brain" && provider == "ollama" && self.search.is_empty() {
+                    self.ollama_model_picker(ui);
                 }
                 if !claude.is_empty() {
                     ui.collapsing("Claude session management", |ui| {

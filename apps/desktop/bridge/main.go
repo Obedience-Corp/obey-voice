@@ -182,6 +182,14 @@ func (h *host) handle(ctx context.Context, r request, o *output) (any, error) {
 		return saveSetup(setupPath(), r.Config)
 	case "setup_provider":
 		return setupProvider(ctx)
+	case "ollama_models":
+		var args struct {
+			Host string `json:"host"`
+		}
+		if err := json.Unmarshal(r.Config, &args); err != nil {
+			return nil, err
+		}
+		return listOllamaModels(ctx, args.Host)
 	case "worker_config_get":
 		cfg, err := config.LoadRaw()
 		if err != nil {
