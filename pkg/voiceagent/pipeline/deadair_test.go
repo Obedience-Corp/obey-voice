@@ -9,15 +9,16 @@ import (
 )
 
 // applyStarted and applyFinished drive the two playback events the turn loop
-// serializes, without standing up a whole pipeline.
-func applyStarted(t *testing.T, p *Pipeline, m *turnMetrics, index int) {
+// serializes, without standing up a whole pipeline. Explicit timestamps keep
+// metric assertions independent of when the test goroutine is scheduled.
+func applyStarted(t *testing.T, p *Pipeline, m *turnMetrics, index int, at time.Time) {
 	t.Helper()
-	p.applyPlaybackEvent(playbackEvent{kind: playbackStarted, index: index, sentence: "s"}, m, new(atomic.Int64))
+	p.applyPlaybackEvent(playbackEvent{kind: playbackStarted, index: index, sentence: "s", playStarted: at}, m, new(atomic.Int64))
 }
 
-func applyFinished(t *testing.T, p *Pipeline, m *turnMetrics, index int) {
+func applyFinished(t *testing.T, p *Pipeline, m *turnMetrics, index int, at time.Time) {
 	t.Helper()
-	p.applyPlaybackEvent(playbackEvent{kind: playbackFinished, index: index, sentence: "s"}, m, new(atomic.Int64))
+	p.applyPlaybackEvent(playbackEvent{kind: playbackFinished, index: index, sentence: "s", playEnded: at}, m, new(atomic.Int64))
 }
 
 // TestDeadAirCountsSilenceBetweenSegments covers what no watchdog could see:
@@ -28,19 +29,16 @@ func TestDeadAirCountsSilenceBetweenSegments(t *testing.T) {
 	p := &Pipeline{Events: events.NewBus()}
 	m := newTurnMetrics()
 
-	applyStarted(t, p, m, 0)
-	applyFinished(t, p, m, 0)
+	applyStarted(t, p, m, 0, m.start)
+	end := m.start.Add(100 * time.Millisecond)
+	applyFinished(t, p, m, 0, end)
 	// The synthesizer is still working on segment 1; the player is idle.
 	gap := 40 * time.Millisecond
-	time.Sleep(gap)
-	applyStarted(t, p, m, 1)
+	applyStarted(t, p, m, 1, end.Add(gap))
 
 	got := m.snapshot().DeadAirElapsed
-	if got < gap {
-		t.Fatalf("DeadAirElapsed = %v, want at least the %v the player sat idle", got, gap)
-	}
-	if got > 10*gap {
-		t.Fatalf("DeadAirElapsed = %v, implausibly larger than the %v gap", got, gap)
+	if got != gap {
+		t.Fatalf("DeadAirElapsed = %v, want exactly the %v gap between playback events", got, gap)
 	}
 }
 
@@ -50,9 +48,11 @@ func TestDeadAirExcludesSilenceAfterTheReply(t *testing.T) {
 	p := &Pipeline{Events: events.NewBus()}
 	m := newTurnMetrics()
 
-	applyStarted(t, p, m, 0)
-	applyFinished(t, p, m, 0)
-	time.Sleep(30 * time.Millisecond) // turn is over; nothing follows
+	// Playback ended in the past; without a subsequent segment, the trailing
+	// silence must not be added when the metrics are read.
+	m.start = m.start.Add(-time.Second)
+	applyStarted(t, p, m, 0, m.start)
+	applyFinished(t, p, m, 0, m.start.Add(100*time.Millisecond))
 
 	if got := m.snapshot().DeadAirElapsed; got != 0 {
 		t.Fatalf("DeadAirElapsed = %v, want 0 when no segment followed", got)
@@ -66,15 +66,15 @@ func TestDeadAirIsZeroWhenPlaybackIsContinuous(t *testing.T) {
 	p := &Pipeline{Events: events.NewBus()}
 	m := newTurnMetrics()
 
+	at := m.start
 	for i := range 4 {
-		applyStarted(t, p, m, i)
-		applyFinished(t, p, m, i)
+		applyStarted(t, p, m, i, at)
+		at = at.Add(100 * time.Millisecond)
+		applyFinished(t, p, m, i, at)
 	}
 
-	// Back-to-back events leave only scheduling noise, well under a
-	// millisecond; anything larger would mean the accounting is running.
-	if got := m.snapshot().DeadAirElapsed; got > time.Millisecond {
-		t.Fatalf("DeadAirElapsed = %v, want ~0 for continuous playback", got)
+	if got := m.snapshot().DeadAirElapsed; got != 0 {
+		t.Fatalf("DeadAirElapsed = %v, want exactly 0 for continuous playback", got)
 	}
 }
 
