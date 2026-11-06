@@ -19,10 +19,10 @@
 <p align="center">
   <a href="#install">Get started</a> ·
   <a href="#what-you-can-do">What you can do</a> ·
+  <a href="#group-chat">Group chat</a> ·
   <a href="#audiobooks-and-narration">Audiobooks</a> ·
   <a href="#meeting-notes">Meetings</a> ·
   <a href="#scriptable-voice">Scripting</a> ·
-  <a href="#group-chat">Group chat</a> ·
   <a href="docs/README.md">Docs</a>
 </p>
 
@@ -30,7 +30,7 @@
 
 | Use it for | What you get |
 |------------|--------------|
-| **[Voice agents](#group-chat)** | Streaming conversation, interruptions, background work, and multiple personas with their own voices and models. |
+| **[Group chat and voice agents](#group-chat)** | Streaming conversation, interruptions, background work, and multiple personas with their own voices and models. |
 | **[Ebook → audiobook](#audiobooks-and-narration)** | EPUB and digital PDF narration, chapter/page audio, resumable renders, and optional Calibre library browsing. |
 | **[Articles and documents → audio](#audiobooks-and-narration)** | Read text, Markdown, HTML, and web articles aloud into audio files, or pipe text in from another program. |
 | **[Meeting notes](#meeting-notes)** | Live transcripts, timestamped notes and bookmarks, speaker labels, and saved Markdown you can route into your workspace. |
@@ -41,6 +41,12 @@
   <img src="docs/images/desktop-home.png" alt="Obey Voice desktop Home with recent conversations and workspace navigation" width="900"><br>
   <em>Native macOS app with sample conversations.</em>
 </p>
+
+## Group chat
+
+Bring multiple AI agents into one shared voice conversation, each with its own voice, model, and personality. Personas using different brain providers can participate together.
+
+Say “Jarvis, what do you think?” to bring one in; the last speaker handles follow-ups. Agents can hand questions to each other, and you can interrupt at any time. [Set up personas](docs/personas.md).
 
 <p align="center">
   <img src="docs/images/tui.gif" alt="Obey, Jarvis, and Veronica sharing one conversation in the Obey Voice terminal interface" width="900"><br>
@@ -139,10 +145,6 @@ obey-voice render report.md --out-dir out/report --resume --json > render-result
 **Transcribe recordings from another tool.** `obey-voice transcribe --request /absolute/job/request.json --jsonl` accepts a request describing a finished 16 kHz mono WAV and streams timed transcript events. [Request format and client example](docs/transcribe-protocol.md).
 
 **Build your own interface.** Use the [Go embedding example](examples/embed/README.md) to run the voice agent inside another application, or connect a client through the [HTTPS/WebSocket serve protocol](docs/serve-protocol.md). For phone or tablet access, choose **Use on another device** in the TUI. [Remote access guide](docs/usage.md#remote-access-phone--another-device).
-
-## Group chat
-
-Give each persona a voice, model, and prompt. Personas using different brain providers can share the same conversation. Say “Jarvis, what do you think?” to bring one in; the last speaker handles follow-ups. Agents can hand questions to each other, and you can interrupt at any time. [Set up personas](docs/personas.md).
 
 ## Explore
 
