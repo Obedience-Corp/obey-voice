@@ -43,7 +43,19 @@ func readFrames(t *testing.T, ctx context.Context, ws *websocket.Conn) *frameRea
 // await collects frame types until want arrives or d elapses, returning
 // everything seen so it can be asserted against.
 func (r *frameReader) await(want string, d time.Duration) []string {
-	deadline := time.After(d)
+	return r.awaitAll(d, want)
+}
+
+// Audio and control events use separate outbound queues. A turn_interrupted
+// frame is not a barrier for audio_reset; wait for every required frame before
+// asserting completion or sending the next interrupt.
+func (r *frameReader) awaitAll(d time.Duration, want ...string) []string {
+	remaining := make(map[string]bool, len(want))
+	for _, typ := range want {
+		remaining[typ] = true
+	}
+	deadline := time.NewTimer(d)
+	defer deadline.Stop()
 	var got []string
 	for {
 		select {
@@ -52,10 +64,11 @@ func (r *frameReader) await(want string, d time.Duration) []string {
 				return got
 			}
 			got = append(got, typ)
-			if typ == want {
+			delete(remaining, typ)
+			if len(remaining) == 0 {
 				return got
 			}
-		case <-deadline:
+		case <-deadline.C:
 			return got
 		}
 	}
@@ -160,7 +173,14 @@ func TestRemoteInterruptEmitsTurnEvents(t *testing.T) {
 			}
 
 			writeControl(t, ctx, ws, controlMessage{Type: "interrupt"})
-			got := frames.await("turn_interrupted", 2*time.Second)
+			var got []string
+			if tt.startTurn {
+				got = frames.awaitAll(2*time.Second, tt.want...)
+			} else {
+				// Idle interrupts have no completion event. Observe until the
+				// deadline or a forbidden turn_interrupted makes the test fail.
+				got = frames.await("turn_interrupted", 2*time.Second)
+			}
 
 			for _, want := range tt.want {
 				if !contains(got, want) {
@@ -375,7 +395,7 @@ func TestInterruptAfterWireDeliveryReportsTheTurn(t *testing.T) {
 	frames.await("turn_metrics", 2*time.Second)
 
 	writeControl(t, ctx, ws, controlMessage{Type: "interrupt"})
-	got := frames.await("turn_interrupted", 2*time.Second)
+	got := frames.awaitAll(2*time.Second, "audio_reset", "speaking_interrupted", "turn_interrupted")
 	for _, want := range []string{"audio_reset", "speaking_interrupted", "turn_interrupted"} {
 		if !contains(got, want) {
 			t.Errorf("missing %s after a barge-in over streamed audio; frames = %v", want, got)

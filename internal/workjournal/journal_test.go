@@ -19,7 +19,7 @@ type journalStoreFake struct {
 	mu            sync.Mutex
 	writes        int
 	err           error
-	failNext      bool
+	failOnWrite   int
 	captures      []Checkpoint
 }
 
@@ -56,8 +56,7 @@ func (s *journalStoreFake) Write(_ []Record, checkpoint Checkpoint) (Health, err
 		<-s.release
 	}
 	s.mu.Lock()
-	fail := s.failNext
-	s.failNext = false
+	fail := writeNumber == s.failOnWrite
 	err := s.err
 	s.mu.Unlock()
 	if fail {
@@ -105,7 +104,7 @@ func TestJournalStalledWriteDoesNotBlockObserveAndCountsInflight(t *testing.T) {
 }
 
 func TestJournalFailedBatchRetainsGapAndLatestSnapshot(t *testing.T) {
-	st := &journalStoreFake{err: errors.New("disk full"), failNext: true}
+	st := &journalStoreFake{err: errors.New("disk full"), failOnWrite: 1}
 	// Exercise the failed-batch projection synchronously. A Write-start signal
 	// precedes its result and cannot establish that flush has updated health.
 	// Keep the background timer out of this explicitly driven flush.
@@ -186,14 +185,11 @@ func TestJournalOverflowHealthIsPublishedWhileWriteStalled(t *testing.T) {
 }
 
 func TestJournalRecoveryPreservesRevisionAndFailureGap(t *testing.T) {
-	st := &journalStoreFake{started: make(chan struct{}), secondStarted: make(chan struct{}), thirdStarted: make(chan struct{}), err: errors.New("disk full")}
+	st := &journalStoreFake{started: make(chan struct{}), secondStarted: make(chan struct{}), thirdStarted: make(chan struct{}), err: errors.New("disk full"), failOnWrite: 2}
 	j := testJournal(t, st, Options{SyncInterval: 5 * time.Millisecond})
 	scope := j.coordinator.Scope()
 	j.record(Record{Type: "one"}, scope, nil)
 	<-st.started
-	j.mu.Lock()
-	st.failNext = true
-	j.mu.Unlock()
 	j.record(Record{Type: "two"}, scope, nil)
 	<-st.secondStarted
 	snap := j.coordinator.Snapshot(scope)
