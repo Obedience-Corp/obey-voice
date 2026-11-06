@@ -16,10 +16,10 @@ just desktop install
 open "$HOME/Applications/Obey Voice Agent.app"
 ```
 
-Source builds need authenticated Git access to the private Obedience-Corp Go
-modules; `GOPRIVATE` must include `github.com/Obedience-Corp/*`. The command
-builds an optimized app, includes its voice engine and native speech libraries,
-and verifies the local ad-hoc signature before installing into `~/Applications`.
+The Go dependencies are public; no private dependency access or `GOPRIVATE`
+configuration is required. The command builds an optimized app, includes its voice
+engine and native speech libraries, and verifies the local ad-hoc signature before
+installing into `~/Applications`.
 Quit the app before running the command again to update it. A different
 installation directory can be passed as an argument:
 
@@ -56,7 +56,7 @@ used. Run `just desktop demo` from the repository root to explore the preview.
 
 ## Build and run
 
-Requires Rust 1.95 (pinned by `rust-toolchain.toml`), Go 1.26.1+, a C compiler, and `just`. Authenticate Git access to the private Obedience-Corp dependencies first. Configure `GOPRIVATE` to include `github.com/Obedience-Corp/*` if it is not already configured.
+Requires Rust 1.95 (pinned by `rust-toolchain.toml`), Go 1.26.1+, a C compiler, and `just`. The Go dependencies are public; no private-module authentication is required.
 
 From the repository root:
 
