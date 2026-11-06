@@ -1,7 +1,4 @@
-/* Minimal voice surface for samantha serve (WI-62e19b).
- * Text / iOS dictation in, push-to-talk mic uplink, pcm_s16le TTS out.
- * No automatic barge-in — use Interrupt.
- */
+/* Browser conversation client for obey-voice serve. */
 (function () {
   const $ = (id) => document.getElementById(id);
   const tokenEl = $("token");
@@ -15,11 +12,20 @@
   const inputEl = $("input");
   const logEl = $("log");
   const statusEl = $("status");
+  const setupEl = $("setup");
+  const titleEl = $("conversationTitle");
+  const personaEl = $("persona");
+  const sessionsPanel = $("sessionsPanel");
+  const sessionsEl = $("sessions");
+  const resumeBtn = $("resume");
+  const activityEl = $("activity");
+  const activitySummary = $("activitySummary");
 
   const TOKEN_KEY = "samantha.serve.token";
   const CAPTURE_RATE = 16000;
 
   let ws = null;
+  let activeToken = "";
   let audioCtx = null;
   let nextPlayTime = 0;
   let connected = false;
@@ -29,6 +35,23 @@
   let mediaStream = null;
   let captureNode = null;
   let captureSource = null;
+  let capturePending = false;
+  let micRequest = 0;
+  let selectedName = "Agent";
+  let selectedID = "";
+  let selectionRevision = -1;
+  let snapshotRevision = -1;
+  let snapshotSession = "";
+  let snapshotEpoch = "";
+  let snapshotCount = 0;
+  let activityCount = 0;
+  let workRevision = -1;
+  let workScope = "";
+  const workStates = new Map();
+  let personaRequest = null;
+  let personaRequestSerial = 0;
+  const pendingReplies = new Map();
+  const completedReplies = new Set();
   const sourcesBySegment = new Map();
   const canceledSegments = new Set();
 
@@ -45,6 +68,228 @@
     p.textContent = text;
     logEl.appendChild(p);
     logEl.scrollTop = logEl.scrollHeight;
+    return p;
+  }
+
+  function clearActivity() {
+    if (activityEl) activityEl.textContent = "";
+    activityCount = 0;
+    workRevision = -1;
+    workScope = "";
+    workStates.clear();
+    if (activitySummary) activitySummary.textContent = "Live activity";
+  }
+
+  function addActivity(text) {
+    if (!activityEl || !text) return;
+    const entry = document.createElement("div");
+    entry.className = "activity-entry";
+    entry.textContent = text;
+    activityEl.appendChild(entry);
+    if (activityEl.children.length > 80) activityEl.removeChild(activityEl.children[0]);
+    activityCount += 1;
+    if (activitySummary) activitySummary.textContent = "Live activity (" + activityCount + ")";
+    activityEl.scrollTop = activityEl.scrollHeight;
+  }
+
+  function showWork(snapshot) {
+    if (!snapshot || !snapshot.scope) return;
+    const scope = snapshot.scope;
+    if (snapshotSession && scope.session_id !== snapshotSession) return;
+    if (snapshotEpoch && scope.conversation_epoch !== snapshotEpoch) return;
+    const key = [scope.session_id, scope.runtime_id, scope.conversation_epoch].join(":");
+    if (key !== workScope) {
+      workScope = key;
+      workRevision = -1;
+      workStates.clear();
+    }
+    if (typeof snapshot.state_revision === "number" && snapshot.state_revision <= workRevision) return;
+    workRevision = typeof snapshot.state_revision === "number" ? snapshot.state_revision : workRevision;
+    for (const job of snapshot.jobs || []) {
+      const id = job.key && job.key.job_id;
+      if (!id) continue;
+      const state = job.outcome && job.outcome.status || job.state || "updated";
+      const label = (job.task || "Background work") + " · " + state;
+      if (workStates.get(id) !== label) {
+        workStates.set(id, label);
+        addActivity(label);
+      }
+    }
+  }
+
+  function activityInCurrentSession(env) {
+    const scope = env.work_scope || env.response_envelope || {};
+    if (snapshotSession && scope.session_id && scope.session_id !== snapshotSession) return false;
+    if (snapshotEpoch && scope.conversation_epoch && scope.conversation_epoch !== snapshotEpoch) return false;
+    return true;
+  }
+
+  function selectionName(selection) {
+    return (selection && (selection.display_name || selection.persona_id)) || "Agent";
+  }
+
+  function setSelection(selection) {
+    if (!selection) return;
+    if (typeof selection.revision === "number" && selection.revision < selectionRevision) return;
+    selectionRevision = typeof selection.revision === "number" ? selection.revision : selectionRevision;
+    selectedName = selectionName(selection);
+    selectedID = selection.persona_id || selection.id || selectedID;
+    if (personaEl && selectedID && !personaRequest) personaEl.value = selectedID;
+    if (titleEl) titleEl.textContent = "Conversation · " + selectedName;
+  }
+
+  async function loadPersonas(socket, token) {
+    if (!personaEl) return;
+    try {
+      const response = await fetch("/v1/personas", { headers: { Authorization: "Bearer " + token } });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const result = await response.json();
+      if (ws !== socket) return;
+      personaEl.textContent = "";
+      for (const persona of result.personas || []) {
+        const option = document.createElement("option");
+        option.value = persona.id;
+        option.textContent = persona.display_name || persona.id;
+        option.disabled = !!persona.inactive;
+        personaEl.appendChild(option);
+        if (!selectedID && persona.active) selectedID = persona.id;
+      }
+      if (selectedID) personaEl.value = selectedID;
+      personaEl.disabled = !(result.personas || []).some((persona) => !persona.inactive);
+      if (result.warnings && result.warnings.length) log("Some personas need repair on the host.", "err");
+    } catch (err) {
+      if (ws !== socket) return;
+      personaEl.disabled = true;
+      log("Persona list unavailable: " + err.message, "err");
+    }
+  }
+
+  async function loadSessions() {
+    if (!sessionsEl || !connected || !ws) return;
+    const socket = ws;
+    sessionsEl.disabled = true;
+    if (resumeBtn) resumeBtn.disabled = true;
+    try {
+      const response = await fetch("/v1/sessions", { headers: { Authorization: "Bearer " + activeToken } });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const sessions = await response.json();
+      if (ws !== socket) return;
+      sessionsEl.textContent = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = sessions.length ? "Choose a conversation" : "No saved conversations";
+      sessionsEl.appendChild(placeholder);
+      for (const session of sessions) {
+        const option = document.createElement("option");
+        option.value = session.id;
+        const when = session.updated_at ? new Date(session.updated_at) : null;
+        option.textContent = (session.summary || session.id) + (when && !Number.isNaN(when.getTime()) ? " · " + when.toLocaleString() : "");
+        sessionsEl.appendChild(option);
+      }
+      sessionsEl.value = "";
+      sessionsEl.disabled = sessions.length === 0;
+    } catch (err) {
+      if (ws === socket) log("Saved conversations unavailable: " + err.message, "err");
+    }
+  }
+
+  async function resumeSession() {
+    if (!connected || !ws || !sessionsEl || !sessionsEl.value) return;
+    const socket = ws;
+    const id = sessionsEl.value;
+    const before = snapshotCount;
+    resumeBtn.disabled = true;
+    sessionsEl.disabled = true;
+    try {
+      const response = await fetch("/v1/sessions/" + encodeURIComponent(id) + "/resume", {
+        method: "POST", headers: { Authorization: "Bearer " + activeToken },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "HTTP " + response.status);
+      if (ws !== socket) return;
+      if (snapshotCount === before) {
+        logEl.textContent = "";
+        pendingReplies.clear();
+        completedReplies.clear();
+        log("Conversation resumed. Reconnect if its history does not appear.", "sys");
+      }
+      if (sessionsPanel) sessionsPanel.open = false;
+    } catch (err) {
+      if (ws === socket) log("Could not resume conversation: " + err.message, "err");
+    } finally {
+      if (ws === socket) {
+        sessionsEl.disabled = false;
+        resumeBtn.disabled = !sessionsEl.value;
+      }
+    }
+  }
+
+  function finishPersonaRequest() {
+    if (!personaRequest) return;
+    clearTimeout(personaRequest.timer);
+    personaRequest = null;
+    if (personaEl) {
+      personaEl.disabled = !connected;
+      if (selectedID) personaEl.value = selectedID;
+    }
+  }
+
+  function replyIdentity(env) {
+    const identity = env.response_envelope || {};
+    return { id: identity.response_id || env.response_id || "", name: identity.display_name || selectedName };
+  }
+
+  function restoreSnapshot(env) {
+    if (!Array.isArray(env.transcript)) return;
+    const sameEpoch = (env.session_id || "") === snapshotSession && (env.conversation_epoch || "") === snapshotEpoch;
+    if (sameEpoch && typeof env.state_revision === "number" && env.state_revision < snapshotRevision) return;
+    snapshotRevision = typeof env.state_revision === "number" ? env.state_revision : -1;
+    snapshotCount += 1;
+    if (!sameEpoch) {
+      selectionRevision = -1;
+      clearActivity();
+    }
+    snapshotSession = env.session_id || "";
+    snapshotEpoch = env.conversation_epoch || "";
+    setSelection(env.selection);
+    logEl.textContent = "";
+    pendingReplies.clear();
+    completedReplies.clear();
+    for (const turn of env.transcript) {
+      if (!turn || !turn.content || (turn.role !== "user" && turn.role !== "assistant")) continue;
+      const name = turn.role === "user" ? (turn.speaker || "You") : (turn.persona_display_name || turn.persona_id || "Agent");
+      log(name + ": " + turn.content, turn.role === "user" ? "you" : "sam");
+      if (turn.role === "assistant" && turn.response_id) completedReplies.add(turn.response_id);
+    }
+  }
+
+  function streamReply(env) {
+    if (!env.text) return;
+    const reply = replyIdentity(env);
+    if (reply.id && completedReplies.has(reply.id)) return;
+    const key = reply.id || "legacy";
+    let pending = pendingReplies.get(key);
+    if (!pending) {
+      pending = { node: log(reply.name + ": ", "sam"), text: "", name: reply.name };
+      pendingReplies.set(key, pending);
+    }
+    pending.text += env.text;
+    pending.node.textContent = pending.name + ": " + pending.text;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function finishReply(env) {
+    const reply = replyIdentity(env);
+    if (reply.id && completedReplies.has(reply.id)) return;
+    const key = reply.id || "legacy";
+    const pending = pendingReplies.get(key);
+    if (pending) {
+      pending.node.textContent = reply.name + ": " + (env.response || "");
+      pendingReplies.delete(key);
+    } else if (env.response) {
+      log(reply.name + ": " + env.response, "sam");
+    }
+    if (reply.id) completedReplies.add(reply.id);
   }
 
   function setConnected(on) {
@@ -54,7 +299,12 @@
     interruptBtn.disabled = !on;
     clearBtn.disabled = !on;
     talkBtn.disabled = !on;
-    startBtn.textContent = on ? "Reconnect" : "Start";
+    if (!on && personaEl) personaEl.disabled = true;
+    if (!on && sessionsEl) sessionsEl.disabled = true;
+    if (!on && resumeBtn) resumeBtn.disabled = true;
+    if (!on) finishPersonaRequest();
+    startBtn.textContent = on ? "Reconnect" : "Connect";
+    if (setupEl) setupEl.open = !on;
     if (!on) stopTalk(true);
   }
 
@@ -94,9 +344,19 @@
   }
 
   async function startTalk() {
-    if (!connected || talking) return;
-    await ensureAudio();
-    await ensureMic();
+    if (!connected || talking || capturePending) return;
+    capturePending = true;
+    const request = ++micRequest;
+    try {
+      await ensureAudio();
+      await ensureMic();
+    } finally {
+      capturePending = false;
+    }
+    if (request !== micRequest || !connected) {
+      releaseMic();
+      return;
+    }
     talking = true;
     talkBtn.textContent = "Release…";
     talkBtn.classList.add("danger");
@@ -127,9 +387,10 @@
   }
 
   function stopTalk(silent) {
+    micRequest += 1;
     if (!talking && !captureNode) return;
     talking = false;
-    talkBtn.textContent = "Hold to Talk";
+    talkBtn.textContent = "Hold to talk";
     talkBtn.classList.remove("danger");
     if (captureNode) {
       try { captureNode.disconnect(); } catch (_) {}
@@ -140,10 +401,18 @@
       try { captureSource.disconnect(); } catch (_) {}
       captureSource = null;
     }
+    releaseMic();
     if (!silent && connected) {
       sendJSON({ type: "voice_end" });
       log("sent utterance", "sys");
     }
+  }
+
+  function releaseMic() {
+    if (mediaStream && typeof mediaStream.getTracks === "function") {
+      for (const track of mediaStream.getTracks()) track.stop();
+    }
+    mediaStream = null;
   }
 
   function ensureAudio() {
@@ -275,9 +544,22 @@
     }
     localStorage.setItem(TOKEN_KEY, token);
 
+    setConnected(false);
+    selectedID = "";
+    selectedName = "Agent";
+    if (titleEl) titleEl.textContent = "Conversation";
+    logEl.textContent = "";
+    pendingReplies.clear();
+    completedReplies.clear();
+    clearActivity();
     stopAudio(true);
     canceledSegments.clear();
     audioGeneration = 0;
+    snapshotRevision = -1;
+    selectionRevision = -1;
+    snapshotSession = "";
+    snapshotEpoch = "";
+    snapshotCount = 0;
     if (ws) {
       const previous = ws;
       ws = null;
@@ -303,8 +585,10 @@
         return;
       }
       setConnected(true);
+      activeToken = token;
       setStatus("connected", true);
-      log("connected — audio stream on", "sys");
+      loadPersonas(socket, token);
+      if (sessionsPanel && sessionsPanel.open) loadSessions();
       audioSuppressed = false;
       nextPlayTime = 0;
       socket.send(JSON.stringify({ type: "audio_output", mode: "stream", binary: true, protocol: "ova2" }));
@@ -313,6 +597,7 @@
     socket.onclose = () => {
       if (ws !== socket) return;
       ws = null;
+      activeToken = "";
       stopAudio(true);
       setConnected(false);
       setStatus("disconnected");
@@ -337,17 +622,42 @@
         return;
       }
       switch (env.type) {
+        case "session_snapshot":
+          restoreSnapshot(env);
+          break;
+        case "persona_selected":
+          setSelection(env.selection);
+          break;
+        case "set_persona_ack":
+          if (personaRequest && env.request_id === personaRequest.id) {
+            if (selectionRevision < 0) setSelection({ id: env.id, display_name: env.display_name });
+            finishPersonaRequest();
+          }
+          break;
         case "user_input":
-          log("You: " + (env.text || ""), "you");
+          log((env.speaker || "You") + ": " + (env.text || ""), "you");
+          break;
+        case "response_delta":
+          streamReply(env);
+          setStatus("Responding…", true);
           break;
         case "response_ready":
-          log("Agent: " + (env.response || ""), "sam");
+          finishReply(env);
+          setStatus("Connected", true);
           break;
         case "thinking_started":
-          log("thinking…", "sys");
+          setStatus("Thinking…", true);
+          break;
+        case "tool_call_started":
+          if (activityInCurrentSession(env)) addActivity("Running " + (env.name || "tool") + (env.summary ? ": " + env.summary : ""));
+          break;
+        case "tool_call_finished":
+          if (activityInCurrentSession(env)) addActivity((env.name || "Tool") + " · " + (env.status || "finished") + (env.preview ? ": " + env.preview : "") + (env.message ? " · " + env.message : ""));
+          break;
+        case "work_state_changed":
+          showWork(env.work);
           break;
         case "audio_output_ack":
-          log("audio: " + (env.mode || "?"), "sys");
           break;
         case "audio_chunk":
           playPCM(env.data, env.sample_rate, env.segment_id, env.response_id || (env.response_envelope && env.response_envelope.response_id), env.generation);
@@ -366,9 +676,14 @@
           stopAudio(false);
           break;
         case "conversation_cleared":
-          log("conversation cleared", "sys");
+          logEl.textContent = "";
+          pendingReplies.clear();
+          completedReplies.clear();
+          clearActivity();
+          setStatus("Connected", true);
           break;
         case "error":
+          if (personaRequest && env.request_id === personaRequest.id) finishPersonaRequest();
           log("error: " + (env.message || JSON.stringify(env)), "err");
           break;
         default:
@@ -410,10 +725,12 @@
   });
 
   startBtn.addEventListener("click", () => {
-    ensureAudio()
-      .then(() => ensureMic().catch(() => null))
+    Promise.resolve().then(ensureAudio)
       .then(connect)
-      .catch((err) => log("audio unlock failed: " + err, "err"));
+      .catch((err) => {
+        connect();
+        log("Audio unavailable: " + err.message + ". Text is still available.", "err");
+      });
   });
 
   function bindTalk(el) {
@@ -431,6 +748,12 @@
     el.addEventListener("touchstart", down, { passive: false });
     el.addEventListener("touchend", up);
     el.addEventListener("touchcancel", up);
+    el.addEventListener("keydown", (e) => {
+      if ((e.key === " " || e.key === "Enter") && !e.repeat) down(e);
+    });
+    el.addEventListener("keyup", (e) => {
+      if (e.key === " " || e.key === "Enter") up(e);
+    });
   }
   bindTalk(talkBtn);
 
@@ -447,6 +770,26 @@
       sendBtn.click();
     }
   });
+
+  if (personaEl) personaEl.addEventListener("change", () => {
+    if (!connected || personaRequest || !personaEl.value || personaEl.value === selectedID) return;
+    const id = "browser-persona-" + (++personaRequestSerial) + "-" + Date.now();
+    personaRequest = { id: id, timer: setTimeout(() => {
+      if (!personaRequest || personaRequest.id !== id) return;
+      finishPersonaRequest();
+      log("Persona change was not confirmed; reconnect to check the current selection.", "err");
+    }, 10000) };
+    personaEl.disabled = true;
+    sendJSON({ type: "set_persona", name: personaEl.value, request_id: id });
+  });
+
+  if (sessionsPanel) sessionsPanel.addEventListener("toggle", () => {
+    if (sessionsPanel.open) loadSessions();
+  });
+  if (sessionsEl && resumeBtn) {
+    sessionsEl.addEventListener("change", () => { resumeBtn.disabled = !connected || !sessionsEl.value; });
+    resumeBtn.addEventListener("click", resumeSession);
+  }
 
   interruptBtn.addEventListener("click", () => {
     stopTalk(false);

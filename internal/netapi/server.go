@@ -378,6 +378,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		s.hub.evictAll("server stopping")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
@@ -393,6 +394,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			return nil
 		}
 		// One listener failed; bring the rest down before reporting.
+		s.hub.evictAll("server stopping")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)

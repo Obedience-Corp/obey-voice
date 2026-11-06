@@ -261,6 +261,61 @@ func TestRevokeTokensStopsRunningServerAndClosesStream(t *testing.T) {
 	}
 }
 
+func TestServerShutdownClosesConnectedStreams(t *testing.T) {
+	creds, err := LoadOrCreateCredentials(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := events.NewBus()
+	dispatcher := NewDispatcher(&scriptedRunner{}, bus, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go dispatcher.Run(ctx)
+	server := New(Options{Bind: "127.0.0.1:0", Credentials: creds, Bus: bus, Dispatcher: dispatcher})
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe(ctx) }()
+	deadline := time.After(2 * time.Second)
+	for server.Addr() == nil {
+		select {
+		case <-deadline:
+			t.Fatal("server never bound")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	readCtx, stopRead := context.WithTimeout(context.Background(), 3*time.Second)
+	defer stopRead()
+	ws, _, err := websocket.Dial(readCtx, "wss://"+server.Addr().String()+"/v1/stream?token="+creds.Token, &websocket.DialOptions{HTTPClient: insecureClient()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close(websocket.StatusNormalClosure, "")
+	cancel()
+	if _, _, err := ws.Read(readCtx); err == nil || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("stream did not close on shutdown: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not stop")
+	}
+}
+
+func TestStoppingServerRefusesNewStreamAdmissions(t *testing.T) {
+	server := New(Options{})
+	server.hub.evictAll("server stopping")
+	conn := &streamConn{out: make(chan []byte, 1), kick: make(chan string, 1)}
+	if server.hub.add(conn) {
+		t.Fatal("legacy stream admitted after shutdown")
+	}
+	err := server.installSnapshot(context.Background(), conn, SessionSnapshot{SessionID: "test", ConversationEpoch: "epoch"})
+	if !errors.Is(err, errServerStopping) {
+		t.Fatalf("snapshot stream admission after shutdown: %v", err)
+	}
+}
+
 func TestPairHTTPEndpoint(t *testing.T) {
 	creds, err := LoadOrCreateCredentials(t.TempDir())
 	if err != nil {

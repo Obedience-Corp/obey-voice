@@ -38,6 +38,7 @@ type hub struct {
 	mu           sync.Mutex
 	completionMu sync.Mutex
 	conns        map[*streamConn]struct{}
+	closing      bool
 	audioBlocked bool
 	// audioGeneration is the ordered PCM boundary. Reset advances it while
 	// blocking delivery; resume advances it again before reopening delivery.
@@ -110,7 +111,7 @@ func (h *hub) audioGenerationSnapshot() uint64 {
 func (h *hub) add(c *streamConn) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if len(h.conns) >= maxStreamClients {
+	if h.closing || len(h.conns) >= maxStreamClients {
 		return false
 	}
 	c.audioBlocked.Store(h.audioBlocked)
@@ -143,6 +144,7 @@ func (h *hub) removeLocked(c *streamConn) {
 func (h *hub) evictAll(reason string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.closing = true
 	for c := range h.conns {
 		c.evict(reason)
 	}
@@ -693,6 +695,8 @@ func snapshotConnectClose(err error) (websocket.StatusCode, string) {
 		return websocket.StatusPolicyViolation, "session snapshot unavailable"
 	case errors.Is(err, ErrBusy):
 		return websocket.StatusTryAgainLater, "server busy — try again shortly"
+	case errors.Is(err, errServerStopping):
+		return websocket.StatusTryAgainLater, "server stopping"
 	case errors.Is(err, errTooManyStreamClients):
 		return websocket.StatusTryAgainLater, "too many clients"
 	default:

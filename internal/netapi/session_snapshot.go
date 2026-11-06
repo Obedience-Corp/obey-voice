@@ -58,12 +58,16 @@ func marshalSessionSnapshot(snapshot SessionSnapshot) ([]byte, error) {
 type SnapshotProvider func(context.Context) (SessionSnapshot, error)
 
 var errTooManyStreamClients = errors.New("too many stream clients")
+var errServerStopping = errors.New("server stopping")
 
 func (s *Server) installSnapshot(ctx context.Context, conn *streamConn, snapshot SessionSnapshot) error {
 	s.hub.mu.Lock()
 	defer s.hub.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if s.hub.closing {
+		return errServerStopping
 	}
 	snapshot.MicState = s.hub.micStateLocked()
 	if s.dispatcher != nil {

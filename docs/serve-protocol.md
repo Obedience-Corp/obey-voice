@@ -45,6 +45,22 @@ Headless/CLI:
 obey-voice serve --tailscale
 ```
 
+The server runs in the foreground. On macOS and Linux, another terminal can
+request a graceful stop or restart without revoking paired devices:
+
+```bash
+obey-voice serve stop
+obey-voice serve restart
+```
+
+Use `--port` on either command for a server started on a non-default port.
+Restart keeps the running process and startup options, reloads its configuration,
+and restores the current saved conversation. Connected clients are disconnected
+and can reconnect with their existing pairing. The command reports when the
+request is accepted; startup can take longer. These controls require a server
+started by a version that supports them. On Windows, stop a foreground server
+with Ctrl+C.
+
 Binds the node’s Tailscale IPv4, prefers a cert via `tailscale cert` under
 `~/.obey/agents/voice/obey-voice/serve/tls/`, mutes the host speaker by default,
 and prints the MagicDNS URL (e.g. `https://mac.tailnet.ts.net:7262/`).
