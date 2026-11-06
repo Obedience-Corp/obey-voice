@@ -111,6 +111,9 @@ func probeOllama(ctx context.Context, host, model string) providerCheck {
 			d.Models = append(d.Models, name)
 		}
 	}
+	if len(d.Models) == 0 {
+		d.Models = []string{}
+	}
 	if strings.TrimSpace(model) == "" {
 		d.Detail = "Choose an installed Ollama model"
 		d.Remediation = "Select a model below, save your choice, then check again."
@@ -126,4 +129,12 @@ func probeOllama(ctx context.Context, host, model string) providerCheck {
 	}
 	d.Detail = "The selected model is not installed on this Ollama server"
 	return d
+}
+
+func listOllamaModels(ctx context.Context, host string) (any, error) {
+	check := probeOllama(ctx, host, "")
+	if check.Severity == config.SeverityError && len(check.Models) == 0 && check.Detail != "Choose an installed Ollama model" {
+		return nil, fmt.Errorf("%s", check.Detail)
+	}
+	return check.Models, nil
 }

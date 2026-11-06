@@ -147,6 +147,10 @@ impl VoiceApp {
             self.complete_obey_catalog(id, key.clone(), result);
             return;
         }
+        if let Purpose::OllamaCatalog(key) = &purpose {
+            self.ollama_catalog_result(id, key.clone(), result);
+            return;
+        }
         if let Purpose::Setup(operation) = purpose {
             if self.setup.busy != Some(id) {
                 return;
@@ -193,6 +197,7 @@ impl VoiceApp {
         };
         match purpose {
             Purpose::ObeyCatalog(_)
+            | Purpose::OllamaCatalog(_)
             | Purpose::Setup(_)
             | Purpose::PersonaDirectories
             | Purpose::PersonaBrowse
@@ -232,6 +237,9 @@ impl VoiceApp {
                     self.obey_catalog = Value::Null;
                     self.obey_catalog_request = None;
                 }
+                if self.values["brain_provider"]["value"] != "ollama" {
+                    self.invalidate_ollama_catalog();
+                }
                 self.settings_persona = v["persona"].clone();
                 if self.values["brain_provider"]["value"] == "obey"
                     && matches!(self.screen, Screen::Settings | Screen::Setup)
@@ -248,6 +256,7 @@ impl VoiceApp {
                 self.setup.invalidate();
                 self.obey_catalog = Value::Null;
                 self.obey_catalog_request = None;
+                self.invalidate_ollama_catalog();
                 self.drafts.remove(&key);
                 self.status = format!("Saved {key}");
                 self.command(&["config", "get", "--json"], Purpose::SettingsValues);

@@ -41,7 +41,7 @@ impl VoiceApp {
         }
         let model_key = super::super::provider_choices::installed_model_key(&provider);
         let fields: &[&str] = match provider.as_str() {
-            "ollama" => &["ollama_host", "ollama_model"],
+            "ollama" => &["ollama_host"],
             "grok" => &["grok_model"],
             "cursor" => &["cursor_model"],
             "obey" => &[
@@ -55,7 +55,11 @@ impl VoiceApp {
             _ => &[],
         };
         self.setup_fields(ui, fields);
-        if let Some(model_key) = model_key
+        if provider == "ollama" {
+            self.ollama_model_picker(ui);
+        }
+        if provider != "ollama"
+            && let Some(model_key) = model_key
             && let Some(models) = self
                 .setup
                 .provider
