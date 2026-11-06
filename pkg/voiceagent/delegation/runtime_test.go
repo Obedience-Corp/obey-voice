@@ -12,6 +12,7 @@ import (
 type fakeClient struct {
 	started  chan Request
 	admit    chan struct{}
+	returned chan struct{}
 	results  chan Snapshot
 	canceled chan string
 	mu       sync.Mutex
@@ -34,6 +35,9 @@ func (f *fakeClient) Start(ctx context.Context, r Request) (Snapshot, error) {
 		case <-ctx.Done():
 			return Snapshot{}, ctx.Err()
 		}
+	}
+	if f.returned != nil {
+		close(f.returned)
 	}
 	return Snapshot{ID: "obey-42", State: "working"}, nil
 }
@@ -145,12 +149,18 @@ func TestExplicitCancelRacingAdmission(t *testing.T) {
 func TestSessionCloseCancelsAfterAdmission(t *testing.T) {
 	f := newFake()
 	f.admit = make(chan struct{})
+	f.returned = make(chan struct{})
 	r := newRuntime(t, f, time.Minute)
 	_, _ = r.Start("task")
 	<-f.started
+	close(f.admit)
+	select {
+	case <-f.returned:
+	case <-time.After(time.Second):
+		t.Fatal("admission did not return")
+	}
 	closed := make(chan error, 1)
 	go func() { closed <- r.Close() }()
-	close(f.admit)
 	select {
 	case err := <-closed:
 		if err != nil {
