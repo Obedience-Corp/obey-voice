@@ -73,43 +73,19 @@ var (
 var serveCmd = &cobra.Command{
 	Use:   serveCommandName,
 	Short: "Serve Obey Voice to your LAN or Tailscale over HTTPS + WebSocket",
-	Long: `Run Obey Voice as a network-accessible instance for any device on your
-LAN or Tailscale network: phones, tablets, laptops, browsers, or
-obey-voice connect. Clients send text or push-to-talk audio and stream the
-live conversation over /v1/stream.
+	Long: `Share Obey Voice with clients on your LAN or Tailscale network.
+The server prints an address and pairing code for the browser client.
 
-Quick paths:
+  obey-voice serve              Share on the local network
+  obey-voice serve --tailscale  Share on your tailnet
+  obey-voice serve --open       Open the local Stage voice page
+  obey-voice serve stop         Stop the local server
+  obey-voice serve restart      Restart it with the same options
 
-  obey-voice serve --tailscale
-      Remote access over Tailscale (anywhere on your tailnet): bind the 100.x
-      address, print a link + pairing code, mute the host speaker. Prefers a
-      trusted cert so every browser can use the mic; if that is unavailable,
-      starts in limited mode (most desktop browsers work after one warning;
-      the UI prints a free setup link for full mic support).
-
-  obey-voice serve
-      Same Wi‑Fi / LAN (auto-detected private bind). Same client page and
-      pairing flow. Prefer --tailscale when devices are not on the same
-      network, or pass --tls-cert/--tls-key for trusted HTTPS on the LAN.
-
-  obey-voice serve --open
-      After listen, open the Stage camera page in the default browser, already
-      paired. The orb speaks there. Host speaker is muted so you do not get
-      two voices at once; pass --no-voice=false if you want both.
-
-Embedded voice page: obey-voice serve --open, or open the Stage: URL from the
-banner. The phone client still uses Open on client: → Pair → Start.
-Protocol details: docs/serve-protocol.md.
-
-Local full voice (mic + speakers on this machine) is still "obey-voice" TUI —
-serve is for remote clients, not a replacement for the conversation TUI.
-SSH/Termius into the host still uses the local TUI audio path; remote mic and
-speakers require the HTTPS voice page or obey-voice connect.
-
-Auth is mandatory. --revoke-tokens invalidates the bearer. mDNS advertises
-_obey-voice._tcp on the LAN (--no-mdns to disable; --tailscale implies
---no-mdns because MagicDNS is the discovery). Remote tools stay off unless
-remote_tools_enabled is set.`,
+The server runs in the foreground; press Ctrl+C to stop it. Authentication is
+required. Stop and restart controls are available on macOS and Linux.
+Remote tools are disabled unless remote_tools_enabled is set.
+See docs/serve-protocol.md for connection and TLS details.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		restoreStdio, err := configureServeStdio()
@@ -120,46 +96,55 @@ remote_tools_enabled is set.`,
 		if serveRevokeTokens {
 			return runRevokeTokens()
 		}
-		if err := applyServeTailscaleDefaults(cmd); err != nil {
-			return err
-		}
-		applyServeOpenDefaults(cmd)
-		cfg, err := config.Load()
-		if err != nil {
-			return fmt.Errorf("load config: %w", err)
-		}
-		// The agent's tools operate here. An explicit --work-dir that does not
-		// exist is an error, not a silent fall back to home. Resolved after
-		// configureServeStdio, which has already opened a relative --log-file
-		// against the caller's cwd.
-		if err := resolveConversationDirectory(cfg, servePersona, serveWorkDir, nil); err != nil {
-			return err
-		}
-		// --persona overrides the active persona for this process only.
-		// config.Load already applied the configured persona via the
-		// SetAfterLoad hook, so this simply re-binds to a different one.
-		if id := strings.TrimSpace(servePersona); id != "" {
-			binding, err := persona.ResolveBinding(cfg, id)
-			if err != nil {
-				return fmt.Errorf("resolve persona: %w", err)
-			}
-			cfg = binding.Config()
-		}
-		wd, err := config.ResolveWorkDirInfo(cfg, "")
-		if err != nil {
-			return err
-		}
-		// The TLS material is read inside runServe, after the chdir.
-		absPathFlag(&serveTLSCert)
-		absPathFlag(&serveTLSKey)
-		if err := enterWorkDir(wd.Dir); err != nil {
-			return err
-		}
-		// Stamped onto the config so cfg and the process cwd cannot disagree.
-		cfg.WorkDir = wd.Dir
-		serveWorkDirInfo = wd
-		return runServe(cfg)
+		return runManagedServe(cmd)
 	},
+}
+
+type serveRestartState struct {
+	sessionID string
+	saveErr   error
+}
+
+func runServeOnce(ctx context.Context, cmd *cobra.Command, state *serveRestartState) error {
+	if err := applyServeTailscaleDefaults(cmd); err != nil {
+		return err
+	}
+	applyServeOpenDefaults(cmd)
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	// The agent's tools operate here. An explicit --work-dir that does not
+	// exist is an error, not a silent fall back to home. Resolved after
+	// configureServeStdio, which has already opened a relative --log-file
+	// against the caller's cwd.
+	if err := resolveConversationDirectory(cfg, servePersona, serveWorkDir, nil); err != nil {
+		return err
+	}
+	// --persona overrides the active persona for this process only.
+	// config.Load already applied the configured persona via the
+	// SetAfterLoad hook, so this simply re-binds to a different one.
+	if id := strings.TrimSpace(servePersona); id != "" {
+		binding, err := persona.ResolveBinding(cfg, id)
+		if err != nil {
+			return fmt.Errorf("resolve persona: %w", err)
+		}
+		cfg = binding.Config()
+	}
+	wd, err := config.ResolveWorkDirInfo(cfg, "")
+	if err != nil {
+		return err
+	}
+	// The TLS material is read inside runServe, after the chdir.
+	absPathFlag(&serveTLSCert)
+	absPathFlag(&serveTLSKey)
+	if err := enterWorkDir(wd.Dir); err != nil {
+		return err
+	}
+	// Stamped onto the config so cfg and the process cwd cannot disagree.
+	cfg.WorkDir = wd.Dir
+	serveWorkDirInfo = wd
+	return runServe(ctx, cfg, state)
 }
 
 func init() {
@@ -178,6 +163,7 @@ func init() {
 	serveCmd.Flags().StringVar(&serveWorkDir, "work-dir", "", "Directory the agent's file and shell tools operate in (default: the work_dir setting)")
 	serveCmd.Flags().StringVar(&serveLogFile, "log-file", "", "Append human/diagnostic output to this file (created 0600) instead of the console; stdout still carries the --banner-json lines")
 	serveCmd.Flags().BoolVar(&serveOpen, "open", false, "Open Stage in the default browser after listen; voice plays in the orb")
+	serveCmd.AddCommand(serveControlCmd("stop"), serveControlCmd("restart"))
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -268,9 +254,7 @@ func runRevokeTokens() error {
 	return nil
 }
 
-func runServe(cfg *config.Config) error {
-	ctx, cancel := signalContext()
-	defer cancel()
+func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState) error {
 
 	// Phase 3: TTS always required for stream clients. Phase 4 remote mic
 	// also needs STT + VAD models when --remote-mic is set (default on).
@@ -308,6 +292,7 @@ func runServe(cfg *config.Config) error {
 	p.VoiceToolsEnabled = cfg.RemoteToolsEnabled
 
 	ref := &sessionRef{sess: session.New(cfg.BrainProvider, serveModelName(cfg))}
+	defer func() { state.sessionID = ref.id() }()
 	if err := ref.bindWork(p, &serveCfg, ref.sess); err != nil {
 		return err
 	}
@@ -324,6 +309,7 @@ func runServe(cfg *config.Config) error {
 	wireCompact(p, cfg, ref.sess, bus)
 	defer func() {
 		if err := ref.save(p.Brain.History()); err != nil {
+			state.saveErr = err
 			fmt.Fprintf(serveHumanOut, "  warning: failed to save session: %v\n", err)
 		}
 	}()
@@ -341,6 +327,11 @@ func runServe(cfg *config.Config) error {
 			return err
 		}
 		defer switcher.selector.Close()
+	}
+	if state.sessionID != "" {
+		if err := switcher.resume(ctx, state.sessionID); err != nil {
+			return fmt.Errorf("restore conversation after restart: %w", err)
+		}
 	}
 
 	credsDir := filepath.Join(config.ConfigDir(), "serve")
