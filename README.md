@@ -30,7 +30,7 @@
 
 | Use it for | What you get |
 |------------|--------------|
-| **[Group chat and voice agents](#group-chat)** | Streaming conversation, interruptions, background work, and multiple personas with their own voices and models. |
+| **[Group voice agent chat](#group-chat)** | Streaming conversation, interruptions, background work, and multiple personas with their own voices and models. |
 | **[Ebook → audiobook](#audiobooks-and-narration)** | EPUB and digital PDF narration, chapter/page audio, resumable renders, and optional Calibre library browsing. |
 | **[Articles and documents → audio](#audiobooks-and-narration)** | Read text, Markdown, HTML, and web articles aloud into audio files, or pipe text in from another program. |
 | **[Meeting notes](#meeting-notes)** | Live transcripts, timestamped notes and bookmarks, speaker labels, and saved Markdown you can route into your workspace. |
