@@ -79,7 +79,10 @@ type Options struct {
 	// invoked only at a serialized dispatcher boundary; nil preserves the
 	// legacy stream contract without a snapshot.
 	CurrentSessionSnapshot SnapshotProvider
-	ListSessions           func() []SessionSummary
+	// CurrentWorkSnapshot exposes a read-only, scoped view for reconnecting
+	// clients. The handler projects only the fields needed for work status.
+	CurrentWorkSnapshot func() work.Snapshot
+	ListSessions        func() []SessionSummary
 	// DeleteSession, when set, enables DELETE /v1/sessions/{id}. nil leaves
 	// the route unregistered, so an older or limited serve 404s rather than
 	// pretending — the same gate Meetings uses. The implementation must
@@ -288,6 +291,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("GET /v1/stream", s.handleStream)
 	mux.HandleFunc("GET /v1/status", s.handleStatus)
 	mux.HandleFunc("GET /v1/sessions", s.handleSessions)
+	if s.opts.CurrentWorkSnapshot != nil {
+		mux.HandleFunc("GET /v1/work", s.handleCurrentWork)
+	}
 	// ADR-004: read-only persona list. Registered only when serve supplied the
 	// resolver, so a build without it 404s instead of lying with [].
 	if s.opts.ListPersonas != nil {

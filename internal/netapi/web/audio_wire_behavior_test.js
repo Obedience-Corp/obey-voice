@@ -143,7 +143,7 @@ function makeEnvironment() {
 
 async function exerciseConversation() {
   const env = makeEnvironment();
-  env.sandbox.fetch = async () => ({ ok: true, json: async () => ({ personas: [
+  env.sandbox.fetch = async (url) => url === "/v1/work" ? { status: 404 } : ({ ok: true, json: async () => ({ personas: [
     { id: "samantha", display_name: "Samantha", active: true },
     { id: "jarvis", display_name: "Jarvis" },
     { id: "disabled", display_name: "Disabled", inactive: true },
@@ -198,6 +198,7 @@ async function exerciseConversation() {
   assert.equal(log.children.length, 3, "stale snapshot erased conversation");
 
   env.sandbox.fetch = async (url) => {
+    if (url === "/v1/work") return { status: 404 };
     if (url === "/v1/sessions") return { ok: true, json: async () => [{ id: "saved-1", summary: "A saved conversation" }] };
     if (url === "/v1/sessions/saved-1/resume") {
       message({ type: "session_snapshot", session_id: "saved-1", conversation_epoch: "new", state_revision: 1,
@@ -245,6 +246,39 @@ async function exerciseConversation() {
   await new Promise((resolve) => setImmediate(resolve));
   assert.ok(trackStopped, "released pending microphone stream was left open");
   assert.ok(!socket.sent.some((frame) => typeof frame === "string" && JSON.parse(frame).type === "voice_start"), "late microphone permission started a released turn");
+}
+
+async function exerciseWorkReconnect() {
+  const env = makeEnvironment();
+  let resolveWork;
+  env.sandbox.fetch = async (url) => {
+    if (url === "/v1/personas") return { ok: true, json: async () => ({ personas: [] }) };
+    if (url === "/v1/work") return new Promise((resolve) => { resolveWork = resolve; });
+    throw new Error("unexpected URL " + url);
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "app.js"), "utf8"), env.sandbox, { filename: "app.js" });
+  env.elements.get("start").click();
+  await new Promise((resolve) => setImmediate(resolve));
+  const socket = env.sockets.at(-1);
+  socket.onopen();
+  const message = (value) => socket.onmessage({ data: JSON.stringify(value) });
+  const scope = { session_id: "saved", conversation_epoch: "epoch", runtime_id: "runtime" };
+  message({ type: "session_snapshot", session_id: "saved", conversation_epoch: "epoch", state_revision: 1, transcript: [] });
+  const work = (revision, state) => ({ scope, state_revision: revision, jobs: [{ key: { job_id: "job" }, task: "Research", state }] });
+  message({ type: "work_state_changed", work: work(3, "running") });
+  resolveWork({ ok: true, json: async () => ({ work: work(2, "queued") }) });
+  await new Promise((resolve) => setImmediate(resolve));
+  const activity = env.elements.get("activity");
+  assert.deepEqual(activity.children.map((node) => node.textContent), ["Research · running"], "older HTTP state overwrote a newer event");
+
+  env.elements.get("start").click();
+  await new Promise((resolve) => setImmediate(resolve));
+  const next = env.sockets.at(-1);
+  next.onopen();
+  next.onmessage({ data: JSON.stringify({ type: "session_snapshot", session_id: "saved", conversation_epoch: "epoch", state_revision: 1, transcript: [] }) });
+  resolveWork({ ok: true, json: async () => ({ work: work(3, "running") }) });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(activity.children.map((node) => node.textContent), ["Research · running"], "reconnect did not restore current work");
 }
 
 function pcmJSON(responseID, generation, segmentID = 1) {
@@ -332,6 +366,7 @@ async function exercise(file, connectID) {
   await exercise("app.js", "start");
   await exercise("stage.js", "connect");
   await exerciseConversation();
+  await exerciseWorkReconnect();
   console.log("audio wire browser behavior: pass (app.js, stage.js)");
 })().catch((err) => {
   console.error(err);

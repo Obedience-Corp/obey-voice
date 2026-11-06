@@ -77,7 +77,7 @@
     workRevision = -1;
     workScope = "";
     workStates.clear();
-    if (activitySummary) activitySummary.textContent = "Live activity";
+    if (activitySummary) activitySummary.textContent = "Work and activity";
   }
 
   function addActivity(text) {
@@ -88,7 +88,7 @@
     activityEl.appendChild(entry);
     if (activityEl.children.length > 80) activityEl.removeChild(activityEl.children[0]);
     activityCount += 1;
-    if (activitySummary) activitySummary.textContent = "Live activity (" + activityCount + ")";
+    if (activitySummary) activitySummary.textContent = "Work and activity (" + activityCount + ")";
     activityEl.scrollTop = activityEl.scrollHeight;
   }
 
@@ -114,6 +114,18 @@
         workStates.set(id, label);
         addActivity(label);
       }
+    }
+  }
+
+  async function refreshWork(socket, token) {
+    try {
+      const response = await fetch("/v1/work", { headers: { Authorization: "Bearer " + token } });
+      if (response.status === 404) return; // Older servers have live events only.
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const body = await response.json();
+      if (ws === socket) showWork(body.work);
+    } catch (err) {
+      if (ws === socket) addActivity("Current work unavailable: " + err.message);
     }
   }
 
@@ -624,6 +636,7 @@
       switch (env.type) {
         case "session_snapshot":
           restoreSnapshot(env);
+          refreshWork(socket, token);
           break;
         case "persona_selected":
           setSelection(env.selection);
