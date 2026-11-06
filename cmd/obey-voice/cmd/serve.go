@@ -426,6 +426,7 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 		Bus:                    bus,
 		Dispatcher:             dispatcher,
 		CurrentSessionSnapshot: currentSessionSnapshot,
+		CurrentWorkSnapshot:    p.WorkSnapshot,
 		Audio:                  fanout,
 		Ingress:                ingress,
 		VoiceSilenceTimeout:    turnClocks.StartTimeout,

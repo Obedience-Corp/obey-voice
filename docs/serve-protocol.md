@@ -262,6 +262,7 @@ that can and does refuse.
 | `GET` | `/v1/status` | yes | `protocol_version`, `turn_active`, `providers`, `uptime_seconds`, `fingerprint`, `work_dir`, `meetings`, `capabilities` |
 | `GET` | `/v1/sessions` | yes | Session summaries |
 | `GET` | `/v1/personas` | yes | Persona list for `set_persona` (see below) |
+| `GET` | `/v1/work` | yes | Current conversation's work status, if supported |
 | `POST` | `/v1/sessions/{id}/resume` | yes | Load history into the live pipeline |
 | `DELETE` | `/v1/sessions/{id}` | yes | Delete a saved conversation; `409` if it is the live session |
 | `POST` | `/v1/pair` | no | Exchange pairing code for token (optional `device_name`) |
@@ -269,6 +270,14 @@ that can and does refuse.
 | `DELETE` | `/v1/devices/{id}` | yes | Revoke one device token + streams (D2) |
 | `POST` | `/v1/intent` | yes | Capture intent (D3; file sink) |
 | `GET` | `/v1/intent/targets` | yes | Intent routing targets (D3) |
+
+`GET /v1/work` returns `{ "work": null }` when there is no active work
+coordinator, or a scoped snapshot containing the work revision and each job's
+id, task, provider, model, state, and optional outcome status. It excludes
+provider configuration, output text, and source paths. Older servers return
+404. Clients should fetch it after their `session_snapshot`, compare the scope
+to that session, and discard older revisions when a live `work_state_changed`
+event arrives before the HTTP response.
 
 ## Meetings
 
