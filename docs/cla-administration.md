@@ -25,11 +25,13 @@ Gist in its dashboard. Verify that an unsigned contributor produces a failing
 CLA status and a returning signer produces a passing status. Do not accept an
 agreement on another person's behalf during testing.
 
+Set the minimum file-change threshold to `1` so single-file PRs also require
+acceptance. Verify the check on a PR before making it required.
+
 Require the service's CLA status check in the `main` branch protection rule or
-ruleset. GitHub currently refuses branch protection for this private repository
-on its current plan; enable the required check when the repository becomes public
-or its plan supports private-repository protection. Until then, a displayed status
-alone does not prevent merging.
+ruleset. The repository is now public, so the former private-repository plan
+restriction no longer applies. A displayed status alone does not prevent merging;
+it must be required by an active protection rule.
 
 Export the acceptance records from the CLA Assistant dashboard for company
 records. When changing the agreement, update the repository copy and Gist
