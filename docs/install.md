@@ -61,7 +61,7 @@ create bundles in `apps/desktop/dist`; they do not install them.
 
 ## Linux amd64 archive
 
-Release packaging produces a relocatable `obey-voice-linux-amd64.tar.gz` for
+Release packaging produces a relocatable `obey-voice-VERSION-linux-amd64.tar.gz` for
 x86_64 glibc Linux. Check the [releases page](https://github.com/Obedience-Corp/obey-voice/releases)
 for available archives.
 Once downloaded, the archive contains the Obey Voice executable and its sherpa-onnx /
@@ -69,7 +69,9 @@ onnxruntime shared libraries; keep the executable and `lib/` directory
 together.
 
 ```bash
-tar -xzf obey-voice-linux-amd64.tar.gz
+# Download the matching .tar.gz.sha256 alongside the archive; substitute VERSION.
+sha256sum --check obey-voice-VERSION-linux-amd64.tar.gz.sha256
+tar -xzf obey-voice-VERSION-linux-amd64.tar.gz
 mkdir -p ~/.local/opt ~/.local/bin
 mv obey-voice-linux-amd64 ~/.local/opt/obey-voice
 ln -s ~/.local/opt/obey-voice/obey-voice ~/.local/bin/obey-voice

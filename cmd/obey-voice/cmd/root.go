@@ -161,7 +161,7 @@ func attachTranscriptLog(bus *events.Bus) (func(), error) {
 
 // Execute runs the root command.
 func Execute() error {
-	return fang.Execute(context.Background(), rootCmd)
+	return fang.Execute(context.Background(), rootCmd, fang.WithVersion(releaseVersion))
 }
 
 func modelName(cfg *config.Config) string {

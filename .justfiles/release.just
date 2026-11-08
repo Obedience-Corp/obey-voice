@@ -1,7 +1,7 @@
 # Release tasks for Obey Voice.
 #
-# Samantha uses native CGO builds. Homebrew builds macOS from source; release
-# workflows also publish relocatable native artifacts for supported platforms.
+# Native CGO archives are shared by every distribution channel. Publication
+# stages both supported platforms in a draft and validates remote readback.
 
 [private]
 default:
@@ -34,12 +34,18 @@ tag version:
     git push origin "{{version}}"
     echo
     echo "Tagged {{version}}. Next:"
-    echo "  just release publish {{version}}      # create the GitHub release"
-    echo "  just release formula-sha {{version}}  # values for the Homebrew formula"
+    echo "  Release Artifacts will validate both platforms, stage a draft, then publish."
+    echo "  Inspect the workflow before promoting any package channel."
 
-# Create the GitHub release for a pushed tag (auto-generated notes).
+# Publish a pushed tag using both versioned archives + sidecars in dist/release.
+[no-cd]
 publish version:
-    gh release create "{{version}}" --title "Obey Voice {{version}}" --generate-notes
+    python3 scripts/publish_release.py "{{version}}"
+
+# Packaging integrity and interrupted-publication regression tests (no network).
+[no-cd]
+artifact-test:
+    python3 -m unittest discover -s scripts -p test_release_*.py
 
 # Print the url + sha256 to paste into the Homebrew tap formula.
 formula-sha version:
@@ -74,6 +80,7 @@ linux-artifact:
         }
     done
 
+    version="$(python3 scripts/release_artifacts.py version)"
     platform="linux-amd64"
     stage="dist/obey-voice-${platform}"
     tarball="dist/obey-voice-${platform}.tar.gz"
@@ -86,7 +93,9 @@ linux-artifact:
 
     echo "Building native CGO amd64 binary…"
     CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-        go build -buildvcs=false -trimpath -o "$bin" ./cmd/obey-voice
+        go build -buildvcs=false -trimpath \
+        -ldflags "-X github.com/Obedience-Corp/obey-voice/cmd/obey-voice/cmd.releaseVersion=$version" \
+        -o "$bin" ./cmd/obey-voice
 
     module_dir="$(
         go list -m -json github.com/k2-fsa/sherpa-onnx-go-linux |
@@ -105,6 +114,7 @@ linux-artifact:
         cp "$native_dir/$lib" "$libdir/$lib"
     done
     cp LICENSE "$stage/LICENSE"
+    cp NOTICE "$stage/NOTICE"
     cp "$module_dir/LICENSE" "$licensedir/sherpa-onnx-go-linux-LICENSE"
 
     # sherpa-onnx-go-linux v1.13.8 bundles ONNX Runtime 1.28.2 without its
@@ -144,26 +154,8 @@ linux-artifact:
         exit 1
     fi
 
-    version="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
-    built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    mapfile -t relfiles < <(cd "$stage" && find . -type f | sed 's|^\./||' | sort)
-    {
-        printf '{\n'
-        printf '  "name": "obey-voice",\n'
-        printf '  "version": "%s",\n' "$version"
-        printf '  "platform": "%s",\n' "$platform"
-        printf '  "built_at": "%s",\n' "$built_at"
-        printf '  "files": [\n'
-        first=1
-        for rel in "${relfiles[@]}"; do
-            sha="$(sha256sum "$stage/$rel" | cut -d' ' -f1)"
-            (( first )) && first=0 || printf ',\n'
-            printf '    {"path": "%s", "sha256": "%s"}' "$rel" "$sha"
-        done
-        printf '\n  ]\n}\n'
-    } > "$stage/manifest.json"
-
-    tar -czf "$tarball" -C dist "obey-voice-${platform}"
+    python3 scripts/release_artifacts.py package "$stage" "$platform" "$version"
+    python3 scripts/release_artifacts.py smoke "dist/release/obey-voice-${version}-${platform}.tar.gz" "$platform" "$version"
 
     smoke_root="$(mktemp -d)"
     trap 'rm -rf "$smoke_root"' EXIT
@@ -209,6 +201,7 @@ macos-artifact:
         exit 1
     fi
 
+    version="$(python3 scripts/release_artifacts.py version)"
     platform="macos-arm64"
     stage="dist/obey-voice-${platform}"
     tarball="dist/obey-voice-${platform}.tar.gz"
@@ -220,7 +213,9 @@ macos-artifact:
 
     echo "Building CGO arm64 binary…"
     CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-        go build -buildvcs=false -trimpath -o "$bin" ./cmd/obey-voice
+        go build -buildvcs=false -trimpath \
+        -ldflags "-X github.com/Obedience-Corp/obey-voice/cmd/obey-voice/cmd.releaseVersion=$version" \
+        -o "$bin" ./cmd/obey-voice
 
     # The cgo LDFLAGS bake the sherpa-onnx module-cache dir in as an LC_RPATH;
     # that is where @rpath dylibs are found before relocation.
@@ -281,30 +276,5 @@ macos-artifact:
     [[ -n "$module_dir" ]] || { echo "cannot locate sherpa-onnx-go-macos module directory" >&2; exit 1; }
     bash scripts/package-macos-notices.sh "$stage" "$module_dir"
 
-    # manifest.json: version + every packaged file's sha256 (computed before the
-    # manifest exists so it never lists itself).
-    version="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
-    built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    mapfile -t relfiles < <(cd "$stage" && find . -type f | sed 's|^\./||' | sort)
-    {
-        printf '{\n'
-        printf '  "name": "obey-voice",\n'
-        printf '  "version": "%s",\n' "$version"
-        printf '  "platform": "%s",\n' "$platform"
-        printf '  "built_at": "%s",\n' "$built_at"
-        printf '  "files": [\n'
-        first=1
-        for rel in "${relfiles[@]}"; do
-            sha="$(shasum -a 256 "$stage/$rel" | cut -d' ' -f1)"
-            (( first )) && first=0 || printf ',\n'
-            printf '    {"path": "%s", "sha256": "%s"}' "$rel" "$sha"
-        done
-        printf '\n  ]\n}\n'
-    } > "$stage/manifest.json"
-
-    COPYFILE_DISABLE=1 tar -czf "$tarball" -C dist "obey-voice-${platform}"
-    echo
-    echo "Artifact: $tarball"
-    shasum -a 256 "$tarball"
-    echo "Contents:"
-    tar -tzf "$tarball"
+    python3 scripts/release_artifacts.py package "$stage" "$platform" "$version"
+    python3 scripts/release_artifacts.py smoke "dist/release/obey-voice-${version}-${platform}.tar.gz" "$platform" "$version"
