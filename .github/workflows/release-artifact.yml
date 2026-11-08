@@ -1,9 +1,5 @@
 name: Release Artifacts
 
-# Build relocatable native artifacts. The macOS archive is also vendored by the
-# Obey Voice Mac app (delta D5); Linux ships the binary with relative native
-# library lookup so it can run without a Go module cache.
-
 on:
   workflow_dispatch:
   push:
@@ -11,15 +7,26 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  linux-artifact:
-    runs-on: ubuntu-24.04
+  artifacts:
+    name: Native artifact (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-amd64
+            recipe: linux-artifact
+          - runner: macos-14
+            platform: macos-arm64
+            recipe: macos-artifact
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -30,51 +37,55 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: extractions/setup-just@v3
-      - name: Install artifact tools
+      - name: Install Linux artifact tools
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install --yes patchelf
-      - name: Build relocatable Linux amd64 artifact
-        run: just release linux-artifact
+      - name: Install macOS build shell
+        if: runner.os == 'macOS'
+        run: brew install bash
+      - name: Check packaging and publication failure paths
+        run: just release artifact-test
+      - name: Build and verify relocated native archive
+        env:
+          ARTIFACT_RECIPE: ${{ matrix.recipe }}
+        run: just release "$ARTIFACT_RECIPE"
       - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
         with:
-          name: obey-voice-linux-amd64
-          path: dist/obey-voice-linux-amd64.tar.gz
+          name: obey-voice-${{ matrix.platform }}
+          path: dist/release/*
           if-no-files-found: error
           retention-days: 7
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist/obey-voice-linux-amd64.tar.gz --clobber
 
-  macos-artifact:
-    runs-on: macos-latest
-    timeout-minutes: 45
+  publish:
+    needs: artifacts
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    # Serialize release mutation across tags as well as retries.
+    concurrency:
+      group: obey-voice-release-publication
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 0 # git describe needs history/tags for the manifest version
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-python@v5
         with:
-          go-version-file: go.mod
-          cache: true
-      - name: Install just
-        run: brew install just
-      - name: Build relocatable macOS arm64 artifact
-        run: just release macos-artifact
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
         with:
-          name: obey-voice-macos-arm64
-          path: dist/obey-voice-macos-arm64.tar.gz
-          if-no-files-found: error
-          retention-days: 7
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
+          pattern: obey-voice-*
+          path: dist/release
+          merge-multiple: true
+      - name: Stage, verify, and publish the complete release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist/obey-voice-macos-arm64.tar.gz --clobber
+        run: python3 scripts/publish_release.py "$GITHUB_REF_NAME"

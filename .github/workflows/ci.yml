@@ -140,5 +140,7 @@ jobs:
           sudo apt-get install --yes patchelf
       - name: Build and smoke-test artifact
         run: just release linux-artifact
+      - name: Packaging and publication regression tests
+        run: just release artifact-test
       # Routine CI validates the archive without retaining a copy on every
       # push. Use Release Artifacts when a downloadable build is needed.

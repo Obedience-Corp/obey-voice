@@ -20,7 +20,10 @@ Voice-mode development requires local microphone and speaker access. Integration
 CI builds and smoke-tests the relocatable Linux archive on every PR and main
 push without uploading it to Actions storage. For downloadable Linux and macOS
 builds, run **Release Artifacts** manually on the desired branch; those downloads
-expire after seven days. Tag builds attach archives directly to the GitHub release.
+expire after seven days. Tag builds wait for both platforms, upload into a draft,
+verify downloaded assets, then publish. See [release operations](docs/releases.md).
+Native packaging requires Python 3.12+ and Bash 4+ in addition to the source
+toolchain; these are builder requirements, not requirements for archive users.
 
 ## Pull Requests
 
