@@ -127,7 +127,16 @@ def verify(directory, tag, workspace, brew):
     run(isolated_brew, "uninstall", "--force", "--formula", FORMULA)
     formula.write_text(original)
     preserved()
-    run(isolated_brew, "install", "--force-bottle", bottles[0])
+    # Use the same formula/bottle metadata route as a public tap installation.
+    # Some Homebrew releases interpret a local bottle path as a tap name.
+    bottle_json = list(output.glob("*.bottle.json"))
+    if len(bottle_json) != 1:
+        raise ValueError(f"expected one bottle metadata file, found {bottle_json}")
+    run(isolated_brew, "bottle", "--merge", "--write", "--no-commit", bottle_json[0])
+    bottle_cache = Path(run(isolated_brew, "--cache", "--force-bottle", "--formula", FORMULA))
+    bottle_cache.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(bottles[0], bottle_cache)
+    run(isolated_brew, "install", "--force-bottle", "--formula", FORMULA)
     run(isolated_brew, "test", FORMULA)
     installed = Path(run(isolated_brew, "--prefix", FORMULA))
     receipt = json.loads((installed / "INSTALL_RECEIPT.json").read_text())
@@ -136,7 +145,8 @@ def verify(directory, tag, workspace, brew):
     preserved()
     run(isolated_brew, "uninstall", "--force", "--formula", FORMULA)
     preserved()
-    if installed.exists() or (prefix / "bin/obey-voice").exists():
+    executable = prefix / "bin/obey-voice"
+    if installed.exists() or executable.exists() or executable.is_symlink():
         raise ValueError("uninstall left package-owned executable files")
     evidence = {"version": tag, "platform": target, "brew_commit": run("git", "rev-parse", "HEAD", cwd=prefix),
                 "bottle": bottles[0].name, "sha256": digest(bottles[0]), "poured_from_bottle": True,

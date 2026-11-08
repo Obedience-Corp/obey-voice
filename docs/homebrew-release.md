@@ -77,7 +77,9 @@ bottles built from a private fixture tap commit, not production tap artifacts.
      obedience-corp/tap/obey-voice
    ```
 
-4. Stage those bottles in a draft release in the tap repository. Merge their JSON
+4. Stage those bottles in a draft release in the tap repository. Upload each
+   `local_filename` under the corresponding `filename` from its bottle JSON;
+   Homebrew's local and public filenames differ. Merge their JSON
    into the tap formula using `brew bottle --merge --write --no-commit` and both
    JSON paths. Preserve Homebrew's generated platform and relocation metadata;
    do not invent bottle checksums or claim a fixture-tap bottle as production.
