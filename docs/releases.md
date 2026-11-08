@@ -22,7 +22,9 @@ unsafe archive entries, incomplete publication and retry regression coverage.
 
 After the project's required checks pass, `just release tag vX.Y.Z` pushes an
 annotated tag. **Release Artifacts** builds and validates both platforms before
-its publication job starts. It creates a draft release, uploads the complete set,
+its publication job starts. The [Homebrew lifecycle checks](homebrew-release.md)
+also audit, install, bottle, upgrade and uninstall both platform packages in
+isolated prefixes. It creates a draft release, uploads the complete set,
 downloads and verifies it, publishes, then verifies published readback. A failed
 build produces no public release; a failed upload/readback leaves a draft.
 Prerelease tags are marked as prereleases. Publication never changes `Latest`;
@@ -47,6 +49,6 @@ session with repository release-write access. Never synthesize a missing platfor
 or publish a release containing only one archive. Do not use `gh release upload
 --clobber` against a published release.
 
-Homebrew, npm, Festival catalog publication and Developer ID signing/notarization
+Homebrew tap publication, npm, Festival catalog publication and Developer ID signing/notarization
 have separate qualification gates. An artifact workflow pass does not make those
 channels available.

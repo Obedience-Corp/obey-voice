@@ -141,6 +141,8 @@ jobs:
       - name: Build and smoke-test artifact
         run: just release linux-artifact
       - name: Packaging and publication regression tests
-        run: just release artifact-test
+        run: |
+          just release artifact-test
+          just release homebrew-test
       # Routine CI validates the archive without retaining a copy on every
       # push. Use Release Artifacts when a downloadable build is needed.

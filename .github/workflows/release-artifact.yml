@@ -62,8 +62,50 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  homebrew:
+    name: Homebrew lifecycle (${{ matrix.platform }})
     needs: artifacts
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-amd64
+          - runner: macos-15
+            platform: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: Homebrew/actions/setup-homebrew@63a2d4d8d4193eab3e62b1b782ff3ab8408f5b29
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: obey-voice-*
+          path: dist/release
+          merge-multiple: true
+      - name: Audit, install, bottle, upgrade, reinstall and uninstall
+        run: |
+          version="$(python3 scripts/release_artifacts.py version)"
+          python3 scripts/verify_homebrew.py "$version" --workspace dist/homebrew-check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: homebrew-${{ matrix.platform }}
+          path: |
+            dist/homebrew-check/bottles/*
+            dist/homebrew-check/evidence.json
+            dist/homebrew-check/verification.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  publish:
+    needs: [artifacts, homebrew]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
