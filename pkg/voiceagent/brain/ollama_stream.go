@@ -109,7 +109,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				done <- StreamResult{Err: err}
 				return
 			}
-			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil)
+			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil, opts)
 			if imageResultRetry {
 				messages[0].Content += "\n\n" + systemPrompt(o.cfg, "image-result-repair", nil)
 			}

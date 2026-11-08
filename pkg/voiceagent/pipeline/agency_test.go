@@ -38,7 +38,7 @@ func (w *slowWorker) ClearHistory()            {}
 func (w *slowWorker) History() []brain.Turn    { return nil }
 func (w *slowWorker) LoadHistory([]brain.Turn) {}
 
-func TestSpawnReportsRealJobWithoutCannedSpeech(t *testing.T) {
+func TestSpawnAcknowledgesAcceptedWorkBeforeResult(t *testing.T) {
 	provider := &progressiveFakeTTS{}
 	player := newFakePlayer(time.Millisecond)
 	defer player.Close()
@@ -62,8 +62,8 @@ func TestSpawnReportsRealJobWithoutCannedSpeech(t *testing.T) {
 	if accepted.State != "accepted" || accepted.JobID == "" || !jobs.Active() {
 		t.Fatalf("missing real admission: %+v", accepted)
 	}
-	if calls := provider.Calls(); len(calls) != 0 {
-		t.Fatalf("spawn invented speech before a worker result: %v", calls)
+	if calls := provider.Calls(); len(calls) != 1 || calls[0] != "I'll work on that and report back." {
+		t.Fatalf("missing accepted-work acknowledgment before the result: %v", calls)
 	}
 	close(worker.done)
 }

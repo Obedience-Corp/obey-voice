@@ -90,9 +90,14 @@ func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 	return o.buildMessagesForTurn(skillCtx, false)
 }
 
-func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bool) []api.Message {
+func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bool, options ...StreamOptions) []api.Message {
 	msgs := make([]api.Message, 0, len(o.history)+1)
 	system := o.fullSystemPrompt + o.conversationIdentityGuidance()
+	opts := StreamOptions{AgentContinuation: agentContinuation}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	system += currentRequestContext(o.cfg, opts)
 	lastUser := lastUserIndex(o.history)
 	if o.audioResolver != nil && lastUser >= 0 && lastUser < len(o.working) && o.working[lastUser].Utterance != nil && len(o.history[lastUser].Images) > 0 {
 		system += "\n\nThe user request is in the attached recording. Answer the speaker's request. The persona examples illustrate style; do not repeat them or claim an action unless its tool result confirms it."
@@ -127,6 +132,11 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 		// request projection, never in canonical user text.
 		if ((i == lastUser && !agentContinuation) || (agentContinuation && i == len(o.history)-1)) && m.Role == "user" && o.groupModeEnabled() && o.cfg != nil {
 			m.Content += groupReplyInstruction(o.cfg, o.cfg.AgentName)
+		}
+		// Place the human request boundary beside the actual input as well as
+		// in system context. Never add competing text to a native recording.
+		if len(options) > 0 && i == lastUser && !(o.audioResolver != nil && opts.Utterance != nil) {
+			m.Content += currentRequestReminder(o.cfg, opts)
 		}
 		msgs = append(msgs, m)
 	}

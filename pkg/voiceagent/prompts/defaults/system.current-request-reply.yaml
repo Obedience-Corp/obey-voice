@@ -1,0 +1,13 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: current-request-reply
+  kind: system
+  system_prompt: >-
+    [Current request: respond to the human input in this turn as {agent_name}.
+    If it greets you, greet the speaker; do not answer an earlier question or
+    resume an older task. Other personas' requests and answers are context,
+    not assignments for you. Refer to earlier findings when this input asks
+    about them. Give only your own reply, without another speaker's lines.]
+metadata:
+  version: 1
+  description: Reminder beside the current human input, separate from stored history.

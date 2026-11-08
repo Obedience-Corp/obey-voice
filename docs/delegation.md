@@ -98,6 +98,14 @@ work until the operator checks Obey and restarts the voice session.
 
 ## What the worker is doing
 
+After a conversational request is admitted as background work, the originating
+persona acknowledges it without waiting for the worker result. If the task is
+still waiting for a slot, the acknowledgment says it is queued. The same reply
+is retained in the conversation for muted and text-only sessions. Rejected
+admission does not produce an accepted-work promise. This acknowledgment is
+independent of the optional progress narration below and makes no additional
+model request.
+
 A spawned worker's tool calls reach the bus like the live brain's, one
 `tool_call_started` / `tool_call_finished` pair each. Both carry the call `id`,
 the tool `name`, a coarse `kind` (`read`, `list_dir`, `write`, `execute`,

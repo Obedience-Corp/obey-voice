@@ -216,7 +216,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	origin.Envelope.ResponseID = newWorkID()
 	origin.Voices.primary, origin.Voices.fallback = a.pipeline.responseTTS(ctx)
 	origin.releaseVoice = a.pipeline.RetainTTS(origin.Voices.primary, origin.Voices.fallback)
-	_, err := a.jobs.Start(ctx, job.Spec{
+	acceptedID, err := a.jobs.Start(ctx, job.Spec{
 		RuntimeBudget: runtimeBudget,
 		ID:            jobID,
 		OnAccepted: func(id string) {
@@ -241,6 +241,21 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		}
 		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 		return
+	}
+	// A routed turn must not silently end while its work continues. Speak only
+	// after admission succeeded; the same bounded line is retained in canonical
+	// history even for muted/text-only hosts. This does not wait for the worker.
+	if turn != nil && metrics != nil {
+		line := "I'll work on that and report back."
+		for _, info := range a.jobs.Status() {
+			if info.ID == acceptedID && info.State == job.StateQueued {
+				line = "I've queued that task and will report back."
+				break
+			}
+		}
+		if err := a.pipeline.speakStandalone(ctx, turn, metrics, line); err != nil {
+			metrics.degraded = true
+		}
 	}
 }
 

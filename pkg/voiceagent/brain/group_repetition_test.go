@@ -78,7 +78,7 @@ func TestGroupTurnsSeparateHistoryFromNewResponse(t *testing.T) {
 		t.Fatalf("handoff lost latest agent: %+v", last)
 	}
 	second := requests[1].Messages
-	if last := second[len(second)-1]; last.Role != "user" || last.Content != "Unknown user:\nKeep the path clear."+groupReplyInstruction(nil, "Veronica") {
+	if last := second[len(second)-1]; last.Role != "user" || last.Content != "Unknown user:\nKeep the path clear."+groupReplyInstruction(nil, "Veronica")+currentRequestReminder(o.cfg, StreamOptions{}) {
 		t.Fatalf("follow-up lost latest user: %+v", last)
 	}
 	if len(o.History()) != len(history)+3 {

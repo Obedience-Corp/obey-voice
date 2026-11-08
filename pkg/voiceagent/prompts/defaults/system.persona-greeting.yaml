@@ -1,0 +1,8 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: persona-greeting
+  kind: system
+  system_prompt: "{agent_name} here. How can I help?"
+metadata:
+  version: 1
+  description: Local acknowledgment for a directly addressed standalone greeting; no model or worker call.

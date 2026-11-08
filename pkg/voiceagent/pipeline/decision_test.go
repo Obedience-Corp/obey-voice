@@ -181,7 +181,7 @@ func TestOptionalDecisionCrossesPipelineAndWorkerAdmission(t *testing.T) {
 					t.Fatalf("workers=%d speaking calls=%d", workers.Load(), modelCalls.Load())
 				}
 				history := b.History()
-				if len(history) != 1 || history[0].Content != input || history[0].Role != "user" {
+				if len(history) != 2 || history[0].Content != input || history[0].Role != "user" || history[1].Role != "assistant" || history[1].Content == "" {
 					t.Fatalf("routed history=%+v", history)
 				}
 			} else {

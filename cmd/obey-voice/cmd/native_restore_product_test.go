@@ -70,7 +70,9 @@ func TestProductRestoreProjectionPreservesRecordingOrItsActualTranscript(t *test
 					}
 					foreground := false
 					for _, message := range request.Messages {
-						if message.Content == "Continue from saved recording" {
+						// A request-local host reminder can follow the actual user
+						// input. Still inspect the recording/transcript on that call.
+						if strings.Contains(message.Content, "Continue from saved recording") {
 							foreground = true
 						}
 					}
