@@ -56,7 +56,8 @@ between different upstream versions.
 Evidence and the command log remain in the workspace. `bottles/` contains the
 test bottle, bottle JSON and canonical generated formula. Release Artifacts runs
 this journey on native Linux and macOS and retains those outputs for seven days;
-tag publication waits for both Homebrew journeys to pass. These are qualification
+tap promotion requires both Homebrew journeys to pass. Native archive publication
+remains independent. These are qualification
 bottles built from a private fixture tap commit, not production tap artifacts.
 
 ## Publish the tap package

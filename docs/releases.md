@@ -22,13 +22,15 @@ unsafe archive entries, incomplete publication and retry regression coverage.
 
 After the project's required checks pass, `just release tag vX.Y.Z` pushes an
 annotated tag. **Release Artifacts** builds and validates both platforms before
-its publication job starts. The [Homebrew lifecycle checks](homebrew-release.md)
-also audit, install, bottle, upgrade and uninstall both platform packages in
-isolated prefixes. It creates a draft release, uploads the complete set,
+its publication job starts. It creates a draft release, uploads the complete set,
 downloads and verifies it, publishes, then verifies published readback. A failed
 build produces no public release; a failed upload/readback leaves a draft.
 Prerelease tags are marked as prereleases. Publication never changes `Latest`;
 package-channel promotion is separate and must reject downgrades.
+The [Homebrew lifecycle checks](homebrew-release.md) separately audit, install,
+bottle, upgrade and uninstall both platform packages in isolated prefixes.
+Both Homebrew jobs must pass before promoting the tap package; they do not block
+the independent native archive release.
 
 Manual workflow runs on a branch build downloadable development artifacts without
 publishing. A manual run on a release tag can retry publication. Published assets
