@@ -77,6 +77,29 @@ func TestExtractTarStreamDirectoriesAndNestedFiles(t *testing.T) {
 	}
 }
 
+func TestExtractTarStreamAcceptsPAXMetadataBeforePrefix(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, h := range []tar.Header{
+		{Name: "pax_global_header", Typeflag: tar.TypeXGlobalHeader, PAXRecords: map[string]string{"comment": "release"}},
+		{Name: "./model/worker", Typeflag: tar.TypeReg, Mode: 0755},
+	} {
+		if err := tw.WriteHeader(&h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if _, err := extractTarStream(&buf, dir, "test", []string{"worker"}); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(filepath.Join(dir, "worker")); err != nil || info.Mode().Perm() != 0755 {
+		t.Fatalf("executable mode lost: %v, %v", info, err)
+	}
+}
+
 func TestExtractTarStreamRejectsTraversal(t *testing.T) {
 	dir := t.TempDir()
 	entries := []tarEntry{

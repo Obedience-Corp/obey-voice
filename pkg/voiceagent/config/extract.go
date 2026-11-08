@@ -91,6 +91,11 @@ func extractTar(tr *tar.Reader, dir, name string) error {
 		if err != nil {
 			return fmt.Errorf("extract %s: reading archive: %w", name, err)
 		}
+		// Global PAX metadata is not a filesystem entry and must not decide
+		// whether the following model files have a release-directory prefix.
+		if header.Typeflag == tar.TypeXGlobalHeader || header.Typeflag == tar.TypeXHeader {
+			continue
+		}
 
 		rel, err := stripper.Strip(header.Name, header.Typeflag == tar.TypeDir)
 		if err != nil {
