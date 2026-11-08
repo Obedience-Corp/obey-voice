@@ -23,7 +23,7 @@ jobs:
           - runner: ubuntu-24.04
             platform: linux-amd64
             recipe: linux-artifact
-          - runner: macos-14
+          - runner: macos-15
             platform: macos-arm64
             recipe: macos-artifact
     runs-on: ${{ matrix.runner }}

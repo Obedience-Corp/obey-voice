@@ -3,7 +3,7 @@
 `just release linux-artifact` and `just release macos-artifact` build on native
 x86_64 glibc Linux and Apple Silicon macOS, respectively. Use Python 3.12+, Bash
 4+, Go and the native toolchain; Linux also needs `patchelf` and binutils. CI uses
-Ubuntu 24.04 and macOS 14. These tools are required only on the builder.
+Ubuntu 24.04 and macOS 15. These tools are required only on the builder.
 
 Each build creates `dist/release/obey-voice-VERSION-PLATFORM.tar.gz` and a matching
 `.tar.gz.sha256`. The archive still extracts to `obey-voice-PLATFORM/`, containing
