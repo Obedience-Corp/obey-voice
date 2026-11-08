@@ -31,6 +31,35 @@ serve banner must not advertise `https://127.0.0.1` for that local Stage URL.
 The Stage page opens `/v1/stream` as `ws://127.0.0.1` (`ws:` when
 `location.protocol` is `http:`); LAN and Tailscale remain `wss://`.
 
+### Debug client certificate trust
+
+`obey-voice connect` authenticates the server with the operating system's TLS
+trust roots before sending its bearer token. A publicly trusted certificate
+(including a working Tailscale HTTPS certificate) needs no additional trust flag;
+connect using its matching DNS name.
+
+For a private CA or the managed self-signed LAN certificate, obtain the CA/server
+PEM certificate through a trusted channel such as your existing SSH connection.
+The managed LAN certificate is `serve/cert.pem` under the server's Obey Voice
+config directory (normally `~/.obey/agents/voice/obey-voice/`). Keep `key.pem` on
+the server. Then run:
+
+```bash
+obey-voice connect <certificate-hostname-or-ip>:7262 \
+  --token <token> --ca-cert ./server-cert.pem
+```
+
+`--ca-cert` adds the certificate to system trust for this invocation only. An
+optional `--fingerprint <64-hex-sha256>` additionally checks the leaf certificate
+against the fingerprint printed by `serve`. Hostname, expiration, and chain
+checks still apply with a pin. After certificate rotation, replace the trusted
+certificate and any pin through the same trusted channel.
+
+Earlier `connect` versions accepted an untrusted server when no fingerprint was
+supplied, and allowed fingerprint-only self-signed connections. Those connections
+now require `--ca-cert` or an already trusted certificate. The client does not
+discover and trust a certificate over an unauthenticated connection.
+
 ### Tailscale one-shot
 
 Interactive: launch `obey-voice`, then choose **Use on another device**. The

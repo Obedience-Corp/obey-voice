@@ -5,11 +5,7 @@ package cmd
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -23,6 +19,7 @@ import (
 )
 
 var (
+	connectCACert      string
 	connectToken       string
 	connectFingerprint string
 	connectAudioOut    string
@@ -43,9 +40,11 @@ pcm_s16le bytes are appended to FILE so you can verify the wire format, e.g.:
   obey-voice connect host:7262 --token … --audio-out /tmp/out.raw
   ffplay -f s16le -ar 24000 -ac 1 /tmp/out.raw
 
-Pin the server with --fingerprint (printed by serve at startup); without it
-the certificate is accepted blindly and its fingerprint printed so you can
-pin on the next run.`,
+Server certificates are verified against system trust roots. For a private or
+self-signed server, obtain its certificate through a trusted channel and pass
+--ca-cert FILE. For a managed serve, use its serve/cert.pem (never its private key).
+Add --fingerprint (printed by serve) to pin the leaf certificate as well; a pin
+alone does not replace certificate-chain and hostname verification.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runConnect(args[0])
@@ -53,6 +52,7 @@ pin on the next run.`,
 }
 
 func init() {
+	connectCmd.Flags().StringVar(&connectCACert, "ca-cert", "", "PEM CA or server certificate to trust in addition to system roots")
 	connectCmd.Flags().StringVar(&connectToken, "token", "", "Bearer token issued by obey-voice serve (required)")
 	connectCmd.Flags().StringVar(&connectFingerprint, "fingerprint", "", "Pin the server's certificate SHA-256 (hex)")
 	connectCmd.Flags().StringVar(&connectAudioOut, "audio-out", "", "Append raw pcm_s16le audio_chunk payloads to this file")
@@ -64,30 +64,17 @@ func runConnect(addr string) error {
 	ctx, cancel := signalContext()
 	defer cancel()
 
-	tlsConfig := &tls.Config{
-		// Self-signed LAN cert: trust is fingerprint pinning, not a CA.
-		InsecureSkipVerify: true,
-		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-			if len(rawCerts) == 0 {
-				return fmt.Errorf("server presented no certificate")
-			}
-			sum := sha256.Sum256(rawCerts[0])
-			got := hex.EncodeToString(sum[:])
-			if connectFingerprint == "" {
-				fmt.Printf("  %s %s\n", dimStyle.Render("Server cert SHA-256 (unpinned — pass --fingerprint to pin):"), got)
-				return nil
-			}
-			if !strings.EqualFold(connectFingerprint, got) {
-				return fmt.Errorf("certificate fingerprint mismatch: pinned %s, server presented %s", connectFingerprint, got)
-			}
-			return nil
-		},
+	tlsConfig, err := connectTLSConfig(connectCACert, connectFingerprint)
+	if err != nil {
+		return err
 	}
+	transport := &http.Transport{TLSClientConfig: tlsConfig}
+	defer transport.CloseIdleConnections()
 
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+connectToken)
 	ws, _, err := websocket.Dial(ctx, "wss://"+addr+"/v1/stream", &websocket.DialOptions{
-		HTTPClient: &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}},
+		HTTPClient: &http.Client{Transport: transport},
 		HTTPHeader: header,
 	})
 	if err != nil {

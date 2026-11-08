@@ -35,8 +35,17 @@ obey-voice serve --open
 
 # Ops
 obey-voice serve --revoke-tokens   # Invalidate the bearer; next serve mints a new one
-obey-voice connect <host:port> --token <token>   # Debug text client
+obey-voice connect <host:port> --token <token>   # Debug text client; system-trusted TLS
+# Private/self-signed certificate, copied from the server through a trusted channel:
+obey-voice connect <host:port> --token <token> --ca-cert ./server-cert.pem
 ```
+
+`connect` verifies the server certificate before sending the token. For managed
+self-signed servers, copy `serve/cert.pem` from the server's Obey Voice config
+directory; never copy `key.pem`. `--fingerprint <sha256>` optionally adds a leaf
+certificate pin, but no longer bypasses chain, validity, or hostname checks.
+Use the hostname or IP covered by the certificate. See
+[debug client trust setup](serve-protocol.md#debug-client-certificate-trust).
 
 If a trusted cert is not available yet, remote access still starts in
 **limited** mode: text works on every device; most desktop browsers can use
