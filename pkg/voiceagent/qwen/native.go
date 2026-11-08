@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/internal/archiveutil"
 )
 
 // Native product install lives under models_dir/qwen3-tts/ (release tarball layout).
@@ -782,8 +784,14 @@ func extractNativeTarGz(archivePath, destRoot string) error {
 	}
 	defer os.RemoveAll(stage)
 
+	root, err := os.OpenRoot(stage)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	tr := tar.NewReader(gz)
-	var prefix string
+	var stripper archiveutil.Stripper
+	var links []archiveutil.Link
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -792,44 +800,27 @@ func extractNativeTarGz(archivePath, destRoot string) error {
 		if err != nil {
 			return fmt.Errorf("native Qwen setup: tar: %w", err)
 		}
-		if strings.HasPrefix(hdr.Name, "/") || filepath.IsAbs(hdr.Name) {
-			return fmt.Errorf("native Qwen setup: refusing absolute path %q", hdr.Name)
-		}
-		if _, err := safeJoinNative(stage, hdr.Name); err != nil {
-			return err
-		}
-		if prefix == "" {
-			if parts := strings.SplitN(hdr.Name, "/", 2); len(parts) > 1 {
-				prefix = parts[0] + "/"
-			}
-		}
-		rel := strings.TrimPrefix(hdr.Name, prefix)
-		if rel == "" || rel == "." {
+		if hdr.Typeflag == tar.TypeXGlobalHeader || hdr.Typeflag == tar.TypeXHeader {
 			continue
 		}
-		target, err := safeJoinNative(stage, rel)
+		rel, err := stripper.Strip(hdr.Name, hdr.Typeflag == tar.TypeDir)
 		if err != nil {
 			return err
 		}
+		if rel == "." {
+			continue
+		}
+		target := filepath.FromSlash(rel)
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := rejectNativeSymlinkComponents(stage, target); err != nil {
-				return err
-			}
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := root.MkdirAll(target, 0o755); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			if err := rejectNativeSymlinkComponents(stage, target); err != nil {
+			if err := root.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			if err := rejectNativeSymlinkComponents(stage, target); err != nil {
-				return err
-			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(hdr.Mode)|0o644)
+			out, err := root.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(hdr.Mode)|0o644)
 			if err != nil {
 				return err
 			}
@@ -841,25 +832,14 @@ func extractNativeTarGz(archivePath, destRoot string) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			// Allow relative library aliases only when their logical target remains
-			// inside the package after the staged tree is promoted into destRoot.
-			if err := validateNativeArchiveSymlink(rel, hdr.Linkname); err != nil {
-				return err
-			}
-			if err := rejectNativeSymlinkComponents(stage, target); err != nil {
-				return err
-			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			_ = os.Remove(target)
-			if err := os.Symlink(hdr.Linkname, target); err != nil {
-				// If symlink fails (e.g. Windows without privilege), skip — fixDylibNames later.
-				continue
-			}
+			links = append(links, archiveutil.Link{Name: rel, Target: hdr.Linkname})
 		default:
 			// ignore other types
 		}
+	}
+
+	if err := archiveutil.CreateLinks(root, links, "install.json", "SHA256SUMS", "bin", "models"); err != nil {
+		return err
 	}
 
 	// Promote staged install.json / bin / models into destRoot (merge/replace).
@@ -884,63 +864,6 @@ func extractNativeTarGz(archivePath, destRoot string) error {
 		}
 	}
 	return nil
-}
-
-func validateNativeArchiveSymlink(rel, linkname string) error {
-	nativeLink := filepath.FromSlash(linkname)
-	if linkname == "" || strings.Contains(linkname, `\`) || path.IsAbs(linkname) ||
-		filepath.IsAbs(nativeLink) || filepath.VolumeName(nativeLink) != "" {
-		return fmt.Errorf("native Qwen setup: refusing unsafe symlink %q -> %q", rel, linkname)
-	}
-	target := path.Clean(path.Join(path.Dir(filepath.ToSlash(rel)), linkname))
-	if target == ".." || strings.HasPrefix(target, "../") {
-		return fmt.Errorf("native Qwen setup: symlink %q -> %q escapes archive root", rel, linkname)
-	}
-	return nil
-}
-
-// rejectNativeSymlinkComponents prevents a later regular-file header from
-// following an earlier archive symlink. The final path is checked too because
-// os.OpenFile follows an existing symlink at that position.
-func rejectNativeSymlinkComponents(root, target string) error {
-	if err := requirePathWithinNative(root, target, target); err != nil {
-		return err
-	}
-	rel, err := filepath.Rel(root, target)
-	if err != nil {
-		return err
-	}
-	current := root
-	for _, component := range strings.Split(rel, string(filepath.Separator)) {
-		if component == "" || component == "." {
-			continue
-		}
-		current = filepath.Join(current, component)
-		info, err := os.Lstat(current)
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("native Qwen setup: refusing archive write through symlink %q", current)
-		}
-	}
-	return nil
-}
-
-func safeJoinNative(dir, rel string) (string, error) {
-	nativeRel := filepath.FromSlash(rel)
-	if filepath.IsAbs(nativeRel) || filepath.VolumeName(nativeRel) != "" {
-		return "", fmt.Errorf("unsafe absolute path %q", rel)
-	}
-	target := filepath.Join(dir, nativeRel)
-	within, err := filepath.Rel(dir, target)
-	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("unsafe path %q escapes archive root", rel)
-	}
-	return target, nil
 }
 
 func copyPath(src, dst string) error {

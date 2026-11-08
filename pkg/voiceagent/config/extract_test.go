@@ -93,6 +93,43 @@ func TestExtractTarStreamRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestExtractTarStreamRejectsUnsafeOriginalName(t *testing.T) {
+	for _, name := range []string{"../escape", "model/../escape", `C:/escape`, `model\escape`} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := extract(t, []tarEntry{{name: name, typeflag: tar.TypeReg, body: "evil"}}, dir, "test", nil); err == nil {
+				t.Fatal("unsafe original name hidden by prefix stripping")
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("rejected extraction left entries: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestExtractTarConfinesExistingDestinationSymlink(t *testing.T) {
+	outside := t.TempDir()
+	sentinel := filepath.Join(outside, "file")
+	if err := os.WriteFile(sentinel, []byte("untouched"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "sub")); err != nil {
+		t.Fatal(err)
+	}
+	raw := makeTar(t, []tarEntry{{name: "model/sub/file", typeflag: tar.TypeReg, body: "evil"}})
+	if err := extractTar(tar.NewReader(bytes.NewReader(raw)), dir, "test"); err == nil {
+		t.Fatal("write followed an existing symlink outside the root")
+	}
+	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "untouched" {
+		t.Fatalf("outside file changed: %q, %v", got, err)
+	}
+	if info, err := os.Stat(sentinel); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("outside mode changed: %v, %v", info, err)
+	}
+}
+
 func TestExtractTarStreamRejectsAbsolutePath(t *testing.T) {
 	dir := t.TempDir()
 	entries := []tarEntry{{name: "/etc/evil.txt", typeflag: tar.TypeReg, body: "evil"}}

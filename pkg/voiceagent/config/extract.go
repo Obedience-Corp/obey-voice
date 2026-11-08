@@ -6,7 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/internal/archiveutil"
 )
 
 // archiveExtracted checks if all expected files/dirs exist.
@@ -76,7 +77,12 @@ func extractTarStream(r io.Reader, dir, name string, checkFiles []string) ([]str
 // top-level directory prefix. It rejects unsafe paths (absolute or escaping the
 // root) and link entries (symlinks/hardlinks), and ignores other special types.
 func extractTar(tr *tar.Reader, dir, name string) error {
-	var prefix string
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("extract %s: %w", name, err)
+	}
+	defer root.Close()
+	var stripper archiveutil.Stripper
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -86,23 +92,9 @@ func extractTar(tr *tar.Reader, dir, name string) error {
 			return fmt.Errorf("extract %s: reading archive: %w", name, err)
 		}
 
-		// Reject absolute entry names before any prefix stripping can mask them.
-		if strings.HasPrefix(header.Name, "/") || filepath.IsAbs(header.Name) {
-			return fmt.Errorf("extract %s: refusing absolute path %q in archive", name, header.Name)
-		}
-		// Some release archives (e.g. the NeMo Parakeet 110m model) are built
-		// with "./dir/file" entries; the leading "./" is not a top-level dir.
-		header.Name = strings.TrimPrefix(header.Name, "./")
-
-		// Detect the top-level prefix from the first entry, then strip it.
-		if prefix == "" {
-			if parts := strings.SplitN(header.Name, "/", 2); len(parts) > 1 {
-				prefix = parts[0] + "/"
-			}
-		}
-		rel := strings.TrimPrefix(header.Name, prefix)
-		if rel == "" || rel == "." {
-			continue
+		rel, err := stripper.Strip(header.Name, header.Typeflag == tar.TypeDir)
+		if err != nil {
+			return fmt.Errorf("extract %s: %w", name, err)
 		}
 
 		switch header.Typeflag {
@@ -110,21 +102,21 @@ func extractTar(tr *tar.Reader, dir, name string) error {
 			return fmt.Errorf("extract %s: refusing link entry %q", name, rel)
 		}
 
-		target, err := safeJoin(dir, rel)
-		if err != nil {
-			return fmt.Errorf("extract %s: %w", name, err)
+		if rel == "." {
+			continue
 		}
+		target := filepath.FromSlash(rel)
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := root.MkdirAll(target, 0o755); err != nil {
 				return fmt.Errorf("extract %s: create dir %s: %w", name, rel, err)
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := root.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return fmt.Errorf("extract %s: create parent dir for %s: %w", name, rel, err)
 			}
-			f, err := os.Create(target)
+			f, err := root.Create(target)
 			if err != nil {
 				return fmt.Errorf("extract %s: create file %s: %w", name, rel, err)
 			}
@@ -132,25 +124,14 @@ func extractTar(tr *tar.Reader, dir, name string) error {
 				f.Close()
 				return fmt.Errorf("extract %s: write file %s: %w", name, rel, err)
 			}
-			f.Close()
-			if err := os.Chmod(target, os.FileMode(header.Mode)); err != nil {
+			if err := f.Chmod(os.FileMode(header.Mode).Perm()); err != nil {
+				f.Close()
 				return fmt.Errorf("extract %s: chmod %s: %w", name, rel, err)
+			}
+			if err := f.Close(); err != nil {
+				return fmt.Errorf("extract %s: close %s: %w", name, rel, err)
 			}
 		}
 	}
 	return nil
-}
-
-// safeJoin joins rel under dir, rejecting absolute paths and any path that would
-// escape dir via "..".
-func safeJoin(dir, rel string) (string, error) {
-	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("unsafe absolute path %q in archive", rel)
-	}
-	target := filepath.Join(dir, rel)
-	within, err := filepath.Rel(dir, target)
-	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("unsafe path %q escapes archive root", rel)
-	}
-	return target, nil
 }

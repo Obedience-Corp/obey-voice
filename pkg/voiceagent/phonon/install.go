@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/internal/archiveutil"
 )
 
 const (
@@ -262,57 +264,59 @@ func extract(archive, dest string) error {
 		return err
 	}
 	defer gz.Close()
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(dest)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	tr := tar.NewReader(gz)
 	var total int64
-	type link struct{ path, target string }
-	var links []link
+	var links []archiveutil.Link
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
-			// Create links last so later regular entries can never write through
-			// an archive-supplied symlink. Upstream uses internal license links.
-			for _, l := range links {
-				if err := os.Symlink(l.target, l.path); err != nil {
-					return err
-				}
-			}
-			return nil
+			return archiveutil.CreateLinks(root, links)
 		}
 		if err != nil {
 			return err
 		}
-		rel := filepath.Clean(filepath.FromSlash(h.Name))
-		if filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("unsafe source archive path %q", h.Name)
+		rel, err := archiveutil.Name(h.Name)
+		if err != nil {
+			return err
 		}
-		path := filepath.Join(dest, rel)
+		path := filepath.FromSlash(rel)
 		switch h.Typeflag {
 		case tar.TypeXGlobalHeader, tar.TypeXHeader:
 			// GitHub codeload includes PAX metadata, not filesystem entries.
 			continue
 		case tar.TypeDir:
-			if err := os.MkdirAll(path, 0755); err != nil {
+			if err := root.MkdirAll(path, 0755); err != nil {
 				return err
 			}
 		case tar.TypeSymlink:
-			target := filepath.Clean(filepath.Join(filepath.Dir(rel), filepath.FromSlash(h.Linkname)))
-			if filepath.IsAbs(h.Linkname) || target == ".." || strings.HasPrefix(target, ".."+string(filepath.Separator)) {
-				return fmt.Errorf("unsafe source archive link %q", h.Name)
-			}
-			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-				return err
-			}
-			links = append(links, link{path, h.Linkname})
+			links = append(links, archiveutil.Link{Name: rel, Target: h.Linkname})
 		case tar.TypeReg:
 			total += h.Size
 			if total > 128<<20 {
 				return errors.New("native Phonon source archive is too large")
 			}
-			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			if err := root.MkdirAll(filepath.Dir(path), 0755); err != nil {
 				return err
 			}
-			if err := atomicWrite(path, tr, 0644); err != nil {
+			out, err := root.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+			if err != nil {
 				return err
+			}
+			_, copyErr := io.Copy(out, tr)
+			closeErr := out.Close()
+			if copyErr != nil {
+				return copyErr
+			}
+			if closeErr != nil {
+				return closeErr
 			}
 		default:
 			return fmt.Errorf("unsupported source archive entry %q", h.Name)
