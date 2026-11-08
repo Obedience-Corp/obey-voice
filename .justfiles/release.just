@@ -47,15 +47,20 @@ publish version:
 artifact-test:
     python3 -m unittest discover -s scripts -p test_release_*.py
 
-# Print the url + sha256 to paste into the Homebrew tap formula.
-formula-sha version:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    url="https://github.com/Obedience-Corp/obey-voice/archive/refs/tags/{{version}}.tar.gz"
-    sha="$(curl -fsSL "$url" | shasum -a 256 | cut -d' ' -f1)"
-    echo "lancekrogers/homebrew-tap → Formula/obey-voice.rb:"
-    echo "  url \"$url\""
-    echo "  sha256 \"$sha\""
+# Render the org tap formula from both verified archives in dist/release.
+[no-cd]
+homebrew-formula version:
+    python3 scripts/render_homebrew.py "{{version}}"
+
+# Validate, bottle, upgrade and uninstall in a new isolated Homebrew prefix.
+[no-cd]
+homebrew-check version workspace:
+    python3 scripts/verify_homebrew.py "{{version}}" --workspace "{{workspace}}"
+
+# Reject incomplete or corrupted formula inputs before changing generated output.
+[no-cd]
+homebrew-test:
+    python3 -m unittest discover -s scripts -p test_homebrew.py
 
 # Produces dist/obey-voice-linux-amd64.tar.gz: the native CGO binary plus the
 # sherpa-onnx/onnxruntime shared libraries it needs. patchelf replaces the

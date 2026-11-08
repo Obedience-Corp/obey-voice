@@ -27,6 +27,10 @@ downloads and verifies it, publishes, then verifies published readback. A failed
 build produces no public release; a failed upload/readback leaves a draft.
 Prerelease tags are marked as prereleases. Publication never changes `Latest`;
 package-channel promotion is separate and must reject downgrades.
+The [Homebrew lifecycle checks](homebrew-release.md) separately audit, install,
+bottle, upgrade and uninstall both platform packages in isolated prefixes.
+Both Homebrew jobs must pass before promoting the tap package; they do not block
+the independent native archive release.
 
 Manual workflow runs on a branch build downloadable development artifacts without
 publishing. A manual run on a release tag can retry publication. Published assets
@@ -47,6 +51,6 @@ session with repository release-write access. Never synthesize a missing platfor
 or publish a release containing only one archive. Do not use `gh release upload
 --clobber` against a published release.
 
-Homebrew, npm, Festival catalog publication and Developer ID signing/notarization
+Homebrew tap publication, npm, Festival catalog publication and Developer ID signing/notarization
 have separate qualification gates. An artifact workflow pass does not make those
 channels available.
