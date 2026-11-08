@@ -110,7 +110,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			o.working = restoreWorking
 			return "", err
 		}
-		messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil)
+		messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil, opts)
 		if imageResultRetry {
 			messages[0].Content += "\n\n" + systemPrompt(o.cfg, "image-result-repair", nil)
 		}

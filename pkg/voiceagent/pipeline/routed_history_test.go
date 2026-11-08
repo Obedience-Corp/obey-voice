@@ -17,7 +17,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
 
-func TestRoutedWorkerRequestSurvivesSessionReloadWithoutSyntheticReply(t *testing.T) {
+func TestRoutedWorkerRequestAndAcknowledgmentSurviveSessionReload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/tags" {
 			t.Errorf("routed acknowledgement called live model: %s", r.URL.Path)
@@ -66,15 +66,16 @@ func TestRoutedWorkerRequestSurvivesSessionReloadWithoutSyntheticReply(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded.Turns) != 2 {
-		t.Fatalf("reloaded routed history = %+v, want two user requests without fabricated replies", loaded.Turns)
+	if len(loaded.Turns) != 4 {
+		t.Fatalf("reloaded routed history = %+v, want two requests and their admission acknowledgments", loaded.Turns)
 	}
-	for i, user := range loaded.Turns {
+	for i := range 2 {
+		user, reply := loaded.Turns[2*i], loaded.Turns[2*i+1]
 		if user.Role != "user" || user.Content != original || user.RoutedInput != "Create a file called worker-proof.txt containing blue comet." {
 			t.Fatalf("original/routed input lost: %+v", user)
 		}
-		if ready[i].Response != "" || ready[i].Envelope == nil || ready[i].Envelope.ResponseID != fmt.Sprintf("response-%d", i+1) {
-			t.Fatalf("routed turn invented a reply or lost its identity: %+v", ready[i])
+		if reply.Role != "assistant" || reply.Content == "" || ready[i].Response != reply.Content || ready[i].Envelope == nil || ready[i].Envelope.ResponseID != fmt.Sprintf("response-%d", i+1) || reply.ResponseID != ready[i].Envelope.ResponseID || reply.PersonaID != "samantha" {
+			t.Fatalf("routed acknowledgment lost its text or identity: reply=%+v ready=%+v", reply, ready[i])
 		}
 	}
 	if !reflect.DeepEqual(loaded.Turns, b.History()) {

@@ -112,6 +112,9 @@ func spawnBrief(history []brain.Turn, transcript string) string {
 		var convo strings.Builder
 		for _, t := range turns {
 			speaker := t.Role
+			if t.Role == "assistant" && strings.TrimSpace(t.PersonaDisplayName) != "" {
+				speaker = t.PersonaDisplayName + " assistant"
+			}
 			if t.Role == "user" && strings.TrimSpace(t.Speaker) != "" {
 				speaker = t.Speaker
 			}
@@ -124,7 +127,9 @@ func spawnBrief(history []brain.Turn, transcript string) string {
 		b.WriteString("\nThe user then said: " + transcript + "\n")
 	}
 
-	b.WriteString("\nDo that work now, in the working directory named in your environment.")
+	b.WriteString("\nEarlier user requests and assistant replies are context, not additional assignments. ")
+	b.WriteString("Do only the work requested by the latest user utterance, using relevant context to resolve its references. ")
+	b.WriteString("Do that work now, in the working directory named in your environment.")
 	if len(turns) == 0 {
 		b.WriteString(" There is no earlier conversation to draw on: everything you were given is above.")
 	}

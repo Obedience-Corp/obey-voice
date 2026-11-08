@@ -121,6 +121,9 @@ func TestToolOutcomeProductionTerminalProof(t *testing.T) {
 	if !strings.Contains(h.chat, "run this command and report the result") {
 		t.Fatalf("original conversation missing from chat view:\n%s", h.chat)
 	}
+	if !strings.Contains(h.chat, "report back") {
+		t.Fatalf("admitted-work acknowledgment missing from chat view:\n%s", h.chat)
+	}
 	if !strings.Contains(h.activity, "failed") || !strings.Contains(h.activity, "7") {
 		t.Fatalf("failed command outcome missing from Activity:\n%s", h.activity)
 	}
@@ -181,6 +184,7 @@ type toolOutcomeTerminalHarness struct {
 	jobStarted   int
 	jobFinished  int
 	jobToolCalls int
+	acknowledged bool
 }
 
 func (h *toolOutcomeTerminalHarness) Init() tea.Cmd { return h.model.bridge.waitContext(h.ctx) }
@@ -198,6 +202,12 @@ func (h *toolOutcomeTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case events.JobFinished:
 			h.jobFinished++
+		case events.ResponseReady:
+			h.acknowledged = strings.Contains(e.Response, "report back")
+		}
+		// Execution and acknowledgment can finish in either order. Observe both
+		// through the real event bridge before checking the terminal projection.
+		if h.jobFinished > 0 && h.acknowledged {
 			h.chat = stripANSI(h.model.View())
 			h.model, _ = h.model.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
 			h.activity = stripANSI(h.model.View())

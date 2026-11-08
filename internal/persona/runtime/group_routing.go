@@ -171,6 +171,7 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	var participants []brain.GroupParticipant
+	greeting := false
 	selected, err := s.selectAtBoundaryWithCommitCheck(ctx, exact.Address.PersonaID, exact.Address.Reason, func(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -185,6 +186,7 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 			if revalidated.Address.PersonaID != exact.Address.PersonaID {
 				return fmt.Errorf("exact identity control changed target while preparing")
 			}
+			greeting = addressedGreeting(input, roster, revalidated)
 		case summon.ExactControlInvalid:
 			if revalidated.Err != nil {
 				return revalidated.Err
@@ -204,6 +206,8 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 	admitted.Request = exact.Address.Remainder
 	if exact.Address.Bare {
 		admitted.LocalReply = selected.DisplayName + " here."
+	} else if greeting {
+		admitted.LocalReply = s.greetingReply(responseEnvelope(selected))
 	}
 	admitted.Envelope = responseEnvelope(selected)
 	return admitted, nil

@@ -165,7 +165,7 @@ func (g *GrokBrain) ThinkStream(ctx context.Context, input string, streamOpts St
 // reached out, and any terminal stream error. The caller finalizes once, after
 // any resume-failure retry, so a failed first attempt never emits the fallback.
 func (g *GrokBrain) streamAttempt(ctx context.Context, out chan<- string, streamOpts StreamOptions) (string, bool, error) {
-	prompt := g.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(g.cfg, streamOpts)
+	prompt := g.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(g.cfg, streamOpts) + currentRequestContext(g.cfg, streamOpts)
 	strip := newLabelStripper(g.agentName())
 
 	events, errs := g.client.StreamPrompt(ctx, prompt, g.runOptions(grok.StreamingJSONOutput, liveCLITools(streamOpts)))
@@ -262,7 +262,7 @@ func (g *GrokBrain) ThinkFull(ctx context.Context, input string, streamOpts Stre
 // decodeOutput only populates GrokResult.SessionID and IsError when it parses
 // a JSON result — plain output returns Text alone.
 func (g *GrokBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions) (string, error) {
-	prompt := g.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(g.cfg, streamOpts)
+	prompt := g.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(g.cfg, streamOpts) + currentRequestContext(g.cfg, streamOpts)
 
 	result, err := g.client.RunPromptCtx(ctx, prompt, g.runOptions(grok.JSONOutput, liveCLITools(streamOpts)))
 	if err != nil {
