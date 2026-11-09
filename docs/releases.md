@@ -20,7 +20,79 @@ unsafe archive entries, incomplete publication and retry regression coverage.
 
 ## Publication
 
-After the project's required checks pass, `just release tag vX.Y.Z` pushes an
+For a coordinated stable release, run from a clean checkout of the current,
+CI-passing remote main:
+
+```sh
+just release plan vX.Y.Z     # read-only plan and configuration/access blockers
+just release create vX.Y.Z   # create or resume the same release
+```
+
+The operator must complete the applicable physical voice/release acceptance
+before invoking `create`: it authorizes publication and the tap merge. The command
+checks software/package evidence; it cannot certify microphone quality or replace
+the [physical procedure](first-conversation-acceptance.md). No extra interactive
+confirmation is required by the command. It uses the installed `gh` login with
+write access to the engine and owning tap; registry credentials stay in the
+owning publication workflows, not the local release configuration.
+
+The command:
+
+1. Checks channel configuration/access, the tap's verification contract, current
+   main CI and checkout identity. Runs Go tests, the project build and packaging
+   checks before creating a new annotated tag. An existing remote tag is resumed
+   at its original commit, even if main has subsequently advanced.
+2. Waits for the native release workflow and verifies both published native
+   archives/manifests/checksums through authenticated and anonymous readback.
+3. Creates or reuses a `release/obey-voice-vX.Y.Z` branch and draft tap PR.
+   Builds both production bottles from the exact tap commit and verifies their
+   provenance, checksums, platform pair and lifecycle evidence.
+4. Stages bottles without overwriting differing assets, updates the formula from
+   their metadata, and tests those exact staged bytes on both supported hosts.
+5. Publishes the bottles, verifies anonymous public URLs, then marks the tap PR
+   ready and merges using its verified head SHA. Repository reviews/protections
+   are honored; a required review stops the command with a resumable result.
+6. Tests the merged tap through public bottle installs on both hosts. Runs and
+   verifies each other enabled channel. Exits successfully only after every
+   enabled channel has public readback evidence.
+
+Rerun the same `create` command after an interrupted upload, failed job or required
+review. It rechecks remote state rather than trusting a local checkpoint, reuses
+complete staged/published assets, retries failed jobs once per invocation, and
+never replaces published files or retargets a tag. It rejects channel downgrades.
+An inconsistent draft or incomplete published release stops for investigation.
+Each workflow wait is bounded (one hour by default). Ctrl+C stops local waiting;
+already-started GitHub jobs may continue. The local summary is
+`dist/releases/vX.Y.Z/status.json`; it records incomplete stages and errors.
+
+Both new support PRs must be merged before first use: the engine coordinator and
+the tap's `packaging/obey-voice-release.json` contract plus build/verify/public
+workflow modes. `plan` reports a missing contract before any tag is pushed.
+
+### Adding channels
+
+`packaging/release-channels.json` is the explicit channel inventory. Homebrew is
+enabled. npm is **not configured** until launcher/platform packages and a publisher
+exist; disabled channels are printed and recorded, never reported as published.
+
+To enable npm, implement `release-npm.yml` on main with `workflow_dispatch` input
+`release_tag`, and list **all** launcher/platform package names in the config.
+The workflow must consume the verified native release, run package installation
+checks, preserve published versions, reject dist-tag downgrades and finish only
+after publication. Use the project's chosen registry authentication in that
+workflow. Set `enabled: true` only when that publisher exists. The coordinator
+then requires successful execution at the release tag, checks every package's
+public npm version and `gitHead`, downloads its tarball and verifies SHA-512 SRI.
+Missing workflow/package configuration fails before a new tag is created.
+
+New channel kinds need an adapter with equivalent publication/readback semantics;
+unknown enabled channels fail closed. Festival and signed desktop delivery remain
+separate work items until those adapters and acceptance evidence exist.
+
+### Native-only operations
+
+For a deliberate native-only release, after the project's required checks pass,
+`just release tag vX.Y.Z` pushes an
 annotated tag. **Release Artifacts** builds and validates both platforms before
 its publication job starts. It creates a draft release, uploads the complete set,
 downloads and verifies it, publishes, then verifies published readback. A failed

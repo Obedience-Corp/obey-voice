@@ -7,6 +7,18 @@
 default:
     @just --list --justfile {{source_file()}}
 
+# Create/resume a release and verify every enabled package channel.
+[no-cd]
+[positional-arguments]
+create version:
+    python3 scripts/release_pipeline.py "$1"
+
+# Read-only release plan: versions, channels, permissions and blockers.
+[no-cd]
+[positional-arguments]
+plan version:
+    python3 scripts/release_pipeline.py "$1" --plan
+
 # Validate tracked media coverage and byte-bound review records (not clearance).
 [no-cd]
 media-check:
@@ -22,7 +34,7 @@ media-ready:
 media-test:
     python3 -m unittest discover -s scripts -p test_media_review.py
 
-# Tag and push a release after tests pass. Usage: just release tag v0.1.0
+# Native-only tag/push after tests. Prefer create for coordinated channel releases.
 [no-cd]
 tag version:
     #!/usr/bin/env bash

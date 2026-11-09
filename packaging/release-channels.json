@@ -1,0 +1,16 @@
+{
+  "repository": "Obedience-Corp/obey-voice",
+  "channels": {
+    "homebrew": {
+      "enabled": true,
+      "repository": "Obedience-Corp/homebrew-tap",
+      "workflow": "obey-voice-bottles.yml"
+    },
+    "npm": {
+      "enabled": false,
+      "reason": "Platform packages and the npm publishing workflow are not implemented yet.",
+      "workflow": "release-npm.yml",
+      "packages": []
+    }
+  }
+}
