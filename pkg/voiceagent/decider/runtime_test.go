@@ -3,66 +3,103 @@
 package decider
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
-func fakePython(t *testing.T, root, script string) {
+func fakeNative(t *testing.T, root, script string) {
 	t.Helper()
-	python := PythonPath(root)
-	if err := os.MkdirAll(filepath.Dir(python), 0700); err != nil {
+	device := defaultDevice()
+	exe := NativePath(root, device)
+	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(python, []byte(script), 0700); err != nil {
+	if err := os.WriteFile(exe, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "decider", runtimeID(), "installed"), []byte(runtimeID()), 0600); err != nil {
+	hash, err := fileHash(t.Context(), exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := NativeAsset(runtime.GOOS, runtime.GOARCH, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(installedNative{Revision: RuntimeRevision, Archive: asset.SHA256, Files: map[string]string{"llama-server": hash}})
+	if err := os.WriteFile(filepath.Join(filepath.Dir(exe), "installed.json"), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 }
-
-func TestReadyEnvironmentDoesNotRequireInstallerOrSource(t *testing.T) {
+func TestVerifiedNativeRuntimeDoesNotRequireArchive(t *testing.T) {
 	root := t.TempDir()
-	fakePython(t, root, "#!/bin/sh\nexit 0\n")
-	if !PythonReady(root) {
-		t.Fatal("installed environment not ready")
+	device := defaultDevice()
+	fakeNative(t, root, "#!/bin/sh\nexit 0\n")
+	if !NativeReadyFor(root, "2b", device) {
+		t.Fatal("native runtime not ready")
 	}
-	if err := EnsurePython(t.Context(), root, func(string) { t.Error("ready environment reran installer") }); err != nil {
+	if err := EnsureNativeFor(t.Context(), root, "2b", device, func(string) { t.Error("verified runtime reinstalled") }); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(PythonPath(root)); err != nil {
+	if err := os.WriteFile(NativePath(root, device), []byte("tampered"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if PythonReady(root) {
-		t.Fatal("marker alone counts as usable Python")
+	if NativeReadyFor(root, "2b", device) {
+		t.Fatal("tampered worker accepted")
 	}
-	if err := EnsurePython(t.Context(), root, nil); err == nil {
-		t.Fatal("missing source silently repaired environment")
-	}
-	if PythonReady(root) {
-		t.Fatal("failed repair marked ready")
+	if err := EnsureNativeFor(t.Context(), root, "2b", device, nil); err == nil {
+		t.Fatal("missing archive silently repaired runtime")
 	}
 }
-
-func TestInstallRejectsCorruptSourceBeforeLaunchingInstaller(t *testing.T) {
+func TestNativeInstallRejectsCorruptArchive(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Dir(SourcePath(root)), 0700); err != nil {
+	device := defaultDevice()
+	a, err := NativeAsset(runtime.GOOS, runtime.GOARCH, device)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(SourcePath(root), []byte("corrupt"), 0600); err != nil {
+	archive := RuntimeArchivePath(root, a)
+	if err = os.MkdirAll(filepath.Dir(archive), 0700); err != nil {
 		t.Fatal(err)
 	}
-	err := EnsurePython(t.Context(), root, func(string) { t.Error("corrupt source launched installer") })
+	if err = os.WriteFile(archive, []byte("corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err = EnsureNativeFor(t.Context(), root, "2b", device, nil)
 	if err == nil || !strings.Contains(err.Error(), "checksum") {
 		t.Fatalf("error=%v", err)
 	}
-	if PythonReady(root) {
+	if NativeReadyFor(root, "2b", device) {
 		t.Fatal("failed install marked ready")
+	}
+}
+func TestLegacyRuntimeNeverCountsAsNative(t *testing.T) {
+	root := t.TempDir()
+	legacy := filepath.Join(root, "decider", "runtime-old", "venv", "bin")
+	if err := os.MkdirAll(legacy, 0700); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(legacy, "python")
+	if err := os.WriteFile(exe, []byte("legacy"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if NativeReadyFor(root, "2b", defaultDevice()) {
+		t.Fatal("legacy Python counted as native")
+	}
+	if _, err := Start(t.Context(), root, "2b"); err == nil {
+		t.Fatal("started legacy runtime")
+	}
+	got, err := os.ReadFile(exe)
+	if err != nil || string(got) != "legacy" {
+		t.Fatal("legacy assets changed")
 	}
 }
 
@@ -101,19 +138,12 @@ func TestServerStartupFailureAndCancellationCleanUp(t *testing.T) {
 	for _, script := range []string{"#!/bin/sh\nexit 7\n", "#!/bin/sh\nexec sleep 30\n"} {
 		t.Run(strings.TrimSpace(script), func(t *testing.T) {
 			root := t.TempDir()
-			fakePython(t, root, script)
+			fakeNative(t, root, script)
 			ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
 			defer cancel()
 			start := time.Now()
-			cwd, err := os.Getwd()
-			if err != nil {
-				t.Fatal(err)
-			}
-			relative, err := filepath.Rel(cwd, root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			server, err := Start(ctx, relative, "2b")
+			model, _ := ModelFor("2b")
+			server, err := startNative(ctx, root, "unused-fixture.gguf", model, defaultDevice())
 			if server != nil || err == nil {
 				if server != nil {
 					server.Close()
@@ -125,6 +155,54 @@ func TestServerStartupFailureAndCancellationCleanUp(t *testing.T) {
 			}
 			if time.Since(start) > 3*time.Second {
 				t.Fatal("startup failed to join cancelled child")
+			}
+		})
+	}
+}
+
+func TestNativeArchiveMaterializesOnlySafeLibraryLinks(t *testing.T) {
+	for _, target := range []string{"libreal.dylib", "../../outside", "/outside", "libalias.dylib"} {
+		t.Run(target, func(t *testing.T) {
+			root := t.TempDir()
+			archive := filepath.Join(root, "runtime.tar.gz")
+			f, err := os.Create(archive)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gz := gzip.NewWriter(f)
+			tw := tar.NewWriter(gz)
+			for _, h := range []*tar.Header{{Name: "release/libreal.dylib", Mode: 0600, Size: 3, Typeflag: tar.TypeReg}, {Name: "release/libalias.dylib", Typeflag: tar.TypeSymlink, Linkname: target}} {
+				if err = tw.WriteHeader(h); err != nil {
+					t.Fatal(err)
+				}
+				if h.Typeflag == tar.TypeReg {
+					_, _ = tw.Write([]byte("lib"))
+				}
+			}
+			tw.Close()
+			gz.Close()
+			f.Close()
+			dest := filepath.Join(root, "output")
+			if err := os.Mkdir(dest, 0700); err != nil {
+				t.Fatal(err)
+			}
+			err = extractNative(t.Context(), archive, dest)
+			if target != "libreal.dylib" {
+				if err == nil {
+					t.Fatal("unsafe link accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			info, err := os.Lstat(filepath.Join(dest, "libalias.dylib"))
+			if err != nil || !info.Mode().IsRegular() {
+				t.Fatal("library link was not materialized")
+			}
+			got, err := os.ReadFile(filepath.Join(dest, "libalias.dylib"))
+			if err != nil || string(got) != "lib" {
+				t.Fatal("wrong library content")
 			}
 		})
 	}

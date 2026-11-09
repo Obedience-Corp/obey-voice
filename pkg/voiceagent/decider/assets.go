@@ -9,9 +9,8 @@ import (
 	"runtime"
 )
 
-const RuntimeRevision = "91b6fa9b94ab6c4dc2c63d3b14d413243b4fffcc"
-const RuntimeSHA256 = "2e35b1566396c89e60b53bee4de734390a85ced4e85495f924062fcfa0d7a0d3"
-const UVVersion = "0.7.13"
+const RuntimeRevision = "620d2225cc436ab0b001e3200e590e3b286ef9ab"
+const RuntimeVersion = "b11669"
 
 //go:embed models.json
 var modelJSON []byte
@@ -22,13 +21,17 @@ type File struct {
 	SHA256 string `json:"sha256"`
 }
 type Model struct {
-	Name      string `json:"name"`
-	Engine    string `json:"engine"`
-	License   string `json:"license"`
-	MemoryGiB int    `json:"memory_gib"`
-	Repo      string `json:"repo"`
-	Revision  string `json:"revision"`
-	Files     []File `json:"files"`
+	NativeRepo        string             `json:"native_repo"`
+	NativeRevision    string             `json:"native_revision"`
+	Temperature       float64            `json:"temperature"`
+	TemperatureByType map[string]float64 `json:"temperature_by_type"`
+	Name              string             `json:"name"`
+	Engine            string             `json:"engine"`
+	License           string             `json:"license"`
+	MemoryGiB         int                `json:"memory_gib"`
+	Repo              string             `json:"repo"`
+	Revision          string             `json:"revision"`
+	Files             []File             `json:"files"`
 }
 
 func ModelFor(tier string) (Model, error) {
@@ -51,25 +54,38 @@ func ModelDir(modelsDir, tier string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(modelsDir, "decider", "models", model.Revision), nil
+	return filepath.Join(modelsDir, "decider", "native-models", model.NativeRevision), nil
 }
 
-func UVAsset(goos, arch string) (name, sha string, err error) {
-	assets := map[string][2]string{
-		"darwin/arm64": {"uv-aarch64-apple-darwin", "721f532b73171586574298d4311a91d5ea2c802ef4db3ebafc434239330090c6"},
-		"linux/amd64":  {"uv-x86_64-unknown-linux-gnu", "909278eb197c5ed0e9b5f16317d1255270d1f9ea4196e7179ce934d48c4c2545"},
-		"linux/arm64":  {"uv-aarch64-unknown-linux-gnu", "0b2ad9fe4295881615295add8cc5daa02549d29cc9a61f0578e397efcf12f08f"},
+//go:embed runtimes.json
+var runtimeJSON []byte
+
+type RuntimeAsset struct {
+	Name   string        `json:"name"`
+	URL    string        `json:"url"`
+	SHA256 string        `json:"sha256"`
+	Size   int64         `json:"size"`
+	CUDA   *RuntimeAsset `json:"cuda,omitempty"`
+}
+
+func NativeAsset(goos, arch, device string) (RuntimeAsset, error) {
+	var assets map[string]RuntimeAsset
+	if err := json.Unmarshal(runtimeJSON, &assets); err != nil {
+		return RuntimeAsset{}, err
 	}
-	asset, ok := assets[goos+"/"+arch]
+	key := goos + "/" + arch
+	if device == "cuda" {
+		key += "/cuda"
+	}
+	a, ok := assets[key]
 	if !ok {
-		return "", "", fmt.Errorf("managed decisions are unavailable on %s/%s; use an external local server", goos, arch)
+		return a, fmt.Errorf("managed native decisions unavailable on %s (%s)", key, device)
 	}
-	return asset[0], asset[1], nil
+	return a, nil
 }
-
-func UVDir(modelsDir string) string {
-	return filepath.Join(modelsDir, "decider", "uv-"+UVVersion+"-"+runtime.GOOS+"-"+runtime.GOARCH)
+func RuntimeDir(modelsDir, device string) string {
+	return filepath.Join(modelsDir, "decider", "native-"+RuntimeVersion+"-"+runtime.GOOS+"-"+runtime.GOARCH+"-"+device)
 }
-func SourcePath(modelsDir string) string {
-	return filepath.Join(modelsDir, "decider", "decider-"+RuntimeRevision+".tar.gz")
+func RuntimeArchivePath(modelsDir string, a RuntimeAsset) string {
+	return filepath.Join(modelsDir, "decider", "archives", a.Name)
 }

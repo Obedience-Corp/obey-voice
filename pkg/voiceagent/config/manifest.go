@@ -516,14 +516,14 @@ func (m AssetManifest) Status(modelsDir string) []AssetStatus {
 		out = append(out, st)
 		if a.decisionRuntime {
 			device, _ := decider.DeviceFor(runtime.GOOS, runtime.GOARCH, a.decisionDevice, false)
-			ready := decider.PythonReadyFor(modelsDir, a.decisionModel, device)
+			ready := decider.NativeReadyFor(modelsDir, a.decisionModel, device)
 			if (a.decisionDevice == "" || a.decisionDevice == "auto") && runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
-				ready = ready || decider.PythonReadyFor(modelsDir, a.decisionModel, "cuda")
+				ready = ready || decider.NativeReadyFor(modelsDir, a.decisionModel, "cuda")
 			}
-			runtime := AssetStatus{ID: "decision.runtime.environment", Name: "Private decision Python environment", Provider: "decider", Kind: AssetKindDecision, Installed: ready}
+			runtime := AssetStatus{ID: "decision.runtime.environment", Name: "Verified native decision runtime", Provider: "decider", Kind: AssetKindDecision, Installed: ready}
 			if !ready {
-				runtime.Missing = []string{decider.PythonPathFor(modelsDir, a.decisionModel, device)}
-				runtime.Detail = "run models ensure --decision to install the pinned environment"
+				runtime.Missing = []string{decider.NativePath(modelsDir, device)}
+				runtime.Detail = "run models ensure --decision to install the pinned native runtime"
 			}
 			out = append(out, runtime)
 		}

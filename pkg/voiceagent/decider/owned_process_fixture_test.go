@@ -33,19 +33,15 @@ type ownerFixture struct {
 	done     chan struct{}
 }
 
-func ownedFixtureCommand(ctx context.Context, python string) *exec.Cmd {
-	return exec.CommandContext(ctx, python, "-c", workerFixture)
+func ownedFixtureCommand(ctx context.Context, executable string) *exec.Cmd {
+	return exec.CommandContext(ctx, executable, "-test.run=^TestOwnedWorkerNativeHelper$")
 }
 
 func startOwnerFixture(t *testing.T, slowStartup bool) *ownerFixture {
 	t.Helper()
-	python, err := exec.LookPath("python3")
-	if err != nil {
-		t.Skip("python3 is required for the model-free lifecycle fixture")
-	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestOwnedWorkerOwnerHelper$")
-	cmd.Env = append(os.Environ(), "OBEY_DECIDER_OWNER_HELPER=1", "OBEY_DECIDER_TEST_PYTHON="+python,
+	cmd.Env = append(os.Environ(), "OBEY_DECIDER_OWNER_HELPER=1",
 		fmt.Sprintf("OBEY_DECIDER_TEST_SLOW_START=%t", slowStartup))
 	cmd.WaitDelay = time.Second
 	input, err := cmd.StdinPipe()
@@ -111,8 +107,8 @@ func TestOwnedWorkerOwnerHelper(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := ownedFixtureCommand(ctx, os.Getenv("OBEY_DECIDER_TEST_PYTHON"))
-	cmd.Env = append(cleanEnvironment(), "FIXTURE_SLOW_START="+os.Getenv("OBEY_DECIDER_TEST_SLOW_START"))
+	cmd := ownedFixtureCommand(ctx, os.Args[0])
+	cmd.Env = append(cleanEnvironment(), "OBEY_DECIDER_NATIVE_HELPER=1", "FIXTURE_SLOW_START="+os.Getenv("OBEY_DECIDER_TEST_SLOW_START"))
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	var lease *os.File
 	if os.Getenv("OBEY_DECIDER_TEST_BASELINE") == "1" {
@@ -154,20 +150,49 @@ func TestOwnedWorkerOwnerHelper(t *testing.T) {
 	}
 }
 
-const workerFixture = `
-import json, os, socket, subprocess, sys, time
-if os.environ.get("FIXTURE_SLOW_START") == "true":
-    time.sleep(20)
-descendant = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-listener = socket.socket(fileno=3)
-while True:
-    connection, _ = listener.accept()
-    with connection:
-        request = connection.recv(4096)
-        body = json.dumps({"worker": os.getpid(), "descendant": descendant.pid,
-                           "supervisor": os.getppid()}).encode()
-        connection.sendall(b"HTTP/1.0 200 OK\r\nContent-Length: " + str(len(body)).encode()
-                           + b"\r\n\r\n" + body)
-    if b" /exit " in request:
-        sys.exit(0)
-`
+// The fixture, supervisor and owner all execute native Go, so lifecycle tests
+// also run on systems without any Python installation.
+func TestOwnedWorkerNativeHelper(t *testing.T) {
+	if os.Getenv("OBEY_DECIDER_NATIVE_HELPER") != "1" {
+		return
+	}
+	if os.Getenv("FIXTURE_SLOW_START") == "true" {
+		time.Sleep(20 * time.Second)
+	}
+	descendant := exec.Command(os.Args[0], "-test.run=^TestOwnedWorkerDescendantHelper$")
+	descendant.Env = append(os.Environ(), "OBEY_DECIDER_DESCENDANT=1")
+	if err := descendant.Start(); err != nil {
+		t.Fatal(err)
+	}
+	file := os.NewFile(3, "listener")
+	listener, err := net.FileListener(file)
+	file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		connection, err := listener.Accept()
+		if err != nil {
+			t.Fatal(err)
+		}
+		request, err := http.ReadRequest(bufio.NewReader(connection))
+		if err != nil {
+			connection.Close()
+			continue
+		}
+		request.Body.Close()
+		body, _ := json.Marshal(workerInfo{os.Getpid(), descendant.Process.Pid, os.Getppid()})
+		fmt.Fprintf(connection, "HTTP/1.0 200 OK\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+		connection.Close()
+		if request.URL.Path == "/exit" {
+			os.Exit(0)
+		}
+	}
+}
+
+func TestOwnedWorkerDescendantHelper(t *testing.T) {
+	if os.Getenv("OBEY_DECIDER_DESCENDANT") != "1" {
+		return
+	}
+	time.Sleep(time.Minute)
+}

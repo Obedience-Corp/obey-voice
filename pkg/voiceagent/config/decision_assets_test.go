@@ -134,7 +134,7 @@ func TestDecisionCatalogDownloadsOnlySelectedWeightsAndRuntime(t *testing.T) {
 		for _, a := range m.Assets {
 			if strings.HasPrefix(a.Source, "https://huggingface.co/") {
 				weights++
-				if a.Source != "https://huggingface.co/"+model.Repo || a.License != model.License {
+				if a.Source != "https://huggingface.co/"+model.NativeRepo || a.License != model.License {
 					t.Fatal("wrong model assets")
 				}
 			}
@@ -151,7 +151,7 @@ func TestDecisionCatalogDownloadsOnlySelectedWeightsAndRuntime(t *testing.T) {
 		for _, state := range states {
 			if state.ID == "decision.runtime.environment" {
 				found = true
-				if state.Installed || len(state.Missing) != 1 || state.Missing[0] != decider.PythonPathFor(root, id, "cpu") {
+				if state.Installed || len(state.Missing) != 1 || state.Missing[0] != decider.NativePath(root, "cpu") {
 					t.Fatal("status used wrong runtime profile")
 				}
 			}

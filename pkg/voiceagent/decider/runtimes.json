@@ -1,0 +1,32 @@
+{
+  "darwin/arm64": {
+    "name": "llama-b11669-bin-macos-arm64.tar.gz",
+    "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/assets/644413958",
+    "sha256": "dbed55493d72bc1ba2babc8770d669c2289b5bc4ee9fb2a4dfc158d45b7d13fd",
+    "size": 12191582
+  },
+  "linux/amd64": {
+    "name": "llama-b11669-bin-ubuntu-x64.tar.gz",
+    "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/assets/644416747",
+    "sha256": "cf07c1c112d709bd67e522017471de57ed0ec8bea031d732c5422351c07f65ac",
+    "size": 17851611
+  },
+  "linux/arm64": {
+    "name": "llama-b11669-bin-ubuntu-arm64.tar.gz",
+    "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/assets/644414113",
+    "sha256": "9ac6fda2058d35677608a06f751a50122ddfa4ce0ddb7f084466b8e79b6d4a99",
+    "size": 13900160
+  },
+  "linux/amd64/cuda": {
+    "name": "llama-b11669-bin-ubuntu-cuda-12.8-x64.tar.gz",
+    "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/assets/644414249",
+    "sha256": "4703ed1a3cd6e8504affb6cb9866f501e96d634d68a002dc9a8251c9e2819b49",
+    "size": 172525113,
+    "cuda": {
+      "name": "cudart-llama-b11669-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/assets/644409232",
+      "sha256": "ab3eda89a82096bcba00b6448218c3c11eec2016b0f38d64884dc29736549f26",
+      "size": 594377811
+    }
+  }
+}

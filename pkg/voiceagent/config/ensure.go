@@ -39,7 +39,12 @@ func EnsureRuntimeAssetsProgress(ctx context.Context, cfg *Config, req AssetRequ
 			return err
 		}
 	}
-	manifest, err := ManifestFor(cfg, req)
+	assetCfg := cfg
+	if device != "" {
+		assetCfg = cfg.Clone()
+		assetCfg.DecisionDevice = device
+	}
+	manifest, err := ManifestFor(assetCfg, req)
 	if err != nil {
 		return err
 	}
@@ -48,7 +53,7 @@ func EnsureRuntimeAssetsProgress(ctx context.Context, cfg *Config, req AssetRequ
 		return err
 	}
 	if req.NeedDecision && ManagedDecisions(cfg) {
-		if err := decider.EnsurePythonFor(ctx, dir, cfg.DecisionLocalModel, device, func(stage string) {
+		if err := decider.EnsureNativeFor(ctx, dir, cfg.DecisionLocalModel, device, func(stage string) {
 			if onProgress != nil {
 				onProgress(AssetProgress{Asset: "Local decision runtime", Phase: assetPhaseInstall})
 			}

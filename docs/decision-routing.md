@@ -81,10 +81,13 @@ The equivalent persisted configuration keys are:
 
 Use `obey-voice config KEY VALUE` to persist a key. With managed decisions
 enabled, `obey-voice models ensure --decision` installs just their assets, and
-`obey-voice models status --decision` checks the weights, installer and private
-Python environment. Initial setup downloads public model/runtime dependencies.
-Subsequent inference runs locally with offline model loading and a private
-loopback listener. Setup does not alter the user's Python installation.
+`obey-voice models status --decision` checks the GGUF weights and verified native
+runtime. Initial setup downloads checksum-pinned native archives and model files.
+Inference runs locally with offline model loading. A Go adapter exposes only the
+typed decision endpoint; the underlying llama.cpp server uses a private Unix
+socket. Setup and inference do not install or launch Python, uv, pip or PyTorch.
+Legacy decision environments and weights are preserved but never treated as
+native-ready. Run setup explicitly after upgrading.
 
 Each managed decision server has an independent supervisor tied to its owning
 Obey Voice process by an inherited lifetime pipe. If the app crashes or is
@@ -97,21 +100,27 @@ servers; upgrading does not terminate orphaned workers from older versions.
 The original `2b` and `0.8b` IDs keep their pinned weights. `2b` remains the
 default, and decision shortcuts remain off until enabled. New catalog entries
 are experimental alternatives, not automatic upgrades. Settings display download
-size, approximate memory requirements, and license. Liquid d1 uses the
+size, a memory planning estimate, and license. Liquid d1 uses the
 [LFM Open License](https://huggingface.co/LiquidAI/d1-3B/blob/main/LICENSE),
 which has commercial restrictions; the Decider entries use Apache-2.0.
 
 Auto chooses MPS on Apple Silicon, detected NVIDIA CUDA on Linux x86_64, and
 CPU otherwise. An explicit unavailable device fails with a diagnostic; it never
 silently changes model or selects a hosted provider. Managed macOS requires
-Apple Silicon and macOS 14 or later; Linux needs glibc 2.28 or later. Linux
+Apple Silicon and macOS 14 or later. The pinned Linux runtime requires glibc
+2.38+, libstdc++ providing GLIBCXX_3.4.32/CXXABI_1.3.15, OpenSSL 3 and libgomp
+(Ubuntu 24.04 or Debian 13 satisfy these dependencies). Debian 12 and older
+glibc 2.28 installations need an external compatible server. Linux
 ARM64 uses CPU; managed CUDA on ARM64, Intel macOS, and Windows are not supported.
 Those systems can use an external compatible loopback server. Linux backend
 selection has fixture coverage; live hardware validation is on Apple Silicon.
 
-Managed setup pins model revisions, model/source/archive SHA-256 checksums,
-Python and dependency versions. Runtime environments are isolated by model
-family and compute device. Only the selected model is downloaded. Changing
+Managed setup pins source and GGUF model revisions, file SHA-256 checksums and
+llama.cpp b11669 native archives. Full-precision F16/BF16 files preserve the
+catalog's model selections; quantized substitutes are not used. Runtime
+directories are isolated by version, platform and compute device. CUDA uses the
+pinned CUDA 12.8 runtime libraries under NVIDIA's CUDA Toolkit EULA. Only the
+selected model is downloaded. Changing
 settings cancels prior setup/inference and returns to ordinary routing until
 the new runtime is ready.
 

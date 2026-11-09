@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 
@@ -9,35 +10,46 @@ import (
 )
 
 func ManagedDecisions(cfg *Config) bool {
-	return cfg != nil && cfg.DecisionEnabled && (cfg.DecisionVoiceWork || cfg.DecisionTextWork) &&
-		(cfg.DecisionProvider == "" || cfg.DecisionProvider == "local") && (cfg.DecisionRuntime == "" || cfg.DecisionRuntime == "managed")
+	return cfg != nil && cfg.DecisionEnabled && (cfg.DecisionVoiceWork || cfg.DecisionTextWork) && (cfg.DecisionProvider == "" || cfg.DecisionProvider == "local") && (cfg.DecisionRuntime == "" || cfg.DecisionRuntime == "managed")
 }
-
 func decisionAssets(cfg *Config) ([]Asset, error) {
 	model, err := decider.ModelFor(cfg.DecisionLocalModel)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := decider.DeviceFor(runtime.GOOS, runtime.GOARCH, cfg.DecisionDevice, false); err != nil {
-		return nil, err
-	}
-	uvName, uvSHA, err := decider.UVAsset(runtime.GOOS, runtime.GOARCH)
+	device, err := decider.DeviceFor(runtime.GOOS, runtime.GOARCH, cfg.DecisionDevice, false)
 	if err != nil {
 		return nil, err
 	}
-	weights := Asset{ID: "decision." + model.Revision, Provider: "decider", Kind: AssetKindDecision, Name: model.Name, License: model.License, Source: "https://huggingface.co/" + model.Repo}
-	for _, file := range model.Files {
-		weights.Files = append(weights.Files, AssetFile{Path: filepath.Join("decider", "models", model.Revision, file.Name), URL: fmt.Sprintf("https://huggingface.co/%s/resolve/%s/%s", model.Repo, model.Revision, file.Name), SHA256: file.SHA256, Size: file.Size})
+	// Status must describe the runtime installed by auto preparation without
+	// running a GPU probe in the settings render path. Preparation passes its
+	// explicitly resolved device and never uses this installed-state hint.
+	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" && (cfg.DecisionDevice == "" || cfg.DecisionDevice == "auto") {
+		if _, err := os.Stat(filepath.Join(decider.RuntimeDir(cfg.ModelsDir, "cuda"), "installed.json")); err == nil {
+			device = "cuda"
+		}
 	}
-	assets := []Asset{weights,
-		{ID: "decision.runtime.source", Provider: "decider", Kind: AssetKindDecision, Name: "Decision runtime source", License: "Apache-2.0", Source: "https://github.com/Mapika/decider", Files: []AssetFile{{Path: filepath.Join("decider", "decider-"+decider.RuntimeRevision+".tar.gz"), URL: "https://github.com/Mapika/decider/archive/" + decider.RuntimeRevision + ".tar.gz", SHA256: decider.RuntimeSHA256}}},
-		{ID: "decision.uv." + decider.UVVersion + "." + runtime.GOOS + "." + runtime.GOARCH, Provider: "decider", Kind: AssetKindDecision, Name: "Decision runtime installer", License: "MIT OR Apache-2.0", Source: "https://github.com/astral-sh/uv", TargetDir: filepath.Join("decider", "uv-"+decider.UVVersion+"-"+runtime.GOOS+"-"+runtime.GOARCH), Archive: &AssetArchive{URL: "https://github.com/astral-sh/uv/releases/download/" + decider.UVVersion + "/" + uvName + ".tar.gz", SHA256: uvSHA}, CheckFiles: []string{"uv"}},
+	a, err := decider.NativeAsset(runtime.GOOS, runtime.GOARCH, device)
+	if err != nil {
+		return nil, err
 	}
-	assets[2].decisionModel = cfg.DecisionLocalModel
-	assets[2].decisionDevice = cfg.DecisionDevice
-	assets[2].decisionRuntime = true
-	if model.Engine == "liquid" {
-		assets = append(assets[:1], assets[2:]...)
+	weights := Asset{ID: "decision.native." + model.NativeRevision, Provider: "decider", Kind: AssetKindDecision, Name: model.Name, License: model.License, Source: "https://huggingface.co/" + model.NativeRepo}
+	for _, f := range model.Files {
+		weights.Files = append(weights.Files, AssetFile{Path: filepath.Join("decider", "native-models", model.NativeRevision, f.Name), URL: fmt.Sprintf("https://huggingface.co/%s/resolve/%s/%s", model.NativeRepo, model.NativeRevision, f.Name), SHA256: f.SHA256, Size: f.Size})
 	}
+	assets := []Asset{weights}
+	for _, part := range []*decider.RuntimeAsset{&a, a.CUDA} {
+		if part == nil {
+			continue
+		}
+		license := "MIT"
+		if part == a.CUDA {
+			license = "NVIDIA CUDA Toolkit EULA"
+		}
+		assets = append(assets, Asset{ID: "decision.native.runtime." + part.Name, Name: "Native decision runtime", Provider: "decider", Kind: AssetKindDecision, License: license, Source: "https://github.com/ggml-org/llama.cpp", Files: []AssetFile{{Path: filepath.Join("decider", "archives", part.Name), URL: part.URL, SHA256: part.SHA256, Size: part.Size}}})
+	}
+	assets[1].decisionRuntime = true
+	assets[1].decisionModel = cfg.DecisionLocalModel
+	assets[1].decisionDevice = device
 	return assets, nil
 }
