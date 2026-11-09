@@ -25,6 +25,10 @@ def render(directory, tag, destination):
     formula = TEMPLATE.read_text()
     for key, value in replacements.items():
         formula = formula.replace(f"@@{key}@@", value)
+    # Homebrew infers stable semver from the URL and rejects a redundant version
+    # in strict audit. Keep the override for development/prerelease suffixes.
+    if "-" not in tag:
+        formula = formula.replace(f'  version "{tag[1:]}"\n', "")
     if re.search(r"@@[A-Z_]+@@", formula):
         raise ValueError("unresolved Homebrew template marker")
     destination.parent.mkdir(parents=True, exist_ok=True)
