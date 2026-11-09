@@ -78,8 +78,7 @@ Installs the released CLI with its native speech libraries on Apple Silicon
 macOS 15+ and x86_64 Linux with glibc 2.39+ (Ubuntu 24.04+). The desktop app is
 installed separately from source below.
 
-**Availability:** the initial v0.3.0 Homebrew bottles are still awaiting
-publication. Use the source install below until they are public. Once published:
+The CLI is available through the Obedience Corp tap:
 
 ```bash
 brew install obedience-corp/tap/obey-voice

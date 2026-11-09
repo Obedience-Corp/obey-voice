@@ -71,9 +71,13 @@ is pushed.
 
 ### Desktop archive and Homebrew cask
 
-Starting with v0.3.1, `just release create vX.Y.Z` also builds and promotes the
-macOS desktop app. The existing v0.3.0 CLI release can be resumed without adding
-a desktop package retroactively. The two Homebrew packages are independent:
+The channel configuration enables desktop publication for v0.3.1 and later, so
+`just release create vX.Y.Z` requires Apple signing credentials and also builds
+and promotes the macOS desktop app. The v0.3.1 publication was explicitly scoped
+to native CLI archives and the Homebrew formula while those credentials were
+unavailable; it does not include a desktop archive or cask. The existing v0.3.0
+CLI release can be resumed without adding a desktop package retroactively.
+The two Homebrew packages are independent:
 `obey-voice` is the CLI formula; `obey-voice-app` is the desktop cask. Both live
 in `Obedience-Corp/homebrew-tap`.
 
