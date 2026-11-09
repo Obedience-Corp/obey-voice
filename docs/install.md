@@ -97,6 +97,20 @@ native speech libraries. It supports Apple Silicon macOS 15+ and x86_64 Linux
 with glibc 2.39+ (Ubuntu 24.04+). It does not install the desktop app; use the
 [desktop source install](#desktop-app-macos) for that.
 
+The separate desktop cask, `obedience-corp/tap/obey-voice-app`, is created by the
+release pipeline after the first signed and notarized desktop archive is
+published. It is **not yet available**. Once that first app release is public:
+
+```bash
+brew install --cask obedience-corp/tap/obey-voice-app
+open "/Applications/Obey Voice Agent.app"
+```
+
+The cask includes its own engine and native libraries; it does not require the
+CLI formula. Both share existing user settings and model caches. The cask
+supports Apple Silicon macOS 15+. Use `brew upgrade --cask
+obedience-corp/tap/obey-voice-app` for subsequent app releases; quit the app first.
+
 **Availability:** the initial v0.3.0 bottles are still awaiting publication.
 Use [the source install](#from-source) until those bottles are public. The
 Homebrew commands for the published release are:

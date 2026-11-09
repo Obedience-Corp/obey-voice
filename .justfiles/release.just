@@ -58,6 +58,19 @@ publish version:
 [no-cd]
 artifact-test:
     python3 -m unittest discover -s scripts -p test_release_*.py
+    python3 -m unittest discover -s scripts -p test_desktop_*.py
+
+# Build a signed/notarized desktop archive from a clean release tag.
+[no-cd]
+[positional-arguments]
+desktop-artifact version:
+    python3 scripts/desktop_artifacts.py "$1"
+
+# Local packaging preview only; cannot be published by the release coordinator.
+[no-cd]
+[positional-arguments]
+desktop-preview version="v0.0.0":
+    python3 scripts/desktop_artifacts.py "$1" --unsigned
 
 # Render the org tap formula from both verified archives in dist/release.
 [no-cd]

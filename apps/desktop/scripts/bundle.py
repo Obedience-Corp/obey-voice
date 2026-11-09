@@ -2,9 +2,11 @@
 """Package locally built binaries as a macOS application (no publishing)."""
 import argparse
 import json
+import os
 import pathlib
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -13,6 +15,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--release', action='store_true')
 parser.add_argument('--demo', action='store_true')
 args = parser.parse_args()
+version = os.environ.get('OBEY_VOICE_DESKTOP_VERSION', '0.1.0').removeprefix('v')
+if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+    parser.error('OBEY_VOICE_DESKTOP_VERSION must be a stable semantic version')
 if sys.platform != 'darwin':
     parser.error('macOS app bundles must be built on macOS')
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -21,6 +26,8 @@ metadata = json.loads(subprocess.check_output(
     cwd=root, text=True))
 target_dir = Path(metadata['target_directory'])
 bundle = root / 'dist' / ('Obey Voice Demo.app' if args.demo else 'Obey Voice Agent.app')
+if bundle.exists():
+    shutil.rmtree(bundle)
 macos = bundle / 'Contents' / 'MacOS'
 macos.mkdir(parents=True, exist_ok=True)
 resources = bundle / 'Contents' / 'Resources'
@@ -68,6 +75,8 @@ for path in rpaths:
     subprocess.run(['install_name_tool', '-delete_rpath', path, str(engine)], check=True)
 subprocess.run(['install_name_tool', '-add_rpath', '@executable_path/../Frameworks', str(engine)], check=True)
 info = dict(CFBundleName='Obey Voice Demo' if args.demo else 'Obey Voice Agent', CFBundleDisplayName='Obey Voice Agent', CFBundleExecutable='obey-voice-agent', CFBundleIdentifier='com.obedience.voice-agent.demo' if args.demo else 'com.obedience.voice-agent', CFBundleVersion='1', CFBundleShortVersionString='0.1.0', CFBundlePackageType='APPL', LSMinimumSystemVersion='13.0', NSMicrophoneUsageDescription='Obey Voice uses your microphone for conversations, voice enrollment, and meeting recordings.', NSHighResolutionCapable=True)
+info.update(CFBundleVersion=version, CFBundleShortVersionString=version,
+            LSMinimumSystemVersion=os.environ.get('MACOSX_DEPLOYMENT_TARGET', '13.0'))
 if args.demo:
     info['LSEnvironment'] = {'OBEY_VOICE_AGENT_DEMO': '1'}
 info['CFBundleIconFile'] = 'AppIcon.icns'

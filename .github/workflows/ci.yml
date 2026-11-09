@@ -17,6 +17,32 @@ concurrency:
 # also deny this repository access to self-hosted runner groups before publication;
 # workflow YAML alone cannot stop a PR from requesting another available runner.
 jobs:
+  desktop-archive:
+    name: Desktop archive (macOS)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95'
+      - uses: extractions/setup-just@v3
+      - name: Install build shell
+        run: brew install bash
+      - name: Build and verify a non-publishable desktop preview
+        run: just release desktop-preview
+      - name: Desktop release failure paths
+        run: python3 -m unittest discover -s scripts -p 'test_desktop_*.py'
+
   decision-lifecycle:
     name: Decision owner lifecycle (${{ matrix.os }})
     strategy:

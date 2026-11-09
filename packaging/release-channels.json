@@ -6,6 +6,13 @@
       "repository": "Obedience-Corp/homebrew-tap",
       "workflow": "obey-voice-bottles.yml"
     },
+    "homebrew_cask": {
+      "enabled": true,
+      "since": "v0.3.1",
+      "repository": "Obedience-Corp/homebrew-tap",
+      "workflow": "obey-voice-cask.yml",
+      "artifact_workflow": "desktop-release.yml"
+    },
     "npm": {
       "enabled": false,
       "reason": "Platform packages and the npm publishing workflow are not implemented yet.",
