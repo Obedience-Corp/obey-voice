@@ -90,6 +90,10 @@ On first launch, choose providers and download speech models. No Go or Rust
 toolchain is needed for the CLI with Parakeet STT and Kokoro TTS.
 [Homebrew setup, upgrades, and dev-install coexistence](docs/install.md#homebrew-macos--linux).
 
+The desktop package is a separate cask, `obedience-corp/tap/obey-voice-app`.
+It will become installable after the first signed and notarized app release;
+until then, use `just desktop install` below.
+
 ### Build from source
 
 For local development or the desktop app, start with a checkout:

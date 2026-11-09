@@ -7,7 +7,7 @@ default:
 # Build the shared Go voice companion
 bridge:
     mkdir -p bin
-    cd bridge && go build -o ../bin/obey-voice-engine .
+    cd bridge && go build -ldflags "-X github.com/Obedience-Corp/obey-voice/cmd/obey-voice/cmd.releaseVersion=${OBEY_VOICE_DESKTOP_VERSION:-dev}" -o ../bin/obey-voice-engine .
 
 # Build the companion and debug desktop app
 build: bridge

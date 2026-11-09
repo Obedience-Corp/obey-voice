@@ -65,9 +65,69 @@ Each workflow wait is bounded (one hour by default). Ctrl+C stops local waiting;
 already-started GitHub jobs may continue. The local summary is
 `dist/releases/vX.Y.Z/status.json`; it records incomplete stages and errors.
 
-Both new support PRs must be merged before first use: the engine coordinator and
-the tap's `packaging/obey-voice-release.json` contract plus build/verify/public
-workflow modes. `plan` reports a missing contract before any tag is pushed.
+The tap verification workflows must be merged before first use. `plan` reports
+missing formula/cask contracts and desktop signing secrets before any new tag
+is pushed.
+
+### Desktop archive and Homebrew cask
+
+Starting with v0.3.1, `just release create vX.Y.Z` also builds and promotes the
+macOS desktop app. The existing v0.3.0 CLI release can be resumed without adding
+a desktop package retroactively. The two Homebrew packages are independent:
+`obey-voice` is the CLI formula; `obey-voice-app` is the desktop cask. Both live
+in `Obedience-Corp/homebrew-tap`.
+
+Before the first desktop release, configure these **repository Actions secrets**
+on `Obedience-Corp/obey-voice`, using GitHub settings or `gh secret set`:
+
+| Secret | Value |
+|---|---|
+| `APPLE_CERTIFICATE_P12` | Base64-encoded Developer ID Application certificate and private key export |
+| `APPLE_CERTIFICATE_PASSWORD` | Password protecting that P12 export |
+| `APPLE_SIGNING_IDENTITY` | Exact `Developer ID Application: … (TEAMID)` identity |
+| `APPLE_NOTARY_KEY_ID` | App Store Connect notarization API key ID |
+| `APPLE_NOTARY_ISSUER_ID` | Issuer ID for that team API key |
+| `APPLE_NOTARY_PRIVATE_KEY` | Contents of the API key's `.p8` file |
+
+An Apple Development certificate does not qualify for public desktop signing.
+The signing workflow runs only on a release tag. It builds without exposing
+signing credentials to dependency build scripts, imports the private key into
+a temporary keychain after compilation, signs nested code with hardened runtime,
+submits the app to Apple, staples the accepted ticket, and checks Gatekeeper.
+It then archives the stapled app and verifies the extracted copy. The keychain
+is removed on completion or failure. See [Apple's notarization requirements](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
+
+The app includes the companion built from the same checkout, its native speech
+libraries, dependency notices, and signed source/version metadata. Missing
+standalone Rust crate notices are retrieved from the crate's exact upstream
+commit; when the upstream supplies no accessible notice, its complete published
+crate source and license declaration are retained. No floating upstream branch
+is used for notice retrieval.
+
+The coordinator verifies the archive checksum, source/version receipt, and
+notarization evidence before uploading desktop assets to the native release.
+Retries reuse published bytes; they never overwrite a differently signed build.
+Anonymous download readback precedes generating `Casks/obey-voice-app.rb` and
+opening its tap PR. The tap checks the public app's signature, notarization,
+Gatekeeper acceptance, bundled-engine version, upgrade from the prior cask when
+one exists, reinstall, uninstall, and fixture-data retention. The coordinator
+merges with an exact-head guard and then verifies installation from tap main.
+Repository review requirements still apply. A first cask is created only after
+the first valid public app archive exists; no placeholder URL or checksum is
+installed in the tap.
+
+For a local packaging check with no Apple credentials:
+
+```sh
+just release desktop-preview v0.0.0
+```
+
+This creates an ad-hoc signed **preview**, which cannot be promoted by the
+release command. For a local signed build from a clean release tag, set
+`APPLE_SIGNING_IDENTITY` and `APPLE_NOTARY_PROFILE` (an existing `notarytool`
+keychain profile), then run `just release desktop-artifact vX.Y.Z`.
+Normal `just desktop install` remains the local development install and does
+not require signing credentials, tags, or a release.
 
 ### Adding channels
 
@@ -86,8 +146,8 @@ public npm version and `gitHead`, downloads its tarball and verifies SHA-512 SRI
 Missing workflow/package configuration fails before a new tag is created.
 
 New channel kinds need an adapter with equivalent publication/readback semantics;
-unknown enabled channels fail closed. Festival and signed desktop delivery remain
-separate work items until those adapters and acceptance evidence exist.
+unknown enabled channels fail closed. Festival delivery remains separate until
+its adapter and acceptance evidence exist.
 
 ### Native-only operations
 

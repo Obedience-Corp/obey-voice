@@ -18,6 +18,8 @@ from release_artifacts import PLATFORMS, archive_name
 from release_homebrew import Homebrew, reject_downgrade, stable_version
 from release_service import GitHub, ReleaseError, command, public_bytes
 from render_homebrew import render
+from desktop_signing import SECRET_NAMES
+from release_desktop import Desktop, reject_downgrade as reject_cask_downgrade
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,12 +39,16 @@ def load_config(path):
             if not item.get("reason"):
                 raise ReleaseError(f"{name}: disabled channels need an explicit reason")
             continue
-        if name not in {"homebrew", "npm"}:
+        if name not in {"homebrew", "homebrew_cask", "npm"}:
             raise ReleaseError(f"enabled channel {name} has no adapter")
         if not re.fullmatch(r"[A-Za-z0-9_.-]+\.ya?ml", item.get("workflow", "")):
             raise ReleaseError(f"{name}: configure its publishing workflow")
-        if name == "homebrew" and item.get("repository") != "Obedience-Corp/homebrew-tap":
+        if name in {"homebrew", "homebrew_cask"} and item.get("repository") != "Obedience-Corp/homebrew-tap":
             raise ReleaseError("Homebrew currently targets the owning Obedience Corp tap")
+        if name == "homebrew_cask":
+            stable_version(item.get("since", ""))
+            if not re.fullmatch(r"[A-Za-z0-9_.-]+\.ya?ml", item.get("artifact_workflow", "")):
+                raise ReleaseError("homebrew_cask: configure the desktop artifact workflow")
         if name == "npm":
             if not item.get("packages") or not isinstance(item["packages"], list):
                 raise ReleaseError("npm: enumerate every launcher and platform package before enabling")
@@ -56,6 +62,11 @@ def native_identity(github, repo, tag):
     if ref:
         return github.api(f"repos/{repo}/commits/{tag}")["sha"], True
     return github.ref(repo, "heads/main"), False
+
+
+def applies(channel, tag):
+    return channel["enabled"] and (not channel.get("since") or
+                                   stable_version(tag) >= stable_version(channel["since"]))
 
 
 def check_npm_downgrade(packages, tag):
@@ -81,7 +92,7 @@ def preflight(github, config, tag, plan=False):
         if not info.get("permissions", {}).get("push"):
             blockers.append(f"authenticated gh account needs write access to {target}")
     for name, channel in config["channels"].items():
-        if not channel["enabled"]:
+        if not applies(channel, tag):
             continue
         owner = channel.get("repository", repo)
         workflow = github.api(f"repos/{owner}/actions/workflows/{channel['workflow']}", optional=True)
@@ -97,6 +108,24 @@ def preflight(github, config, tag, plan=False):
                 blockers.append("homebrew: merge the staged/public bottle verification workflow first")
         if name == "npm":
             check_npm_downgrade(channel["packages"], tag)
+        if name == "homebrew_cask":
+            current, _ = github.file(owner, "Casks/obey-voice-app.rb", "main")
+            reject_cask_downgrade(current, tag)
+            contract, _ = github.file(owner, "packaging/obey-voice-cask.json", "main")
+            contract = json.loads(contract) if contract else {}
+            if contract != {"schema": 1, "workflow": channel["workflow"], "modes": ["verify", "public"]}:
+                blockers.append("homebrew_cask: merge the cask verification workflow first")
+            workflow = github.api(f"repos/{repo}/actions/workflows/{channel['artifact_workflow']}", optional=True)
+            if workflow is None or workflow["state"] != "active":
+                blockers.append("homebrew_cask: desktop signing workflow is absent or disabled")
+            source_workflow, _ = github.file(repo, f".github/workflows/{channel['artifact_workflow']}", sha)
+            if source_workflow is None:
+                blockers.append("homebrew_cask: release source does not contain the desktop signing workflow")
+            secrets = github.api(f"repos/{repo}/actions/secrets?per_page=100")
+            available = {entry["name"] for entry in secrets["secrets"]}
+            missing = set(SECRET_NAMES) - available
+            if missing:
+                blockers.append("homebrew_cask: configure repository signing secrets: " + ", ".join(sorted(missing)))
     if not exists:
         if command("git", "status", "--porcelain"):
             blockers.append("new release requires a clean tracked/untracked working tree")
@@ -178,6 +207,8 @@ def execute(github, config, tag, report):
     for name, channel in config["channels"].items():
         if not channel["enabled"]:
             report(name, "not-configured", reason=channel["reason"])
+        elif not applies(channel, tag):
+            report(name, "not-applicable", reason=f"channel begins with {channel['since']}")
     identity = preflight(github, config, tag)
     sha, exists = identity["source_sha"], identity["resume"]
     repo = config["repository"]
@@ -188,12 +219,14 @@ def execute(github, config, tag, report):
         scratch = Path(scratch)
         native_release(github, repo, tag, sha, scratch / "native", report, new_tag=not exists)
         for name, channel in config["channels"].items():
-            if not channel["enabled"]:
+            if not applies(channel, tag):
                 continue
             if name == "homebrew":
                 formula = scratch / "obey-voice.rb"
                 render(scratch / "native", tag, formula)
                 Homebrew(github, channel, tag, formula.read_text(), report).run()
+            elif name == "homebrew_cask":
+                Desktop(github, repo, channel, tag, sha, report).run()
             elif name == "npm":
                 check_npm_downgrade(channel["packages"], tag)
                 report(name, "publishing")
