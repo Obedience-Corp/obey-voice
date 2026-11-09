@@ -62,6 +62,12 @@ bottles built from a private fixture tap commit, not production tap artifacts.
 
 ## Publish the tap package
 
+Prefer `just release create vX.Y.Z` for stable releases; it automates this sequence
+and resumes incomplete work. See [coordinated releases](releases.md#publication).
+The low-level steps below remain useful for diagnosis. Do not merge a tap PR
+while its bottle assets are still draft; the coordinator publishes and checks
+public URLs before merging.
+
 1. Publish and read back the versioned native release through the normal release
    workflow. Verify the actual release URLs before promoting a formula.
 2. Render the formula from those published bytes. Open a PR in the owning tap

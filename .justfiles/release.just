@@ -7,6 +7,18 @@
 default:
     @just --list --justfile {{source_file()}}
 
+# Create/resume a release and verify every enabled package channel.
+[no-cd]
+[positional-arguments]
+create version:
+    python3 scripts/release_pipeline.py "$1"
+
+# Read-only release plan: versions, channels, permissions and blockers.
+[no-cd]
+[positional-arguments]
+plan version:
+    python3 scripts/release_pipeline.py "$1" --plan
+
 # Validate tracked media coverage and byte-bound review records (not clearance).
 [no-cd]
 media-check:
