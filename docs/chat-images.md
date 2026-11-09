@@ -13,8 +13,10 @@ thread after sending. You can send images with a question or on their own.
 - F4 removes the last draft image. `/image N` opens thread image N, counting from one.
 
 Inline previews use colored half-blocks, so scrolling and tmux work without a terminal
-image protocol. Draft thumbnails scale with the available terminal space. Use F3
-to read screenshot text at full resolution. If the selected model cannot accept
+image protocol. These are low-resolution thumbnails, not native bitmap rendering.
+Area averaging preserves thin detail when shrinking screenshots, and thread previews
+use more rows in taller windows. Draft thumbnails scale with the available terminal
+space. Use F3 to read screenshot text at full resolution. If the selected model cannot accept
 images, one error stays beside the draft; the image and typed text remain available
 to resend after changing models in Settings > Brain. Native bitmap clipboard import
 is supported on macOS and Linux; pasted file paths also work where a bitmap clipboard
@@ -59,7 +61,9 @@ instead of entering speech and chat history. This shares the required routing
 step's single retry; an honest refusal selects `route(kind=chat)` before answering.
 When a live reply omits a route without an unsupported image claim, that retry uses
 the same route schema as constrained JSON instead of asking for another native tool
-call. The host validates the decision before dispatch; a chat decision then gets a
+call. Raw tool-call markup, including `<atem:function_calls>` invocations, is rejected
+before reply text or speech; it is never interpreted as an executable tool call.
+The host validates the decision before dispatch; a chat decision then gets a
 fresh answer. Undecided prose and private routing JSON never become spoken replies.
 The check uses the current request to recognize pronoun-only claims such as
 "I've attached them below" and also validates the answer after `route(kind=chat)`.

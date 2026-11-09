@@ -20,10 +20,9 @@ func mediaPixels(img image.Image, width, height int) string {
 	if img == nil {
 		return "Loading preview…"
 	}
+	img = chatmedia.Thumbnail(img, max(1, width), max(1, height)*2)
 	b := img.Bounds()
-	w := max(1, min(width, b.Dx()))
-	h := max(1, min(height*2, b.Dy()*w/b.Dx()))
-	w = max(1, min(w, b.Dx()*h/max(1, b.Dy())))
+	w, h := b.Dx(), b.Dy()
 	var out strings.Builder
 	for y := 0; y < h; y += 2 {
 		for x := 0; x < w; x++ {
