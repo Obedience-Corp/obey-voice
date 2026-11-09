@@ -217,12 +217,12 @@
       "disposition": "retain_public",
       "public_release": "cleared",
       "content_review": "complete",
-      "sha256": "6b7febb645b3712bd1e89388dadf9446b7a296254973734f6b9a101ff776b8dc",
+      "sha256": "acd575a0d7afb971cf7c9c12a3c78f2b943f8d209fd20b3d1749e2f2b6fe9d93",
       "review": {
-        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
-        "reviewed_at": "2026-11-04",
-        "content_evidence": "Inspected initial eight-frame sample, 17 one-second timeline snapshots and 3 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
-        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-08",
+        "content_evidence": "Regenerated with the real Bubble Tea terminal harness using deterministic geometric fixtures and disposable configuration. Inspected draft/thread/pause/resume screenshots and checked animation-region frame hashes for motion, pause, and resume. Source and selected-frame review, not every-frame visual inspection. No personal source screenshots, live model, or microphone used; see docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
       }
     },
     {
@@ -231,12 +231,12 @@
       "disposition": "retain_public",
       "public_release": "cleared",
       "content_review": "complete",
-      "sha256": "a32cdec559b2f6fa24e5d5116e4043bdb557b4bf4fb2115a6bd12037e838afd7",
+      "sha256": "deac81263b0191fb27bf1af9b7c7981d2db8bb09af17c2c5af6f35f50db9cc16",
       "review": {
-        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
-        "reviewed_at": "2026-11-04",
-        "content_evidence": "Inspected initial eight-frame sample, 16 one-second timeline snapshots and 2 detected scene-change snapshots alongside source recipes. No private content finding. Sampling plus source review, not every-frame inspection; see docs/media-review-evidence.md#project-ui-captures. Retention decision uses source inspection and targeted sampled privacy review under the 2026-11-04 proportionate policy; not an every-frame guarantee.",
-        "rights_evidence": "Project-produced UI/demo capture retained as project documentation. Source recipes and inspected scenes support this narrow use; no imported performer or unlicensed artwork was identified. The legacy live-source tool-call clip is not represented as an isolated generator."
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-08",
+        "content_evidence": "Regenerated with the real Bubble Tea terminal harness using deterministic geometric fixtures and disposable configuration. Inspected draft/thread/pause/resume screenshots and checked animation-region frame hashes for motion, pause, and resume. Source and selected-frame review, not every-frame visual inspection. No personal source screenshots, live model, or microphone used; see docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
       }
     },
     {
@@ -273,12 +273,12 @@
       "disposition": "retain_public",
       "public_release": "cleared",
       "content_review": "complete",
-      "sha256": "17bd947d04a57c33f711803c36d345f79a617320389e0eb49a9a053fee642f07",
+      "sha256": "cf20c49cd51d185eeff88ac7b688cc851d6de108dbb89844ab4143d32b8e0167",
       "review": {
-        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
-        "reviewed_at": "2026-11-04",
-        "content_evidence": "Synthetic terminal UI and colored rectangle attachment preview; tape recipe demos/agent-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
-        "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-08",
+        "content_evidence": "Individually inspected this regenerated draft, thread, paused, or resumed terminal screenshot. Only synthetic geometric fixtures and fixture conversation text are visible; no personal source screenshot or live session used. See docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
       }
     },
     {
@@ -287,12 +287,12 @@
       "disposition": "retain_public",
       "public_release": "cleared",
       "content_review": "complete",
-      "sha256": "65298eec07c3e831ea5c247ecc82cc9b00a85a4aa5097ea07f5d447bf5d28006",
+      "sha256": "097993ae4fba62249019c2a12ba043c36fc7cbadc900e1377e92074ff54b7b0a",
       "review": {
-        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
-        "reviewed_at": "2026-11-04",
-        "content_evidence": "Synthetic terminal UI and colored rectangle attachment/thread preview; tape recipe demos/agent-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
-        "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-08",
+        "content_evidence": "Individually inspected this regenerated draft, thread, paused, or resumed terminal screenshot. Only synthetic geometric fixtures and fixture conversation text are visible; no personal source screenshot or live session used. See docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
       }
     },
     {
@@ -301,12 +301,12 @@
       "disposition": "retain_public",
       "public_release": "cleared",
       "content_review": "complete",
-      "sha256": "17bd947d04a57c33f711803c36d345f79a617320389e0eb49a9a053fee642f07",
+      "sha256": "095cbbe0e58d75a79e2db4ddda92c2709c5a432dbd1093f8a9dbcbee461cb3b6",
       "review": {
-        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
-        "reviewed_at": "2026-11-04",
-        "content_evidence": "Synthetic terminal UI and colored rectangle attachment preview; tape recipe demos/chat-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
-        "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-08",
+        "content_evidence": "Individually inspected this regenerated draft, thread, paused, or resumed terminal screenshot. Only synthetic geometric fixtures and fixture conversation text are visible; no personal source screenshot or live session used. See docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
       }
     },
     {
@@ -315,12 +315,12 @@
       "disposition": "retain_public",
       "public_release": "cleared",
       "content_review": "complete",
-      "sha256": "7ef8f5aa00b0a7a86d8176915d774b65e22fead987b9c449c422aa318e693d94",
+      "sha256": "eefcd83477ab771e08c29dd9e4e81787f49920aee86ba9395b1d04b5b6cd32dc",
       "review": {
-        "reviewer": "Codex, with source/ASR evidence from GPT-6 Luna workers",
-        "reviewed_at": "2026-11-04",
-        "content_evidence": "Synthetic terminal UI and colored rectangle attachment/thread preview; tape recipe demos/chat-images.tape. See docs/media-review-evidence.md#project-ui-captures for method and limits. Independently re-inspected as an individual image by Codex on 2026-11-03; no remaining private-content finding.",
-        "rights_evidence": "Project-authored interface capture and demo content; retained as ordinary project documentation under the repository license. No third-party recording or imported artwork identified beyond product UI branding/labels."
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-08",
+        "content_evidence": "Individually inspected this regenerated draft, thread, paused, or resumed terminal screenshot. Only synthetic geometric fixtures and fixture conversation text are visible; no personal source screenshot or live session used. See docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
       }
     },
     {
@@ -1287,6 +1287,48 @@
         "reviewed_at": "2026-11-04",
         "content_evidence": "Generated from documented text with canonical PCM conversion and offline ASR check. Native KWS/setup/voiceflow checks pass for affected paths. British Obey is ASR-ambiguous but native KWS matches. ASR is not human listening. See docs/media-review-evidence.md#replacement-synthetic-audio.",
         "rights_evidence": "Routine synthetic output from the published Apache-2.0 Kokoro multi-lang pack; exact model/voice/archive hashes and license source recorded. Replaces Apple System Voice or undocumented voiceflow source; no claim of model-weight redistribution."
+      }
+    },
+    {
+      "path": "demos/frames/agent-images-paused.png",
+      "source": "Project-produced UI screenshot from the isolated image/GIF terminal harness and generated geometric fixtures.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "0faf589236414e5888108448f955a2007fa0afbb167ff64794b70c0f4e91a773",
+      "review": {
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-08",
+        "content_evidence": "Individually inspected this regenerated draft, thread, paused, or resumed terminal screenshot. Only synthetic geometric fixtures and fixture conversation text are visible; no personal source screenshot or live session used. See docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
+      }
+    },
+    {
+      "path": "demos/frames/agent-images-resumed.png",
+      "source": "Project-produced UI screenshot from the isolated image/GIF terminal harness and generated geometric fixtures.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "0faf589236414e5888108448f955a2007fa0afbb167ff64794b70c0f4e91a773",
+      "review": {
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-08",
+        "content_evidence": "Individually inspected this regenerated draft, thread, paused, or resumed terminal screenshot. Only synthetic geometric fixtures and fixture conversation text are visible; no personal source screenshot or live session used. See docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
+      }
+    },
+    {
+      "path": "demos/frames/chat-images-paused.png",
+      "source": "Project-produced UI screenshot from the isolated image/GIF terminal harness and generated geometric fixtures.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "5b4a18f93feb727ea6487c87b7b37f4399cd4dae2af3ddcf196448e5eea650a7",
+      "review": {
+        "reviewer": "Codex",
+        "reviewed_at": "2026-11-08",
+        "content_evidence": "Individually inspected this regenerated draft, thread, paused, or resumed terminal screenshot. Only synthetic geometric fixtures and fixture conversation text are visible; no personal source screenshot or live session used. See docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
       }
     }
   ]

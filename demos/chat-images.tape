@@ -16,7 +16,8 @@ Sleep 500ms
 Show
 Sleep 4s
 Screenshot demos/frames/chat-images-draft.png
-Sleep 1s
-Sleep 6s
+Sleep 2s
+Screenshot demos/frames/chat-images-paused.png
+Sleep 4s
 Screenshot demos/frames/chat-images-thread.png
 Sleep 5s

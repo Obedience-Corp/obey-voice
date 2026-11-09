@@ -128,3 +128,41 @@ After `just bundle` in `apps/desktop`, run
 `python3 scripts/ui-fixture.py --agent-images` for a silent native app whose local
 model stub returns both a PNG and an animated GIF. The isolated request log and saved
 session files let reviewers verify input bytes and durable reply references.
+
+### What the recordings establish
+
+The recordings above were refreshed for PR #368 using the real Bubble Tea UI and
+isolated, generated geometric fixtures. They show the current colored-character
+thumbnail renderer, not full-resolution terminal graphics.
+
+| Behavior | Evidence |
+| --- | --- |
+| Pasted PNG path and clipboard GIF appear in the draft | `chat-images.gif`, with both previews visible before sending |
+| GIF playback stops and resumes with F2 | Draft hint changes to **F2 play GIFs** while paused; the animated bar moves again after resume |
+| Input attachments survive sending | Both previews appear beside the submitted user turn |
+| Agent-returned PNG and GIF appear in chat | `agent-images.gif` shows `result.png` and `result.gif` after a fixture worker completion |
+| Returned GIF stops and resumes | The returned bar stops near the end of the recording, then moves again |
+| Video attachments/playback | Not implemented; the attachment importer accepts PNG, JPEG, and GIF only |
+| Native desktop rendering | Not exercised by these terminal recordings; use the desktop fixture above |
+
+The harness injects paste/key events and a deterministic worker result; it does not
+exercise the operating system clipboard reader or prove a live model will create an
+attachment. Tests separately cover import, durable storage, reply references, and
+transport to the desktop projection.
+
+For the refreshed GIF artifacts, FFmpeg frame hashes of just the animated preview
+confirm movement, a still interval, and movement after resume:
+
+| Recording | Playing interval / distinct frames | Paused interval / distinct frames | Resumed interval / distinct frames |
+| --- | --- | --- | --- |
+| `chat-images.gif` | 3.5–4.5 s / 7 | 5.6–6.5 s / 1 | 7.5–8.3 s / 7 |
+| `agent-images.gif` | 12.5–13.5 s / 6 | 14.5–15.5 s / 1 | 16.5 s–end / 2 |
+
+These counts sample at 12 fps and exclude the cursor and other UI. They apply to
+these artifacts; rerunning the asynchronous UI harness can shift the timings.
+Reproduce with `just demo-chat-images` and `just demo-agent-images`. Run the media
+checks with:
+
+```sh
+go test ./internal/tui ./pkg/voiceagent/chatmedia ./pkg/voiceagent/session -run 'Media|Image|GIF|Thumbnail|Durable|Reply' -count=1
+```

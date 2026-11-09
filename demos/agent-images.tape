@@ -19,4 +19,7 @@ Screenshot demos/frames/agent-images-draft.png
 Sleep 1s
 Sleep 8s
 Screenshot demos/frames/agent-images-thread.png
-Sleep 4s
+Sleep 2s
+Screenshot demos/frames/agent-images-paused.png
+Sleep 2s
+Screenshot demos/frames/agent-images-resumed.png
