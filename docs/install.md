@@ -155,8 +155,9 @@ just install    # Build this checkout, bundle native libraries, install, then en
 ```
 
 `just install` is also the development install: rerun it after editing code, even
-with uncommitted changes. It builds your checkout locally and bundles the native
-libraries selected by its Go dependencies. No release, tag, Homebrew formula,
+with uncommitted changes. It uses the Go build-util dashboard to vet and build
+your checkout, then bundles the native libraries selected by its Go dependencies.
+No release, tag, Homebrew formula,
 or published Obey Voice binary is needed. The version includes the Git revision
 and `-dirty` when applicable; a `v0.3.0-...` prefix is Git's nearest version tag,
 not a dependency on the v0.3.0 release.
@@ -170,10 +171,11 @@ continues to work if the source checkout or Go cache is removed or unmounted.
 Go still needs an accessible module/build cache when compiling the next build.
 
 Supported install hosts are Apple Silicon macOS and x86_64 glibc Linux. In
-addition to Go, a C compiler, and `just`, install Python 3.12+, `curl`, and Bash
+addition to Go, a C compiler, and `just`, install `curl` and Bash
 4+. macOS needs Xcode Command Line Tools (`otool`, `install_name_tool`, and
 `codesign`); Linux needs `patchelf` and binutils. The shared native packaging
 step retrieves checksum-pinned dependency license notices from upstream.
+The CLI install path does not require Python or run release archive packaging.
 
 For the usual edit/reinstall loop with your existing models:
 

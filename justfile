@@ -339,11 +339,11 @@ _optimize-demo-gif path:
 # Install this checkout with bundled native libraries; no tag or release required.
 # Set OBEY_VOICE_SKIP_MODELS_ENSURE=1 to reuse existing models without downloading.
 install:
-    python3 scripts/install_dev.py
+    @{{BUILDTOOL}} install
 
-# Dev install replacement, corruption, and startup-failure regression tests.
+# Dev install replacement, incomplete payload, and startup-failure regression tests.
 install-test:
-    python3 -m unittest discover -s scripts -p test_install_dev.py
+    go test ./internal/buildutil/...
 
 # Build and run with any args
 run *ARGS: build
