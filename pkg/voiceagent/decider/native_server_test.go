@@ -32,18 +32,21 @@ func TestNativeAdapterWorkerFixture(t *testing.T) {
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
-			w.Write([]byte(`{"status":"ok"}`))
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
 			return
 		}
 		var input struct {
 			Questions map[string]any `json:"questions"`
 		}
-		json.NewDecoder(r.Body).Decode(&input)
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		answers := map[string]any{}
 		for key := range input.Questions {
 			answers[key] = map[string]any{"noul": 1.0}
 		}
-		json.NewEncoder(w).Encode(map[string]any{"answers": answers})
+		_ = json.NewEncoder(w).Encode(map[string]any{"answers": answers})
 	})
 	if err := http.Serve(listener, handler); err != nil {
 		t.Fatal(err)

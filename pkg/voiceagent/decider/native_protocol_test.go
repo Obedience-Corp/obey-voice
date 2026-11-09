@@ -36,7 +36,7 @@ func TestNativeLabelReadout(t *testing.T) {
 				if variant == "complete" || (variant == "fallback" && calls == 2) {
 					top = append(top, map[string]any{"id": 43, "logprob": -4.0})
 				}
-				json.NewEncoder(w).Encode(map[string]any{"truncated": variant == "truncated", "completion_probabilities": []any{map[string]any{"top_logprobs": top}}})
+				_ = json.NewEncoder(w).Encode(map[string]any{"truncated": variant == "truncated", "completion_probabilities": []any{map[string]any{"top_logprobs": top}}})
 			}))
 			defer server.Close()
 			n := nativeScorer{client: server.Client(), base: server.URL}
@@ -59,7 +59,7 @@ func TestNativeLabelReadout(t *testing.T) {
 
 func TestNativeLiquidConfidence(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"answers":{"route":{"choice":"yes","confidence":0.8,"probabilities":{"yes":0.9,"no":0.1}}}}`))
+		_, _ = w.Write([]byte(`{"answers":{"route":{"choice":"yes","confidence":0.8,"probabilities":{"yes":0.9,"no":0.1}}}}`))
 	}))
 	defer server.Close()
 	n := nativeScorer{client: server.Client(), base: server.URL, model: Model{Engine: "liquid"}}

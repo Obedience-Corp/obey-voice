@@ -183,7 +183,9 @@ func TestNativeArchiveMaterializesOnlySafeLibraryLinks(t *testing.T) {
 			gz.Close()
 			f.Close()
 			dest := filepath.Join(root, "output")
-			os.Mkdir(dest, 0700)
+			if err := os.Mkdir(dest, 0700); err != nil {
+				t.Fatal(err)
+			}
 			err = extractNative(t.Context(), archive, dest)
 			if target != "libreal.dylib" {
 				if err == nil {
