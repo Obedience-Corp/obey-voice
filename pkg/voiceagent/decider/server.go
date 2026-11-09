@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -147,13 +148,13 @@ func startNative(ctx context.Context, modelsDir, weights string, model Model, de
 		}
 		select {
 		case <-s.done:
-			return nil, fmt.Errorf("native decision worker exited before ready (%s)", s.logPath)
+			return nil, nativeStartupError(s.logPath, fmt.Errorf("worker exited before ready"))
 		case <-readyCtx.Done():
 			_ = s.Close()
 			if ctx.Err() != nil {
 				return nil, fmt.Errorf("native decision startup: %w", ctx.Err())
 			}
-			return nil, fmt.Errorf("native decision startup failed (%s): %w", s.logPath, readyCtx.Err())
+			return nil, nativeStartupError(s.logPath, readyCtx.Err())
 		case <-tick.C:
 		}
 	}
@@ -184,6 +185,25 @@ func startNative(ctx context.Context, modelsDir, weights string, model Model, de
 	}()
 	return s, nil
 }
+
+func nativeStartupError(logPath string, cause error) error {
+	// Surface loader failures rather than asking users to infer missing host
+	// dependencies from a readiness timeout. Read only a bounded log tail.
+	f, err := os.Open(logPath)
+	if err == nil {
+		defer f.Close()
+		if info, err := f.Stat(); err == nil && info.Size() > 4096 {
+			_, _ = f.Seek(-4096, io.SeekEnd)
+		}
+		raw, _ := io.ReadAll(io.LimitReader(f, 4096))
+		log := string(raw)
+		if strings.Contains(log, "GLIBC_") || strings.Contains(log, "GLIBCXX_") || strings.Contains(log, "CXXABI_") || strings.Contains(log, "error while loading shared libraries") {
+			return fmt.Errorf("native decision host libraries unavailable: use Ubuntu 24.04+/Debian 13+ with libstdc++, OpenSSL 3 and libgomp installed, or configure an external local server; details: %s: %w", logPath, cause)
+		}
+	}
+	return fmt.Errorf("native decision startup failed (%s): %w", logPath, cause)
+}
+
 func nativeHealthy(ctx context.Context, client *http.Client, base string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()

@@ -88,3 +88,14 @@ func TestNativeAdapterStartupAndClose(t *testing.T) {
 		t.Fatal("closed adapter still reachable")
 	}
 }
+
+func TestNativeLoaderFailureDiagnostic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "worker.log")
+	if err := os.WriteFile(path, []byte("llama-server: libgomp.so.1: error while loading shared libraries\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := nativeStartupError(path, context.Canceled)
+	if !strings.Contains(err.Error(), "libgomp installed") || !strings.Contains(err.Error(), "external local server") {
+		t.Fatalf("not actionable: %v", err)
+	}
+}
