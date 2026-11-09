@@ -1,13 +1,35 @@
 """Carry native and Rust dependency notices with the public desktop bundle."""
 
 import json
+import os
 import re
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from urllib.request import urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
+
+
+class GitHubAPIRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urlsplit(newurl)
+        if target.scheme != "https" or target.netloc != "api.github.com":
+            raise HTTPError(req.full_url, code, "refusing GitHub API redirect outside HTTPS API host", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def github_tree(repository, sha):
+    headers = {"Accept": "application/vnd.github+json"}
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(f"https://api.github.com/repos/{repository}/git/trees/{sha}?recursive=1", headers=headers)
+    # Repository renames may redirect within the API, but never send a token
+    # to another host or to the raw-file requests below.
+    with build_opener(GitHubAPIRedirect()).open(request, timeout=60) as response:
+        return json.load(response)
 
 
 def is_notice(name):
@@ -26,8 +48,7 @@ def upstream_notices(package, directory, target, cache):
     key = repository, sha
     if key not in cache:
         try:
-            with urlopen(f"https://api.github.com/repos/{repository}/git/trees/{sha}?recursive=1", timeout=60) as response:
-                tree = json.load(response)
+            tree = github_tree(repository, sha)
         except HTTPError as error:
             if error.code not in (404, 422):
                 raise

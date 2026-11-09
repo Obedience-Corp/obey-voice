@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -203,6 +204,43 @@ func TestNativeArchiveMaterializesOnlySafeLibraryLinks(t *testing.T) {
 			got, err := os.ReadFile(filepath.Join(dest, "libalias.dylib"))
 			if err != nil || string(got) != "lib" {
 				t.Fatal("wrong library content")
+			}
+		})
+	}
+}
+
+func TestStartRequiresExplicitModelRepair(t *testing.T) {
+	for _, present := range []bool{false, true} {
+		t.Run(fmt.Sprintf("weights-present=%t", present), func(t *testing.T) {
+			root := t.TempDir()
+			fakeNative(t, root, "#!/bin/sh\nexit 1\n")
+			model, err := ModelFor("2b")
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir, err := ModelDir(root, "2b")
+			if err != nil {
+				t.Fatal(err)
+			}
+			weights := filepath.Join(dir, model.Files[0].Name)
+			if present {
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(weights, []byte("corrupt fixture"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := StartFor(t.Context(), root, "2b", defaultDevice()); err == nil || !strings.Contains(err.Error(), "Settings > Brain") || !strings.Contains(err.Error(), "models decision install") {
+				t.Fatalf("setup error=%v", err)
+			}
+			if present {
+				raw, err := os.ReadFile(weights)
+				if err != nil || string(raw) != "corrupt fixture" {
+					t.Fatalf("startup repaired model: %q %v", raw, err)
+				}
+			} else if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Fatalf("startup created model directory: %v", err)
 			}
 		})
 	}

@@ -64,15 +64,8 @@ func prepareDecisions(ctx context.Context, cfg *config.Config) (decision.Evaluat
 		var owned io.Closer
 		switch cfg.DecisionRuntime {
 		case "", "managed":
-			cfg = cfg.Clone()
-			device, err := decider.ResolveDevice(ctx, cfg.DecisionDevice)
-			if err != nil {
-				return nil, nil, err
-			}
-			cfg.DecisionDevice = device
-			if err := config.EnsureRuntimeAssetsProgress(ctx, cfg, config.AssetRequest{NeedDecision: true}, nil); err != nil {
-				return nil, nil, fmt.Errorf("prepare local decisions: %w", err)
-			}
+			// Preparation may verify/load installed assets, but never install or
+			// repair them. Settings and explicit model commands own setup.
 			server, err := decider.StartFor(ctx, config.ModelsDirFrom(cfg), cfg.DecisionLocalModel, cfg.DecisionDevice)
 			if err != nil {
 				return nil, nil, err

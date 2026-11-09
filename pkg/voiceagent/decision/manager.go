@@ -23,7 +23,8 @@ type preparation struct {
 	closer io.Closer
 }
 
-// Manager keeps installation and cold startup outside the conversation path.
+// Manager keeps cold startup outside the conversation path. Installation is
+// owned by explicit setup actions, never by the runtime preparation callback.
 // A missing, loading or failed optional runtime leaves the controller off.
 type Manager struct {
 	mu         sync.Mutex
