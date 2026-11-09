@@ -86,7 +86,10 @@ Missing or changed stored assets produce an explicit error. Attachment storage i
 sending a message supplies its images to the configured Ollama server or Codex provider.
 
 Limits: four images per message, 8 MiB per image, 4096 pixels per side, 16 megapixels.
-GIFs allow up to 64 frames and 16 million total frame pixels. Preview caches are bounded;
+GIFs allow up to 64 frames and 16 megapixels of total logical-canvas work
+(canvas width × canvas height × frame count), even when frames only update small
+rectangles. This bounds compositing and preview downsampling; oversized animations
+are rejected before rendering, including previously stored attachments. Preview caches are bounded;
 older images can still be opened at full size. Desktop offers **Load preview** when its
 cache is full. Removing an attachment from a draft does not delete the durable asset.
 

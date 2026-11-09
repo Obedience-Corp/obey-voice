@@ -11,11 +11,14 @@ import (
 )
 
 // Inspect frame descriptors before DecodeAll can allocate a hostile animation.
+// Delta rectangles bound decoded pixels, but compositing and downsampling visit
+// the logical canvas for every frame, so both totals must fit the pixel budget.
 func checkGIF(data []byte) (int, error) {
 	bad := errors.New("invalid GIF or animation exceeds 64 frames / 16 million frame pixels")
 	if len(data) < 13 {
 		return 0, bad
 	}
+	canvasPixels := int64(binary.LittleEndian.Uint16(data[6:8])) * int64(binary.LittleEndian.Uint16(data[8:10]))
 	pos := 13
 	if data[10]&128 != 0 {
 		pos += 3 * (1 << ((data[10] & 7) + 1))
@@ -58,6 +61,9 @@ func checkGIF(data []byte) (int, error) {
 			pixels += int64(w) * int64(h)
 			if frames > 64 || pixels > MaxPixels {
 				return 0, bad
+			}
+			if canvasPixels*int64(frames) > MaxPixels {
+				return 0, errors.New("GIF animation exceeds 16 megapixels of total canvas work (width x height x frames)")
 			}
 			if flags&128 != 0 {
 				pos += 3 * (1 << ((flags & 7) + 1))
