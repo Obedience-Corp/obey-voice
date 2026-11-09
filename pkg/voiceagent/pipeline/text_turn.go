@@ -35,6 +35,7 @@ func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, r
 
 // RunTurnTextMode runs a turn with text input instead of mic.
 func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
+	p.discardInputRetry()
 	if err := p.prepareNativeForeground(ctx); err != nil {
 		return err
 	}
@@ -63,23 +64,27 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 	turn.to(TurnThinking)
 	continuation, isContinuation := continuationFromContext(ctx)
+	retry, isRetry := inputRetryFromContext(ctx)
 	speakerID := p.currentSpeakerID()
 	if isContinuation {
 		input = continuation.admission.Request
 		speakerID = ""
 	} else if background {
 		speakerID = ""
-	} else {
+	} else if !isRetry {
 		p.emitResponse(metrics, events.UserInput{Text: input, Speaker: speakerID})
 	}
 	original := input
 	var pendingDecision *decisionTurn
-	if !p.GroupParticipationEnabled && len(chatmedia.Input(ctx)) == 0 {
+	if !isRetry && !p.GroupParticipationEnabled && len(chatmedia.Input(ctx)) == 0 {
 		pendingDecision = p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
 	}
 	defer func() { pendingDecision.close() }()
 	var admission ResponseAdmission
-	if isContinuation {
+	if isRetry {
+		admission = ResponseAdmission{Request: input, Envelope: retry.Envelope}
+		ctx = p.bindAdmission(ctx, "", admission, metrics)
+	} else if isContinuation {
 		admission = continuation.admission
 		ctx = p.bindAdmission(ctx, "", admission, metrics)
 	} else {
@@ -99,7 +104,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		ctx, stop = discussion.Bind(ctx, admission.Discussion.State)
 		defer stop()
 	}
-	if p.GroupParticipationEnabled && admission.Discussion == nil && len(chatmedia.Input(ctx)) == 0 {
+	if !isRetry && p.GroupParticipationEnabled && admission.Discussion == nil && len(chatmedia.Input(ctx)) == 0 {
 		pendingDecision = p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
 	}
 	if !isContinuation && admission.LocalReply != "" {
@@ -114,18 +119,20 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		turn.finish(TurnFailed)
 		return err
 	}
-	if err := p.prepareTurn(ctx, input, metrics, turn); err != nil {
-		if errors.Is(err, context.Canceled) {
-			turn.finish(TurnInterrupted)
-			return err
+	if !isRetry {
+		if err := p.prepareTurn(ctx, input, metrics, turn); err != nil {
+			if errors.Is(err, context.Canceled) {
+				turn.finish(TurnInterrupted)
+				return err
+			}
+			p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
+			return nil
 		}
-		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
-		return nil
 	}
 	p.emitResponse(metrics, events.ThinkingStarted{})
 	thinkingStarted := metrics.tEOU()
 
-	if !background && !isContinuation && admission.Discussion == nil && len(chatmedia.Input(ctx)) == 0 {
+	if !isRetry && !background && !isContinuation && admission.Discussion == nil && len(chatmedia.Input(ctx)) == 0 {
 		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
 			return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		}
@@ -137,7 +144,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 	requestCtx := ctx
 	var ordinary *ordinaryCompletion
-	if !isContinuation && admission.Discussion == nil {
+	if !isRetry && !isContinuation && admission.Discussion == nil {
 		requestCtx, ordinary, _ = p.beginOrdinaryCompletion(ctx, input, speakerID)
 	}
 	if ordinary != nil {
@@ -157,6 +164,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	// cannot become a fresh user work request through promise repair.
 	repair := &promiseRepairState{enabled: len(chatmedia.Input(ctx)) == 0 && !isContinuation && admission.Discussion == nil && p.failedRouteRepairEnabled()}
 	streamOpts := brain.StreamOptions{
+		RetryInput:        isRetry,
 		Attachments:       chatmedia.Input(ctx),
 		Discussion:        admission.Discussion,
 		WorkerTiers:       p.workerTierAvailability(),

@@ -95,8 +95,9 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
-	Input      utterance.Provider
-	AdmitAudio func(context.Context, *utterance.Finalized) (ResponseAdmission, error)
+	inputBindingRevision atomic.Uint64
+	Input                utterance.Provider
+	AdmitAudio           func(context.Context, *utterance.Finalized) (ResponseAdmission, error)
 	// BeforeCapture refreshes the host binding before opening a reader and
 	// snapshotting its policy. Hosts serialize this with clear/restore/selection.
 	BeforeCapture func(context.Context) error
@@ -321,6 +322,7 @@ func (p *Pipeline) OutputMuted() bool { return p.outputMuted.Load() }
 // until any already-started utterance has drained and TTSRetentions have released.
 func (p *Pipeline) ReplaceTTS(primary, fallback tts.Provider) {
 	p.ttsMu.Lock()
+	p.inputBindingRevision.Add(1)
 	p.TTS = primary
 	p.TTSFallback = fallback
 	p.ttsMu.Unlock()

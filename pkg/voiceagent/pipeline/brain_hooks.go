@@ -46,6 +46,12 @@ func (p *Pipeline) emit(event events.Event) {
 }
 
 func (p *Pipeline) bindBrainInfo() {
+	primary, _ := p.ttsProviders()
+	if s, ok := primary.(interface {
+		SetProviderStatusSink(func(context.Context, events.Info))
+	}); ok {
+		s.SetProviderStatusSink(func(ctx context.Context, info events.Info) { p.emitResponseContext(ctx, info) })
+	}
 	if is, ok := p.Brain.(interface{ SetInfoSink(func(events.Info)) }); ok {
 		is.SetInfoSink(func(info events.Info) { p.emit(info) })
 	}

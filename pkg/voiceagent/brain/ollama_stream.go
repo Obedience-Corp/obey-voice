@@ -32,14 +32,23 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		opts.Identity = &copied
 	}
 	o.refreshSystemPrompt(opts.OnPromptWarn)
-	skillCtx := ""
-	if opts.Discussion == nil && !opts.AgentContinuation {
+	retrySkills := ""
+	if opts.RetryInput {
+		retry, ok := o.FailedInputRetry()
+		if !ok || retry.Input != input {
+			return nil, fmt.Errorf("failed input is no longer retryable; send a new request")
+		}
+		retrySkills = o.inputRetry.skillContext
+		opts.ToolsEnabled, opts.RouterToolsPolicy = o.inputRetry.toolsEnabled, o.inputRetry.routerPolicy
+	}
+	o.inputRetry = nil
+	skillCtx := retrySkills
+	if opts.Discussion == nil && !opts.AgentContinuation && !opts.RetryInput {
 		skillCtx = o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
-	} else {
-
+	} else if opts.Discussion != nil || opts.AgentContinuation {
 		opts.ToolsEnabled = false
 	}
-	if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
+	if !opts.RetryInput && !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
 		if err := o.appendUserInput(input, opts); err != nil {
 			return nil, err
 		}
@@ -49,12 +58,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	if opts.AgentContinuation && len(o.canonical) > 0 {
 		latestMessage = o.canonical[len(o.canonical)-1].Content
 	}
-	if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
+	if !opts.RetryInput && !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
 		o.receiveDelegationResults(opts)
 	}
 	if opts.Background && !opts.AgentContinuation {
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
+	baseSkillCtx := skillCtx
 	skillCtx += WorkResultsPrompt(opts.WorkResults)
 	skillCtx += WorkerFactsPrompt(opts.WorkerFacts)
 	o.ensureContextBudget(skillCtx)
@@ -409,6 +419,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					o.appendMessage(api.Message{Role: "assistant", Content: partial}, opts.Identity, incompleteDisposition(err))
 					o.trimHistory()
 				}
+				o.retainFailedInput(ctx, input, opts, baseSkillCtx, err, emitted.Len() > 0 || hadThinking || hadTools || len(toolCalls) > 0)
 				done <- StreamResult{Err: fmt.Errorf("ollama stream: %w", err), Recovered: ctx.Err() == nil}
 				return
 			}

@@ -13,9 +13,13 @@ import (
 // startBrainStream gives harnesses the routing boundary that Ollama implements
 // in its tool loop. Classification never enters the live conversation/session.
 func (p *Pipeline) startBrainStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	opts.InputBindingRevision = p.inputBindingRevision.Load()
+	if voices, ok := ctx.Value(responseVoicesKey{}).(responseVoices); ok {
+		opts.InputBindingRevision = voices.revision
+	}
 	classifier, ok := p.Brain.(brain.LiveRouteClassifier)
 	if !ok || p.Agency == nil || !opts.ToolsEnabled || opts.RouterToolsPolicy != brain.RouterToolsRouteOnly ||
-		opts.AgentContinuation || opts.Background || opts.Discussion != nil || opts.OmitTurnInstruction ||
+		opts.RetryInput || opts.AgentContinuation || opts.Background || opts.Discussion != nil || opts.OmitTurnInstruction ||
 		(opts.Utterance != nil && p.Native != nil && p.Native.Controls == "conversation") {
 		return p.Brain.ThinkStream(ctx, input, opts)
 	}

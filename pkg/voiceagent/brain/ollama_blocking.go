@@ -14,6 +14,11 @@ import (
 
 // ThinkFull sends input and waits for the complete response.
 func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOptions) (answer string, resultErr error) {
+	if opts.TransientHistory {
+		ctx = context.WithValue(ctx, disableOutageRetryKey{}, true)
+	} else {
+		o.inputRetry = nil
+	}
 	o.refreshSystemPrompt(opts.OnPromptWarn)
 	// Registered before rollback defers so the final budget reflects retained
 	// history even after a failed or transient request.

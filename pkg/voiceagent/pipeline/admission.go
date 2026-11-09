@@ -37,7 +37,10 @@ func (p *Pipeline) validateCapturedBinding(metrics *turnMetrics) error {
 	return nil
 }
 
-type responseVoices struct{ primary, fallback tts.Provider }
+type responseVoices struct {
+	primary, fallback tts.Provider
+	revision          uint64
+}
 type responseVoicesKey struct{}
 type responseMentionsKey struct{}
 
@@ -88,8 +91,10 @@ func (p *Pipeline) bindAdmission(ctx context.Context, input string, admitted Res
 	if p.Brain != nil {
 		metrics.historyAtAdmission = len(p.Brain.History())
 	}
-	primary, fallback := p.ttsProviders()
-	ctx = context.WithValue(events.WithResponse(ctx, admitted.Envelope), responseVoicesKey{}, responseVoices{primary, fallback})
+	p.ttsMu.RLock()
+	voices := responseVoices{primary: p.TTS, fallback: p.TTSFallback, revision: p.inputBindingRevision.Load()}
+	p.ttsMu.RUnlock()
+	ctx = context.WithValue(events.WithResponse(ctx, admitted.Envelope), responseVoicesKey{}, voices)
 	ctx = context.WithValue(ctx, responseMentionsKey{}, admitted.AgentMentionControl)
 	p.bindBrainInfo()
 	return ctx

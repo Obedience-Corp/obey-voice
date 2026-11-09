@@ -17,6 +17,7 @@ type slashCommandID int
 
 const (
 	commandHelp slashCommandID = iota
+	commandRetry
 	commandClear
 	commandCompact
 	commandSession
@@ -54,6 +55,7 @@ type slashCommand struct {
 // slashCommands is the single source of truth for command execution, help,
 // completion, and the dynamic command palette.
 var slashCommands = []slashCommand{
+	{id: commandRetry, name: "/retry", usage: "/retry", description: "Retry an unanswered request without duplicating input or tool effects"},
 	{id: commandInput, name: "/input", usage: "/input replay N | transcribe N", description: "Replay an original recording or explicitly retry its transcript"},
 	{id: commandHelp, name: "/help", usage: "/help [command]", description: "Show commands or help for one command", aliases: []string{"/?", "/commands"}},
 	{id: commandClear, name: "/clear", usage: "/clear", description: "Clear this conversation", aliases: []string{"/c"}},
@@ -189,6 +191,8 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 	}
 
 	switch command.id {
+	case commandRetry:
+		return m.requestInputRetry()
 	case commandHelp:
 		m.showCommandHelp(args)
 		return m.resumeListening()
