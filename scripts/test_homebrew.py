@@ -11,12 +11,20 @@ class HomebrewRendererTests(PayloadFixture):
         output = self.root / "Formula/obey-voice.rb"
         render(self.output, self.tag, output)
         formula = output.read_text()
-        self.assertIn('version "1.2.3"', formula)
+        self.assertNotIn('  version "', formula)
         for archive in (linux, macos):
             self.assertIn(f"https://github.com/Obedience-Corp/obey-voice/releases/download/{self.tag}/{archive.name}", formula)
             checksum = archive.with_name(archive.name + ".sha256").read_text().split()[0]
             self.assertIn(checksum, formula)
         self.assertNotIn("@@", formula)
+
+    def test_prerelease_keeps_exact_version_override(self):
+        self.tag = "v1.2.3-rc.1"
+        self.payload("linux-amd64")
+        self.payload("macos-arm64")
+        output = self.root / "obey-voice.rb"
+        render(self.output, self.tag, output)
+        self.assertIn('  version "1.2.3-rc.1"', output.read_text())
 
     def test_incomplete_release_does_not_replace_previous_formula(self):
         self.payload("linux-amd64")
