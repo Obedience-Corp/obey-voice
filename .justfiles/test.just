@@ -23,7 +23,7 @@ unit:
     @{{BUILDTOOL}} test
 
 # Managed decision lifecycle, including filesystem-backed startup fixtures.
-# No models or inference dependencies are installed; Python uses only stdlib.
+# No models, Python, or inference dependencies are installed.
 [no-cd]
 decider-lifecycle:
     docker build -t obey-voice-decision-lifecycle:local tests/decider
@@ -37,7 +37,7 @@ decider-lifecycle:
 # Filesystem-free native proof, including SIGKILL and stopped inference workers.
 [no-cd]
 decider-lifecycle-native:
-    GOMAXPROCS=2 go test -mod=readonly -p=2 -race -count=1 -timeout=60s -run '^TestOwnedWorker' ./pkg/voiceagent/decider
+    GOMAXPROCS=2 go test -mod=readonly -p=2 -race -count=1 -timeout=60s -run '^(TestOwnedWorker|TestNativeSupervisor)' ./pkg/voiceagent/decider
 
 # Run tests for a specific package
 [no-cd]

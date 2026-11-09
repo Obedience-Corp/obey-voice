@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
 	"syscall"
 	"testing"
 	"time"
@@ -109,7 +111,7 @@ func (o *ownerFixture) assertGone(t *testing.T) {
 func TestOwnedWorkerStartFailureClosesOwnerPipe(t *testing.T) {
 	// An invalid executable is enough to exercise pipe cleanup, without fixtures
 	// on disk or a Python dependency.
-	cmd := ownedFixtureCommand(t.Context(), "/obey-voice-nonexistent-python")
+	cmd := ownedFixtureCommand(t.Context(), "/obey-voice-nonexistent-worker")
 	listener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
 		t.Fatal(err)
@@ -126,5 +128,39 @@ func TestOwnedWorkerStartFailureClosesOwnerPipe(t *testing.T) {
 			owner.Close()
 		}
 		t.Fatalf("owner=%v error=%v, want failed launch without an owner pipe", owner, err)
+	}
+}
+
+func TestNativeSupervisorRejectsOrdinaryInvocation(t *testing.T) {
+	cmd := exec.CommandContext(t.Context(), os.Args[0], supervisorArgument, os.Args[0], os.Args[0])
+	// No private group or inherited protocol: never terminate the caller's group.
+	if err := cmd.Run(); err == nil {
+		t.Fatal("supervisor accepted an ordinary invocation")
+	}
+}
+
+func TestNativeSupervisorRejectsClosedOwnerBeforeWorkerStart(t *testing.T) {
+	listener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	file, err := listener.File()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	write.Close()
+	cmd := exec.CommandContext(t.Context(), os.Args[0], supervisorArgument, os.Args[0], os.Args[0], "-test.run=^TestOwnedWorkerDescendantHelper$")
+	cmd.Env = append(os.Environ(), "OBEY_DECIDER_DESCENDANT=1")
+	cmd.ExtraFiles = []*os.File{file, read}
+	configureProcess(cmd)
+	if err := cmd.Run(); err == nil {
+		t.Fatal("closed owner allowed worker execution")
 	}
 }
