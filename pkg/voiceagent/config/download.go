@@ -46,6 +46,11 @@ func openDownload(ctx context.Context, url, name string) (*http.Response, error)
 		cancel()
 		return nil, fmt.Errorf("download %s: %w", name, err)
 	}
+	// GitHub release asset API URLs need binary content negotiation. No
+	// account credentials are needed for these pinned public artifacts.
+	if req.URL.Host == "api.github.com" {
+		req.Header.Set("Accept", "application/octet-stream")
+	}
 	resp, err := downloadClient.Do(req)
 	if err != nil {
 		cancel()

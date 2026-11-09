@@ -58,6 +58,13 @@ that must not enter the Obey Voice process tree during synthesis. See
 
 ## Prompt maintenance
 
+Managed decision inference is also native-only: Go supervision and protocol
+adapter, checksum-pinned llama.cpp binaries, and pinned GGUF models. Do not add
+Python/PyTorch setup, conversion, inference, or fallback to an application-owned
+decision path. Legacy environments must not count as ready or be deleted during
+upgrade. Offline conversion/reference qualification may use Python in isolated
+development tooling. See `docs/adr/0005-native-only-managed-decisions.md`.
+
 Store model instructions in named YAML documents under
 `pkg/voiceagent/prompts/defaults/`, using the existing prompt schema and resolver.
 Keep Go code responsible for runtime data and assembly, rather than inline

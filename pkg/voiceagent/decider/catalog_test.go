@@ -59,18 +59,14 @@ func TestDeviceMatrix(t *testing.T) {
 	}
 }
 
-func TestRuntimeProfilesDoNotReuseIncompatibleEnvironment(t *testing.T) {
-	if runtimeIDFor("2b", "cpu") != runtimeIDFor("decider-4b-v3", "cpu") {
-		t.Fatal("compatible models cannot share runtime")
+func TestNativeRuntimeProfiles(t *testing.T) {
+	if RuntimeDir("models", "cpu") == RuntimeDir("models", "mps") {
+		t.Fatal("device profiles collide")
 	}
-	seen := map[string]bool{}
-	for _, model := range []string{"2b", "d1-3b"} {
-		for _, device := range []string{"cpu", "mps", "cuda"} {
-			id := runtimeIDFor(model, device)
-			if seen[id] {
-				t.Fatal("runtime family/device collision")
-			}
-			seen[id] = true
+	for _, platform := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}} {
+		a, err := NativeAsset(platform[0], platform[1], "cpu")
+		if err != nil || len(a.SHA256) != 64 || a.Size <= 0 {
+			t.Fatalf("unverified runtime: %+v %v", a, err)
 		}
 	}
 }

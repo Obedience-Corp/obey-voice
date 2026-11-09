@@ -1,186 +1,348 @@
 package decider
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
-	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
-	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
 )
 
-//go:embed requirements.txt
-var requirements string
-
-//go:embed liquid_server.py
-var liquidServer string
-
-//go:embed requirements-cuda.txt
-var cudaRequirements string
-
-const visionVersion = "0.29.2"
-const pillowVersion = "13.0.0"
-
-const pythonVersion = "3.13.3"
-const torchVersion = "2.14.1"
-
-func defaultDevice() string {
-	device, _ := DeviceFor(runtime.GOOS, runtime.GOARCH, "auto", false)
-	return device
+func defaultDevice() string { d, _ := DeviceFor(runtime.GOOS, runtime.GOARCH, "auto", false); return d }
+func NativePath(modelsDir, device string) string {
+	return filepath.Join(RuntimeDir(modelsDir, device), "llama-server")
 }
-func runtimeID() string { return runtimeIDFor("2b", defaultDevice()) }
-func runtimeIDFor(modelID, device string) string {
-	model, _ := ModelFor(modelID)
-	digest := sha256.Sum256([]byte(RuntimeRevision + pythonVersion + torchVersion + visionVersion + pillowVersion + requirements + cudaRequirements + liquidServer + model.Engine + device))
-	return fmt.Sprintf("runtime-%x", digest[:8])
+
+type installedNative struct {
+	Revision string            `json:"revision"`
+	Archive  string            `json:"archive"`
+	CUDA     string            `json:"cuda,omitempty"`
+	Files    map[string]string `json:"files"`
 }
-func PythonPath(modelsDir string) string { return PythonPathFor(modelsDir, "2b", defaultDevice()) }
-func PythonPathFor(modelsDir, model, device string) string {
-	return filepath.Join(modelsDir, "decider", runtimeIDFor(model, device), "venv", "bin", "python")
+
+func fileHash(ctx context.Context, name string) (string, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	buf := make([]byte, 128<<10)
+	for {
+		if err = ctx.Err(); err != nil {
+			return "", err
+		}
+		n, e := f.Read(buf)
+		if n > 0 {
+			_, _ = h.Write(buf[:n])
+		}
+		if e == io.EOF {
+			break
+		}
+		if e != nil {
+			return "", e
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
-func PythonReady(modelsDir string) bool { return PythonReadyFor(modelsDir, "2b", defaultDevice()) }
-func PythonReadyFor(modelsDir, model, device string) bool {
+func NativeReadyFor(modelsDir, model, device string) bool {
+	return verifyNative(context.Background(), modelsDir, model, device) == nil
+}
+func verifyNative(ctx context.Context, modelsDir, model, device string) error {
 	if _, err := ModelFor(model); err != nil {
-		return false
+		return err
 	}
-	root := filepath.Join(modelsDir, "decider", runtimeIDFor(model, device))
-	marker, err := os.ReadFile(filepath.Join(root, "installed"))
-	if err != nil || string(marker) != runtimeIDFor(model, device) {
-		return false
+	a, err := NativeAsset(runtime.GOOS, runtime.GOARCH, device)
+	if err != nil {
+		return err
 	}
-	info, err := os.Stat(PythonPathFor(modelsDir, model, device))
-	return err == nil && !info.IsDir()
+	root := RuntimeDir(modelsDir, device)
+	raw, err := os.ReadFile(filepath.Join(root, "installed.json"))
+	if err != nil {
+		return fmt.Errorf("native runtime setup required: %w", err)
+	}
+	var m installedNative
+	if json.Unmarshal(raw, &m) != nil || m.Revision != RuntimeRevision || m.Archive != a.SHA256 || len(m.Files) == 0 || m.Files["llama-server"] == "" {
+		return fmt.Errorf("invalid native runtime installation")
+	}
+	if a.CUDA != nil && m.CUDA != a.CUDA.SHA256 {
+		return fmt.Errorf("native CUDA runtime setup required")
+	}
+	for name, want := range m.Files {
+		if filepath.Base(name) != name {
+			return fmt.Errorf("invalid native file name")
+		}
+		info, err := os.Lstat(filepath.Join(root, name))
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("native file unavailable: %s", name)
+		}
+		got, err := fileHash(ctx, filepath.Join(root, name))
+		if err != nil {
+			return err
+		}
+		if got != want {
+			return fmt.Errorf("native file checksum mismatch: %s", name)
+		}
+	}
+	info, err := os.Stat(NativePath(modelsDir, device))
+	if err != nil {
+		return err
+	}
+	if info.Mode()&0111 == 0 {
+		return fmt.Errorf("native worker is not executable")
+	}
+	return nil
 }
 
-// EnsurePython uses a private managed interpreter and environment. It never
-// changes the user's Python, shell profile or package installation. Downloads
-// are an explicit setup operation; normal inference invokes Python directly.
-func EnsurePython(ctx context.Context, modelsDir string, progress func(string)) error {
-	return EnsurePythonFor(ctx, modelsDir, "2b", defaultDevice(), progress)
-}
-func EnsurePythonFor(ctx context.Context, modelsDir, modelID, device string, progress func(string)) error {
-	model, err := ModelFor(modelID)
+// EnsureNativeFor consumes only already-downloaded, pinned native archives.
+// There is no interpreter, package manager, conversion or source build here.
+func EnsureNativeFor(ctx context.Context, modelsDir, model, device string, progress func(string)) error {
+	if _, err := ModelFor(model); err != nil {
+		return err
+	}
+	device, err := ResolveDevice(ctx, device)
 	if err != nil {
 		return err
 	}
-	device, err = ResolveDevice(ctx, device)
+	a, err := NativeAsset(runtime.GOOS, runtime.GOARCH, device)
 	if err != nil {
 		return err
 	}
-	absolute, err := filepath.Abs(modelsDir)
-	if err != nil {
-		return fmt.Errorf("resolve decision models directory: %w", err)
-	}
-	modelsDir = absolute
-	if _, _, err := UVAsset(runtime.GOOS, runtime.GOARCH); err != nil {
+	parent := filepath.Join(modelsDir, "decider")
+	if err = os.MkdirAll(parent, 0700); err != nil {
 		return err
 	}
-	root := filepath.Join(modelsDir, "decider", runtimeIDFor(modelID, device))
-	if err := os.MkdirAll(root, 0700); err != nil {
-		return fmt.Errorf("create decision runtime: %w", err)
-	}
-	release, err := installLock(ctx, filepath.Join(root, "install.lock"))
+	release, err := installLock(ctx, filepath.Join(parent, "native-install.lock"))
 	if err != nil {
 		return err
 	}
 	defer release()
-	if PythonReadyFor(modelsDir, modelID, device) {
+	if verifyNative(ctx, modelsDir, model, device) == nil {
 		return nil
 	}
-	if model.Engine == "decider" {
-		source, err := os.Open(SourcePath(modelsDir))
-		if err != nil {
-			return fmt.Errorf("open decision runtime source: %w", err)
-		}
-		hash := sha256.New()
-		_, err = io.Copy(hash, source)
-		_ = source.Close()
-		if err != nil {
-			return fmt.Errorf("read decision runtime source: %w", err)
-		}
-		if fmt.Sprintf("%x", hash.Sum(nil)) != RuntimeSHA256 {
-			return fmt.Errorf("decision runtime source checksum mismatch")
-		}
+	if progress != nil {
+		progress("Installing verified native decision runtime")
 	}
-	log, err := os.OpenFile(filepath.Join(root, "install.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	stage, err := os.MkdirTemp(parent, ".native-*")
 	if err != nil {
-		return fmt.Errorf("open decision setup log: %w", err)
-	}
-	defer log.Close()
-	uv := filepath.Join(UVDir(modelsDir), "uv")
-	if err := os.WriteFile(filepath.Join(root, "requirements.txt"), []byte(requirements), 0600); err != nil {
 		return err
 	}
-	run := func(stage string, args ...string) error {
-		if progress != nil {
-			progress(stage)
+	defer os.RemoveAll(stage)
+	for _, asset := range []*RuntimeAsset{&a, a.CUDA} {
+		if asset == nil {
+			continue
 		}
-		cmd := exec.CommandContext(ctx, uv, append([]string{"--no-config", "--no-progress"}, args...)...)
-		cmd.Dir = root
-		cmd.Env = append(cleanEnvironment(), "UV_PYTHON_INSTALL_DIR="+filepath.Join(modelsDir, "decider", "python"), "UV_CACHE_DIR="+filepath.Join(modelsDir, "decider", "cache"), "UV_KEYRING_PROVIDER=disabled")
-		cmd.Stdout, cmd.Stderr = log, log
-		configureProcess(cmd)
-		if err := cmd.Run(); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
+		archive := RuntimeArchivePath(modelsDir, *asset)
+		got, err := fileHash(ctx, archive)
+		if err != nil {
+			return err
+		}
+		if got != asset.SHA256 {
+			return fmt.Errorf("native archive checksum mismatch: %s", asset.Name)
+		}
+		target := stage
+		if asset == a.CUDA {
+			target, err = os.MkdirTemp(parent, ".cuda-*")
+			if err != nil {
+				return err
 			}
-			return fmt.Errorf("%s: %w (details: %s)", stage, err, log.Name())
+			defer os.RemoveAll(target)
 		}
-		return nil
-	}
-	if err := run("Installing private Python", "venv", "--managed-python", "--python", pythonVersion, "--no-project", "--allow-existing", filepath.Join(root, "venv")); err != nil {
-		return err
-	}
-	python := PythonPathFor(modelsDir, modelID, device)
-	if err := run("Installing decision dependencies", "pip", "install", "--python", python, "--no-deps", "--default-index", "https://pypi.org/simple", "-r", filepath.Join(root, "requirements.txt")); err != nil {
-		return err
-	}
-	index := "https://pypi.org/simple"
-	if runtime.GOOS == "linux" && device != "cuda" {
-		index = "https://download.pytorch.org/whl/cpu"
-	}
-	if err := run("Installing local inference engine", "pip", "install", "--python", python, "--no-deps", "--default-index", index, "torch=="+torchVersion, "torchvision=="+visionVersion); err != nil {
-		return err
-	}
-	if err := run("Installing image dependencies", "pip", "install", "--python", python, "--no-deps", "--default-index", "https://pypi.org/simple", "pillow=="+pillowVersion); err != nil {
-		return err
-	}
-	if device == "cuda" {
-		cudaPath := filepath.Join(root, "requirements-cuda.txt")
-		if err := os.WriteFile(cudaPath, []byte(cudaRequirements), 0600); err != nil {
+		if err = extractNative(ctx, archive, target); err != nil {
 			return err
 		}
-		if err := run("Installing CUDA dependencies", "pip", "install", "--python", python, "--no-deps", "--default-index", "https://pypi.org/simple", "-r", cudaPath); err != nil {
-			return err
+		if target != stage {
+			entries, err := os.ReadDir(target)
+			if err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				name := entry.Name()
+				if name == "LICENSE" {
+					name = "CUDA-LICENSE"
+				}
+				dst := filepath.Join(stage, name)
+				if _, err = os.Lstat(dst); err == nil {
+					return fmt.Errorf("duplicate CUDA runtime file %s", name)
+				} else if !os.IsNotExist(err) {
+					return err
+				}
+				if err = os.Rename(filepath.Join(target, entry.Name()), dst); err != nil {
+					return err
+				}
+			}
 		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "liquid_server.py"), []byte(liquidServer), 0600); err != nil {
+	files := map[string]string{}
+	entries, err := os.ReadDir(stage)
+	if err != nil {
 		return err
 	}
-	sourceURL := (&url.URL{Scheme: "file", Path: SourcePath(modelsDir)}).String()
-	if model.Engine == "decider" {
-		if err := run("Installing decision server", "pip", "install", "--python", python, "--no-deps", "--no-build-isolation", "decider-ai[serve] @ "+sourceURL); err != nil {
+	for _, entry := range entries {
+		hash, err := fileHash(ctx, filepath.Join(stage, entry.Name()))
+		if err != nil {
 			return err
 		}
+		files[entry.Name()] = hash
 	}
-	if err := run("Verifying decision environment", "pip", "check", "--python", python, "--offline"); err != nil {
+	if files["llama-server"] == "" {
+		return fmt.Errorf("native archive lacks llama-server")
+	}
+	installed := installedNative{Revision: RuntimeRevision, Archive: a.SHA256, Files: files}
+	if a.CUDA != nil {
+		installed.CUDA = a.CUDA.SHA256
+	}
+	marker, err := json.Marshal(installed)
+	if err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
+	if err = os.WriteFile(filepath.Join(stage, "installed.json"), marker, 0600); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(root, "installed"), []byte(runtimeIDFor(modelID, device)), 0600)
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+	root := RuntimeDir(modelsDir, device)
+	old := root + ".previous"
+	if err = os.RemoveAll(old); err != nil {
+		return err
+	}
+	if _, err = os.Stat(root); err == nil {
+		if err = os.Rename(root, old); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err = os.Rename(stage, root); err != nil {
+		_ = os.Rename(old, root)
+		return fmt.Errorf("publish native runtime: %w", err)
+	}
+	return os.RemoveAll(old)
 }
 
-// Optional local processes inherit no provider credentials or Python/uv user
-// configuration. Library paths and locale remain available for native loading.
+// Upstream archives contain shared-library links. Materialize only links to
+// regular files within the verified archive instead of creating filesystem
+// symlinks. All runtime libraries live alongside the worker for relocation.
+func extractNative(ctx context.Context, archive, dest string) error {
+	f, err := os.Open(archive)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	links := map[string]string{}
+	seen := map[string]bool{}
+	total := int64(0)
+	for {
+		if err = ctx.Err(); err != nil {
+			return err
+		}
+		h, e := tr.Next()
+		if e == io.EOF {
+			break
+		}
+		if e != nil {
+			return e
+		}
+		clean := path.Clean(h.Name)
+		if path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
+			return fmt.Errorf("unsafe native archive path")
+		}
+		if h.Typeflag == tar.TypeDir || h.Typeflag == tar.TypeXGlobalHeader || h.Typeflag == tar.TypeXHeader {
+			continue
+		}
+		name := path.Base(clean)
+		if name != "llama-server" && !strings.HasPrefix(name, "lib") && name != "LICENSE" {
+			continue
+		}
+		if seen[name] {
+			return fmt.Errorf("duplicate native archive file %s", name)
+		}
+		seen[name] = true
+		if h.Typeflag == tar.TypeSymlink || h.Typeflag == tar.TypeLink {
+			target := path.Clean(path.Join(path.Dir(clean), h.Linkname))
+			if h.Typeflag == tar.TypeLink {
+				target = path.Clean(h.Linkname)
+			}
+			if path.IsAbs(h.Linkname) || target == ".." || strings.HasPrefix(target, "../") {
+				return fmt.Errorf("unsafe native library link")
+			}
+			links[name] = path.Base(target)
+			continue
+		}
+		if h.Typeflag != tar.TypeReg {
+			return fmt.Errorf("unsupported native archive entry")
+		}
+		total += h.Size
+		if h.Size < 0 || total > 4<<30 {
+			return fmt.Errorf("native archive exceeds size limit")
+		}
+		out, err := os.OpenFile(filepath.Join(dest, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, os.FileMode(h.Mode)&0777)
+		if err != nil {
+			return err
+		}
+		_, err = io.CopyN(out, tr, h.Size)
+		closeErr := out.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	for len(links) > 0 {
+		progress := false
+		for name, target := range links {
+			if _, pending := links[target]; pending {
+				continue
+			}
+			src, err := os.Open(filepath.Join(dest, target))
+			if err != nil {
+				return fmt.Errorf("native library target: %w", err)
+			}
+			info, err := src.Stat()
+			if err != nil {
+				src.Close()
+				return err
+			}
+			out, err := os.OpenFile(filepath.Join(dest, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+			if err != nil {
+				src.Close()
+				return err
+			}
+			_, err = io.Copy(out, src)
+			src.Close()
+			ce := out.Close()
+			if err != nil {
+				return err
+			}
+			if ce != nil {
+				return ce
+			}
+			delete(links, name)
+			progress = true
+		}
+		if !progress {
+			return fmt.Errorf("cyclic native library links")
+		}
+	}
+	return nil
+}
 func cleanEnvironment() []string {
-	allowed := map[string]bool{"HOME": true, "PATH": true, "TMPDIR": true, "LANG": true, "LC_ALL": true, "LD_LIBRARY_PATH": true, "DYLD_LIBRARY_PATH": true, "SYSTEMROOT": true}
+	allowed := map[string]bool{"HOME": true, "PATH": true, "TMPDIR": true, "LANG": true, "LC_ALL": true, "SYSTEMROOT": true}
 	var env []string
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
@@ -188,5 +350,5 @@ func cleanEnvironment() []string {
 			env = append(env, entry)
 		}
 	}
-	return append(env, "PYTHONNOUSERSITE=1", "HF_HUB_DISABLE_TELEMETRY=1", "DO_NOT_TRACK=1")
+	return append(env, "DO_NOT_TRACK=1")
 }

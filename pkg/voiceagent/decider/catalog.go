@@ -26,13 +26,13 @@ func (m Model) Details() string {
 	if m.Engine == "liquid" {
 		note = "; LFM license: commercial restrictions apply"
 	}
-	return fmt.Sprintf("%.1f GiB download · ~%d GiB GPU memory (CPU may need more) · %s%s", float64(m.DownloadBytes())/(1<<30), m.MemoryGiB, m.License, note)
+	return fmt.Sprintf("%.1f GiB download · ~%d GiB memory planning estimate (context/device dependent) · %s%s", float64(m.DownloadBytes())/(1<<30), m.MemoryGiB, m.License, note)
 }
 
 // DeviceFor validates the platform matrix without doing I/O. Auto is resolved
 // using a bounded host probe at preparation time; it never chooses a model.
 func DeviceFor(goos, arch, requested string, cuda bool) (string, error) {
-	if _, _, err := UVAsset(goos, arch); err != nil {
+	if _, err := NativeAsset(goos, arch, "cpu"); err != nil {
 		return "", err
 	}
 	if requested == "" {
