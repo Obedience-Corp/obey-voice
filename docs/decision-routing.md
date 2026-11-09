@@ -86,6 +86,14 @@ Python environment. Initial setup downloads public model/runtime dependencies.
 Subsequent inference runs locally with offline model loading and a private
 loopback listener. Setup does not alter the user's Python installation.
 
+Each managed decision server has an independent supervisor tied to its owning
+Obey Voice process by an inherited lifetime pipe. If the app crashes or is
+force-quit, the supervisor terminates that server and its subprocesses, including
+a worker stuck in inference. Normal cancellation also stops the owned process
+group. Other sessions' decision servers, external endpoints, and Ollama models
+have separate lifetimes. This protection applies to newly started managed
+servers; upgrading does not terminate orphaned workers from older versions.
+
 The original `2b` and `0.8b` IDs keep their pinned weights. `2b` remains the
 default, and decision shortcuts remain off until enabled. New catalog entries
 are experimental alternatives, not automatic upgrades. Settings display download

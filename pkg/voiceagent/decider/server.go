@@ -85,17 +85,16 @@ func StartFor(ctx context.Context, modelsDir, tier, device string) (*Server, err
 		module = "liquid_server:app"
 	}
 	cmd := exec.CommandContext(processCtx, PythonPathFor(modelsDir, tier, device), "-m", "uvicorn", module, "--fd", "3", "--no-access-log")
-	cmd.ExtraFiles = []*os.File{fd}
 	cmd.Dir = filepath.Join(modelsDir, "decider", runtimeIDFor(tier, device))
 	cmd.Env = append(cleanEnvironment(), "DECIDER_MODEL="+modelDir, "DECIDER_DEVICE="+device, "DECIDER_COMPILE=0", "DECIDER_FP8=0", "HF_HUB_OFFLINE=1", "TRANSFORMERS_OFFLINE=1", "HF_HOME="+filepath.Join(modelsDir, "decider", "hf"))
 	cmd.Stdout, cmd.Stderr = log, log
-	configureProcess(cmd)
-	if err := cmd.Start(); err != nil {
+	owner, err := startOwnedProcess(cmd, fd)
+	if err != nil {
 		cancel()
 		log.Close()
 		return nil, fmt.Errorf("start decision runtime: %w", err)
 	}
-	go func() { _ = cmd.Wait(); _ = log.Close(); close(s.done) }()
+	go func() { _ = cmd.Wait(); _ = owner.Close(); _ = log.Close(); close(s.done) }()
 	// Close both parent descriptors now; only the owned child serves this port.
 	_ = listener.Close()
 	_ = fd.Close()
