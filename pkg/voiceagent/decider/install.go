@@ -232,6 +232,13 @@ func EnsureNativeFor(ctx context.Context, modelsDir, model, device string, progr
 // regular files within the verified archive instead of creating filesystem
 // symlinks. All runtime libraries live alongside the worker for relocation.
 func extractNative(ctx context.Context, archive, dest string) error {
+	// Confine every archive-derived filesystem operation to the staging root,
+	// independently of the lexical checks and basename flattening below.
+	root, err := os.OpenRoot(dest)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	f, err := os.Open(archive)
 	if err != nil {
 		return err
@@ -290,7 +297,7 @@ func extractNative(ctx context.Context, archive, dest string) error {
 		if h.Size < 0 || total > 4<<30 {
 			return fmt.Errorf("native archive exceeds size limit")
 		}
-		out, err := os.OpenFile(filepath.Join(dest, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, os.FileMode(h.Mode)&0777)
+		out, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, os.FileMode(h.Mode)&0777)
 		if err != nil {
 			return err
 		}
@@ -309,7 +316,7 @@ func extractNative(ctx context.Context, archive, dest string) error {
 			if _, pending := links[target]; pending {
 				continue
 			}
-			src, err := os.Open(filepath.Join(dest, target))
+			src, err := root.Open(target)
 			if err != nil {
 				return fmt.Errorf("native library target: %w", err)
 			}
@@ -318,7 +325,7 @@ func extractNative(ctx context.Context, archive, dest string) error {
 				src.Close()
 				return err
 			}
-			out, err := os.OpenFile(filepath.Join(dest, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+			out, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
 			if err != nil {
 				src.Close()
 				return err
