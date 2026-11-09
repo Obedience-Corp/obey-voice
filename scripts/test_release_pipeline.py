@@ -277,6 +277,18 @@ class ReleasePipelineTests(unittest.TestCase):
 
 
 class WorkflowSelectionTests(unittest.TestCase):
+    def test_formula_update_uses_contents_put_with_existing_blob_guard(self):
+        github = GitHub()
+        with patch.object(github, "file", return_value=("old formula", "old-blob")), \
+                patch("release_service.command", return_value=json.dumps({"commit": {"sha": SOURCE}})) as call:
+            self.assertEqual(github.update_formula(REPO, "release", "new formula"), SOURCE)
+            args = call.call_args.args
+            self.assertIn("--method", args)
+            self.assertEqual(args[args.index("--method") + 1], "PUT")
+            request = json.loads(call.call_args.kwargs["data"])
+            self.assertEqual(request["sha"], "old-blob")
+            self.assertEqual(request["branch"], "release")
+
     def test_verify_does_not_reuse_successful_build_run(self):
         github = GitHub(timeout=10, poll=0)
         runs = [[{"databaseId": 1, "headSha": SOURCE, "event": "workflow_dispatch",

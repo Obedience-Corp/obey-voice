@@ -35,8 +35,10 @@ class GitHub:
     def gh(self, *args):
         return command("gh", *args)
 
-    def api(self, path, body=None, optional=False):
+    def api(self, path, body=None, optional=False, method=None):
         args = ["gh", "api", path]
+        if method:
+            args.extend(["--method", method])
         if body is not None:
             args.extend(["--input", "-"])
         try:
@@ -121,7 +123,7 @@ class GitHub:
                 "content": base64.b64encode(text.encode()).decode()}
         if blob:
             body["sha"] = blob
-        result = self.api(f"repos/{repo}/contents/{path}", body)
+        result = self.api(f"repos/{repo}/contents/{path}", body, method="PUT")
         return result["commit"]["sha"]
 
     def pr(self, repo, branch, tag):
