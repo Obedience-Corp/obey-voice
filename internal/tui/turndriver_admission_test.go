@@ -246,17 +246,50 @@ type voiceFailureTerminalHarness struct {
 	retryScheduled bool
 }
 
+func TestVoiceFailureTerminalHarnessStopsAfterThirdResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		msg  tea.Msg
+	}{
+		{"retry tick", voiceRetryMsg{}},
+		{"background recovery tick", backgroundRecoveryMsg{}},
+		{"background ready notification", backgroundReadyMsg{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := sizedConversation(t, 80, 24)
+			model.startConversation(conversationDeps{
+				runner: &fakeTurnRunner{}, bus: events.NewBus(), voice: true, ctx: t.Context(),
+			})
+			// The third response failure has completed, but its error event has
+			// not crossed the terminal bridge yet. Exercise each queued wakeup
+			// deterministically instead of relying on the 500ms timer racing it.
+			model.turnState = turnIdle
+			harness := &voiceFailureTerminalHarness{model: model, completed: 3}
+			_, cmd := harness.Update(tc.msg)
+			if cmd != nil || harness.model.turnState != turnIdle {
+				t.Fatal("terminal proof dispatched beyond its three scripted turns")
+			}
+			if !harness.model.voiceEnabled {
+				t.Fatal("terminal proof changed the voice-enabled result being observed")
+			}
+		})
+	}
+}
+
 func (h *voiceFailureTerminalHarness) Init() tea.Cmd {
 	return h.model.startConversation(h.model.deps)
 }
 
 func (h *voiceFailureTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Bubble Tea may already have queued a retry tick while the third response
-	// error is crossing the event bridge. The proof observes that third retry
-	// was scheduled, but must not execute a fourth fixture turn while waiting
-	// for the third error to render.
-	if _, ok := msg.(voiceRetryMsg); ok && h.completed >= 3 && !h.wantFallback {
-		return h, nil
+	// Retry and background-recovery wakeups can both resume an idle listener.
+	// Once the three scripted response failures finish, keep draining the event
+	// bridge for rendering without dispatching another fixture turn. Leave the
+	// model's voice-enabled state intact: that is the result this proof checks.
+	if h.completed >= 3 && !h.wantFallback {
+		switch msg.(type) {
+		case voiceRetryMsg, backgroundRecoveryMsg, backgroundReadyMsg:
+			return h, nil
+		}
 	}
 	var cmd tea.Cmd
 	h.model, cmd = h.model.Update(msg)
