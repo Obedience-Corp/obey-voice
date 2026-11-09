@@ -14,6 +14,10 @@ import (
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
+	// RetryInput resumes a validated failed input without appending another user turn.
+	RetryInput bool
+	// InputBindingRevision fences explicit retries across host binding changes.
+	InputBindingRevision uint64
 	// HarnessRouting describes the host's conversational path after classification
 	// or routing-context recovery. It is never a recorded user instruction.
 	HarnessRouting *HarnessRouting

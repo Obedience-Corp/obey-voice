@@ -205,9 +205,15 @@ func encodeEvent(e events.Event) map[string]any {
 			env["truncated"] = o.Truncated
 		}
 	case events.Error:
+		if e.ProviderStatus != nil {
+			env["provider_status"] = e.ProviderStatus
+		}
 		env["stage"] = e.Stage
 		env["message"] = e.Message
 	case events.Info:
+		if e.ProviderStatus != nil {
+			env["provider_status"] = e.ProviderStatus
+		}
 		env["message"] = e.Message
 	case events.WorkStateChanged:
 		env["work"] = e.Snapshot

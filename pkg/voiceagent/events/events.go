@@ -566,7 +566,8 @@ func (e ConversationCleared) eventType() string { return "conversation_cleared" 
 
 // Error carries an error message for display.
 type Error struct {
-	Trace *TraceContext `json:"trace,omitempty"`
+	ProviderStatus *ProviderStatus `json:"provider_status,omitempty"`
+	Trace          *TraceContext   `json:"trace,omitempty"`
 
 	Stage   string
 	Message string
@@ -588,7 +589,8 @@ const StageTTSFallback = "tts-fallback"
 
 // Info carries an informational message.
 type Info struct {
-	Trace *TraceContext `json:"trace,omitempty"`
+	ProviderStatus *ProviderStatus `json:"provider_status,omitempty"`
+	Trace          *TraceContext   `json:"trace,omitempty"`
 
 	Message string
 }

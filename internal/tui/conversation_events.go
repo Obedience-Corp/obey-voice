@@ -153,6 +153,11 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.updateInputTranscript(e)
 
 	case events.ThinkingStarted:
+		if e.Envelope != nil {
+			m.providerResponseID = e.Envelope.ResponseID
+		} else if e.Trace != nil && e.Trace.ResponseID != nil {
+			m.providerResponseID = *e.Trace.ResponseID
+		}
 		// Start a fresh streaming buffer; a prior turn's leftover (e.g. after an
 		// interrupt that skipped ResponseReady) must not bleed into this reply.
 		// Re-render so any stale live partial leaves the viewport immediately.
@@ -302,6 +307,8 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 
 	case events.ConversationCleared:
+		m.providerHealth = nil
+		m.pendingInputRetry = false
 		m.contextKnown = false
 		m.contextBudget = events.ContinuityBudget{}
 		m.contextFill = 0
@@ -355,6 +362,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 
 	case events.Error:
+		m.applyProviderStatus(e.ProviderStatus, e.Trace)
 		// The Activity pane is the durable surface — it must carry the real
 		// message, not just the stage name. The status line clears on the next
 		// event; an opaque "error brain" entry is how degraded qwen turns went
@@ -372,6 +380,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.setStatus(notice, true)
 
 	case events.Info:
+		m.applyProviderStatus(e.ProviderStatus, e.Trace)
 		m.appendActivity("info", e.Message, 0)
 		m.appendTranscript(dimStyle.Render("  " + e.Message))
 

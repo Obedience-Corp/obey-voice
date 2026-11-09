@@ -122,6 +122,9 @@ func (m *conversationModel) applySelectionSnapshot(selection events.PersonaSelec
 	if selection.Revision == m.selectionRevision && m.selection.PersonaID != "" && selection.BindingHash != "" && selection.BindingHash != m.selection.BindingHash {
 		return
 	}
+	if m.selection.BindingHash != selection.BindingHash || m.selection.PersonaID != selection.PersonaID {
+		m.providerHealth = nil
+	}
 	m.selection = selection
 	m.selectionRevision = selection.Revision
 	if selection.DisplayName != "" {

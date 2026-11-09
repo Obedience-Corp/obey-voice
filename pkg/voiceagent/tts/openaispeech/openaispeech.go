@@ -19,11 +19,13 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/phonon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
@@ -41,12 +43,15 @@ const probeTimeout = 3 * time.Second
 
 // Provider is the OpenAI-compatible speech client.
 type Provider struct {
-	base    string
-	model   string
-	voice   string
-	apiKey  string
-	timeout time.Duration
-	client  *http.Client
+	statusMu    sync.Mutex
+	statusSink  func(context.Context, events.Info)
+	healthState string
+	base        string
+	model       string
+	voice       string
+	apiKey      string
+	timeout     time.Duration
+	client      *http.Client
 
 	alive  atomic.Bool
 	detail string
@@ -235,10 +240,12 @@ func (p *Provider) SynthesizeRequest(ctx context.Context, req tts.SynthesisReque
 		}
 		for _, piece := range SplitForLimit(prepared, MaxInputChars) {
 			if err := p.speakInto(ctx, stream, piece, voice); err != nil {
+				p.reportProviderResult(ctx, err)
 				stream.CloseWithError(err)
 				return
 			}
 		}
+		p.reportProviderResult(ctx, nil)
 		stream.Close()
 	}()
 

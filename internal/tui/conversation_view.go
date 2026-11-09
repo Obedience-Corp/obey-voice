@@ -65,6 +65,9 @@ func (m conversationModel) workCue() string {
 // the selectable part of the header; its key hint also works without a mouse.
 func (m conversationModel) headerRight() (right string, cueWidth int) {
 	cue := m.workCue()
+	if warning := m.providerWarning(); warning != "" {
+		return errorStyle.Render(ansi.Truncate(warning, max(20, m.width-2), "…")), 0
+	}
 	if m.voiceMode != anim.ModeIdle {
 		if cue != "" {
 			work := thinkStyle.Render(cue+" · ^W") + "  "

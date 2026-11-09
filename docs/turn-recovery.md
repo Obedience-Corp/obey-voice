@@ -13,6 +13,40 @@ can still be marked `completed (degraded)` so the conversation remains usable.
 Narration failures and automatic worker failure/budget notifications are also
 text-only; asking for job status still produces a normal spoken response.
 
+## Ollama model outages
+
+Ollama can remain reachable while its model worker is unavailable. An eligible
+worker-exit, temporary service refusal, or connection failure gets one automatic
+request retry after a short, cancellable delay. This retry shares the turn's
+deadline and existing request, token, and retry budgets. Requests that already
+delivered text, thinking, tool calls, or completion are not replayed. Compaction
+summaries retain their existing single-attempt behavior.
+
+If recovery fails, the conversation keeps the input and actual error. The TUI
+header and desktop status retain a provider warning while microphone listening
+continues. A healthy microphone, speaker, metadata response, or different model
+does not establish recovery. Successful generation with the affected binding
+clears the warning. Primary OpenAI-compatible speech health is tracked separately:
+a Kokoro fallback can speak a reply while the primary speech provider remains
+unavailable.
+
+After checking or restarting Ollama on its host, type **`/retry`** in the TUI or
+desktop composer to resume the
+last eligible unanswered Ollama input. The command drains listening capture
+before retrying and reuses the existing user turn in chat and saved history.
+It does not append the slash command or another copy of the original input.
+It is available for ordinary text and standard transcribed-voice inputs that
+produced no answer, thinking, or tool effects. Partial replies, tool-using turns,
+group discussions, image attachments, and native audio inputs require a new
+request. New input, history clear/restore, or a changed provider/persona/prompt
+invalidates the old retry. Pending retry actions are not restored after exit.
+
+Obey Voice does not restart shared Ollama instances or switch brain providers
+automatically. Raw diagnostics remain in Chat, Activity, and the existing log;
+runtime errors are never spoken as persona replies.
+
+## Other recovery and usage behavior
+
 Ollama's private route recovery validates the complete JSON decision even when
 the server reports a token-limit stop. A finished, schema-valid object is usable;
 incomplete JSON, trailing content and invalid route fields remain failures. The

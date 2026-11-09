@@ -347,7 +347,11 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m desktopModel) state() DesktopState {
 	c := m.app.conversation
-	state := DesktopState{SessionID: m.rt.SessionID, Name: c.agentName, Status: ansi.Strip(c.status), Error: c.statusErr, Mic: c.voiceEnabled,
+	status, statusErr := c.status, c.statusErr
+	if warning := c.providerWarning(); warning != "" {
+		status, statusErr = warning, true
+	}
+	state := DesktopState{SessionID: m.rt.SessionID, Name: c.agentName, Status: ansi.Strip(status), Error: statusErr, Mic: c.voiceEnabled,
 		VoiceAvailable: m.rt.Voice, OutputAvailable: m.rt.Output, Muted: c.outputMuted || !m.rt.Output, Busy: c.turnState != turnIdle, Recording: c.recordMode(), Thinking: c.streamingThink,
 		Response: c.streamingAgent, InputLevel: c.inputLevel, OutputLevel: c.outputLevel, Workers: m.rt.Pipeline.Workers(), WorkersEnabled: m.rt.Pipeline.WorkersEnabled()}
 	m.outputState(&state)

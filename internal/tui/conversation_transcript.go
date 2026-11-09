@@ -25,6 +25,9 @@ func (m *conversationModel) appendTranscript(lines ...string) {
 }
 
 func (m *conversationModel) clearTranscript() {
+	m.providerHealth = nil
+	m.providerResponseID = ""
+	m.pendingInputRetry = false
 	m.media = mediaState{}
 	m.transcript = nil
 	m.items = nil

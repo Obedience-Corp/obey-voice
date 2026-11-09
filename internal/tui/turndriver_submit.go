@@ -88,6 +88,7 @@ func (m *conversationModel) handleSubmit() tea.Cmd {
 // or text turn. handleVoiceTurnDone / handleTextTurnDone dispatch the text when
 // the cancel drains.
 func (m *conversationModel) beginTextBargeIn(text string) tea.Cmd {
+	m.pendingInputRetry = false
 	m.pendingText = text
 	previous := m.input.Value()
 	m.input.Reset()
@@ -266,6 +267,14 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	wasCanceling := m.turnState == turnVoiceCanceling
 	m.turnState = turnIdle
 
+	if wasCanceling && m.pendingInputRetry {
+		m.pendingInputRetry = false
+		if m.selectionPending() {
+			m.commandError("persona changed; send a new request")
+			return m.resumeListening()
+		}
+		return m.dispatchInputRetry()
+	}
 	if wasCanceling {
 		text := m.pendingText
 		m.pendingText = ""
@@ -373,6 +382,14 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	m.pendingText = ""
 	m.turnState = turnIdle
 
+	if wasCanceling && m.pendingInputRetry {
+		m.pendingInputRetry = false
+		if m.selectionPending() {
+			m.commandError("persona changed; send a new request")
+			return m.resumeListening()
+		}
+		return m.dispatchInputRetry()
+	}
 	if wasCanceling {
 		talk := m.takeTalkTurn()
 		if m.pendingCompact {

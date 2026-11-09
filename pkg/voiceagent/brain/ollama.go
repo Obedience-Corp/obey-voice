@@ -24,6 +24,9 @@ import (
 
 // OllamaBrain implements Provider using the Ollama API with tool calling.
 type OllamaBrain struct {
+	healthMu              sync.Mutex
+	healthState           string
+	inputRetry            *ollamaInputRetry
 	inputTranscripts      sync.Map
 	audioResolver         utterance.Resolver
 	nativeContextIdentity NativeContextIdentity

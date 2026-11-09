@@ -115,6 +115,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		}
 	}
 	if !isContinuation {
+		p.discardInputRetry()
 		p.emitResponse(metrics, events.UserInput{Text: text, Speaker: speakerID, Utterance: metrics.input.Clone()})
 	}
 	original := text

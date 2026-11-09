@@ -59,11 +59,14 @@ type conversationModel struct {
 	items      []chatItem
 	// showThink keeps finalized thinking blocks in the thread. Live streaming
 	// still paints thinking regardless; this flag only rebuilds stored turns.
-	showThink bool
-	activity  []activityEntry
-	status    string
-	statusErr bool
-	jobStatus string
+	showThink          bool
+	activity           []activityEntry
+	status             string
+	statusErr          bool
+	providerHealth     map[string]events.ProviderStatus
+	providerResponseID string
+	pendingInputRetry  bool
+	jobStatus          string
 	// jobs is what the chip knows about each queued or running job, keyed by
 	// id so a spawn queued behind a running worker cannot relabel it;
 	// jobOrder keeps them in queue order.

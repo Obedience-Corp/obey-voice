@@ -90,11 +90,22 @@ func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 // chat issues a chat request with bounded recovery for malformed tool calls
 // before any response is delivered. Required routing tools return a compatibility
 // error when unsupported. Legacy tools and thinking retain their logged fallback.
-func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
+func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) (resultErr error) {
 	if o.audioProjectionBlocked.Load() {
 		return ErrAudioProjection
 	}
+	defer func() {
+		if resultErr != nil {
+			o.healthMu.Lock()
+			retrying := o.healthState == "retrying"
+			o.healthMu.Unlock()
+			if retrying {
+				o.reportProviderState(context.WithoutCancel(ctx), "unavailable")
+			}
+		}
+	}()
 	budget := workerBudgetFromContext(ctx)
+	outageRetried := false
 	parseRetried := false
 	parseRetryPending := false
 	for {
@@ -113,15 +124,41 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 		}
 		var input, output int
 		delivered := false
+		completed := false
 		var callbackErr error
 		err := o.client.Chat(ctx, req, func(resp api.ChatResponse) error {
 			if resp.Done {
+				completed = true
 				input, output = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
 			}
 			delivered = delivered || resp.Message.Content != "" || resp.Message.Thinking != "" || len(resp.Message.ToolCalls) > 0 || resp.Done
 			callbackErr = fn(resp)
 			return callbackErr
 		})
+		if outage := ollamaOutage(err); outage != nil && callbackErr == nil && ctx.Err() == nil {
+			if !delivered && !outageRetried && ctx.Value(disableOutageRetryKey{}) != true {
+				budget.RecordUsage(input, output)
+				if limitErr := budget.Err(); limitErr != nil {
+					o.reportProviderState(ctx, "unavailable")
+					return limitErr
+				}
+				if retryErr := budget.AcquireRetry(ctx); retryErr != nil {
+					o.reportProviderState(ctx, "unavailable")
+					return retryErr
+				}
+				outageRetried = true
+				o.reportProviderState(ctx, "retrying")
+				if waitErr := waitOutageRetry(ctx); waitErr != nil {
+					return waitErr
+				}
+				continue
+			}
+			o.reportProviderState(ctx, "unavailable")
+			outage.Delivered = delivered
+			err = outage
+		} else if err == nil && completed {
+			o.reportProviderState(ctx, "available")
+		}
 		if err != nil && callbackErr == nil && !delivered && !parseRetried && len(req.Tools) > 0 && modelMalformedToolCall(err) {
 			// A parse failure happens after generation, unlike an unsupported
 			// option rejection. Keep the attempt charged, including unknown
