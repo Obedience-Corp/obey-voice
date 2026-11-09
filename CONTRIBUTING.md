@@ -15,6 +15,12 @@ use contributions in proprietary products.
 4. Run `go test ./...`.
 5. Run `just build` for the project build workflow.
 
+For a CLI dev install from your current checkout (including uncommitted edits),
+run `OBEY_VOICE_SKIP_MODELS_ENSURE=1 just install` after code changes. It bundles
+the checkout's native libraries and replaces the installed command without a
+tag, release, or Homebrew update. See [source installation](docs/install.md#from-source)
+for packaging prerequisites and the installed layout.
+
 Voice-mode development requires local microphone and speaker access. Integration tests require Docker or a compatible container runtime.
 
 CI builds and smoke-tests the relocatable Linux archive on every PR and main

@@ -144,5 +144,16 @@ jobs:
         run: |
           just release artifact-test
           just release homebrew-test
+          just install-test
+      - name: Install and reinstall the checkout with bundled libraries
+        env:
+          OBEY_VOICE_SKIP_MODELS_ENSURE: '1'
+        run: |
+          export GOBIN="$RUNNER_TEMP/dev bin"
+          just install
+          just install
+          cd "$RUNNER_TEMP"
+          env -u LD_LIBRARY_PATH "$GOBIN/obey-voice" --version
+          env -u LD_LIBRARY_PATH "$GOBIN/samantha" --help
       # Routine CI validates the archive without retaining a copy on every
       # push. Use Release Artifacts when a downloadable build is needed.

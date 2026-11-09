@@ -100,21 +100,46 @@ Privacy & Security → Microphone.
 ## From source
 
 ```bash
-just install    # Build, sign on macOS when possible, install obey-voice to $GOBIN (+ a `samantha` alias symlink), then `models ensure` for the default STT/TTS/VAD stack
+just install    # Build this checkout, bundle native libraries, install, then ensure models
 ```
 
-For development builds:
+`just install` is also the development install: rerun it after editing code, even
+with uncommitted changes. It builds your checkout locally and bundles the native
+libraries selected by its Go dependencies. No release, tag, Homebrew formula,
+or published Obey Voice binary is needed. The version includes the Git revision
+and `-dirty` when applicable; a `v0.3.0-...` prefix is Git's nearest version tag,
+not a dependency on the v0.3.0 release.
+
+The executable and libraries live together under `$GOBIN/.obey-voice-dev/`
+(default: `$(go env GOPATH)/bin/.obey-voice-dev/`). The `obey-voice` and `samantha`
+commands point there. Installation verifies the new payload before replacing
+the command and removes the previous dev payload after switching. Existing
+release or Homebrew symlink targets are left intact. The installed dev build
+continues to work if the source checkout or Go cache is removed or unmounted.
+Go still needs an accessible module/build cache when compiling the next build.
+
+Supported install hosts are Apple Silicon macOS and x86_64 glibc Linux. In
+addition to Go, a C compiler, and `just`, install Python 3.12+, `curl`, and Bash
+4+. macOS needs Xcode Command Line Tools (`otool`, `install_name_tool`, and
+`codesign`); Linux needs `patchelf` and binutils. The shared native packaging
+step retrieves checksum-pinned dependency license notices from upstream.
+
+For the usual edit/reinstall loop with your existing models:
+
+```bash
+OBEY_VOICE_SKIP_MODELS_ENSURE=1 just install
+obey voice --version    # Or: obey-voice --version
+```
+
+For running directly from the checkout (requires its Go cache):
 
 ```bash
 just build
 just run -- --text
 ```
 
-On Linux, `just install` is a source/developer install and retains the native
-libraries supplied through the Go module cache. Use the release archive when
-you need a relocatable installation that remains valid after cleaning that
-cache. Set `OBEY_VOICE_SKIP_MODELS_ENSURE=1` to skip the model download (binary
-only). Qwen3-TTS is opt-in (`obey-voice models ensure --tts`): linux/amd64
+Set `OBEY_VOICE_SKIP_MODELS_ENSURE=1` to skip model setup; existing settings and
+model caches are reused. Qwen3-TTS is opt-in (`obey-voice models ensure --tts`): linux/amd64
 downloads the CPU package from `qwen3-tts-native` v0.1.1. It is slower than
 Kokoro on a handheld; NVIDIA boxes should point `qwen_tts_native_url` at a
 `linux-amd64-cuda` tarball when one is published. With
