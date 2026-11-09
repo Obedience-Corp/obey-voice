@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"time"
@@ -43,7 +44,9 @@ func ollamaOutage(err error) *ProviderOutage {
 		return &ProviderOutage{Kind: "model worker failed", Err: err}
 	}
 	var network *net.OpError
-	if errors.As(err, &network) {
+	// A response body cut short after its headers is a transport failure too;
+	// the Ollama client returns unexpected EOF without wrapping a net.OpError.
+	if errors.As(err, &network) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return &ProviderOutage{Kind: "connection unavailable", Err: err}
 	}
 	return nil

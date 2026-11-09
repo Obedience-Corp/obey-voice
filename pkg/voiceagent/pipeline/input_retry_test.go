@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 )
 
 func TestInputRetryReusesPersistedUserTurn(t *testing.T) {
-	for _, mode := range []string{"recover", "partial", "clear", "new input", "rebound", "restore"} {
+	for _, mode := range []string{"recover", "partial", "clear", "new input", "rebound", "restore", "truncated", "truncated partial"} {
 		t.Run(mode, func(t *testing.T) {
 			var healthy atomic.Bool
 			var calls atomic.Int32
@@ -26,6 +27,15 @@ func TestInputRetryReusesPersistedUserTurn(t *testing.T) {
 				}
 				calls.Add(1)
 				if !healthy.Load() {
+					if strings.HasPrefix(mode, "truncated") {
+						w.Header().Set("Content-Length", "10000")
+						w.WriteHeader(http.StatusOK)
+						if mode == "truncated partial" {
+							_, _ = fmt.Fprintln(w, `{"message":{"role":"assistant","content":"Partial answer."}}`)
+						}
+						w.(http.Flusher).Flush()
+						return
+					}
 					if mode == "partial" {
 						_, _ = fmt.Fprintln(w, `{"message":{"role":"assistant","content":"Partial answer."}}`)
 					} else {
@@ -44,7 +54,7 @@ func TestInputRetryReusesPersistedUserTurn(t *testing.T) {
 						users++
 					}
 				}
-				if mode == "recover" && users != 1 {
+				if (mode == "recover" || mode == "truncated") && users != 1 {
 					t.Errorf("wire user entries=%d", users)
 				}
 				_, _ = fmt.Fprintln(w, `{"message":{"role":"assistant","content":"Recovered answer."},"done":true,"done_reason":"stop"}`)
@@ -78,7 +88,7 @@ func TestInputRetryReusesPersistedUserTurn(t *testing.T) {
 				}
 			}
 			err = p.RetryLastTurn(t.Context())
-			if mode != "recover" {
+			if mode != "recover" && mode != "truncated" {
 				if err == nil {
 					t.Fatal("unsafe or expired retry dispatched")
 				}
