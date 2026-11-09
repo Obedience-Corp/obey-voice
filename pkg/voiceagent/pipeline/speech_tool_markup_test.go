@@ -70,3 +70,19 @@ func TestStreamResponseReportsRawToolMarkupWithoutReplyText(t *testing.T) {
 		t.Fatalf("reply=%q interrupted=%v err=%v errors=%d degraded=%v", reply, interrupted, err, errorsSeen, metrics.degraded)
 	}
 }
+
+func TestSpeechProjectionRejectsAtemMarkup(t *testing.T) {
+	fixture := `<atem:function_calls>
+<atem:invoke name="route">
+<atem:parameter name="kind">spawn</atem:parameter>
+<atem:parameter name="source">user</atem:parameter>
+</atem:invoke>
+</atem:function_calls>`
+	for split := 0; split <= len(fixture); split++ {
+		p := NewSpeechProjection()
+		a, b, c := p.Speak(fixture[:split]), p.Speak(fixture[split:]), p.Flush()
+		if a.Heard() || b.Heard() || c.Heard() || a.Filtered+b.Filtered+c.Filtered != "" || !errors.Is(p.Err(), textclean.ErrRawToolMarkup) {
+			t.Fatalf("split %d: leaked or unreported markup: %+v %+v %+v err=%v", split, a, b, c, p.Err())
+		}
+	}
+}

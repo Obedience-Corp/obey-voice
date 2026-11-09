@@ -89,7 +89,7 @@ func (f *ToolMarkupFilter) Flush() string {
 	pending := f.pending
 	f.pending = ""
 	lower := strings.ToLower(strings.TrimSpace(pending))
-	for _, marker := range []string{"<tool_call", "<tool_calls", "</tool_call", "</tool_calls", "</function", "</parameter"} {
+	for _, marker := range []string{"<tool_call", "<tool_calls", "</tool_call", "</tool_calls", "</function", "</parameter", "<atem:function_calls", "</atem:function_calls", "<atem:invoke", "</atem:invoke", "<atem:parameter", "</atem:parameter"} {
 		if lower == marker {
 			f.err = ErrRawToolMarkup
 			return ""
@@ -103,7 +103,7 @@ func (f *ToolMarkupFilter) Flush() string {
 // once '=' or a tag delimiter confirms the grammar, no payload is buffered.
 func toolMarkerPrefix(s string) (possible, confirmed bool) {
 	lower := strings.ToLower(s)
-	for _, base := range []string{"<tool_call", "<tool_calls", "</tool_call", "</tool_calls", "</function", "</parameter", "<function", "<parameter"} {
+	for _, base := range []string{"<tool_call", "<tool_calls", "</tool_call", "</tool_calls", "</function", "</parameter", "<function", "<parameter", "<atem:function_calls", "</atem:function_calls", "<atem:invoke", "</atem:invoke", "<atem:parameter", "</atem:parameter"} {
 		if strings.HasPrefix(base, lower) {
 			possible = true
 			continue

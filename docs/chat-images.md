@@ -13,8 +13,10 @@ thread after sending. You can send images with a question or on their own.
 - F4 removes the last draft image. `/image N` opens thread image N, counting from one.
 
 Inline previews use colored half-blocks, so scrolling and tmux work without a terminal
-image protocol. Draft thumbnails scale with the available terminal space. Use F3
-to read screenshot text at full resolution. If the selected model cannot accept
+image protocol. These are low-resolution thumbnails, not native bitmap rendering.
+Area averaging preserves thin detail when shrinking screenshots, and thread previews
+use more rows in taller windows. Draft thumbnails scale with the available terminal
+space. Use F3 to read screenshot text at full resolution. If the selected model cannot accept
 images, one error stays beside the draft; the image and typed text remain available
 to resend after changing models in Settings > Brain. Native bitmap clipboard import
 is supported on macOS and Linux; pasted file paths also work where a bitmap clipboard
@@ -59,7 +61,9 @@ instead of entering speech and chat history. This shares the required routing
 step's single retry; an honest refusal selects `route(kind=chat)` before answering.
 When a live reply omits a route without an unsupported image claim, that retry uses
 the same route schema as constrained JSON instead of asking for another native tool
-call. The host validates the decision before dispatch; a chat decision then gets a
+call. Raw tool-call markup, including `<atem:function_calls>` invocations, is rejected
+before reply text or speech; it is never interpreted as an executable tool call.
+The host validates the decision before dispatch; a chat decision then gets a
 fresh answer. Undecided prose and private routing JSON never become spoken replies.
 The check uses the current request to recognize pronoun-only claims such as
 "I've attached them below" and also validates the answer after `route(kind=chat)`.
@@ -82,7 +86,10 @@ Missing or changed stored assets produce an explicit error. Attachment storage i
 sending a message supplies its images to the configured Ollama server or Codex provider.
 
 Limits: four images per message, 8 MiB per image, 4096 pixels per side, 16 megapixels.
-GIFs allow up to 64 frames and 16 million total frame pixels. Preview caches are bounded;
+GIFs allow up to 64 frames and 16 megapixels of total logical-canvas work
+(canvas width × canvas height × frame count), even when frames only update small
+rectangles. This bounds compositing and preview downsampling; oversized animations
+are rejected before rendering, including previously stored attachments. Preview caches are bounded;
 older images can still be opened at full size. Desktop offers **Load preview** when its
 cache is full. Removing an attachment from a draft does not delete the durable asset.
 
@@ -124,3 +131,41 @@ After `just bundle` in `apps/desktop`, run
 `python3 scripts/ui-fixture.py --agent-images` for a silent native app whose local
 model stub returns both a PNG and an animated GIF. The isolated request log and saved
 session files let reviewers verify input bytes and durable reply references.
+
+### What the recordings establish
+
+The recordings above were refreshed for PR #368 using the real Bubble Tea UI and
+isolated, generated geometric fixtures. They show the current colored-character
+thumbnail renderer, not full-resolution terminal graphics.
+
+| Behavior | Evidence |
+| --- | --- |
+| Pasted PNG path and clipboard GIF appear in the draft | `chat-images.gif`, with both previews visible before sending |
+| GIF playback stops and resumes with F2 | Draft hint changes to **F2 play GIFs** while paused; the animated bar moves again after resume |
+| Input attachments survive sending | Both previews appear beside the submitted user turn |
+| Agent-returned PNG and GIF appear in chat | `agent-images.gif` shows `result.png` and `result.gif` after a fixture worker completion |
+| Returned GIF stops and resumes | The returned bar stops near the end of the recording, then moves again |
+| Video attachments/playback | Not implemented; the attachment importer accepts PNG, JPEG, and GIF only |
+| Native desktop rendering | Not exercised by these terminal recordings; use the desktop fixture above |
+
+The harness injects paste/key events and a deterministic worker result; it does not
+exercise the operating system clipboard reader or prove a live model will create an
+attachment. Tests separately cover import, durable storage, reply references, and
+transport to the desktop projection.
+
+For the refreshed GIF artifacts, FFmpeg frame hashes of just the animated preview
+confirm movement, a still interval, and movement after resume:
+
+| Recording | Playing interval / distinct frames | Paused interval / distinct frames | Resumed interval / distinct frames |
+| --- | --- | --- | --- |
+| `chat-images.gif` | 3.5–4.5 s / 7 | 5.6–6.5 s / 1 | 7.5–8.3 s / 7 |
+| `agent-images.gif` | 12.5–13.5 s / 6 | 14.5–15.5 s / 1 | 16.5 s–end / 2 |
+
+These counts sample at 12 fps and exclude the cursor and other UI. They apply to
+these artifacts; rerunning the asynchronous UI harness can shift the timings.
+Reproduce with `just demo-chat-images` and `just demo-agent-images`. Run the media
+checks with:
+
+```sh
+go test ./internal/tui ./pkg/voiceagent/chatmedia ./pkg/voiceagent/session -run 'Media|Image|GIF|Thumbnail|Durable|Reply' -count=1
+```

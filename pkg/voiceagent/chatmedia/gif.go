@@ -11,11 +11,14 @@ import (
 )
 
 // Inspect frame descriptors before DecodeAll can allocate a hostile animation.
+// Delta rectangles bound decoded pixels, but compositing and downsampling visit
+// the logical canvas for every frame, so both totals must fit the pixel budget.
 func checkGIF(data []byte) (int, error) {
 	bad := errors.New("invalid GIF or animation exceeds 64 frames / 16 million frame pixels")
 	if len(data) < 13 {
 		return 0, bad
 	}
+	canvasPixels := int64(binary.LittleEndian.Uint16(data[6:8])) * int64(binary.LittleEndian.Uint16(data[8:10]))
 	pos := 13
 	if data[10]&128 != 0 {
 		pos += 3 * (1 << ((data[10] & 7) + 1))
@@ -59,6 +62,9 @@ func checkGIF(data []byte) (int, error) {
 			if frames > 64 || pixels > MaxPixels {
 				return 0, bad
 			}
+			if canvasPixels*int64(frames) > MaxPixels {
+				return 0, errors.New("GIF animation exceeds 16 megapixels of total canvas work (width x height x frames)")
+			}
 			if flags&128 != 0 {
 				pos += 3 * (1 << ((flags & 7) + 1))
 			}
@@ -88,7 +94,7 @@ func (s Store) Preview(r Ref) (Preview, error) {
 	}
 	if r.Format != "gif" {
 		img, _, err := image.Decode(bytes.NewReader(data))
-		return Preview{Frames: []image.Image{thumbnail(img, 160, 100)}}, err
+		return Preview{Frames: []image.Image{Thumbnail(img, 160, 100)}}, err
 	}
 	g, err := gif.DecodeAll(bytes.NewReader(data))
 	if err != nil {
@@ -101,7 +107,7 @@ func (s Store) Preview(r Ref) (Preview, error) {
 		draw.Draw(before, before.Bounds(), canvas, image.Point{}, draw.Src)
 		draw.Draw(canvas, frame.Bounds(), frame, frame.Bounds().Min, draw.Over)
 		// Keep only small preview frames, not full-resolution copies of every frame.
-		p.Frames = append(p.Frames, thumbnail(canvas, 160, 100))
+		p.Frames = append(p.Frames, Thumbnail(canvas, 160, 100))
 		p.Delays = append(p.Delays, max(20*time.Millisecond, time.Duration(g.Delay[i])*10*time.Millisecond))
 		if i < len(g.Disposal) {
 			switch g.Disposal[i] {
@@ -113,19 +119,6 @@ func (s Store) Preview(r Ref) (Preview, error) {
 		}
 	}
 	return p, nil
-}
-func thumbnail(src image.Image, w, h int) image.Image {
-	b := src.Bounds()
-	w = min(w, b.Dx())
-	h = min(h, max(1, b.Dy()*w/b.Dx()))
-	w = max(1, min(w, b.Dx()*h/b.Dy()))
-	out := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			out.Set(x, y, src.At(b.Min.X+x*b.Dx()/w, b.Min.Y+y*b.Dy()/h))
-		}
-	}
-	return out
 }
 func (p Preview) Frame(elapsed time.Duration, paused bool) image.Image {
 	if len(p.Frames) == 0 {

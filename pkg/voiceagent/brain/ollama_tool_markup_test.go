@@ -16,7 +16,12 @@ const rawToolTextFixture = "<function=read_file>\n<parameter=path>\n/workspace/c
 
 func TestOllamaRejectsRawToolMarkupWithoutExecutionOrReply(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
-		for _, fixture := range []string{rawToolTextFixture, "<tool_call>", "<tool_call", "</function", "<function=read_file"} {
+		for _, fixture := range []string{`<atem:function_calls>
+<atem:invoke name="route">
+<atem:parameter name="kind">spawn</atem:parameter>
+<atem:parameter name="source">user</atem:parameter>
+</atem:invoke>
+</atem:function_calls>`, rawToolTextFixture, "<tool_call>", "<tool_call", "</function", "<function=read_file"} {
 			t.Run(map[bool]string{false: "full", true: "stream"}[streaming]+"/"+fixture[:min(18, len(fixture))], func(t *testing.T) {
 				var requests, executions atomic.Int32
 				o := repetitionBrain(t, func(w http.ResponseWriter, r *http.Request) {

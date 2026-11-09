@@ -8,8 +8,15 @@ import (
 
 const rawFunctionFixture = "<function=read_file>\n<parameter=path>\n/workspace/campaigns/example\n</parameter>\n</function>\n</tool_call>"
 
+const rawAtemFixture = `<atem:function_calls>
+<atem:invoke name="route">
+<atem:parameter name="kind">spawn</atem:parameter>
+<atem:parameter name="source">user</atem:parameter>
+</atem:invoke>
+</atem:function_calls>`
+
 func TestToolMarkupFilterRejectsInvocationAtEveryChunkBoundary(t *testing.T) {
-	for _, input := range []string{rawFunctionFixture, "<tool_call>" + rawFunctionFixture, "<parameter=path>", "</function>", "</tool_call>", "<function=read_file", "<tool_call", "</parameter"} {
+	for _, input := range []string{rawAtemFixture, "<atem:function_calls", "</atem:invoke>", "<atem:invoke name=\"route\">", "<atem:parameter name=\"kind\">spawn</atem:parameter>", rawFunctionFixture, "<tool_call>" + rawFunctionFixture, "<parameter=path>", "</function>", "</tool_call>", "<function=read_file", "<tool_call", "</parameter"} {
 		for split := 0; split <= len(input); split++ {
 			var f ToolMarkupFilter
 			got := f.Feed(input[:split]) + f.Feed(input[split:]) + f.Flush()
@@ -36,7 +43,7 @@ func TestToolMarkupFilterNeverLeaksByteStreamPayload(t *testing.T) {
 func TestToolMarkupFilterPreservesProseAndQuotedCode(t *testing.T) {
 	for _, input := range []string{
 		"Three < five and eight > six.", "x <function                    and y > z.", "x <functionValue and y > parameter.",
-		"<em>normal markup</em>", "<tool_callback> is an unrelated identifier.",
+		"<em>normal markup</em>", "<atem:invoker> is unrelated.", "`" + rawAtemFixture + "`", "<tool_callback> is an unrelated identifier.",
 		"The word function=read_file is not an invocation.",
 		"Use `<function=read_file>` only as an example.",
 		"```xml\n" + rawFunctionFixture + "\n```\nThis is quoted code.",
