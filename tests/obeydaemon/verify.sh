@@ -2,7 +2,7 @@
 set -euo pipefail
 [ -f /.dockerenv ] && [ "$(id -u)" != 0 ] || { echo 'Disposable non-root Docker fixture required' >&2; exit 2; }
 mkdir -p "$HOME/bin" "$HOME/evidence"
-trap 'cat "$HOME/evidence/failure-paths.log" "$HOME/evidence/real-daemon.log" 2>/dev/null || true' EXIT
+trap 'cat "$HOME/evidence/bootstrap.log" "$HOME/evidence/install.log" "$HOME/evidence/failure-paths.log" "$HOME/evidence/real-daemon.log" 2>/dev/null || true' EXIT
 curl --fail --silent --show-error --location --retry 3 --max-time 120 \
  https://raw.githubusercontent.com/Obedience-Corp/festival/main/install.sh -o "$HOME/festival-install.sh"
 VERSION="$FESTIVAL_VERSION" INSTALL_DIR="$HOME/bin" bash "$HOME/festival-install.sh" --no-shell > "$HOME/evidence/bootstrap.log" 2>&1

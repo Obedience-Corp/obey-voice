@@ -100,7 +100,9 @@ func TestReleasedObeyCatalogAndVoiceTurn(t *testing.T) {
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer provider.Close()
-	data, _ := json.Marshal(map[string]any{"data_dir": filepath.Join(root, "data"), "campaigns": []string{workdir}, "grpc": map[string]any{"enabled": true, "socket": socket}, "network": map[string]any{"enabled": false}, "watcher": map[string]any{"enabled": false}, "auto_commits": map[string]any{"enabled": false}, "providers": map[string]any{"daemon-profile": map[string]any{"type": "openai", "enabled": true, "api_key": "fixture-not-a-secret", "base_url": provider.URL + "/v1", "default_model": "raw-fixture:1"}}})
+	// The synthetic model has no built-in context metadata. Declare its fixture
+	// budget so the real daemon can run its normal preflight before dispatch.
+	data, _ := json.Marshal(map[string]any{"data_dir": filepath.Join(root, "data"), "campaigns": []string{workdir}, "grpc": map[string]any{"enabled": true, "socket": socket}, "network": map[string]any{"enabled": false}, "watcher": map[string]any{"enabled": false}, "auto_commits": map[string]any{"enabled": false}, "compaction": map[string]any{"window_overrides": map[string]int{"raw-fixture:1": 32768}}, "providers": map[string]any{"daemon-profile": map[string]any{"type": "openai", "enabled": true, "api_key": "fixture-not-a-secret", "base_url": provider.URL + "/v1", "default_model": "raw-fixture:1"}}})
 	if err := os.WriteFile(daemonConfig, data, 0600); err != nil {
 		t.Fatal(err)
 	}
