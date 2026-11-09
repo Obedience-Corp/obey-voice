@@ -55,10 +55,15 @@ admission.
 
 ## Enable and manage
 
-Open **Settings → Brain → Decision shortcuts (experimental)**. Choose the provider and runtime,
-then enable decision routing. Local + managed is the default selection. Preparation
-runs in the background; the normal pipeline remains available while the model is
-installing or starting. The settings show preparation/readiness/failure state.
+Open **Settings → Brain → Decision shortcuts (experimental)**. Choose the provider
+and runtime. For managed local decisions, install the selected model using
+**Local decision model setup**, then enable decision routing. Local + managed is
+the default selection. Startup verifies and
+loads installed assets in the background; it never downloads, installs or repairs
+them. Missing or corrupt assets leave optional decisions unavailable with setup
+guidance, while ordinary routing remains available. The settings show
+preparation/readiness/failure state. Starting a conversation, enabling decisions,
+or changing their model/device selection does not trigger installation.
 Disable the master switch to cancel optional work and stop its owned server.
 Voice and text switches can be changed independently and persist across restarts.
 

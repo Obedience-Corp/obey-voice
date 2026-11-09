@@ -50,7 +50,7 @@ func StartFor(ctx context.Context, modelsDir, tier, device string) (*Server, err
 		return nil, err
 	}
 	if err = verifyNative(ctx, modelsDir, tier, device); err != nil {
-		return nil, fmt.Errorf("native decisions require setup (models ensure --decision): %w", err)
+		return nil, decisionSetupError(err)
 	}
 	modelDir, err := ModelDir(modelsDir, tier)
 	if err != nil {
@@ -62,12 +62,16 @@ func StartFor(ctx context.Context, modelsDir, tier, device string) (*Server, err
 	weights := filepath.Join(modelDir, model.Files[0].Name)
 	hash, err := fileHash(ctx, weights)
 	if err != nil {
-		return nil, err
+		return nil, decisionSetupError(err)
 	}
 	if hash != model.Files[0].SHA256 {
-		return nil, fmt.Errorf("native decision model checksum mismatch")
+		return nil, decisionSetupError(fmt.Errorf("native decision model checksum mismatch"))
 	}
 	return startNative(ctx, modelsDir, weights, model, device)
+}
+
+func decisionSetupError(err error) error {
+	return fmt.Errorf("install / repair the selected decision model in Settings > Brain > Local decision model setup, or run obey-voice models decision install: %w", err)
 }
 
 func startNative(ctx context.Context, modelsDir, weights string, model Model, device string) (*Server, error) {
