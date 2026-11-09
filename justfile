@@ -6,7 +6,6 @@ set dotenv-load := true
 BUILDTOOL := "go run ./internal/buildutil"
 binary_name := "obey-voice"
 bin_dir := "bin"
-gobin := env_var_or_default("GOBIN", `go env GOPATH` + "/bin")
 
 # Modules
 [doc('Native desktop builds, checks, and isolated UI fixtures')]
@@ -337,29 +336,14 @@ _optimize-demo-gif path:
     mv "$optimized" "$gif"
     ls -lh "$gif"
 
-# Build, sign, install to $GOBIN, then download the default STT/TTS/VAD stack.
-# Qwen is opt-in and only downloads on platforms with a published native package.
-# Set OBEY_VOICE_SKIP_MODELS_ENSURE=1 for a binary-only install.
-install: build
-    #!/usr/bin/env bash
-    set -euo pipefail
-    mkdir -p {{gobin}}
-    cp {{bin_dir}}/{{binary_name}} {{gobin}}/{{binary_name}}
-    if [[ "$(uname)" == "Darwin" ]]; then
-        codesign --force --sign - {{gobin}}/{{binary_name}} 2>/dev/null || \
-        echo "Warning: Could not sign binary (non-fatal)"
-    fi
-    # One-cycle compatibility alias for scripts and muscle memory predating the rename.
-    ln -sfn {{gobin}}/{{binary_name}} {{gobin}}/samantha
-    echo "obey-voice installed to {{gobin}}/{{binary_name}} (alias: {{gobin}}/samantha)"
-    if [[ "${OBEY_VOICE_SKIP_MODELS_ENSURE:-}" == "1" ]]; then
-        echo "Skipping model download (OBEY_VOICE_SKIP_MODELS_ENSURE=1). Run: {{binary_name}} models ensure"
-    else
-        echo "Downloading default model assets (STT/TTS/VAD for this config)..."
-        if ! "{{gobin}}/{{binary_name}}" models ensure; then
-            echo "Binary installed; voice setup is incomplete. Resolve the model/runtime error above, then run: {{binary_name}} models ensure"
-        fi
-    fi
+# Install this checkout with bundled native libraries; no tag or release required.
+# Set OBEY_VOICE_SKIP_MODELS_ENSURE=1 to reuse existing models without downloading.
+install:
+    python3 scripts/install_dev.py
+
+# Dev install replacement, corruption, and startup-failure regression tests.
+install-test:
+    python3 -m unittest discover -s scripts -p test_install_dev.py
 
 # Build and run with any args
 run *ARGS: build
