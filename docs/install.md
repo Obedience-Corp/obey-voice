@@ -111,9 +111,7 @@ CLI formula. Both share existing user settings and model caches. The cask
 supports Apple Silicon macOS 15+. Use `brew upgrade --cask
 obedience-corp/tap/obey-voice-app` for subsequent app releases; quit the app first.
 
-**Availability:** the initial v0.3.0 bottles are still awaiting publication.
-Use [the source install](#from-source) until those bottles are public. The
-Homebrew commands for the published release are:
+Install the published CLI from the Obedience Corp tap:
 
 ```bash
 brew install obedience-corp/tap/obey-voice
