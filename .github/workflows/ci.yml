@@ -33,9 +33,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
       - uses: extractions/setup-just@v3
       - name: Model-free native owner-death regression
         run: just test decider-lifecycle-native
