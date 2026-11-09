@@ -214,6 +214,12 @@ jobs:
         env:
           OBEY_VOICE_SKIP_MODELS_ENSURE: '1'
         run: |
+          # Fail if local installation reintroduces a Python subprocess.
+          mkdir -p "$RUNNER_TEMP/no-python"
+          printf '%s\n' '#!/bin/sh' 'echo "Python invoked during just install" >&2' 'exit 97' > "$RUNNER_TEMP/no-python/python3"
+          cp "$RUNNER_TEMP/no-python/python3" "$RUNNER_TEMP/no-python/python"
+          chmod +x "$RUNNER_TEMP/no-python/"*
+          export PATH="$RUNNER_TEMP/no-python:$PATH"
           export GOBIN="$RUNNER_TEMP/dev bin"
           just install
           just install

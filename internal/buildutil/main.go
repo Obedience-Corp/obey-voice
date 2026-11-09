@@ -2,7 +2,10 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
 	"time"
@@ -16,7 +19,24 @@ func main() {
 		addBuildTag("integration")
 	}
 
-	buildutil.Run(args, buildutil.BuildConfig{
+	if len(args) > 0 && args[0] == "install" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		if len(args) != 1 {
+			fmt.Fprintln(os.Stderr, "usage: buildutil install")
+			os.Exit(1)
+		}
+		if err := installCheckout(ctx, projectConfig()); err != nil {
+			fmt.Fprintln(os.Stderr, "install:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	buildutil.Run(args, projectConfig())
+}
+
+func projectConfig() buildutil.BuildConfig {
+	return buildutil.BuildConfig{
 		BinaryName:         "obey-voice",
 		MainPath:           "./cmd/obey-voice",
 		SectionName:        "Obey Voice",
@@ -31,7 +51,7 @@ func main() {
 				"GOARCH=" + runtime.GOARCH,
 			}
 		},
-	})
+	}
 }
 
 func isIntegrationCommand(args []string) bool {
