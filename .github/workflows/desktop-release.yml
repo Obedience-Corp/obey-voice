@@ -40,6 +40,7 @@ jobs:
         run: brew install bash
       - name: Build, sign, notarize, staple and verify
         env:
+          GH_TOKEN: ${{ github.token }}
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}

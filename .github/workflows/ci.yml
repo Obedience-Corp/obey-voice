@@ -42,6 +42,8 @@ jobs:
       - name: Install build shell
         run: brew install bash
       - name: Build and verify a non-publishable desktop preview
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: just release desktop-preview
       - name: Desktop release failure paths
         run: python3 -m unittest discover -s scripts -p 'test_desktop_*.py'
