@@ -22,6 +22,23 @@ full: unit integration voiceflow speakerflow audio-crackle
 unit:
     @{{BUILDTOOL}} test
 
+# Managed decision lifecycle, including filesystem-backed startup fixtures.
+# No models or inference dependencies are installed; Python uses only stdlib.
+[no-cd]
+decider-lifecycle:
+    docker build -t obey-voice-decision-lifecycle:local tests/decider
+    docker run --init --rm --read-only --memory=2g --cpus=2 --pids-limit=128 \
+        --user 10001:10001 --tmpfs /tmp:rw,exec,size=2g,mode=1777 \
+        -e HOME=/tmp/decision-home \
+        -v "{{justfile_directory()}}:/workspace:ro" \
+        obey-voice-decision-lifecycle:local \
+        sh -c 'mkdir -p "$HOME" "$GOCACHE" "$GOMODCACHE" && exec go test -mod=readonly -p=2 -parallel=2 -race -count=1 -timeout=2m ./pkg/voiceagent/decider'
+
+# Filesystem-free native proof, including SIGKILL and stopped inference workers.
+[no-cd]
+decider-lifecycle-native:
+    GOMAXPROCS=2 go test -mod=readonly -p=2 -race -count=1 -timeout=60s -run '^TestOwnedWorker' ./pkg/voiceagent/decider
+
 # Run tests for a specific package
 [no-cd]
 pkg PACKAGE:

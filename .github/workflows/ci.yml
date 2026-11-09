@@ -17,6 +17,31 @@ concurrency:
 # also deny this repository access to self-hosted runner groups before publication;
 # workflow YAML alone cannot stop a PR from requesting another available runner.
 jobs:
+  decision-lifecycle:
+    name: Decision owner lifecycle (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: extractions/setup-just@v3
+      - name: Model-free native owner-death regression
+        run: just test decider-lifecycle-native
+      - name: Isolated startup and lifecycle suite
+        if: runner.os == 'Linux'
+        run: just test decider-lifecycle
+
   desktop:
     name: Desktop (Linux)
     runs-on: ubuntu-24.04
