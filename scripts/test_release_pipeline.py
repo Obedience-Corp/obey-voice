@@ -126,6 +126,56 @@ class ReleasePipelineTests(unittest.TestCase):
         self.assertEqual(self.github.events, ["formula", "verify", "publish", "merge", "public"])
         self.assertEqual(self.reports[-1][0], ("homebrew", "verified"))
 
+    def test_new_channel_release_builds_stages_verifies_and_merges(self):
+        with tempfile.TemporaryDirectory() as build_dir:
+            build = Path(build_dir)
+            fixture(build)
+            source = "b" * 40
+            for path in build.glob("*.json"):
+                data = json.loads(path.read_text())
+                data["obedience-corp/tap/obey-voice"]["formula"]["tap_git_revision"] = source
+                path.write_text(json.dumps(data))
+            for path in self.directory.iterdir():
+                path.unlink()
+            created = False
+            original_release = self.github.release
+            original_gh = self.github.gh
+
+            def release(repo, tag):
+                return original_release(repo, tag) if created else None
+
+            def gh(*args):
+                nonlocal created
+                if args[:2] == ("release", "create"):
+                    created = True
+                    return ""
+                if args[:2] == ("release", "upload"):
+                    path = Path(args[-1])
+                    shutil.copyfile(path, self.directory / path.name)
+                    return ""
+                if args[:2] == ("run", "download"):
+                    output = Path(args[args.index("--dir") + 1])
+                    for target, platform in zip(TAGS, ("macos-arm64", "linux-amd64")):
+                        root = output / f"obey-voice-bottle-{platform}"
+                        (root / "bottles").mkdir(parents=True)
+                        public_name = f"obey-voice-0.3.0.{target}.bottle.tar.gz"
+                        shutil.copyfile(build / public_name, root / "bottles" / public_name.replace("voice-0", "voice--0"))
+                        metadata = f"obey-voice--0.3.0.{target}.bottle.json"
+                        shutil.copyfile(build / metadata, root / "bottles" / metadata)
+                        (root / "evidence.json").write_text(json.dumps({
+                            "tap_commit": source, "version": "0.3.0", "public_native_download": True,
+                            "poured_from_bottle": True, "revision_upgrade": True,
+                            "user_data_preserved": True, "uninstalled": True}))
+                    return ""
+                return original_gh(*args)
+
+            with patch.object(self.github, "release", side_effect=release), patch.object(self.github, "gh", side_effect=gh):
+                self.adapter.run()
+            steps = [self.github.events.index(name) for name in ("build", "verify", "publish", "merge", "public")]
+            self.assertEqual(steps, sorted(steps))
+            self.assertFalse(self.github.draft)
+            validate_bottles(self.directory, TAG, REPO)
+
     def test_staged_install_failure_never_publishes_or_merges(self):
         self.github.fail_mode = "verify"
         with self.assertRaisesRegex(ReleaseError, "workflow failure"):

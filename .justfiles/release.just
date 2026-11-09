@@ -34,7 +34,7 @@ media-ready:
 media-test:
     python3 -m unittest discover -s scripts -p test_media_review.py
 
-# Tag and push a release after tests pass. Usage: just release tag v0.1.0
+# Native-only tag/push after tests. Prefer create for coordinated channel releases.
 [no-cd]
 tag version:
     #!/usr/bin/env bash
