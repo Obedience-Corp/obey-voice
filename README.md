@@ -70,14 +70,36 @@ Keep conversation local and use another provider for background work, or choose 
 
 ## Install
 
-See the [installation guide](docs/install.md) for app and terminal setup. To build from source, start with a checkout:
+See the [installation guide](docs/install.md) for app and terminal setup.
+
+### Homebrew CLI (macOS / Linux)
+
+Installs the released CLI with its native speech libraries on Apple Silicon
+macOS 15+ and x86_64 Linux with glibc 2.39+ (Ubuntu 24.04+). The desktop app is
+installed separately from source below.
+
+**Availability:** the initial v0.3.0 Homebrew bottles are still awaiting
+publication. Use the source install below until they are public. Once published:
+
+```bash
+brew install obedience-corp/tap/obey-voice
+obey-voice
+```
+
+On first launch, choose providers and download speech models. No Go or Rust
+toolchain is needed for the CLI with Parakeet STT and Kokoro TTS.
+[Homebrew setup, upgrades, and dev-install coexistence](docs/install.md#homebrew-macos--linux).
+
+### Build from source
+
+For local development or the desktop app, start with a checkout:
 
 ```bash
 git clone https://github.com/Obedience-Corp/obey-voice.git
 cd obey-voice
 ```
 
-### macOS app
+#### macOS app
 
 Install Rust 1.95, Go 1.26.1+, Python 3, Xcode Command Line Tools, and [just](https://github.com/casey/just).
 
@@ -88,9 +110,10 @@ open "$HOME/Applications/Obey Voice Agent.app"
 
 Follow first-launch setup to choose providers and download models. Allow microphone access when prompted. Quit the app before reinstalling. [Desktop install guide](docs/install.md#desktop-app-macos).
 
-### Terminal (macOS / Linux)
+#### Terminal (macOS / Linux)
 
-Requires Go 1.26.1+, `just`, and a C compiler.
+Requires Go 1.26.1+, `just`, a C compiler, and the
+[native packaging tools](docs/install.md#from-source).
 
 ```bash
 just install

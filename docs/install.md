@@ -7,8 +7,8 @@ for isolated setup checks and the separate clean-machine audio procedure.
 
 ## Requirements
 
-- Go 1.26+
-- [just](https://github.com/casey/just)
+- Go 1.26+ for source builds
+- [just](https://github.com/casey/just) for source builds
 - A C compiler for source builds (`gcc` or `clang`; Obey Voice uses CGO)
 - A working microphone and speaker for voice mode
 - Claude CLI on `PATH` when `brain_provider=claude`
@@ -90,12 +90,51 @@ The release archive targets glibc Linux with Ubuntu 24.04 as its build and
 compatibility floor. Source builds are also validated on Arch/EndeavourOS;
 musl systems such as Alpine require a separate native build strategy.
 
-## Homebrew (macOS)
+## Homebrew (macOS / Linux)
 
-The public `lancekrogers/tap/samantha` formula tracks the frozen public
-`samantha` repo, not this engine. For Obey Voice, use the [source build](#from-source).
+The `obedience-corp/tap/obey-voice` formula installs the released CLI with its
+native speech libraries. It supports Apple Silicon macOS 15+ and x86_64 Linux
+with glibc 2.39+ (Ubuntu 24.04+). It does not install the desktop app; use the
+[desktop source install](#desktop-app-macos) for that.
+
+**Availability:** the initial v0.3.0 bottles are still awaiting publication.
+Use [the source install](#from-source) until those bottles are public. The
+Homebrew commands for the published release are:
+
+```bash
+brew install obedience-corp/tap/obey-voice
+obey-voice
+```
+
+If Homebrew asks you to trust the organization's tap, run
+`brew trust --tap obedience-corp/tap`, then retry the install.
+Choose a brain provider and download speech models during first-launch setup.
+Homebrew does not install brain providers, download models, or start services.
+For a compiler-free speech setup, select Parakeet STT and Kokoro TTS; native
+Phonon on Linux needs a separate source toolchain. You can also prepare models
+and check audio devices explicitly:
+
+```bash
+obey-voice models ensure
+obey-voice doctor --voice-devices
+```
+
+Upgrade the released CLI with:
+
+```bash
+brew update
+brew upgrade obedience-corp/tap/obey-voice
+```
+
+Settings, personas, sessions, and model caches survive upgrades and uninstall.
+Homebrew and `just install` keep separate executables. If you use both, run
+`type -a obey-voice` to see which command comes first on `PATH`; put your Go
+binary directory first when developing. `brew upgrade` updates the released
+copy, while `just install` rebuilds your current checkout. The older
+`lancekrogers/tap/samantha` package remains independent.
+
 Grant your terminal microphone access under System Settings →
-Privacy & Security → Microphone.
+Privacy & Security → Microphone on macOS.
 
 ## From source
 
