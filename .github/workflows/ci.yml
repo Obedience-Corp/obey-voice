@@ -35,7 +35,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.95'
-      - uses: extractions/setup-just@v3
+      - name: Install pinned just
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci-install-just.sh
       - name: Install build shell
         run: brew install bash
       - name: Build and verify a non-publishable desktop preview
@@ -59,7 +62,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: extractions/setup-just@v3
+      - name: Install pinned just
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci-install-just.sh
       - name: Model-free native owner-death regression
         run: just test decider-lifecycle-native
       - name: Isolated startup and lifecycle suite
@@ -82,7 +88,10 @@ jobs:
         with:
           toolchain: '1.95'
           components: rustfmt, clippy
-      - uses: extractions/setup-just@v3
+      - name: Install pinned just
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci-install-just.sh
       - name: Install desktop dependencies
         run: |
           sudo apt-get update
@@ -128,6 +137,8 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
+          # Avoid intermittent 504s from GitHub release binary downloads.
+          install-mode: goinstall
 
   # Enforcing: the pipeline barge-in VAD race (interrupt controller) is fixed
   # and this -race suite is its deterministic regression guard, so a failure
@@ -182,7 +193,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: extractions/setup-just@v3
+      - name: Install pinned just
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci-install-just.sh
       - name: Install artifact tools
         run: |
           sudo apt-get update

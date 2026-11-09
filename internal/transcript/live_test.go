@@ -29,8 +29,15 @@ func TestLiveWriterCopiesEvidenceAndRejectsOtherRuntime(t *testing.T) {
 	if len(records) != 3 {
 		t.Fatalf("expected header/span/footer: %d", len(records))
 	}
-	if strings.Contains(string(records[1]), "999") || strings.Contains(string(records[1]), "must exclude") {
-		t.Fatal("mutable or wrong scope evidence")
+	var captured record
+	if err := json.Unmarshal(records[1], &captured); err != nil {
+		t.Fatal(err)
+	}
+	if captured.Span == nil || captured.Span.StartMS == nil || captured.Span.EndMS == nil || *captured.Span.StartMS != 0 || *captured.Span.EndMS != 0 {
+		t.Fatalf("mutable span evidence: %+v", captured.Span)
+	}
+	if captured.Trace == nil || captured.Trace.RuntimeID != trace.RuntimeID {
+		t.Fatalf("wrong scope evidence: %+v", captured.Trace)
 	}
 	var end struct {
 		Health Health `json:"health"`
