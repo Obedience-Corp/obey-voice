@@ -18,7 +18,7 @@ from release_artifacts import PLATFORMS, archive_name
 from release_homebrew import Homebrew, reject_downgrade, stable_version
 from release_service import GitHub, ReleaseError, command, public_bytes
 from render_homebrew import render
-from desktop_signing import SECRET_NAMES
+from desktop_signing import SECRET_NAMES, signing_mode
 from release_desktop import Desktop, reject_downgrade as reject_cask_downgrade
 
 
@@ -46,6 +46,7 @@ def load_config(path):
         if name in {"homebrew", "homebrew_cask"} and item.get("repository") != "Obedience-Corp/homebrew-tap":
             raise ReleaseError("Homebrew currently targets the owning Obedience Corp tap")
         if name == "homebrew_cask":
+            signing_mode(item)
             stable_version(item.get("since", ""))
             if not re.fullmatch(r"[A-Za-z0-9_.-]+\.ya?ml", item.get("artifact_workflow", "")):
                 raise ReleaseError("homebrew_cask: configure the desktop artifact workflow")
@@ -109,23 +110,33 @@ def preflight(github, config, tag, plan=False):
         if name == "npm":
             check_npm_downgrade(channel["packages"], tag)
         if name == "homebrew_cask":
+            mode = signing_mode(channel)
             current, _ = github.file(owner, "Casks/obey-voice-app.rb", "main")
             reject_cask_downgrade(current, tag)
             contract, _ = github.file(owner, "packaging/obey-voice-cask.json", "main")
             contract = json.loads(contract) if contract else {}
-            if contract != {"schema": 1, "workflow": channel["workflow"], "modes": ["verify", "public"]}:
+            legacy = contract == {"schema": 1, "workflow": channel["workflow"], "modes": ["verify", "public"]}
+            supported = (contract.get("schema") == 2 and contract.get("workflow") == channel["workflow"]
+                         and {"verify", "public"} <= set(contract.get("modes", []))
+                         and mode in contract.get("signing_modes", []))
+            if not (supported or (legacy and mode == "notarized")):
                 blockers.append("homebrew_cask: merge the cask verification workflow first")
             workflow = github.api(f"repos/{repo}/actions/workflows/{channel['artifact_workflow']}", optional=True)
             if workflow is None or workflow["state"] != "active":
-                blockers.append("homebrew_cask: desktop signing workflow is absent or disabled")
+                blockers.append("homebrew_cask: desktop archive workflow is absent or disabled")
             source_workflow, _ = github.file(repo, f".github/workflows/{channel['artifact_workflow']}", sha)
             if source_workflow is None:
-                blockers.append("homebrew_cask: release source does not contain the desktop signing workflow")
-            secrets = github.api(f"repos/{repo}/actions/secrets?per_page=100")
-            available = {entry["name"] for entry in secrets["secrets"]}
-            missing = set(SECRET_NAMES) - available
-            if missing:
-                blockers.append("homebrew_cask: configure repository signing secrets: " + ", ".join(sorted(missing)))
+                blockers.append("homebrew_cask: release source does not contain the desktop archive workflow")
+            source_config, _ = github.file(repo, "packaging/release-channels.json", sha)
+            source_channel = json.loads(source_config)["channels"]["homebrew_cask"] if source_config else {}
+            if signing_mode(source_channel) != mode:
+                blockers.append("homebrew_cask: release source uses a different signing mode; use a new version")
+            if mode == "notarized":
+                secrets = github.api(f"repos/{repo}/actions/secrets?per_page=100")
+                available = {entry["name"] for entry in secrets["secrets"]}
+                missing = set(SECRET_NAMES) - available
+                if missing:
+                    blockers.append("homebrew_cask: configure repository signing secrets: " + ", ".join(sorted(missing)))
     if not exists:
         if command("git", "status", "--porcelain"):
             blockers.append("new release requires a clean tracked/untracked working tree")

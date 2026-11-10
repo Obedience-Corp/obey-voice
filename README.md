@@ -90,8 +90,10 @@ toolchain is needed for the CLI with Parakeet STT and Kokoro TTS.
 [Homebrew setup, upgrades, and dev-install coexistence](docs/install.md#homebrew-macos--linux).
 
 The desktop package is a separate cask, `obedience-corp/tap/obey-voice-app`.
-It will become installable after the first signed and notarized app release;
-until then, use `just desktop install` below.
+It will become installable after the first desktop release is published;
+until then, use `just desktop install` below. The release pipeline supports
+ad-hoc signing without Apple credentials. Those downloads are not notarized
+and may require **Open Anyway** approval in macOS Privacy & Security settings.
 
 ### Build from source
 

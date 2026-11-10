@@ -66,23 +66,30 @@ already-started GitHub jobs may continue. The local summary is
 `dist/releases/vX.Y.Z/status.json`; it records incomplete stages and errors.
 
 The tap verification workflows must be merged before first use. `plan` reports
-missing formula/cask contracts and desktop signing secrets before any new tag
-is pushed.
+missing formula/cask contracts and, for notarized releases, desktop signing
+secrets before any new tag is pushed.
 
 ### Desktop archive and Homebrew cask
 
-The channel configuration enables desktop publication for v0.3.1 and later, so
-`just release create vX.Y.Z` requires Apple signing credentials and also builds
-and promotes the macOS desktop app. The v0.3.1 publication was explicitly scoped
-to native CLI archives and the Homebrew formula while those credentials were
-unavailable; it does not include a desktop archive or cask. The existing v0.3.0
-CLI release can be resumed without adding a desktop package retroactively.
-The two Homebrew packages are independent:
-`obey-voice` is the CLI formula; `obey-voice-app` is the desktop cask. Both live
-in `Obedience-Corp/homebrew-tap`.
+The desktop channel uses `"signing": "ad-hoc"` in
+`packaging/release-channels.json`. `just release create vX.Y.Z` builds and
+publishes the desktop app without Apple credentials, alongside the CLI and
+Homebrew formula. The desktop archive still requires a clean release tag,
+valid signatures, source/version metadata, checksums and public install checks.
+Ad-hoc signing does not establish an Apple-verified developer identity or
+notarization. Users may need **System Settings → Privacy & Security → Open Anyway**
+after attempting to launch the downloaded app. The cask prints that notice;
+the pipeline does not remove quarantine or disable Gatekeeper.
 
-Before the first desktop release, configure these **repository Actions secrets**
-on `Obedience-Corp/obey-voice`, using GitHub settings or `gh secret set`:
+The v0.3.1 release contains only CLI archives and the Homebrew formula. Use a
+new version after this change merges; its existing tag still uses the older
+notarized-only workflow and is not retargeted. The two Homebrew packages remain
+independent: `obey-voice` is the CLI formula and `obey-voice-app` is the desktop
+cask, both in `Obedience-Corp/homebrew-tap`.
+
+For future notarized releases, change the channel's `signing` to `notarized`
+and configure these **repository Actions secrets** on
+`Obedience-Corp/obey-voice`, using GitHub settings or `gh secret set`:
 
 | Secret | Value |
 |---|---|
@@ -93,8 +100,8 @@ on `Obedience-Corp/obey-voice`, using GitHub settings or `gh secret set`:
 | `APPLE_NOTARY_ISSUER_ID` | Issuer ID for that team API key |
 | `APPLE_NOTARY_PRIVATE_KEY` | Contents of the API key's `.p8` file |
 
-An Apple Development certificate does not qualify for public desktop signing.
-The signing workflow runs only on a release tag. It builds without exposing
+Notarized mode requires Developer ID Application, not Apple Development.
+The archive workflow runs only on a release tag. In notarized mode it builds without exposing
 signing credentials to dependency build scripts, imports the private key into
 a temporary keychain after compilation, signs nested code with hardened runtime,
 submits the app to Apple, staples the accepted ticket, and checks Gatekeeper.
@@ -109,12 +116,17 @@ crate source and license declaration are retained. No floating upstream branch
 is used for notice retrieval.
 
 The coordinator verifies the archive checksum, source/version receipt, and
-notarization evidence before uploading desktop assets to the native release.
+configured signing mode before uploading desktop assets to the native release.
+Notarized mode also requires successful Apple notarization evidence.
 Retries reuse published bytes; they never overwrite a differently signed build.
 Anonymous download readback precedes generating `Casks/obey-voice-app.rb` and
-opening its tap PR. The tap checks the public app's signature, notarization,
-Gatekeeper acceptance, bundled-engine version, upgrade from the prior cask when
-one exists, reinstall, uninstall, and fixture-data retention. The coordinator
+opening its tap PR. The tap checks signatures and provenance, upgrades from the
+prior cask when one exists, reinstall, uninstall and fixture-data retention.
+For ad-hoc releases it verifies quarantine remains and Gatekeeper rejects the app,
+then records that user approval is required. It does not launch the quarantined
+app or claim Gatekeeper acceptance; the bundled engine is smoke-tested during
+archive creation. Notarized mode additionally checks the stapled ticket,
+Gatekeeper acceptance and the installed engine's version. The coordinator
 merges with an exact-head guard and then verifies installation from tap main.
 Repository review requirements still apply. A first cask is created only after
 the first valid public app archive exists; no placeholder URL or checksum is
@@ -127,9 +139,10 @@ just release desktop-preview v0.0.0
 ```
 
 This creates an ad-hoc signed **preview**, which cannot be promoted by the
-release command. For a local signed build from a clean release tag, set
-`APPLE_SIGNING_IDENTITY` and `APPLE_NOTARY_PROFILE` (an existing `notarytool`
-keychain profile), then run `just release desktop-artifact vX.Y.Z`.
+release command, even when ad-hoc releases are enabled.
+`just release desktop-artifact vX.Y.Z` uses the signing mode configured in the
+clean release tag. For a local notarized build, also set `APPLE_SIGNING_IDENTITY`
+and `APPLE_NOTARY_PROFILE` (an existing `notarytool` keychain profile).
 Normal `just desktop install` remains the local development install and does
 not require signing credentials, tags, or a release.
 

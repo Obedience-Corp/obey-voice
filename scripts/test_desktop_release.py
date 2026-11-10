@@ -24,15 +24,17 @@ REPO, TAP = "Obedience-Corp/obey-voice", "Obedience-Corp/homebrew-tap"
 CONFIG = {"repository": TAP, "workflow": "obey-voice-cask.yml", "artifact_workflow": "desktop-release.yml"}
 
 
-def fixture(directory, notarized=True, extra=None):
+def fixture(directory, notarized=True, extra=None, signing=None, preview=False):
     archive = directory / artifacts.archive_name(TAG)
     with zipfile.ZipFile(archive, "w") as zipped:
         prefix = artifacts.APP + "/Contents/"
         info = dict(CFBundleIdentifier=artifacts.BUNDLE_ID, CFBundleShortVersionString=TAG[1:],
                     CFBundleVersion=TAG[1:], LSMinimumSystemVersion="15.0")
         zipped.writestr(prefix + "Info.plist", plistlib.dumps(info))
-        zipped.writestr(prefix + "Resources/release.json", json.dumps(
-            {"version": TAG, "source_sha": SOURCE, "platform": "macos-arm64"}))
+        provenance = {"version": TAG, "source_sha": SOURCE, "platform": "macos-arm64"}
+        if signing:
+            provenance.update(signing=signing, preview=preview)
+        zipped.writestr(prefix + "Resources/release.json", json.dumps(provenance))
         for name in ("MacOS/obey-voice-agent", "MacOS/obey-voice-engine",
                      "Frameworks/libsherpa-onnx-c-api.dylib", "Frameworks/libonnxruntime.dylib",
                      "Resources/LICENSE", "Resources/NOTICE", "Resources/licenses/rust-dependencies.json",
@@ -43,6 +45,11 @@ def fixture(directory, notarized=True, extra=None):
     checksum = digest(archive)
     receipt = dict(version=TAG, source_sha=SOURCE, platform="macos-arm64", sha256=checksum,
                    notarized=notarized, team_id="TEAM123456", notarization_id="fixture-submission")
+    if signing:
+        receipt.update(signing=signing, preview=preview)
+    if signing == "ad-hoc":
+        receipt.pop("team_id")
+        receipt.pop("notarization_id")
     archive.with_suffix(".json").write_text(json.dumps(receipt))
     archive.with_name(archive.name + ".sha256").write_text(f"{checksum}  {archive.name}\n")
     return archive
@@ -139,6 +146,48 @@ class DesktopTests(unittest.TestCase):
             self.adapter.run()
         self.assertEqual(self.github.events, ["sign"])
 
+    def test_ad_hoc_release_promotes_with_explicit_gatekeeper_notice(self):
+        fixture(self.built, notarized=False, signing="ad-hoc")
+        self.adapter.signing = "ad-hoc"
+        self.adapter.run()
+        self.assertIn("# Signing mode: ad-hoc", self.github.main)
+        self.assertIn("not notarized by Apple", self.github.main)
+        self.assertIn("Open Anyway", self.github.main)
+        self.assertIn("public", self.github.events)
+
+    def test_ad_hoc_preview_never_uploads_even_when_ad_hoc_release_enabled(self):
+        fixture(self.built, notarized=False, signing="ad-hoc", preview=True)
+        self.adapter.signing = "ad-hoc"
+        with self.assertRaisesRegex(ValueError, "preview cannot be promoted"):
+            self.adapter.run()
+        self.assertNotIn("upload", self.github.events)
+        artifacts.validate(self.built, TAG, SOURCE, signing="ad-hoc", allow_preview=True)
+
+    def test_ad_hoc_cannot_satisfy_notarized_release(self):
+        fixture(self.built, notarized=False, signing="ad-hoc")
+        with self.assertRaisesRegex(ValueError, "signing mode"):
+            self.adapter.run()
+        self.assertNotIn("upload", self.github.events)
+
+    def test_receipt_cannot_relabel_signed_preview_metadata(self):
+        fixture(self.built, notarized=False, signing="ad-hoc", preview=True)
+        receipt = self.archive.with_suffix(".json")
+        data = json.loads(receipt.read_text())
+        data["preview"] = False
+        receipt.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            artifacts.validate(self.built, TAG, SOURCE, signing="ad-hoc")
+
+    def test_ad_hoc_release_still_requires_clean_tag_checkout(self):
+        for tag_source, dirty in (("b" * 40, ""), (SOURCE, " M file")):
+            with patch("desktop_artifacts.platform.system", return_value="Darwin"), \
+                    patch("desktop_artifacts.platform.machine", return_value="arm64"), \
+                    patch("desktop_artifacts.run", side_effect=[SOURCE, tag_source, dirty]), \
+                    patch("desktop_artifacts.subprocess.run") as build:
+                with self.assertRaisesRegex(ValueError, "clean checkout"):
+                    artifacts.build(TAG, self.root / "out")
+                build.assert_not_called()
+
     def test_failed_install_does_not_merge(self):
         self.github.fail_verify = True
         with self.assertRaisesRegex(ReleaseError, "installation failed"):
@@ -212,6 +261,34 @@ class DesktopTests(unittest.TestCase):
             with self.assertRaisesRegex(ReleaseError, "signing secrets"):
                 preflight(github, config, TAG)
         github.gh.assert_not_called()
+
+    def adhoc_preflight(self, source_signing="ad-hoc", schema=2):
+        github = Mock()
+        def api(path, **kwargs):
+            if "/actions/secrets" in path:
+                raise AssertionError("ad-hoc release must not request Apple credentials")
+            return {"state": "active"} if "/actions/workflows" in path else {"permissions": {"push": True}}
+        github.api.side_effect = api
+        def file(repo, path, ref):
+            if path.endswith("obey-voice-cask.json"):
+                return json.dumps({"schema": schema, "workflow": CONFIG["workflow"],
+                                   "modes": ["verify", "public"], "signing_modes": ["ad-hoc", "notarized"]}), "blob"
+            if path.endswith("release-channels.json"):
+                return json.dumps({"channels": {"homebrew_cask": {"signing": source_signing}}}), "blob"
+            return ("workflow" if path.endswith(".yml") else None), "blob"
+        github.file.side_effect = file
+        config = {"repository": REPO, "channels": {"homebrew_cask": dict(CONFIG, enabled=True, since=TAG, signing="ad-hoc")}}
+        with patch("release_pipeline.native_identity", return_value=(SOURCE, True)):
+            return preflight(github, config, TAG, plan=True)
+
+    def test_ad_hoc_preflight_does_not_require_apple_credentials(self):
+        self.assertEqual(self.adhoc_preflight()["blockers"], [])
+
+    def test_old_release_tag_cannot_be_reinterpreted_as_ad_hoc(self):
+        self.assertIn("different signing mode", " ".join(self.adhoc_preflight(source_signing="notarized")["blockers"]))
+
+    def test_old_tap_contract_cannot_verify_ad_hoc_releases(self):
+        self.assertIn("merge the cask verification", " ".join(self.adhoc_preflight(schema=1)["blockers"]))
 
     def test_development_identity_cannot_be_used_for_public_signing(self):
         with patch.dict("os.environ", {"APPLE_SIGNING_IDENTITY": "Apple Development: Example (TEAM123456)"}, clear=True):

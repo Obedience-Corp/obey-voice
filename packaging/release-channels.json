@@ -11,7 +11,8 @@
       "since": "v0.3.1",
       "repository": "Obedience-Corp/homebrew-tap",
       "workflow": "obey-voice-cask.yml",
-      "artifact_workflow": "desktop-release.yml"
+      "artifact_workflow": "desktop-release.yml",
+      "signing": "ad-hoc"
     },
     "npm": {
       "enabled": false,
