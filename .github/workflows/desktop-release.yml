@@ -38,7 +38,7 @@ jobs:
       - uses: extractions/setup-just@v3
       - name: Install build shell
         run: brew install bash
-      - name: Build, sign, notarize, staple and verify
+      - name: Build and verify desktop archive with configured signing
         env:
           GH_TOKEN: ${{ github.token }}
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}

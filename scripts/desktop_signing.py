@@ -15,6 +15,21 @@ SECRET_NAMES = ("APPLE_CERTIFICATE_P12", "APPLE_CERTIFICATE_PASSWORD", "APPLE_SI
                 "APPLE_NOTARY_KEY_ID", "APPLE_NOTARY_ISSUER_ID", "APPLE_NOTARY_PRIVATE_KEY")
 
 
+def signing_mode(channel):
+    # Older tagged configurations required notarization. Never silently weaken them.
+    mode = channel.get("signing", "notarized")
+    if mode not in ("ad-hoc", "notarized"):
+        raise ValueError("desktop signing must be ad-hoc or notarized")
+    return mode
+
+
+def sign_adhoc(bundle):
+    for binary in [*sorted((bundle / "Contents/Frameworks").glob("*.dylib")),
+                   *sorted((bundle / "Contents/MacOS").iterdir()), bundle]:
+        run("codesign", "--force", "--sign", "-", str(binary))
+    run("codesign", "--verify", "--deep", "--strict", str(bundle))
+
+
 def run(*args):
     result = subprocess.run(args, capture_output=True, text=True, timeout=1800)
     if result.returncode:

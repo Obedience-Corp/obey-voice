@@ -14,7 +14,7 @@ import tempfile
 import zipfile
 
 from desktop_notices import collect
-from desktop_signing import SECRET_NAMES, configuration, credentials, notarize, sign, run
+from desktop_signing import SECRET_NAMES, configuration, credentials, notarize, sign, sign_adhoc, signing_mode, run
 from release_artifacts import digest
 from release_homebrew import stable_version
 
@@ -29,17 +29,27 @@ def archive_name(tag):
     return f"obey-voice-app-{tag}-macos-arm64.zip"
 
 
-def validate(directory, tag, source, allow_unsigned=False):
+def validate(directory, tag, source, signing="notarized", allow_preview=False):
     archive = directory / archive_name(tag)
     receipt = json.loads(archive.with_suffix(".json").read_text())
     if (receipt.get("version"), receipt.get("source_sha"), receipt.get("platform")) != (tag, source, "macos-arm64"):
         raise ValueError("desktop receipt version/source/platform mismatch")
     if not re.fullmatch(r"[a-f0-9]{40}", source):
         raise ValueError("invalid desktop source commit")
-    if not allow_unsigned and (receipt.get("notarized") is not True or
+    if signing not in ("ad-hoc", "notarized") or receipt.get("signing", "notarized") != signing:
+        raise ValueError("desktop archive signing mode does not match release configuration")
+    if "signing" in receipt and type(receipt.get("preview")) is not bool:
+        raise ValueError("desktop preview marker must be a boolean")
+    if receipt.get("preview", False) is not False and not allow_preview:
+        raise ValueError("desktop preview cannot be promoted as a release")
+    if signing == "notarized" and (receipt.get("notarized") is not True or
                                not re.fullmatch(r"[A-Z0-9]{10}", receipt.get("team_id", "")) or
                                not receipt.get("notarization_id")):
         raise ValueError("desktop archive has no successful notarization evidence")
+    if signing == "ad-hoc" and (receipt.get("notarized") is not False or
+                                type(receipt.get("preview")) is not bool or
+                                receipt.get("team_id") or receipt.get("notarization_id")):
+        raise ValueError("ad-hoc desktop receipt has invalid signing evidence")
     expected = digest(archive)
     if receipt.get("sha256") != expected or archive.with_name(archive.name + ".sha256").read_text() != f"{expected}  {archive.name}\n":
         raise ValueError("desktop archive checksum mismatch")
@@ -58,7 +68,10 @@ def validate(directory, tag, source, allow_unsigned=False):
                 info.get("CFBundleVersion"), info.get("LSMinimumSystemVersion")) != (BUNDLE_ID, tag[1:], tag[1:], "15.0"):
             raise ValueError("desktop bundle identity/version/platform mismatch")
         embedded = json.loads(zipped.read(f"{APP}/Contents/Resources/release.json"))
-        if embedded != {"version": tag, "source_sha": source, "platform": "macos-arm64"}:
+        provenance = {"version": tag, "source_sha": source, "platform": "macos-arm64"}
+        if "signing" in receipt:
+            provenance.update(signing=signing, preview=receipt["preview"])
+        if embedded != provenance:
             raise ValueError("signed desktop provenance does not match receipt")
         for name in ("MacOS/obey-voice-agent", "MacOS/obey-voice-engine",
                      "Frameworks/libsherpa-onnx-c-api.dylib", "Frameworks/libonnxruntime.dylib",
@@ -82,10 +95,12 @@ def smoke(bundle, tag):
             raise ValueError("bundled desktop engine has the wrong version")
 
 
-def finish(bundle, tag, source, output, identity=None, keychain=None, authentication=None):
+def finish(bundle, tag, source, output, identity=None, keychain=None, authentication=None, preview=False):
     output.mkdir(parents=True, exist_ok=True)
     archive = output / archive_name(tag)
-    receipt = {"version": tag, "source_sha": source, "platform": "macos-arm64", "notarized": False}
+    mode = "notarized" if identity else "ad-hoc"
+    receipt = {"version": tag, "source_sha": source, "platform": "macos-arm64",
+               "notarized": False, "signing": mode, "preview": preview}
     for binary in [*(bundle / "Contents/MacOS").iterdir(), *(bundle / "Contents/Frameworks").glob("*.dylib")]:
         if run("lipo", "-archs", str(binary)) != "arm64":
             raise ValueError(f"desktop payload is not native arm64: {binary.name}")
@@ -94,7 +109,7 @@ def finish(bundle, tag, source, output, identity=None, keychain=None, authentica
         receipt.update(notarized=True, team_id=identity[-11:-1],
                        notarization_id=notarize(bundle, archive, authentication))
     else:
-        run("codesign", "--force", "--deep", "--sign", "-", str(bundle))
+        sign_adhoc(bundle)
     smoke(bundle, tag)
     # The final archive is made AFTER stapling. Never upload the submission zip.
     archive.unlink(missing_ok=True)
@@ -102,7 +117,7 @@ def finish(bundle, tag, source, output, identity=None, keychain=None, authentica
     receipt["sha256"] = digest(archive)
     archive.with_suffix(".json").write_text(json.dumps(receipt, indent=2) + "\n")
     archive.with_name(archive.name + ".sha256").write_text(f"{receipt['sha256']}  {archive.name}\n")
-    validate(output, tag, source, allow_unsigned=identity is None)
+    validate(output, tag, source, signing=mode, allow_preview=preview)
     with tempfile.TemporaryDirectory(prefix="obey-desktop-extracted-") as scratch:
         run("ditto", "-x", "-k", str(archive), scratch)
         extracted = Path(scratch) / APP
@@ -114,12 +129,14 @@ def finish(bundle, tag, source, output, identity=None, keychain=None, authentica
     print(archive)
 
 
-def build(tag, output, unsigned=False):
+def build(tag, output, preview=False):
     stable_version(tag)
     if (platform.system(), platform.machine()) != ("Darwin", "arm64"):
         raise ValueError("desktop archives require Apple Silicon macOS")
     source = run("git", "rev-parse", "HEAD")
-    if not unsigned and (run("git", "rev-parse", f"{tag}^{{commit}}") != source or
+    mode = "ad-hoc" if preview else signing_mode(json.loads(
+        (ROOT / "packaging/release-channels.json").read_text())["channels"]["homebrew_cask"])
+    if not preview and (run("git", "rev-parse", f"{tag}^{{commit}}") != source or
                          run("git", "status", "--porcelain")):
         raise ValueError("public desktop archive requires a clean checkout of its release tag")
 
@@ -130,10 +147,11 @@ def build(tag, output, unsigned=False):
         bundle = ROOT / "apps/desktop/dist" / APP
         collect(ROOT, bundle)
         (bundle / "Contents/Resources/release.json").write_text(json.dumps(
-            {"version": tag, "source_sha": source, "platform": "macos-arm64"}, indent=2) + "\n")
+            {"version": tag, "source_sha": source, "platform": "macos-arm64",
+             "signing": mode, "preview": preview}, indent=2) + "\n")
         return bundle
 
-    if not unsigned:
+    if mode == "notarized":
         configuration()  # Fail before compiling if public signing is not configured.
     # Dependency build scripts do not receive signing credentials. Import the
     # private key only after the unprivileged build and notice collection finish.
@@ -142,8 +160,8 @@ def build(tag, output, unsigned=False):
         bundle = prepare()
     finally:
         os.environ.update(withheld)
-    if unsigned:
-        finish(bundle, tag, source, output)
+    if mode == "ad-hoc":
+        finish(bundle, tag, source, output, preview=preview)
     else:
         with credentials() as (identity, keychain, authentication):
             finish(bundle, tag, source, output, identity, keychain, authentication)
@@ -152,11 +170,11 @@ def build(tag, output, unsigned=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tag")
-    parser.add_argument("--unsigned", action="store_true", help="local/CI preview only; rejected by release promotion")
+    parser.add_argument("--preview", "--unsigned", action="store_true", help="local/CI preview only; rejected by release promotion")
     parser.add_argument("--output", type=Path, default=ROOT / "dist/desktop-release")
     args = parser.parse_args()
     os.chdir(ROOT)
-    build(args.tag, args.output, args.unsigned)
+    build(args.tag, args.output, args.preview)
 
 
 if __name__ == "__main__":

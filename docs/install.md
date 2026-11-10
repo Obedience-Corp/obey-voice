@@ -98,13 +98,17 @@ with glibc 2.39+ (Ubuntu 24.04+). It does not install the desktop app; use the
 [desktop source install](#desktop-app-macos) for that.
 
 The separate desktop cask, `obedience-corp/tap/obey-voice-app`, is created by the
-release pipeline after the first signed and notarized desktop archive is
-published. It is **not yet available**. Once that first app release is public:
+release pipeline after the first verified desktop archive is published. It is **not yet available**. Once that first app release is public:
 
 ```bash
 brew install --cask obedience-corp/tap/obey-voice-app
 open "/Applications/Obey Voice Agent.app"
 ```
+
+Ad-hoc-signed desktop releases are not notarized by Apple. After attempting
+to launch one, macOS may require **System Settings → Privacy & Security →
+Open Anyway** approval. Homebrew retains quarantine and does not approve the
+app for you. See [Apple’s opening instructions](https://support.apple.com/en-us/102445).
 
 The cask includes its own engine and native libraries; it does not require the
 CLI formula. Both share existing user settings and model caches. The cask

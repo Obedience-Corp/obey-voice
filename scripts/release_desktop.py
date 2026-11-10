@@ -7,6 +7,7 @@ import re
 import tempfile
 
 from desktop_artifacts import archive_name, validate
+from desktop_signing import signing_mode
 from release_homebrew import stable_version
 from release_service import ReleaseError, public_bytes
 
@@ -19,11 +20,18 @@ def names(tag):
     return [name, name + ".sha256", name.removesuffix(".zip") + ".json"]
 
 
-def render(tag, checksum):
+def render(tag, checksum, signing="notarized"):
     stable_version(tag)
     if not re.fullmatch(r"[a-f0-9]{64}", checksum):
         raise ReleaseError("invalid desktop checksum")
-    return '''cask "obey-voice-app" do
+    signing_mode({"signing": signing})
+    notice = ""
+    if signing == "ad-hoc":
+        notice = ("    This app is ad-hoc signed and is not notarized by Apple.\n"
+                  "    After attempting to open it, macOS may require approval in\n"
+                  "    System Settings > Privacy & Security > Open Anyway.\n")
+    return '''# Signing mode: %s
+cask "obey-voice-app" do
   version "%s"
   sha256 "%s"
 
@@ -40,12 +48,12 @@ def render(tag, checksum):
   uninstall quit: "com.obedience.voice-agent"
 
   caveats <<~EOS
-    Choose providers and download speech models during first-launch setup.
+%s    Choose providers and download speech models during first-launch setup.
     The app includes its own engine and native libraries; the CLI formula is separate.
     Settings, personas, sessions, and model caches are retained on uninstall.
   EOS
 end
-''' % (tag[1:], checksum)
+''' % (signing, tag[1:], checksum, notice)
 
 
 def reject_downgrade(text, tag):
@@ -62,6 +70,7 @@ class Desktop:
         self.tag, self.source, self.report = tag, source, report
         self.tap = config["repository"]
         self.branch = f"release/obey-voice-app-{tag}"
+        self.signing = signing_mode(config)
 
     def current(self):
         text, _ = self.github.file(self.tap, CASK, "main")
@@ -77,11 +86,11 @@ class Desktop:
         if expected <= existing:
             self.github.download_release(self.repo, self.tag, scratch, names(self.tag))
         else:
-            self.report("homebrew_cask", "signing-and-notarizing")
+            self.report("homebrew_cask", "building-desktop", signing=self.signing)
             run = self.github.workflow(self.repo, self.config["artifact_workflow"], self.tag, self.source)
             self.github.gh("run", "download", str(run), "-R", self.repo,
                            "--name", "obey-voice-desktop", "--dir", str(scratch))
-            validate(scratch, self.tag, self.source)
+            validate(scratch, self.tag, self.source, signing=self.signing)
             # Resume partial uploads only when they match this verified build.
             # Never overwrite published bytes, even if a new notarization differs.
             for name in names(self.tag):
@@ -92,7 +101,7 @@ class Desktop:
                             raise ReleaseError("published desktop asset differs; refusing replacement")
                 else:
                     self.github.gh("release", "upload", self.tag, "-R", self.repo, str(scratch / name))
-        receipt = validate(scratch, self.tag, self.source)
+        receipt = validate(scratch, self.tag, self.source, signing=self.signing)
         for name in names(self.tag):
             if public_bytes(f"https://github.com/{self.repo}/releases/download/{self.tag}/{name}") != (scratch / name).read_bytes():
                 raise ReleaseError("public desktop readback differs from verified bytes")
@@ -118,16 +127,18 @@ class Desktop:
             return prs[0]
         self.github.gh("pr", "create", "-R", self.tap, "--head", self.branch, "--base", "main",
                        "--title", f"Release Obey Voice desktop {self.tag}", "--body",
-                       "Install the verified Developer ID signed and notarized desktop archive. "
+                       f"Install the verified {self.signing} desktop archive. "
                        "The release coordinator verifies public asset checksums, cask installation, "
-                       "signature, Gatekeeper acceptance, upgrade/reinstall and data retention before merge.")
+                       "signature, expected Gatekeeper behavior, upgrade/reinstall and data retention before merge. "
+                       + ("This ad-hoc signed build is not notarized; users may need Open Anyway approval."
+                          if self.signing == "ad-hoc" else "Developer ID/notarization and Gatekeeper acceptance are required."))
         return self.pull_request()
 
     def run(self):
         self.current()
         with tempfile.TemporaryDirectory(prefix="obey-desktop-release-") as scratch:
             receipt = self.assets(Path(scratch))
-            desired = render(self.tag, receipt["sha256"])
+            desired = render(self.tag, receipt["sha256"], self.signing)
         current = self.current()
         sha = self.update_cask(desired)
         pr = self.pull_request() if current != desired else None
@@ -140,5 +151,6 @@ class Desktop:
             raise ReleaseError("desktop cask awaits review/merge; rerun release create afterward")
         main = self.github.ref(self.tap, "heads/main")
         run = self.github.workflow(self.tap, self.config["workflow"], "main", main, {"mode": "public"})
-        self.report("homebrew_cask", "verified", version=self.tag,
+        self.report("homebrew_cask", "verified", version=self.tag, signing=self.signing,
+                    gatekeeper_approval_required=self.signing == "ad-hoc",
                     run=f"https://github.com/{self.tap}/actions/runs/{run}")

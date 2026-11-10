@@ -60,7 +60,7 @@ artifact-test:
     python3 -m unittest discover -s scripts -p test_release_*.py
     python3 -m unittest discover -s scripts -p test_desktop_*.py
 
-# Build a signed/notarized desktop archive from a clean release tag.
+# Build a desktop archive from a clean release tag using its configured signing mode.
 [no-cd]
 [positional-arguments]
 desktop-artifact version:
@@ -70,7 +70,7 @@ desktop-artifact version:
 [no-cd]
 [positional-arguments]
 desktop-preview version="v0.0.0":
-    python3 scripts/desktop_artifacts.py "$1" --unsigned
+    python3 scripts/desktop_artifacts.py "$1" --preview
 
 # Render the org tap formula from both verified archives in dist/release.
 [no-cd]
