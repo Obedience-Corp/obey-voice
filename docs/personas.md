@@ -294,7 +294,8 @@ A persona backed by Claude Code keeps its Claude session while other personas
 speak: Obey Voice parks it and resumes the same session when that persona is
 addressed again. Each request carries, as quoted conversation records, only the
 lines that session has not seen: your lines, other personas' replies, and
-replies Obey Voice recorded under that persona's name. Lines count as seen only
+replies Obey Voice recorded under that persona's name. Other personas' tool
+calls and tool output are not sent. Lines count as seen only
 after a reply completes, so an interrupted reply is sent again next time, marked
 as unfinished. Claude receives nothing said before its persona was first
 addressed in the conversation; when another agent hands it the floor, that
@@ -306,7 +307,9 @@ stay parked; the least recently used one is closed first. A parked session is
 also closed when its persona's prompt, model, provider or other settings change,
 when the conversation is cleared, and when Obey Voice exits. After resuming a
 saved conversation, a persona on Claude starts a new session that receives the
-lines since it was first addressed, within the same limit.
+lines since it was first addressed, within the same limit. With group
+participation on, a persona on Claude can be addressed directly, but a
+discussion among several personas still requires every member to be on Ollama.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental

@@ -71,6 +71,10 @@ func TestSwitchingAwayFromClaudeParksItsSessionUntilClear(t *testing.T) {
 	if len(c.selector.parked) != 0 {
 		t.Fatalf("a cleared conversation kept a parked session: %+v", c.selector.parked)
 	}
+	c.say("switch to Mira", "Hello again.")
+	if last := lastClaudeRequest(t, c.log); last.Resume != "" {
+		t.Fatalf("a cleared conversation resumed Mira's session: %+v", last)
+	}
 
 	closing := newClaudeConversation(t, 20)
 	closing.say("Note that the vault code is cobalt.", "switch to Ember")

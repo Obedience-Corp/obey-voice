@@ -2,6 +2,7 @@ package personaruntime
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -147,5 +148,77 @@ func TestClaudeShareStartsWhereItsPersonaWasFirstAddressed(t *testing.T) {
 	}
 	if turns := c.selector.Transcript(); len(turns) != len(earlier)+4 || turns[0].Content != earlier[0].Content {
 		t.Fatalf("the earlier conversation must stay in the transcript: %+v", turns)
+	}
+}
+
+func TestCatchUpSharesSpokenLinesOnly(t *testing.T) {
+	turns := []brain.Turn{
+		{Role: "user", Content: "Note the door is teal."},
+		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
+		{Role: "user", Content: "Read the vault file."},
+		{Role: "assistant", ToolCalls: []brain.TurnToolCall{{ID: "c1", Name: "read"}}, PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+		{Role: "tool", ToolName: "read", ToolCallID: "c1", Content: "secret tool output"},
+		{Role: "assistant", Content: "The vault code is cobalt.", PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+	}
+	tr := newTranscript(func() string { return "epoch" }, turns)
+	cursor := brain.SessionContext(turns, 0, 2)
+	tr.setSession("mira", &cursor)
+	catchUp, covered, ok := tr.CatchUp("mira")
+	if !ok || covered != len(turns) || catchUp.Seen != 2 || len(catchUp.Turns) != 4 {
+		t.Fatalf("catch-up = %+v, covered %d, ok %v", catchUp, covered, ok)
+	}
+	for _, turn := range catchUp.Turns {
+		if turn.Role == "tool" || len(turn.ToolCalls) > 0 {
+			t.Fatalf("catch-up carries tool traffic: %+v", catchUp.Turns)
+		}
+	}
+	if got := catchUp.Turns[3].Content; got != "The vault code is cobalt." {
+		t.Fatalf("last shared line = %q", got)
+	}
+}
+
+func TestSessionShareStartIsTheTurnThatFirstAddressedThePersona(t *testing.T) {
+	asked := []brain.Turn{
+		{Role: "user", Content: "Note the door is teal."},
+		{Role: "assistant", Content: "Noted.", PersonaID: "ember"},
+		{Role: "user", Content: "Mira, what do you think?"},
+		{Role: "assistant", Content: "Teal is fine.", PersonaID: "mira"},
+	}
+	handedOff := []brain.Turn{
+		{Role: "user", Content: "Note the door is teal."},
+		{Role: "assistant", Content: "@Mira what do you think?", PersonaID: "ember"},
+		{Role: "assistant", Content: "Teal is fine.", PersonaID: "mira"},
+	}
+	for _, tc := range []struct {
+		name    string
+		turns   []brain.Turn
+		handoff bool
+		want    int
+	}{
+		{"asked by the user", asked, false, 2},
+		{"handed the floor", handedOff, false, 1},
+		{"not addressed yet", asked[:2], false, 2},
+		{"being handed the floor", handedOff[:2], true, 1},
+	} {
+		if got := sessionShareStart(tc.turns, "mira", tc.handoff); got != tc.want {
+			t.Errorf("%s: share start = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestClaudeSelectedAtLaunchButNeverAddressedStartsWhereItIsAddressed(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	c.say("switch to Ember", "Note that the vault code is cobalt.", "switch to Mira", "What do you think?")
+	requests := readClaudeRequests(t, c.log)
+	if len(requests) != 1 {
+		t.Fatalf("requests = %+v", requests)
+	}
+	transcript := c.selector.Transcript()
+	if got, want := promptRecords(t, requests[0].Prompt), recordsOf(transcript[4:6]); !slices.Equal(got, want) {
+		t.Fatalf("catch-up = %+v, want %+v", got, want)
+	}
+	requireOmits(t, requests[0].Prompt, "Note that the vault code", "switch to Ember")
+	if cursor := c.selector.ContextSnapshots()["mira"]; cursor.Session == nil || cursor.Session.From != 4 {
+		t.Fatalf("cursor = %+v", cursor)
 	}
 }

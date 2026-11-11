@@ -3,6 +3,7 @@ package personaruntime
 import (
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -65,7 +66,8 @@ func (t *transcript) Append(epoch string, turns ...brain.Turn) error {
 
 // CatchUp returns what personaID's provider session may receive and the
 // transcript length it covers. It reports false when the persona has no
-// cursor that still matches the transcript.
+// cursor that still matches the transcript. Only spoken lines are shared;
+// another persona's tool calls and tool output stay on this machine.
 func (t *transcript) CatchUp(personaID string) (brain.SessionCatchUp, int, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -74,8 +76,19 @@ func (t *transcript) CatchUp(personaID string) (brain.SessionCatchUp, int, bool)
 	if !ok || cursor.Session == nil || !cursor.Matches(t.turns) {
 		return brain.SessionCatchUp{}, 0, false
 	}
-	from := cursor.Session.From
-	return brain.SessionCatchUp{Turns: brain.CloneTurns(t.turns[from:]), Seen: cursor.Through - from}, len(t.turns), true
+	var catchUp brain.SessionCatchUp
+	for i := cursor.Session.From; i < len(t.turns); i++ {
+		turn := t.turns[i]
+		if turn.Role == "tool" || (turn.Role == "assistant" && strings.TrimSpace(turn.Content) == "") {
+			continue
+		}
+		if i < cursor.Through {
+			catchUp.Seen++
+		}
+		catchUp.Turns = append(catchUp.Turns, turn)
+	}
+	catchUp.Turns = brain.CloneTurns(catchUp.Turns)
+	return catchUp, len(t.turns), true
 }
 
 // AppendSeen records a completed request of personaID whose catch-up covered

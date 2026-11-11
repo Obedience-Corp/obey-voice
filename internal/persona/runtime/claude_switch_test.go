@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -321,5 +322,90 @@ func TestOllamaHandsTheFloorToClaudeByName(t *testing.T) {
 	requireOmits(t, request.Prompt, "door is teal", "\nUser:")
 	if cursor := c.selector.ContextSnapshots()["mira"]; cursor.Session == nil || cursor.Session.From != 1 || cursor.Through != 3 {
 		t.Fatalf("Mira's cursor = %+v", cursor)
+	}
+}
+
+func TestGroupParticipationAddressesClaudeDirectlyButKeepsDiscussionsOnOllama(t *testing.T) {
+	c := newMixedConversation(t, 20, "ember")
+	c.selector.opts.Base.GroupParticipationEnabled = true
+	c.p.RouteHandoff = c.selector.RouteHandoff
+	c.p.EndDiscussion = c.selector.EndDiscussion
+	c.p.CompleteDiscussion = c.selector.RecordDiscussionResponse
+	policy := &groupPolicy{}
+	policy.audience = func(_ context.Context, r discussion.AudienceRequest) (discussion.Audience, error) {
+		var mira, all []string
+		for _, p := range r.Participants {
+			all = append(all, p.Key)
+			if p.Name == "Mira" {
+				mira = append(mira, p.Key)
+			}
+		}
+		switch {
+		case strings.Contains(r.Latest, "everyone"):
+			return discussion.Audience{Kind: "group", Members: all, Coverage: "all", Reason: "explicit"}, nil
+		case strings.Contains(r.Latest, "Mira"):
+			return discussion.Audience{Kind: "direct", Members: mira, Coverage: "none", Reason: "explicit"}, nil
+		}
+		return discussion.Audience{Kind: "current", Coverage: "none", Reason: "none"}, nil
+	}
+	policy.next = func(context.Context, discussion.Context) (discussion.Next, error) {
+		return discussion.Next{Kind: "yield", Reason: "no_contribution"}, nil
+	}
+	policy.check = func(context.Context, discussion.Context, discussion.Persona) (discussion.Contribution, error) {
+		return discussion.Contribution{Kind: "speak", Reason: "perspective", Intent: "Offer a view"}, nil
+	}
+	c.selector.opts.DiscussionDecider = policy
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	if err := c.p.RunTurnTextMode(ctx, "What does everyone think?"); err == nil || !strings.Contains(err.Error(), "needs local Ollama") {
+		t.Fatalf("a group discussion with a persona on Claude = %v", err)
+	}
+	if got := c.selector.Snapshot().PersonaID; got != "ember" {
+		t.Fatalf("selection moved to %q", got)
+	}
+	c.say("Mira, what do you think?")
+	if got := c.selector.Snapshot().PersonaID; got != "mira" {
+		t.Fatalf("direct audience selected %q", got)
+	}
+	requests := readClaudeRequests(t, c.log)
+	if len(requests) != 1 {
+		t.Fatalf("claude requests = %+v", requests)
+	}
+	requireContains(t, requests[0].Prompt, "User: Mira, what do you think?")
+	requireOmits(t, requests[0].Prompt, "everyone")
+	if reply := c.selector.Transcript(); len(reply) == 0 || reply[len(reply)-1].PersonaID != "mira" {
+		t.Fatalf("transcript = %+v", reply)
+	}
+}
+
+func TestRestoredSessionReachesClaudeThroughSelection(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+	c := newMixedConversation(t, 20, "ember")
+	c.say("Note that the vault code is cobalt.", "switch to Mira", "What do you think?", "switch to Ember", "What color is the door?")
+	saved := c.saved()
+	if len(c.selector.parked) != 1 {
+		t.Fatalf("parked = %+v", c.selector.parked)
+	}
+	// The order serve uses to resume a saved conversation in a live process.
+	c.p.Brain.LoadHistory(saved.Turns)
+	c.selector.RestoreSession(saved.ID, saved.SelectedPersonaID, saved.SelectedPersonaDisplayName, saved.SelectedPersonaPromptHash)
+	if len(c.selector.parked) != 0 {
+		t.Fatalf("restoring a session kept a parked provider: %+v", c.selector.parked)
+	}
+	c.selector.RestoreContexts(saved.PersonaContexts)
+	c.selector.RestoreTranscript(saved.Turns)
+	if _, err := c.selector.Select(t.Context(), saved.SelectedPersonaID, "resume"); err != nil {
+		t.Fatal(err)
+	}
+	c.say("switch to Mira", "Do you agree?")
+	requests := readClaudeRequests(t, c.log)
+	last := requests[len(requests)-1]
+	if len(requests) != 2 || last.Resume != "" {
+		t.Fatalf("restored conversation requests = %+v", requests)
+	}
+	transcript := c.selector.Transcript()
+	if got, want := promptRecords(t, last.Prompt), recordsOf(transcript[2:12]); !slices.Equal(got, want) {
+		t.Fatalf("replay after restore = %+v, want %+v", got, want)
 	}
 }

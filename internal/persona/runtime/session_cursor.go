@@ -1,25 +1,20 @@
 package personaruntime
 
 import (
+	"slices"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 )
 
 // sessionShareStart is where a provider keeping its own session begins to
-// receive this conversation: the request that first addressed its persona.
-// A persona addressed only now starts at the end of the transcript, or at the
-// reply that handed it the floor. Earlier turns are never sent to that
-// provider. Returning 0 here would share the whole conversation instead.
+// receive this conversation: the request or handoff that first addressed its
+// persona, just before its first reply. A persona addressed only now starts at
+// the end of the transcript, or at the reply that handed it the floor. Earlier
+// turns are never sent to that provider. Returning 0 here would share the
+// whole conversation instead.
 func sessionShareStart(turns []brain.Turn, personaID string, handoff bool) int {
-	for i, turn := range turns {
-		if turn.Role != "assistant" || turn.PersonaID != personaID {
-			continue
-		}
-		for j := i - 1; j >= 0; j-- {
-			if turns[j].Role == "user" {
-				return j
-			}
-		}
-		return i
+	if i := slices.IndexFunc(turns, answeredBy(personaID)); i >= 0 {
+		return max(i-1, 0)
 	}
 	if handoff && len(turns) > 0 && turns[len(turns)-1].Role == "assistant" {
 		return len(turns) - 1
@@ -27,11 +22,19 @@ func sessionShareStart(turns []brain.Turn, personaID string, handoff bool) int {
 	return len(turns)
 }
 
+func answeredBy(personaID string) func(brain.Turn) bool {
+	return func(turn brain.Turn) bool { return turn.Role == "assistant" && turn.PersonaID == personaID }
+}
+
 // sessionCursor returns the persona's cursor when it still matches turns,
-// otherwise a new one that has seen nothing from its share start.
+// otherwise a new one that has seen nothing from its share start. A cursor
+// whose persona has neither received nor answered anything belongs to a
+// persona selected but never addressed, so it starts again where it is.
 func (s *Selector) sessionCursor(personaID string, turns []brain.Turn, handoff bool) brain.PersonaContext {
 	if cursor, ok := s.transcript.session(personaID, turns); ok {
-		return cursor
+		if from := cursor.Session.From; cursor.Through > from || slices.ContainsFunc(turns[from:], answeredBy(personaID)) {
+			return cursor
+		}
 	}
 	from := sessionShareStart(turns, personaID, handoff)
 	return brain.SessionContext(turns, from, from)
