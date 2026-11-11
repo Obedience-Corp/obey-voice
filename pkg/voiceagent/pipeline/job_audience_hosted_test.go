@@ -36,6 +36,17 @@ func TestReceivesJobOnAPersonaSentOnlyItsShare(t *testing.T) {
 			}
 		})
 	}
+	// The persona that started a job is all that decides; its backend at the
+	// time does not, so an untagged job reaches the only persona the
+	// conversation has had after it moved onto a hosted backend.
+	t.Run("an untagged job after the only persona moved from Ollama", func(t *testing.T) {
+		p := &Pipeline{Brain: museSparkBrain(t)}
+		NewAgency(p, job.NewTable(t.Context()), nil, &config.Config{BrainProvider: "ollama", ActivePersona: "mira"}, nil).Wire()
+		p.Agency.ReplaceWorker(nil, onMuse, nil)
+		if !p.receivesJob(nil) || !p.receivesJob(map[string]string{"provider": "ollama"}) {
+			t.Fatal("Mira was not given a job only she can have started")
+		}
+	})
 	t.Run("a job started outside a spawn after another persona was live", func(t *testing.T) {
 		p := &Pipeline{Brain: museSparkBrain(t)}
 		NewAgency(p, job.NewTable(t.Context()), nil, &config.Config{BrainProvider: "ollama", ActivePersona: "ember"}, nil).Wire()

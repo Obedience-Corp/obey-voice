@@ -393,6 +393,9 @@ still sent when the result is delivered. Compaction summarizes only the share,
 and the exchange kept after the summary is the last one in the share. Like a
 persona on Claude, it receives the pending results of background jobs it
 started, on whichever backend it started them, and not those of other personas.
+A job saved before jobs recorded their persona, or started outside a spawn,
+goes to it when no other persona is in the conversation, even one it started
+on a local backend before it was moved.
 Its hosted notice follows its share as for Claude: in a conversation it has to
 itself it reads "What is said to it is sent to Codex." (or Muse Spark, or Obey),
 not "This conversation is sent to Codex."
