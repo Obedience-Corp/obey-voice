@@ -336,6 +336,15 @@ of how many earlier lines were left out. A persona on Claude receives the
 pending results of background jobs it started; results of jobs other personas
 started wait for those personas.
 
+A fresh Claude session therefore starts with a replay of up to 64 KiB of the
+persona's share, where it used to receive only the last six lines. This
+applies to a conversation with a single persona on Claude too: the first
+request after a resume, after the session fuse resets the session, or when the
+unseen lines do not fit, sends more input tokens and costs more than before.
+After a compaction the fresh session starts from the summary instead. A prompt
+of 100 KiB or more reaches the Claude CLI on stdin rather than as one
+command-line argument.
+
 At most four sessions stay parked; the least recently used one is closed first.
 A parked session is also closed when its persona's prompt, model, provider or
 other settings change, when the conversation is cleared, and when Obey Voice
