@@ -274,9 +274,19 @@ shorter parent deadline or cancellation still stops the request immediately.
 Shared-history projection
 is verified for Ollama, Codex, Muse Spark, and Obey personas: Codex is tested
 on its own, and Muse Spark and Obey each share a conversation with an Ollama
-persona. A persona on another provider (Claude, Grok, Cursor) is refused rather
-than silently replaced. The local acceptance uses Qwen3:8b and Kokoro voices
-`af_heart` and `am_michael`; it does not establish parity for every provider.
+persona. Switching to a persona on another provider (Claude, Grok, Cursor) is
+refused rather than silently replaced. The local acceptance uses Qwen3:8b and
+Kokoro voices `af_heart` and `am_michael`; it does not establish parity for every
+provider.
+
+A conversation can still start on a Claude, Grok, or Cursor persona, with the
+same persona controls. Those providers keep their own session history without
+speaker identity, so Obey Voice keeps the shared transcript itself and records
+each reply, including an interrupted one, under the persona that gave it.
+Selecting an Ollama, Codex, Muse Spark, or Obey persona from there hands it that
+attributed transcript. Clearing the conversation or changing its settings
+restarts the same persona's provider session from the transcript. Group
+participation is not offered while one of these personas is responding.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental
@@ -298,6 +308,8 @@ Older sessions remain readable; missing identity stays unknown, including old
 assistant-role names. A future unsupported format is refused. Compaction keeps
 the canonical transcript and a `<id>.pre-compact.json` backup while producing
 a bounded model context with complete tool groups and attributed source facts.
+In a conversation that started on Claude, Grok, or Cursor, the summary reseeds
+only that provider's session; the saved transcript stays complete.
 A stored transcript alone does not prove a model received all of it: its
 configured history/context limits still govern the projection.
 
