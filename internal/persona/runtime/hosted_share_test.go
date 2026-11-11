@@ -649,3 +649,47 @@ func contents(turns []brain.Turn) []string {
 	}
 	return out
 }
+
+// spokenLine is the group prompt's line naming who has replied in the thread.
+func spokenLine(t *testing.T, prompt string) string {
+	t.Helper()
+	for line := range strings.Lines(prompt) {
+		if i := strings.Index(line, "Agents with replies recorded in this thread:"); i >= 0 {
+			return line[i:]
+		}
+	}
+	t.Fatalf("no spoken line in:\n%s", prompt)
+	return ""
+}
+
+func TestHostedShareNamesWhoSpokeInItAfterItsViewIsSummarized(t *testing.T) {
+	for _, provider := range hostedShareProviders {
+		t.Run(provider, func(t *testing.T) {
+			c := newConversation(t, 20, "ember", provider, "")
+			nova := testProfile("nova", "Nova", "nova")
+			nova.Brain.Model = ""
+			writeTestProfile(t, c.catalog.Dir, nova)
+			writeTestPrompt(t, c.base.PromptsDir, "nova", "You are {agent_name}.")
+			c.say(preInviteUser, "switch to Mira", "What do you think?", "switch to Nova", "Your view?", "switch to Mira", "And yours?")
+			before := spokenLine(t, c.lastHostedPrompt())
+			requireContains(t, before, "Nova")
+			requireOmits(t, before, "Ember")
+
+			c.p.CompactPrompt = "Summarize the conversation."
+			if err := c.p.CompactConversation(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			c.say("Who spoke?")
+			after := spokenLine(t, c.lastHostedPrompt())
+			requireContains(t, after, "Nova")
+			requireOmits(t, after, "Ember")
+
+			saved := c.saved()
+			c.start("mira", saved.Turns, saved.PersonaContexts)
+			c.say("After a restart?")
+			resumed := spokenLine(t, c.lastHostedPrompt())
+			requireContains(t, resumed, "Nova")
+			requireOmits(t, resumed, "Ember")
+		})
+	}
+}

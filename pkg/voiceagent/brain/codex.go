@@ -175,7 +175,7 @@ func (c *CodexBrain) buildPrompt(input string, opts StreamOptions) string {
 			b.WriteString(app + "\n\n")
 		}
 	}
-	if group := c.groupContext.prompt(c.cfg, c.cfg.AgentName, c.working); group != "" {
+	if group := c.groupContext.promptWith(c.cfg, c.cfg.AgentName, c.snapshot.Speakers, c.working); group != "" {
 		b.WriteString(group + "\n\n")
 	}
 	if c.sessionID == "" && len(c.working) > 0 {

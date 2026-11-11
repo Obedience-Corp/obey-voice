@@ -2,6 +2,7 @@ package brain
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -17,7 +18,15 @@ func (g *groupContext) SetGroupParticipants(participants []GroupParticipant) {
 }
 
 func (g *groupContext) prompt(cfg *config.Config, own string, turns []Turn) string {
-	names := groupAgentNames(turns)
+	return g.promptWith(cfg, own, nil, turns)
+}
+
+// promptWith also names speakers whose replies turns no longer hold.
+func (g *groupContext) promptWith(cfg *config.Config, own string, speakers []string, turns []Turn) string {
+	var names []string
+	for _, name := range append(slices.Clone(speakers), groupAgentNames(turns)...) {
+		names = appendGroupName(names, name)
+	}
 	group := len(g.participants) > 1
 	for _, name := range names {
 		if !strings.EqualFold(name, own) {
@@ -29,6 +38,9 @@ func (g *groupContext) prompt(cfg *config.Config, own string, turns []Turn) stri
 	}
 	return groupConversationContext(cfg, own, g.participants, names)
 }
+
+// GroupSpeakers is the display names of the personas with replies in turns.
+func GroupSpeakers(turns []Turn) []string { return groupAgentNames(turns) }
 
 // Catalog availability does not establish who has spoken. Only recorded public
 // display names do; raw storage IDs never become participant names.

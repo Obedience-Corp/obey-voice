@@ -264,6 +264,9 @@ type ContinuitySnapshot struct {
 	Working          []Turn
 	Archive          []continuity.Entry
 	ContextHighWater int
+	// Speakers names the personas with replies in a hosted persona's share,
+	// which its working view may since have summarized or trimmed away.
+	Speakers []string
 }
 
 // ContinuityTransferProvider moves an active conversation between persona

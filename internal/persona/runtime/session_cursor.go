@@ -141,6 +141,7 @@ func shareView(cursor brain.PersonaContext, turns []brain.Turn) brain.Continuity
 		}
 	}
 	view.Canonical = brain.CloneTurns(turns)
+	view.Speakers = brain.GroupSpeakers(turns[cursor.Session.From:])
 	return view
 }
 

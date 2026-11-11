@@ -93,7 +93,7 @@ func TestCodexSelectorInitialSwitchReloadAndRestore(t *testing.T) {
 	if _, err := selector.Select(ctx, "samantha", "explicit"); err != nil {
 		t.Fatal(err)
 	}
-	sharedSnapshot := brain.ContinuitySnapshot{Canonical: snapshot.Canonical, Working: snapshot.Canonical}
+	sharedSnapshot := brain.ContinuitySnapshot{Canonical: snapshot.Canonical, Working: snapshot.Canonical, Speakers: []string{"Santa"}}
 	assertContinuity := func() {
 		t.Helper()
 		got := p.Brain.(brain.ContinuityTransferProvider).ContinuitySnapshot()

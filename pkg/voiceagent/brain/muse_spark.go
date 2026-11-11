@@ -104,7 +104,7 @@ func (b *MuseSparkBrain) buildPrompt(input string, o StreamOptions) string {
 	for _, t := range b.working {
 		parts = append(parts, cliHistoryRecord(t, b.speakerNames))
 	}
-	if group := b.groupContext.prompt(b.cfg, b.agentName(), b.working); group != "" {
+	if group := b.groupContext.promptWith(b.cfg, b.agentName(), b.snapshot.Speakers, b.working); group != "" {
 		parts = append(parts, group)
 	}
 	if app := ApplicationRequestContext(b.cfg, "muse-spark", input); app != "" {
