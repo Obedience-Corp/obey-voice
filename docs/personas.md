@@ -272,7 +272,9 @@ includes model queueing/loading as well as classification; a cold or busy model
 can exceed the former fixed 15-second limit before generating a decision. A
 shorter parent deadline or cancellation still stops the request immediately.
 Shared-history projection
-is currently verified for Ollama. An unsupported provider is refused rather
+is verified for Ollama, Codex, Muse Spark, and Obey personas: Codex is tested
+on its own, and Muse Spark and Obey each share a conversation with an Ollama
+persona. A persona on another provider (Claude, Grok, Cursor) is refused rather
 than silently replaced. The local acceptance uses Qwen3:8b and Kokoro voices
 `af_heart` and `am_michael`; it does not establish parity for every provider.
 
