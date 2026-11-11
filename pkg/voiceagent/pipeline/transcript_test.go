@@ -403,3 +403,45 @@ func TestHostTranscriptRecordsBackgroundCompletionOnce(t *testing.T) {
 		t.Fatalf("result not communicated: %+v", s)
 	}
 }
+
+// sharedStoppedBrain keeps shared history and, stopped mid-reply, records its
+// whole reply in that history and reports success.
+type sharedStoppedBrain struct {
+	routedProjectionBrain
+}
+
+func (b *sharedStoppedBrain) ThinkStream(ctx context.Context, input string, _ brain.StreamOptions) (*brain.Stream, error) {
+	out, done := make(chan string, 1), make(chan brain.StreamResult, 1)
+	out <- "The door is"
+	go func() {
+		<-ctx.Done()
+		b.turns = append(b.turns, brain.Turn{Role: "user", Content: input}, brain.Turn{Role: "assistant", Content: "The door is teal."})
+		done <- brain.StreamResult{}
+		close(done)
+		close(out)
+	}()
+	return &brain.Stream{Chunks: out, Done: done}, nil
+}
+
+// The rule that stores a stopped request as interrupted belongs to the host
+// record, which a provider keeping shared history never gets: its stopped
+// reply stays as it recorded it, and the host records nothing.
+func TestStoppedTurnOnASharedHistoryProviderLeavesTheHostRecordEmpty(t *testing.T) {
+	transcript := &recordedTranscript{}
+	b := &sharedStoppedBrain{routedProjectionBrain{fakeBrain: &fakeBrain{}}}
+	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
+	p.AdmitInput = admitAs("response-1", func(input string) string { return input })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var once sync.Once
+	events.Subscribe(p.Events, func(events.ResponseDelta) { once.Do(cancel) })
+	if err := p.RunTurnTextMode(ctx, "What color is the door?"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+	if turns := transcript.Turns(); len(turns) != 0 {
+		t.Fatalf("host recorded a provider that keeps shared history: %+v", turns)
+	}
+	if !brain.KeepsSharedHistory(b) || p.transcriptFor(b) != nil {
+		t.Fatal("a provider keeping shared history was given the host record")
+	}
+}
