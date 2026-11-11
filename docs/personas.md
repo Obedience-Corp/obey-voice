@@ -337,7 +337,9 @@ says how much was left out. When the unseen lines still do not fit, Obey Voice
 starts a fresh Claude session and sends the newest lines that fit, with a note
 of how many earlier lines were left out. A persona on Claude receives the
 pending results of background jobs it started; results of jobs other personas
-started wait for those personas.
+started wait for those personas. A job saved before jobs recorded their
+persona goes to the persona answering when no other persona is in the
+conversation, and an unset `active_persona` counts as the default persona.
 
 A fresh Claude session therefore starts with a replay of up to 64 KiB of the
 persona's share, where it used to receive only the last six lines. This

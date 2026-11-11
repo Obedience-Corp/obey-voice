@@ -110,13 +110,7 @@ func (p *Pipeline) deliverableResult(r work.ResultView) bool {
 	if !brain.KeepsPersonaSession(p.Brain) {
 		return true
 	}
-	live := ""
-	if p.Agency != nil {
-		if cfg := p.Agency.currentConfig(); cfg != nil {
-			live = cfg.ActivePersona
-		}
-	}
-	return live != "" && r.Outcome.Config["persona"] == live
+	return p.startedByLivePersona(r.Outcome.Config)
 }
 
 func (o *ordinaryCompletion) close() {
