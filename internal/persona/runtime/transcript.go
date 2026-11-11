@@ -2,6 +2,8 @@ package personaruntime
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"sync"
 
@@ -22,6 +24,8 @@ type transcript struct {
 	turns    []brain.Turn
 	sessions brain.PersonaContexts
 	live     string // the selected persona when its provider keeps a session
+	// cleared runs after a clear, outside the lock.
+	cleared func()
 }
 
 func newTranscript(current func() string, turns []brain.Turn) *transcript {
@@ -38,8 +42,12 @@ func (t *transcript) reset(turns []brain.Turn) {
 
 func (t *transcript) Clear() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.turns, t.sessions = nil, nil
+	cleared := t.cleared
+	t.mu.Unlock()
+	if cleared != nil {
+		cleared()
+	}
 }
 
 func (t *transcript) Turns() []brain.Turn {
@@ -60,13 +68,25 @@ func (t *transcript) Append(epoch string, turns ...brain.Turn) error {
 
 // CatchUp returns what personaID's provider session may receive and the
 // transcript length it covers. It reports false when the persona has no
-// cursor that still matches the transcript.
+// cursor that still matches the transcript. The selected persona's cursor is
+// then started again at the end of the transcript, so its session receives
+// nothing said before but stays caught up from here on.
 func (t *transcript) CatchUp(personaID string) (brain.SessionCatchUp, int, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cursor, ok := t.sessions[personaID]
 	if !ok || cursor.Session == nil || !cursor.Matches(t.turns) {
-		return brain.SessionCatchUp{}, 0, false
+		if personaID == "" || personaID != t.live {
+			return brain.SessionCatchUp{}, 0, false
+		}
+		if len(t.turns) > 0 {
+			fmt.Fprintf(os.Stderr, "obey-voice: persona %q lost its place in the conversation; its session receives only what is said from now on\n", personaID)
+		}
+		if t.sessions == nil {
+			t.sessions = make(brain.PersonaContexts)
+		}
+		t.sessions[personaID] = brain.SessionContext(t.turns, len(t.turns), len(t.turns))
+		return brain.SessionCatchUp{}, len(t.turns), true
 	}
 	var catchUp brain.SessionCatchUp
 	for i := cursor.Session.From; i < len(t.turns); i++ {
