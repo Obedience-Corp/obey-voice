@@ -300,6 +300,11 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 			b.dropSession()
 			raw, _, err = b.streamAttempt(ctx, out, streamOpts)
 		}
+		if err == nil {
+			// However the CLI ends a stopped request, it leaves this
+			// provider alone: the next request may already be running.
+			err = ctx.Err()
+		}
 		if err != nil {
 			done <- StreamResult{Err: err}
 			return
