@@ -445,7 +445,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							sess.onStart(decision)
 						}
 						if sess.onEnd != nil {
-							sess.onEnd(ToolResult{ToolCall: decision, Preview: kind})
+							sess.onEnd(ToolResult{ToolCall: decision, Preview: kind, Outcome: &events.ToolOutcome{
+								Status: events.ToolOutcomeSucceeded, InputSummary: kind, OutputPreview: kind,
+							}})
 						}
 					}
 					// Drop this turn from the talking window. Work belongs on
