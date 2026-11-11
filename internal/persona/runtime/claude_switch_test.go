@@ -409,3 +409,69 @@ func TestRestoredSessionReachesClaudeThroughSelection(t *testing.T) {
 		t.Fatalf("replay after restore = %+v, want %+v", got, want)
 	}
 }
+
+func TestFifthParkedClaudeSessionRetiresTheLeastRecentlyUsed(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+	c := newClaudeConversation(t, 20)
+	names := []string{"Ava", "Bea", "Cal", "Dee", "Eli"}
+	for _, name := range names {
+		id := strings.ToLower(name)
+		p := testProfile(id, name, id)
+		p.Brain.Provider, p.Brain.Model = "claude", ""
+		writeTestProfile(t, c.catalog.Dir, p)
+		writeTestPrompt(t, c.base.PromptsDir, id, "You are {agent_name}.")
+	}
+	sessionOf := map[string]string{}
+	ask := func(name string) claudeRequest {
+		t.Helper()
+		c.say("switch to "+name, "What do you think?")
+		last := lastClaudeRequest(t, c.log)
+		if _, ok := sessionOf[name]; !ok {
+			sessionOf[name] = last.Session
+		}
+		return last
+	}
+	c.say("Note the door is teal.")
+	sessionOf["Mira"] = lastClaudeRequest(t, c.log).Session
+	for _, name := range names {
+		ask(name)
+	}
+	parked := map[string]bool{}
+	for _, p := range c.selector.parked {
+		parked[p.personaID] = true
+	}
+	if len(c.selector.parked) != maxParkedBrains || parked["mira"] || !parked["ava"] || !parked["dee"] {
+		t.Fatalf("parked = %+v", c.selector.parked)
+	}
+	if again := ask("Dee"); again.Resume != sessionOf["Dee"] {
+		t.Fatalf("a parked session was not resumed: %+v", again)
+	}
+	if again := ask("Mira"); again.Resume != "" {
+		t.Fatalf("the least recently used session was not retired: %+v", again)
+	}
+}
+
+func TestClaudeCatchUpAfterOllamaCompactionCarriesNoSummary(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+	c := newMixedConversation(t, 20, "ember")
+	c.say("Private: the safe code is 4711.", "switch to Mira", "What do you think?", "switch to Ember", "Thanks.")
+	c.mu.Lock()
+	c.emberSays = "Summary 9988 of everything said."
+	c.mu.Unlock()
+	c.p.CompactPrompt = "Summarize the conversation."
+	if err := c.p.CompactConversation(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if view := c.p.Brain.(brain.ContextHistoryProvider).ContextHistory(); len(view) == 0 || !strings.Contains(view[0].Content, "9988") {
+		t.Fatalf("Ember was not compacted: %+v", view)
+	}
+	c.mu.Lock()
+	c.emberSays = ""
+	c.mu.Unlock()
+	c.say("switch to Mira", "Do you agree?")
+	last := lastClaudeRequest(t, c.log)
+	requireContains(t, last.Prompt, `"content":"Thanks."`, `"content":"Mira here.","persona":"Mira"`)
+	for _, req := range readClaudeRequests(t, c.log) {
+		requireOmits(t, req.Prompt, "9988", "4711")
+	}
+}
