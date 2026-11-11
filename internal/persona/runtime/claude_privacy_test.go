@@ -12,6 +12,14 @@ func TestClaudeReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 	c := newMixedConversation(t, 20, "ember")
 	c.work = true
 	c.start("ember", nil, nil)
+	// Jobs record the persona of the config the Agency admits them with.
+	requireJobPersona := func() {
+		t.Helper()
+		if got, want := c.p.Agency.WorkerMigrationConfig().ActivePersona, c.selector.Snapshot().PersonaID; got != want || got == "" {
+			t.Fatalf("jobs would be recorded for persona %q while %q answers", got, want)
+		}
+	}
+	requireJobPersona()
 	coordinator := c.p.WorkCoordinator()
 	scope := coordinator.Scope()
 	key, err := coordinator.Register(scope, work.Admission{JobID: "ember-job", Task: "Read my private tax notes", Origin: "agency", Config: map[string]string{"persona": "ember"}})
@@ -22,6 +30,7 @@ func TestClaudeReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.say("switch to Mira")
+	requireJobPersona()
 	if _, err := coordinator.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeSucceeded, Text: "The tax refund is 1234."}); err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +60,7 @@ func TestClaudeReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 	requireOmits(t, lastClaudeRequest(t, c.log).Prompt, "1234")
 
 	c.say("switch to Ember", "Any news?", "Anything else?")
+	requireJobPersona()
 	delivered := 0
 	for _, request := range c.ollamaRequests() {
 		var sent strings.Builder
