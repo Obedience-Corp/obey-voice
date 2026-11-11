@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -115,8 +116,10 @@ func TestWorkerCompactsDuringToolLoopWithoutRepeatingWork(t *testing.T) {
 		t.Run(map[bool]string{true: "stream", false: "full"}[streaming], func(t *testing.T) {
 			dir := t.TempDir()
 			payload := "Important finding: artifact A is ready. " + strings.Repeat("tool detail ", 550)
-			if err := os.WriteFile(filepath.Join(dir, "artifact.txt"), []byte(payload), 0600); err != nil {
-				t.Fatal(err)
+			for i := 1; i <= 4; i++ {
+				if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("artifact-%d.txt", i)), []byte(payload), 0600); err != nil {
+					t.Fatal(err)
+				}
 			}
 			requests, summaries, toolsRun := 0, 0, 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +138,7 @@ func TestWorkerCompactsDuringToolLoopWithoutRepeatingWork(t *testing.T) {
 				} else {
 					requests++
 					if requests <= 4 {
-						response.Message.ToolCalls = []api.ToolCall{{ID: "call", Function: api.ToolCallFunction{Name: "read_file", Arguments: mustArgs(map[string]any{"path": "artifact.txt"})}}}
+						response.Message.ToolCalls = []api.ToolCall{{ID: "call", Function: api.ToolCallFunction{Name: "read_file", Arguments: mustArgs(map[string]any{"path": fmt.Sprintf("artifact-%d.txt", requests)})}}}
 					} else {
 						if summaries == 0 {
 							t.Error("worker reached final answer without compacting")

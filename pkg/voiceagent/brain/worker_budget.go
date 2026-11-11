@@ -135,6 +135,17 @@ func (b *WorkerBudget) rejectedRequest() {
 	b.mu.Unlock()
 }
 
+// RemainingRequests reports how many provider requests are left. ok is false
+// when requests are unlimited.
+func (b *WorkerBudget) RemainingRequests() (remaining int, ok bool) {
+	if b == nil || b.limits.MaxRequests <= 0 {
+		return 0, false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return max(0, b.limits.MaxRequests-b.requests), true
+}
+
 func (b *WorkerBudget) RemainingOutput() int {
 	if b == nil || b.limits.MaxOutputTokens <= 0 {
 		return 0
@@ -176,6 +187,24 @@ func (b *WorkerBudget) checkLocked() error {
 		return ErrWorkerBudgetExceeded
 	}
 	return nil
+}
+
+type workerDeadlineContextKey struct{}
+
+// WithWorkerDeadline tells a worker when its job will be stopped, for hosts
+// that enforce the limit outside the context. The worker answers before it.
+func WithWorkerDeadline(ctx context.Context, deadline time.Time) context.Context {
+	return context.WithValue(ctx, workerDeadlineContextKey{}, deadline)
+}
+
+// WorkerDeadline returns the earlier of the context deadline and the one set
+// by WithWorkerDeadline.
+func WorkerDeadline(ctx context.Context) (time.Time, bool) {
+	deadline, ok := ctx.Deadline()
+	if hosted, set := ctx.Value(workerDeadlineContextKey{}).(time.Time); set && (!ok || hosted.Before(deadline)) {
+		return hosted, true
+	}
+	return deadline, ok
 }
 
 type workerBudgetContextKey struct{}
