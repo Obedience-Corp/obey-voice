@@ -22,6 +22,7 @@ type transcript struct {
 	current  func() string
 	turns    []brain.Turn
 	sessions brain.PersonaContexts
+	live     string // the selected persona when its provider keeps a session
 }
 
 func newTranscript(current func() string, turns []brain.Turn) *transcript {
@@ -122,19 +123,32 @@ func (t *transcript) setLive(personaID string, cursor *brain.PersonaContext) {
 	defer t.mu.Unlock()
 	if cursor == nil {
 		delete(t.sessions, personaID)
+		t.live = ""
 		return
 	}
 	if t.sessions == nil {
 		t.sessions = make(brain.PersonaContexts)
 	}
-	t.sessions[personaID] = *cursor
+	t.sessions[personaID], t.live = *cursor, personaID
+}
+
+// LiveCatchUp is CatchUp for the selected persona.
+func (t *transcript) LiveCatchUp() (string, brain.SessionCatchUp, int, bool) {
+	t.mu.Lock()
+	live := t.live
+	t.mu.Unlock()
+	if live == "" {
+		return "", brain.SessionCatchUp{}, 0, false
+	}
+	catchUp, covered, ok := t.CatchUp(live)
+	return live, catchUp, covered, ok
 }
 
 // restoreSessions replaces every session cursor with those in contexts.
 func (t *transcript) restoreSessions(contexts brain.PersonaContexts) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.sessions = make(brain.PersonaContexts)
+	t.sessions, t.live = make(brain.PersonaContexts), ""
 	for id, state := range contexts.Clone() {
 		if state.Session != nil {
 			t.sessions[id] = state

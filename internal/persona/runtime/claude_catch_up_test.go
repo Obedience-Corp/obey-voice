@@ -109,20 +109,40 @@ func TestResumedClaudeConversationReplaysItsShareIntoFreshSession(t *testing.T) 
 	requireOmits(t, last.Prompt, "omitted]")
 }
 
-func TestClaudeTurnAfterCompactionReplaysTheTranscript(t *testing.T) {
+func TestClaudeTurnAfterCompactionStartsFromTheSummary(t *testing.T) {
 	c := newClaudeConversation(t, 20)
-	c.say("Note that the vault code is cobalt.", "The door is teal.")
+	c.say("Note that the vault code is cobalt.", "The door is teal.", "Mira")
 	c.p.CompactPrompt = "Summarize the conversation."
 	if err := c.p.CompactConversation(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	c.say("What do you remember?")
-	last := lastClaudeRequest(t, c.log)
+	requests := readClaudeRequests(t, c.log)
+	summary := requests[len(requests)-1]
+	if summary.Format != "json" || summary.Resume == "" {
+		t.Fatalf("summary request = %+v", summary)
+	}
+	transcript := c.selector.Transcript()
+	if got, want := promptRecords(t, summary.Prompt), recordsOf(transcript[4:6]); !slices.Equal(got, want) {
+		t.Fatalf("the summary did not cover the unseen lines: %+v, want %+v", got, want)
+	}
+
+	c.say("Mira", "What do you remember?")
+	requests = readClaudeRequests(t, c.log)
+	if len(requests) != 4 {
+		t.Fatalf("requests = %+v", requests)
+	}
+	last := requests[3]
 	if last.Resume != "" {
 		t.Fatalf("the turn after compaction resumed %q", last.Resume)
 	}
-	requireContains(t, last.Prompt, `"content":"Note that the vault code is cobalt."`, `"content":"Mira reply 2.","persona":"Mira"`)
-	requireOmits(t, last.Prompt, claudeSummary)
+	transcript = c.selector.Transcript()
+	want := append([]promptRecord{{Role: "assistant", Content: claudeSummary}}, recordsOf(transcript[6:8])...)
+	if got := promptRecords(t, last.Prompt); !slices.Equal(got, want) {
+		t.Fatalf("after compaction = %+v, want the summary and the lines after it %+v", got, want)
+	}
+	if cursor := c.selector.ContextSnapshots()["mira"]; cursor.Through != len(transcript) {
+		t.Fatalf("cursor = %+v for %d turns", cursor, len(transcript))
+	}
 }
 
 func TestClaudeShareStartsWhereItsPersonaWasFirstAddressed(t *testing.T) {

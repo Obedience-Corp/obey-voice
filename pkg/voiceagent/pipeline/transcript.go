@@ -35,6 +35,8 @@ type SessionTranscript interface {
 	// AppendSeen records a completed request whose catch-up covered the
 	// transcript up to covered, and marks its turns seen by the persona.
 	AppendSeen(epoch, personaID string, covered int, turns ...brain.Turn) error
+	// LiveCatchUp is CatchUp for the selected persona, and its id.
+	LiveCatchUp() (string, brain.SessionCatchUp, int, bool)
 }
 
 // transcriptFor returns the host transcript when provider does not keep the

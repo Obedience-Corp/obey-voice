@@ -69,6 +69,9 @@ type Brain struct {
 	// session, so a long session warns once instead of every turn. Re-armed by
 	// dropSession.
 	sessionWarned bool
+	// seed is a compaction summary that stands in for what the dropped session
+	// held, until a request starts a new session from it.
+	seed *Turn
 }
 
 // SetSpeakerNames attaches a rename table for user-turn prompt attribution.
@@ -301,7 +304,7 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 			return
 		}
 		b.history = append(b.history, Turn{Role: "samantha", Content: response, At: time.Now().UTC()})
-		b.hostContext = ""
+		b.hostContext, b.seed = "", nil
 		b.trimHistory()
 		// Checked after the turn lands so a reset never costs the turn in flight.
 		b.enforceSessionBudget()
@@ -552,7 +555,7 @@ func (b *Brain) ThinkFull(ctx context.Context, input string, streamOpts StreamOp
 	}
 
 	b.history = append(b.history, Turn{Role: "samantha", Content: response, At: time.Now().UTC()})
-	b.hostContext = ""
+	b.hostContext, b.seed = "", nil
 	b.trimHistory()
 	// ClaudeResult has no usage fields, so estimate the replayed session size
 	// from local history and enforce the same cap as ThinkStream. Stream turns
@@ -715,7 +718,7 @@ func (b *Brain) SessionInfo() SessionState {
 // a fresh conversation starts a fresh CLI session instead of resuming the old
 // one.
 func (b *Brain) ClearHistory() {
-	b.hostContext = ""
+	b.hostContext, b.seed = "", nil
 	b.history = nil
 	b.dropSession()
 }
@@ -725,9 +728,20 @@ func (b *Brain) ClearHistory() {
 // first turn after load runs the flatten path, then captures a new session id
 // and resumes from there.
 func (b *Brain) LoadHistory(turns []Turn) {
-	b.hostContext = ""
+	b.hostContext, b.seed = "", nil
 	b.history = normalizePromptHistory(turns)
 	b.dropSession()
+}
+
+// ReseedContinuity ends the session after a compaction. When the host
+// supplies the conversation, the next session starts from the summary that
+// leads the seed and the lines after it.
+func (b *Brain) ReseedContinuity(turns []Turn) {
+	b.LoadHistory(turns)
+	if len(turns) > 0 {
+		seed := turns[0]
+		b.seed = &seed
+	}
 }
 
 // normalizePromptHistory maps persisted roles onto the prompt-based providers'

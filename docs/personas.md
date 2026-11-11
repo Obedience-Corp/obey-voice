@@ -351,8 +351,9 @@ the canonical transcript and a `<id>.pre-compact.json` backup while producing
 a bounded model context with complete tool groups and attributed source facts.
 In a conversation that started on Grok or Cursor, the summary reseeds only that
 provider's session; the saved transcript stays complete. For a persona on
-Claude, compaction ends its Claude session, and the next request starts a fresh
-session from the transcript lines described above rather than from the summary.
+Claude, the summary request also carries the lines its session had not seen,
+and the next request starts a fresh Claude session from the summary followed by
+only the lines said after it.
 A stored transcript alone does not prove a model received all of it: its
 configured history/context limits still govern the projection.
 

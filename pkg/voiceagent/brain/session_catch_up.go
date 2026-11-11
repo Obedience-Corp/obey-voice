@@ -47,12 +47,15 @@ func (b *Brain) prepareCatchUp(c *SessionCatchUp) {
 }
 
 // catchUpPrompt renders what this request carries as conversation record: the
-// unseen turns into a live session, or a bounded replay into a fresh one,
-// marked when older turns are left out.
+// unseen turns into a live session, a compaction summary and the turns after
+// it, or a bounded replay into a fresh session, marked when older turns are
+// left out.
 func (b *Brain) catchUpPrompt(c *SessionCatchUp) string {
 	turns := c.Turns
-	if b.sessionID != "" && c.Seen >= 0 && c.Seen <= len(turns) {
+	if seen := c.Seen >= 0 && c.Seen <= len(turns); seen && b.sessionID != "" {
 		turns = turns[c.Seen:]
+	} else if seen && b.seed != nil {
+		turns = append([]Turn{*b.seed}, turns[c.Seen:]...)
 	}
 	records, _ := catchUpRecords(turns, b.speakerNames, b.catchUpBudget())
 	omitted := len(turns) - len(records)

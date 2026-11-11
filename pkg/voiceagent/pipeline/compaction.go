@@ -166,7 +166,19 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 	// The dense briefing replaces voice instructions. Tools and durable-history
 	// writes stay off; only a successful summary can reseed the working context.
 	stage("summarize")
-	summary, err := p.Brain.ThinkFull(ctx, p.compactionInstruction(), brain.StreamOptions{OmitTurnInstruction: true, TransientHistory: true})
+	opts := brain.StreamOptions{OmitTurnInstruction: true, TransientHistory: true}
+	// A provider keeping a persona session summarizes the lines it has not
+	// seen as well; its next session starts from the summary and only the
+	// lines after it.
+	var summarized func()
+	if t, ok := p.transcriptFor(p.Brain).(SessionTranscript); ok && brain.KeepsPersonaSession(p.Brain) {
+		if id, catchUp, covered, ok := t.LiveCatchUp(); ok {
+			epoch := p.ConversationScope().ConversationEpoch
+			opts.CatchUp = &catchUp
+			summarized = func() { _ = t.AppendSeen(epoch, id, covered) }
+		}
+	}
+	summary, err := p.Brain.ThinkFull(ctx, p.compactionInstruction(), opts)
 	if err == nil && strings.TrimSpace(summary) == "" {
 		err = errors.New("empty summary")
 	}
@@ -191,6 +203,9 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 		reseed.ReseedContinuity(seed)
 	} else {
 		p.Brain.LoadHistory(seed)
+	}
+	if summarized != nil {
+		summarized()
 	}
 	if automatic {
 		if budget, ok := p.Brain.(interface{ NeedsContinuityCompact(string) bool }); ok && budget.NeedsContinuityCompact(input) {
