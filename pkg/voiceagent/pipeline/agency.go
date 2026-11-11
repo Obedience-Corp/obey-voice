@@ -182,10 +182,11 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	}
 	jobID := ""
 	var key work.JobKey
+	admission := frozenWorkerConfig(jobCfg, plan)
 	if c, scope := a.workAuthority(); c != nil {
 		jobID = newWorkID()
 		var err error
-		key, err = c.Register(scope, work.Admission{JobID: jobID, Task: task, Origin: "agency", Provider: providerName(jobCfg), Model: modelName(jobCfg), Config: frozenWorkerConfig(jobCfg, plan)})
+		key, err = c.Register(scope, work.Admission{JobID: jobID, Task: task, Origin: "agency", Provider: providerName(jobCfg), Model: modelName(jobCfg), Config: admission})
 		if err != nil {
 			a.emitRouteDecision(d, "rejected", "", err.Error())
 			a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
@@ -208,7 +209,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if plan != nil {
 		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
 	}
-	origin := workerOrigin{Scope: a.pipeline.ConversationScope(), Trace: events.TraceFromContext(ctx)}
+	origin := workerOrigin{Scope: a.pipeline.ConversationScope(), Trace: events.TraceFromContext(ctx), admission: admission}
 	if metrics != nil {
 		origin.Envelope = metrics.response
 		origin.Trace = metrics.trace
@@ -555,34 +556,75 @@ func abortLine(ran []time.Duration, queued int) string {
 	return strings.Join(parts, " ")
 }
 
+// speakJobStatus names the jobs the live persona may be told about and only
+// counts the others, so a persona on a hosted backend never hears another
+// persona's task or progress.
 func (a *Agency) speakJobStatus(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
 	var running, queued []job.Info
+	hiddenRunning, hiddenQueued := 0, 0
 	for _, info := range a.jobs.Status() {
-		switch info.State {
-		case job.StateRunning:
+		if info.State != job.StateRunning && info.State != job.StateQueued {
+			continue
+		}
+		a.mu.Lock()
+		admission := a.workerOrigins[info.ID].admission
+		a.mu.Unlock()
+		shown := a.pipeline.receivesJob(admission)
+		switch {
+		case info.State == job.StateRunning && shown:
 			running = append(running, info)
-		case job.StateQueued:
+		case info.State == job.StateRunning:
+			hiddenRunning++
+		case shown:
 			queued = append(queued, info)
+		default:
+			hiddenQueued++
 		}
 	}
-	line := "No job is running."
+	var parts []string
 	switch {
 	case len(running) > 0:
 		first := running[0]
-		line = fmt.Sprintf("Still working on %s.", spokenTaskLabel(first.Task))
+		parts = append(parts, fmt.Sprintf("Still working on %s.", spokenTaskLabel(first.Task)))
 		if done := a.work.Summary(first.ID); done != "" {
 			// The middle dot is a screen separator; spoken, it is a comma.
-			line += fmt.Sprintf(" So far: %s.", strings.ReplaceAll(done, " · ", ", "))
+			parts = append(parts, fmt.Sprintf("So far: %s.", strings.ReplaceAll(done, " · ", ", ")))
 		}
 	case len(queued) > 0:
-		line = fmt.Sprintf("Queued: %s.", spokenTaskLabel(queued[0].Task))
+		parts = append(parts, fmt.Sprintf("Queued: %s.", spokenTaskLabel(queued[0].Task)))
 		queued = queued[1:]
 	}
 	if more := jobCounts(len(running)-1, len(queued)); more != "" {
-		line += " " + more
+		parts = append(parts, more)
+	}
+	if others := otherJobs(hiddenRunning, hiddenQueued); others != "" {
+		parts = append(parts, others)
+	}
+	line := "No job is running."
+	if len(parts) > 0 {
+		line = strings.Join(parts, " ")
 	}
 	// Standalone speech reports synthesis/playback errors on the event bus.
 	_ = a.pipeline.speakStandalone(ctx, turn, metrics, line)
+}
+
+// otherJobs counts the jobs a status line may not describe.
+func otherJobs(running, queued int) string {
+	state := "running"
+	switch {
+	case running == 0:
+		state = "queued"
+	case queued > 0:
+		state = "running or queued"
+	}
+	switch n := running + queued; n {
+	case 0:
+		return ""
+	case 1:
+		return "One other job is " + state + "."
+	default:
+		return fmt.Sprintf("%d other jobs are %s.", n, state)
+	}
 }
 
 // jobCounts phrases what is working or waiting besides the job just named.

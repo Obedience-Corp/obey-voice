@@ -104,11 +104,17 @@ func (p *Pipeline) beginOrdinaryCompletion(ctx context.Context, input, speaker s
 }
 
 // deliverableResult reports whether a pending result may reach the live
-// persona. A persona on a hosted backend that keeps its own session or is sent
-// only its share of the conversation receives only the results of jobs it
-// started, and not those it started while on a local backend; the others wait
-// for their own persona.
+// persona.
 func (p *Pipeline) deliverableResult(r work.ResultView) bool {
+	return p.receivesJob(r.Outcome.Config)
+}
+
+// receivesJob reports whether the live persona may be told what a job admitted
+// with admission is doing or produced. A persona on a hosted backend that
+// keeps its own session or is sent only its share of the conversation
+// receives only jobs it started, and not those it started while on a local
+// backend; the others wait for their own persona. It takes the Agency's lock.
+func (p *Pipeline) receivesJob(admission map[string]string) bool {
 	if !brain.KeepsPersonaSession(p.Brain) && !brain.HostedSharedHistory(p.Brain) {
 		return true
 	}
@@ -118,10 +124,10 @@ func (p *Pipeline) deliverableResult(r work.ResultView) bool {
 			live = cfg.ActivePersona
 		}
 	}
-	if started := r.Outcome.Config["brain"]; started != "" && !brain.IsHosted(started) {
+	if started := admission["brain"]; started != "" && !brain.IsHosted(started) {
 		return false
 	}
-	return live != "" && r.Outcome.Config["persona"] == live
+	return live != "" && admission["persona"] == live
 }
 
 func (o *ordinaryCompletion) close() {

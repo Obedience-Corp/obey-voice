@@ -1,6 +1,7 @@
 package personaruntime
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -322,6 +325,39 @@ func TestHostedSharedHistoryReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 			c.say("And the build?")
 			requireContains(t, c.lastHostedPrompt(), "The build is green.")
 			requireOmits(t, c.hostedLog(), "1234", "5678", "tax refund", "tax notes", "diary")
+		})
+	}
+}
+
+func TestJobStatusGivesAHostedPersonaOnlyACountOfJobsItDidNotStart(t *testing.T) {
+	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+		t.Run(provider, func(t *testing.T) {
+			c := newConversation(t, 20, "ember", provider, "")
+			binding, err := c.catalog.ResolveBinding(c.base, "ember")
+			if err != nil {
+				t.Fatal(err)
+			}
+			jobs := job.NewTable(t.Context())
+			t.Cleanup(jobs.Close)
+			pipeline.NewAgency(c.p, jobs, nil, binding.Config(), nil).Wire()
+			release := make(chan struct{})
+			t.Cleanup(func() { close(release) })
+			if _, err := jobs.Start(t.Context(), job.Spec{Task: "Read my private tax notes", Run: func(ctx context.Context) (string, error) {
+				select {
+				case <-release:
+				case <-ctx.Done():
+				}
+				return "", ctx.Err()
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			c.say("switch to Mira", "status", "What do you think?")
+			requireOmits(t, c.hostedLog(), "tax notes")
+			var said strings.Builder
+			for _, turn := range c.selector.Transcript() {
+				said.WriteString(turn.Content + "\n")
+			}
+			requireContains(t, said.String(), "One other job is running.")
 		})
 	}
 }

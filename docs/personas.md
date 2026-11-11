@@ -444,7 +444,10 @@ Obey receives of a conversation shared with other personas:
 
 Under both, other personas' tool calls, tool ids, tool output and attached file
 names are never sent, and the persona receives only the results of jobs it
-started. On Claude, whole-conversation catch-up is bounded like any other: the
+started. Asked what is happening, such a persona names only the jobs whose
+results it would receive, with their progress; any other running or queued job
+is only counted ("One other job is running."), without its task or tool
+activity, so that line is not sent either. On Claude, whole-conversation catch-up is bounded like any other: the
 line and request limits above still apply. On Codex, Muse Spark and Obey the
 share is replayed within `max_history`, as their history always was. The
 setting is read when a persona is first addressed on its backend. Changing it
