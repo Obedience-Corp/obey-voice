@@ -174,6 +174,11 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: replayContexts(opts.InitialContexts)}
 	s.transcript = newTranscript(func() string { return opts.Pipeline.ConversationScope().ConversationEpoch }, opts.Transcript)
 	s.transcript.restoreSessions(opts.InitialContexts)
+	s.transcript.cleared = func() {
+		s.transitionMu.Lock()
+		defer s.transitionMu.Unlock()
+		s.retireParked(retireAll)
+	}
 	s.restored = restoredConversation{personaID: opts.Initial.PersonaID, provider: opts.SessionProvider}
 	startedOn := opts.Initial.BrainProvider
 	if len(opts.Transcript) > 0 {

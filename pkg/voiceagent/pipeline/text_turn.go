@@ -207,7 +207,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("brain: %w", err))
 		return nil
 	}
-	defer recording.settle()
+	defer recording.release()
+	metrics.recording = recording
 
 	if background {
 		return p.finishBackgroundStream(ctx, brainCtx, brainCancel, stream, metrics, turn, repair)

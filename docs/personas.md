@@ -303,8 +303,11 @@ transcript.
 
 Voice and audio settings changes keep the provider session. Clearing the
 conversation, or changing the persona's provider, model, prompt, name or
-directory, restarts the session from the transcript. Group participation is
-not offered while one of these personas is responding.
+directory, restarts the session from the transcript: the provider's own
+session is dropped. A new Grok or Cursor session starts with the transcript's
+last `max_history` turns; a new Claude session receives the persona's share as
+described below. Group participation is not offered while one of these
+personas is responding.
 
 A persona on Claude keeps its Claude session while other personas speak: Obey
 Voice parks it and resumes the same session when that persona is addressed
@@ -338,7 +341,19 @@ of how many earlier lines were left out. A persona on Claude receives the
 pending results of background jobs it started while it was on a hosted
 backend; results of jobs other personas started wait for those personas, and so
 do results of jobs the persona started while it was on a local backend, if it
-has since been moved onto Claude.
+has since been moved onto Claude, until a persona on a local backend answers.
+A job saved before jobs recorded their persona goes to the persona answering
+when no other persona is in the conversation, and an unset `active_persona`
+counts as the default persona.
+
+A fresh Claude session therefore starts with a replay of up to 64 KiB of the
+persona's share, where it used to receive only the last six lines. This
+applies to a conversation with a single persona on Claude too: the first
+request after a resume, after the session fuse resets the session, or when the
+unseen lines do not fit, sends more input tokens and costs more than before.
+After a compaction the fresh session starts from the summary instead. A prompt
+of 100 KiB or more reaches the Claude CLI on stdin rather than as one
+command-line argument.
 
 At most four sessions stay parked; the least recently used one is closed first.
 A parked session is also closed when its persona's prompt, model, provider or
@@ -458,7 +473,9 @@ provider's session; the saved transcript stays complete. For a persona on
 Claude, the summary is taken from its live Claude session, which also receives
 the lines it had not seen (shortened or left out with a note when they do not
 fit), and the next request starts a fresh Claude session from the summary
-followed by only the lines said after it.
+followed by only the lines said after it. As with the other
+providers' saved history, the transcript keeps every turn, in memory and on
+disk, until the conversation is cleared.
 A stored transcript alone does not prove a model received all of it: its
 configured history/context limits still govern the projection.
 

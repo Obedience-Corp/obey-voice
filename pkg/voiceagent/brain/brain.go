@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -39,7 +40,13 @@ func init() {
 type claudeRunner interface {
 	StreamPrompt(ctx context.Context, prompt string, opts *claude.RunOptions) (<-chan claude.Message, <-chan error)
 	RunPromptCtx(ctx context.Context, prompt string, opts *claude.RunOptions) (*claude.ClaudeResult, error)
+	RunFromStdinCtx(ctx context.Context, stdin io.Reader, prompt string, opts *claude.RunOptions) (*claude.ClaudeResult, error)
 }
+
+// maxInlinePromptBytes is where the SDK's streaming path stops passing the
+// prompt as an argument and pipes it on stdin: Linux refuses one argument of
+// 128 KiB or more. The blocking path switches at the same size.
+const maxInlinePromptBytes = 100 << 10
 
 // Brain manages conversation with Claude via claude-code-go.
 type Brain struct {
@@ -588,7 +595,13 @@ func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions) 
 	prompt := b.buildPrompt(streamOpts) + harnessRoutingContext(b.cfg, streamOpts) + currentRequestContext(b.cfg, streamOpts)
 	opts := b.runOptions(claude.JSONOutput, liveCLITools(streamOpts))
 
-	result, err := b.client.RunPromptCtx(ctx, prompt, opts)
+	var result *claude.ClaudeResult
+	var err error
+	if len(prompt) >= maxInlinePromptBytes {
+		result, err = b.client.RunFromStdinCtx(ctx, strings.NewReader(prompt), "", opts)
+	} else {
+		result, err = b.client.RunPromptCtx(ctx, prompt, opts)
+	}
 	if err != nil {
 		return "", fmt.Errorf("claude error: %w", err)
 	}
