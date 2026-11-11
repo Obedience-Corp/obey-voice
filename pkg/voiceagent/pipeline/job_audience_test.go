@@ -114,3 +114,18 @@ func TestDeliverableResultWithholdsJobsStartedOnALocalBackend(t *testing.T) {
 		})
 	}
 }
+
+func TestUnnamedJobWaitsWhileAnotherPersonaHasBeenLive(t *testing.T) {
+	ember := &config.Config{BrainProvider: "ollama", ActivePersona: "ember"}
+	mira := &config.Config{BrainProvider: "claude", ActivePersona: "mira"}
+	p := claudePipeline(t, ember)
+	legacy := resultFrom(map[string]string{"provider": "ollama"})
+	p.Agency.ReplaceWorker(nil, mira, nil)
+	if p.deliverableResult(legacy) {
+		t.Fatal("Mira received an unnamed job while Ember, live earlier, may have started it")
+	}
+	p.Agency.restartPersonas()
+	if !p.deliverableResult(legacy) {
+		t.Fatal("after the conversation started again, Mira alone did not receive the unnamed job")
+	}
+}
