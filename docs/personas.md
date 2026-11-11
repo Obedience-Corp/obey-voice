@@ -443,6 +443,13 @@ records, whatever this setting says, and those records still include other
 personas' tool calls, tool ids and attached file names. A persona on Grok or
 Cursor can only hold a conversation that started on it.
 
+The notice covers a persona's conversation backend only. Two other paths can
+send conversation text off this machine without it: a background job on a
+hosted worker provider receives a brief built from the recent conversation,
+and [decision routing](decision-routing.md), when set to Jev or OpenAI, sends
+the request and up to eight recent lines to that service before the request is
+admitted.
+
 Known gap: a reply from a background worker started through the older worker
 path is recorded as a spoken line of the persona that started it. If it arrives
 while a persona on Claude is live, or when `whole_conversation` is set, it is
