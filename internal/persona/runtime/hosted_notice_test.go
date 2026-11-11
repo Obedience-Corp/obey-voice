@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -380,5 +381,73 @@ func TestHostedNoticeComesBeforeCompactionIsTheFirstRequest(t *testing.T) {
 	c.say("Where were we?")
 	if got := c.hostedNotices(); len(got) != before+1 {
 		t.Fatalf("the notice was repeated after compaction: %+v", got)
+	}
+}
+
+func TestHostedNoticeComesBeforeAHandoffToAHostedPersona(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+	c := newMixedConversation(t, 20, "ember")
+	c.p.RouteHandoff = c.selector.RouteHandoff
+	c.mu.Lock()
+	c.emberSays = "@Mira what color do you think the door is?"
+	c.mu.Unlock()
+	c.say("Note that the door is teal.")
+	got := c.hostedNotices()
+	if len(got) != 1 || got[0].message != miraNotice || got[0].claudeRequests != 0 {
+		t.Fatalf("notices = %+v, want %q before the handoff request", got, miraNotice)
+	}
+	if n := len(readClaudeRequests(t, c.log)); n != 1 {
+		t.Fatalf("claude requests = %d", n)
+	}
+}
+
+func TestOnlyWholeConversationSharingSendsEarlierLines(t *testing.T) {
+	fromEnv := func(value string) func(t *testing.T) string {
+		return func(t *testing.T) string {
+			t.Setenv("HOSTED_PERSONA_SHARING", value)
+			config.SetConfigDirForTest(t, t.TempDir())
+			loaded, err := config.LoadWithoutHooks()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return loaded.HostedPersonaSharing
+		}
+	}
+	fixed := func(value string) func(*testing.T) string { return func(*testing.T) string { return value } }
+	for _, tc := range []struct {
+		name    string
+		sharing func(*testing.T) string
+		whole   bool
+	}{
+		{"empty", fixed(""), false},
+		{"from_invite", fixed("from_invite"), false},
+		{"whole_conversation", fixed("whole_conversation"), true},
+		{"unrecognised", fixed("bogus"), false},
+		{"environment whole_conversation", fromEnv("whole_conversation"), true},
+		{"environment unrecognised", fromEnv("bogus"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newMixedConversation(t, 20, "ember")
+			c.base.HostedPersonaSharing = tc.sharing(t)
+			c.start("ember", nil, nil)
+			c.say("The vault code is cobalt.", "switch to Mira", "What is the code?")
+			prompt := readClaudeRequests(t, c.log)[0].Prompt
+			cursor := c.saved().PersonaContexts["mira"]
+			notices := c.hostedNotices()
+			if len(notices) != 1 || cursor.Session == nil {
+				t.Fatalf("notices = %+v, cursor = %+v", notices, cursor)
+			}
+			if tc.whole {
+				requireContains(t, prompt, "The vault code is cobalt.")
+				if cursor.Session.From != 0 || !strings.Contains(notices[0].message, "The whole conversation is sent to Claude.") {
+					t.Fatalf("cursor = %+v, notice = %q", cursor, notices[0].message)
+				}
+				return
+			}
+			requireOmits(t, prompt, "The vault code is cobalt.")
+			if cursor.Session.From == 0 || notices[0].message != miraNotice {
+				t.Fatalf("cursor = %+v, notice = %q", cursor, notices[0].message)
+			}
+		})
 	}
 }

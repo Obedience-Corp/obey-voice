@@ -686,17 +686,22 @@ changing global defaults. See [Group participation](personas.md#group-participat
 ### Hosted persona sharing
 
 `hosted_persona_sharing` (environment `HOSTED_PERSONA_SHARING`) chooses what a
-persona on a hosted backend receives when it joins a conversation shared with
-other personas: `from_invite` (default) sends only what is said from the point
+persona on Claude receives when it joins a conversation shared with other
+personas: `from_invite` (default) sends only what is said from the point
 the persona is first addressed on that backend; `whole_conversation` sends the
 spoken lines from the start. Tool calls, tool output and attachment names of
 other personas are never sent in either mode. Changing it applies to personas
 first addressed after the change and does not widen a session that has already
 started. A running conversation picks the change up only when its settings
 reload; it has no Settings row, so set it with
-`obey-voice config set hosted_persona_sharing whole_conversation`. It governs personas on Claude, the backend that keeps its own session;
-see [Hosted backends](personas.md#hosted-backends) for what the others receive
-and for how hosted personas are marked.
+`obey-voice config set hosted_persona_sharing whole_conversation`. It governs
+personas on Claude only, the backend that keeps its own session. A persona on
+Codex, Muse Spark or Obey is sent the whole shared conversation, including other
+personas' tool calls, tool ids and attachment names, whatever this is set to.
+Only `whole_conversation` widens what is sent; any other value, including an
+unrecognised one from the environment or a hand-edited file, sends from the
+invitation. See [Hosted backends](personas.md#hosted-backends) for what each
+backend receives and for how hosted personas are marked.
 
 ### Ollama thinking in the terminal
 
