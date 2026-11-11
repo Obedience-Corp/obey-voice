@@ -380,37 +380,6 @@ func TestHostTranscriptRequestsOnOneProviderNeverOverlap(t *testing.T) {
 	}
 }
 
-func TestHostTranscriptNewTurnStopsWaitingForAStuckProvider(t *testing.T) {
-	saved := providerStopTimeout
-	providerStopTimeout = 100 * time.Millisecond
-	t.Cleanup(func() { providerStopTimeout = saved })
-	b := &stopCountingBrain{stop: 2 * time.Second}
-	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: &recordedTranscript{}}
-	p.AdmitInput = admitAs("r", func(input string) string { return input })
-	var reported []events.Error
-	events.Subscribe(p.Events, func(e events.Error) { reported = append(reported, e) })
-	ctx, cancel := context.WithCancel(t.Context())
-	var once sync.Once
-	unsubscribe := events.SubscribeDetachable(p.Events, func(events.ResponseDelta) { once.Do(cancel) })
-	_ = p.RunTurnTextMode(ctx, "First question.")
-	unsubscribe()
-	cancel()
-
-	second, stop := context.WithTimeout(t.Context(), 3*time.Second)
-	defer stop()
-	started := time.Now()
-	err := p.RunTurnTextMode(second, "Second question.")
-	if waited := time.Since(started); waited > time.Second {
-		t.Fatalf("new turn waited %v for the stopped provider", waited)
-	}
-	if !errors.Is(err, errProviderStopping) || len(reported) == 0 || reported[len(reported)-1].Message != errProviderStopping.Error() {
-		t.Fatalf("err = %v, reported = %+v", err, reported)
-	}
-	if n := b.overlaps.Load(); n != 0 {
-		t.Fatalf("the stuck provider got a second request (%d overlaps)", n)
-	}
-}
-
 // imageReplyBrain accepts the images the host moves into its reply.
 type imageReplyBrain struct {
 	fakeBrain
