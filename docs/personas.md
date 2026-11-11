@@ -318,8 +318,11 @@ Obey Voice recorded under that persona's name. Other personas' tool calls, tool
 output and the names of attached files are not sent. Lines count as seen only
 after a reply completes, so an interrupted reply is sent again next time, marked
 as unfinished, even if Claude reports success after it was stopped. A stopped
-reply finishes in the background; its session is not used again, and a parked
-session is not closed, until it has.
+reply finishes in the background, and its session is not used again until it
+has, unless your next line would wait more than five seconds for it: then that
+line goes ahead, the stopped reply keeps only what you heard, and nothing it
+sends after that is recorded or counted as seen. A parked session is closed
+only once its stopped reply has finished, or after five seconds.
 
 Claude receives nothing said before its persona was first addressed while on
 Claude in the conversation, unless `hosted_persona_sharing` is set to
