@@ -419,8 +419,9 @@ repeats it once, and one saved before the whole-conversation case was recorded
 gives that notice again when it applies). It counts as given only once it was
 shown and spoken and the request went ahead: a turn stopped during the notice
 gives it again next time, and a turn that sends the persona nothing (one
-refused by its image check, or routed to a job or a story) does not give it. It is shown by the host: no model receives it and it
-is not recorded as any persona's reply. A bare `Mira here.` address sends
+refused by its image check, or routed to a job or a story) does not give it.
+It is shown by the host: no model receives it and it is not recorded as any
+persona's reply. A bare `Mira here.` address sends
 nothing and does not trigger it.
 
 A conversation that started on the hosted provider itself, such as a Claude-only
