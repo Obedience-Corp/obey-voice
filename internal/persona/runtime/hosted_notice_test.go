@@ -152,6 +152,42 @@ func TestHostedNoticeIsOnlySpokenWhenTheConversationDidNotStartOnThatProvider(t 
 	}
 }
 
+// The first notice of a conversation that started on Claude is shown only, but
+// one telling the user that a persona on Claude now receives the whole
+// conversation is spoken too.
+func TestHostedNoticeThatWidensTheShareIsSpokenWhereTheConversationStarted(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	c.addClaudePersona("nova", "Nova")
+	turns := []brain.Turn{
+		{Role: "user", Content: "The vault code is cobalt."},
+		{Role: "assistant", Content: "Noted.", PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+	}
+	c.start("mira", turns, nil)
+	first, ok := c.selector.LiveHostedNotice()
+	if !ok || first.Spoken || first.Text != miraNotice {
+		t.Fatalf("first notice = %q, spoken %v; a conversation that started on Claude shows it only", first.Text, first.Spoken)
+	}
+	c.say("What do you think?")
+	if got := c.hostedNotices(); len(got) != 1 || got[0].message != miraNotice {
+		t.Fatalf("notices = %+v", got)
+	}
+
+	widened := c.base.Clone()
+	widened.HostedPersonaSharing = "whole_conversation"
+	if err := c.selector.Reload(t.Context(), widened); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := c.selector.Select(t.Context(), "nova", "explicit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wider, ok := c.selector.HostedNotice(responseEnvelope(selected))
+	const novaNotice = "Nova runs on Claude, a hosted service. The whole conversation is sent to Claude."
+	if !ok || !wider.Spoken || wider.Text != novaNotice {
+		t.Fatalf("widening notice = %q (due %v), spoken %v; it must be spoken", wider.Text, ok, wider.Spoken)
+	}
+}
+
 func TestMarkersIdentifyHostedPersonasOnSelectionsAndReplies(t *testing.T) {
 	c := newMixedConversation(t, 20, "ember")
 	if c.selector.Snapshot().Hosted {

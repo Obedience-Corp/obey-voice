@@ -15,9 +15,10 @@ import (
 type hostedNotices struct {
 	mu    sync.Mutex
 	epoch string
-	// startedOn is the provider the conversation began on. Its notice is
-	// shown but not spoken, so a conversation that never left a hosted
-	// backend does not announce it at every launch.
+	// startedOn is the provider the conversation began on. Its first notice
+	// is shown but not spoken, so a conversation that never left a hosted
+	// backend does not announce it at every launch; a later one, saying that
+	// a persona on it receives more, is spoken.
 	startedOn string
 	told      []string
 	// whole lists the providers told that they receive the whole
@@ -63,15 +64,17 @@ func (n *hostedNotices) list() (told, whole []string) {
 }
 
 // due reports whether the user must be told about provider before it receives
-// the given share, and whether it is the provider the conversation started on.
-func (n *hostedNotices) due(epoch, provider string, whole bool) (due, started bool) {
+// the given share, and whether the notice may go unspoken: only the first one
+// for the provider the conversation started on.
+func (n *hostedNotices) due(epoch, provider string, whole bool) (due, quiet bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.epoch != epoch {
 		return true, false
 	}
-	due = !slices.Contains(n.told, provider) || (whole && !slices.Contains(n.whole, provider))
-	return due, n.startedOn == provider
+	told := slices.Contains(n.told, provider)
+	due = !told || (whole && !slices.Contains(n.whole, provider))
+	return due, n.startedOn == provider && !told
 }
 
 // take records provider as told about the given share and reports whether
@@ -121,7 +124,7 @@ func (s *Selector) HostedNotice(envelope events.ResponseEnvelope) (pipeline.Host
 	}
 	label := providerLabel(envelope.BrainProvider)
 	scope, whole := s.noticeScope(envelope.PersonaID, envelope.BrainProvider, label)
-	due, started := s.notices.due(envelope.ConversationEpoch, envelope.BrainProvider, whole)
+	due, quiet := s.notices.due(envelope.ConversationEpoch, envelope.BrainProvider, whole)
 	if !due {
 		return pipeline.HostedNotice{}, false
 	}
@@ -131,7 +134,7 @@ func (s *Selector) HostedNotice(envelope events.ResponseEnvelope) (pipeline.Host
 	}
 	return pipeline.HostedNotice{
 		Text:   fmt.Sprintf("%s runs on %s, a hosted service. %s", name, label, scope),
-		Spoken: !started,
+		Spoken: !quiet,
 		Delivered: func() {
 			if s.notices.take(envelope.ConversationEpoch, envelope.BrainProvider, whole) {
 				s.persistNotices()

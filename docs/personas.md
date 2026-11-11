@@ -423,8 +423,10 @@ is not recorded as any persona's reply. A bare `Mira here.` address sends
 nothing and does not trigger it.
 
 A conversation that started on the hosted provider itself, such as a Claude-only
-install, gets the info line but no spoken notice, so it does not announce itself
-at every launch. The marker is still on every reply.
+install, gets the info line but no spoken notice the first time, so it does not
+announce itself at every launch. A later notice for that provider, saying that a
+persona on it now receives the whole conversation, is spoken as well. The marker
+is still on every reply.
 
 `hosted_persona_sharing` chooses what a persona on Claude receives of a
 conversation shared with other personas:
