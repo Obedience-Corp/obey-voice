@@ -295,8 +295,10 @@ never hand the conversation off by mentioning another persona.
 
 Voice and audio settings changes keep the provider session. Clearing the
 conversation, or changing the persona's provider, model, prompt, name or
-directory, restarts the session from the transcript. Group participation is
-not offered while one of these personas is responding.
+directory, restarts the session from the transcript: the provider's own
+session is dropped and a new one starts with the transcript's last
+`max_history` turns. Group participation is not offered while one of these
+personas is responding.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental
@@ -319,7 +321,9 @@ assistant-role names. A future unsupported format is refused. Compaction keeps
 the canonical transcript and a `<id>.pre-compact.json` backup while producing
 a bounded model context with complete tool groups and attributed source facts.
 In a conversation that started on Claude, Grok, or Cursor, the summary reseeds
-only that provider's session; the saved transcript stays complete.
+only that provider's session; the saved transcript stays complete. As with the
+other providers' saved history, it keeps every turn, in memory and on disk,
+until the conversation is cleared.
 A stored transcript alone does not prove a model received all of it: its
 configured history/context limits still govern the projection.
 

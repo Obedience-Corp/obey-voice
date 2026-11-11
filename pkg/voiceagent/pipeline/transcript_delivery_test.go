@@ -208,6 +208,21 @@ func TestHostTranscriptKeepsTheProvidersReasonForAnUnfinishedReply(t *testing.T)
 			t.Fatalf("reply = %+v", reply)
 		}
 	})
+	t.Run("stopped provider reports success", func(t *testing.T) {
+		transcript := &recordedTranscript{}
+		p := &Pipeline{Brain: &failingBrain{partial: "The door is", afterCancel: true}, Events: events.NewBus(), Transcript: transcript}
+		p.AdmitInput = admitAs("stopped", func(input string) string { return input })
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		var once sync.Once
+		events.Subscribe(p.Events, func(events.ResponseDelta) { once.Do(cancel) })
+		if err := p.RunTurnTextMode(ctx, "What color is the door?"); !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v", err)
+		}
+		if reply := recordedReply(t, transcript); reply.Content != "The door is" || reply.Disposition != "interrupted" {
+			t.Fatalf("reply = %+v", reply)
+		}
+	})
 	t.Run("stopped provider reports its own error", func(t *testing.T) {
 		transcript := &recordedTranscript{}
 		p := &Pipeline{Brain: &failingBrain{partial: "The door is", err: errors.New("claude: signal: killed"), afterCancel: true}, Events: events.NewBus(), Transcript: transcript}
