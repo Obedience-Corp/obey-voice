@@ -48,6 +48,7 @@ type turnMetrics struct {
 	response           events.ResponseEnvelope
 	ordinary           *ordinaryCompletion
 	delivery           *completionPlayback
+	recording          *transcriptRecording
 	start              time.Time
 	sttFinal           time.Time
 	acousticName       string // current finalized voice input only; never reused across turns

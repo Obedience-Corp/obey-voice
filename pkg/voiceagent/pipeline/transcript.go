@@ -22,7 +22,9 @@ type Transcript interface {
 	Turns() []brain.Turn
 	Append(epoch string, turns ...brain.Turn) error
 	Clear()
-	brain.ReplyMediaWriter
+	// SetRecordedReplyMedia moves a reply's images into reply, a reply this
+	// transcript recorded, and into no other.
+	SetRecordedReplyMedia(reply brain.Turn, text string, refs []chatmedia.Ref) error
 }
 
 // transcriptFor returns the host transcript when provider does not keep the
@@ -70,6 +72,12 @@ const (
 	providerSettleTimeout = 5 * time.Second
 )
 
+// providerStopTimeout bounds how long a new turn waits for a request an
+// earlier turn stopped. A variable so tests can shorten it.
+var providerStopTimeout = providerSettleTimeout
+
+var errProviderStopping = errors.New("the last reply is still stopping; try again in a moment")
+
 // transcriptRecording records one live provider request in the host
 // transcript exactly once: when the provider finishes, or when the turn
 // settles it, whichever comes first.
@@ -81,11 +89,17 @@ type transcriptRecording struct {
 	// to the same provider waits for it, so they never share session state.
 	drained  chan struct{}
 	recorded chan struct{}
-	write    func(delivered string, err error)
+	write    func(delivered string, err error) *brain.Turn
 
 	mu        sync.Mutex
 	finished  bool
 	delivered strings.Builder
+	reply     *brain.Turn
+	// A routed request is recorded by the routed reply, or by release when
+	// the turn never reached it.
+	route      string
+	routeErr   error
+	routeTaken bool
 }
 
 func (r *transcriptRecording) deliver(text string) {
@@ -104,9 +118,51 @@ func (r *transcriptRecording) finish(route string, err error) {
 	}
 	r.finished = true
 	defer close(r.recorded)
-	if route == "" {
-		r.write(r.delivered.String(), err)
+	if route != "" {
+		r.route, r.routeErr = route, err
+		return
 	}
+	r.reply = r.write(r.delivered.String(), err)
+}
+
+// takeRoute hands the request's record to the routed reply.
+func (r *transcriptRecording) takeRoute() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.routeTaken = true
+}
+
+// release settles the request and records a routed one whose routed reply
+// never ran, so the user's line is kept.
+func (r *transcriptRecording) release() {
+	if r == nil {
+		return
+	}
+	r.settle()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.route == "" || r.routeTaken {
+		return
+	}
+	r.routeTaken = true
+	err := r.routeErr
+	if err == nil {
+		err = r.ctx.Err()
+	}
+	r.reply = r.write(r.delivered.String(), err)
+}
+
+// recordedReply is the reply this request recorded, if any.
+func (r *transcriptRecording) recordedReply() *brain.Turn {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reply
 }
 
 // settle stops a request the turn no longer reads and makes sure it is
@@ -126,9 +182,22 @@ func (r *transcriptRecording) settle() {
 	}
 }
 
-// awaitProvider waits until a request that an earlier turn stopped has
-// ended on the live provider.
+// awaitProvider waits, for at most providerStopTimeout, until a request that
+// an earlier turn stopped has ended on the live provider.
 func (p *Pipeline) awaitProvider(ctx context.Context) error {
+	wait, cancel := context.WithTimeout(ctx, providerStopTimeout)
+	defer cancel()
+	err := p.settleProvider(wait)
+	if err != nil && ctx.Err() == nil {
+		p.emit(events.Error{Stage: "brain", Message: errProviderStopping.Error()})
+		return errProviderStopping
+	}
+	return err
+}
+
+// settleProvider waits until a request that an earlier turn stopped has
+// ended on the live provider.
+func (p *Pipeline) settleProvider(ctx context.Context) error {
 	p.requestMu.Lock()
 	r := p.lastRequest
 	p.requestMu.Unlock()
@@ -165,19 +234,25 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		return nil, nil, err
 	}
 	rec := &transcriptRecording{provider: provider, ctx: ctx, cancel: cancel, drained: make(chan struct{}), recorded: make(chan struct{}),
-		write: func(delivered string, err error) {
+		write: func(delivered string, err error) *brain.Turn {
 			turns := requestTurns(input, opts, delivered, err, started)
 			if len(turns) == 0 {
-				return
+				return nil
 			}
 			if appendErr := t.Append(epoch, turns...); appendErr != nil {
 				p.emit(events.Error{Stage: "history", Message: fmt.Sprintf("record reply in conversation transcript: %v", appendErr)})
+				return nil
 			}
+			if last := turns[len(turns)-1]; last.Role == "assistant" {
+				return &last
+			}
+			return nil
 		}}
 	p.requestMu.Lock()
 	p.lastRequest = rec
 	p.requestMu.Unlock()
-	out := make(chan string, 8)
+	// Unbuffered, so text counts as delivered only once the turn has read it.
+	out := make(chan string)
 	var thinking chan string
 	if stream.Thinking != nil {
 		thinking = make(chan string, 8)
@@ -192,7 +267,8 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		defer close(out)
 		forwarding := true
 		forward := func(ch chan<- string, v string) bool {
-			if !forwarding {
+			if !forwarding || ctx.Err() != nil {
+				forwarding = false
 				return false
 			}
 			select {

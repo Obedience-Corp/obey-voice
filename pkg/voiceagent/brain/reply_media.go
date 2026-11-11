@@ -30,6 +30,20 @@ func setReplyMedia(turns []Turn, text string, refs []chatmedia.Ref) error {
 	turns[i].Attachments = append([]chatmedia.Ref(nil), refs...)
 	return nil
 }
+
+// SetRecordedReplyMedia moves images into the newest turn that is reply, by
+// response id and text, so a reply recorded after it never takes them.
+func SetRecordedReplyMedia(turns []Turn, reply Turn, text string, refs []chatmedia.Ref) error {
+	for i := len(turns) - 1; i >= 0; i-- {
+		t := turns[i]
+		if (t.Role == "assistant" || t.Role == "samantha") && len(t.ToolCalls) == 0 && t.ResponseID == reply.ResponseID && t.Content == reply.Content {
+			turns[i].Content = text
+			turns[i].Attachments = append([]chatmedia.Ref(nil), refs...)
+			return nil
+		}
+	}
+	return errors.New("the reply to attach images to is no longer in the conversation")
+}
 func setMediaViews(canonical, working []Turn, text string, refs []chatmedia.Ref) error {
 	i := replyIndex(canonical)
 	if i < 0 {

@@ -45,7 +45,11 @@ func (r *recordedTranscript) Clear() {
 	r.turns = nil
 }
 
-func (r *recordedTranscript) SetReplyMedia(string, []chatmedia.Ref) error { return nil }
+func (r *recordedTranscript) SetRecordedReplyMedia(reply brain.Turn, text string, refs []chatmedia.Ref) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return brain.SetRecordedReplyMedia(r.turns, reply, text, refs)
+}
 
 // stallingBrain delivers one chunk, then holds the request open until it is
 // canceled, as a CLI provider does when the user interrupts it.
