@@ -19,9 +19,10 @@ type PersonaContext struct {
 	ContextHighWater int                `json:"context_high_water,omitempty"`
 	Through          int                `json:"through"`
 	PrefixHash       string             `json:"prefix_hash"`
-	// Session is set for a persona whose provider keeps its own session.
-	// Through then counts the canonical turns that session already holds,
-	// and Working is unused.
+	// Session is set for a persona whose provider keeps its own session, or
+	// keeps the shared history but sends a hosted service only its working
+	// view. Through then counts the canonical turns that provider already
+	// holds. Working is unused for the first and is the view for the second.
 	Session *SessionCursor `json:"session,omitempty"`
 }
 
@@ -29,6 +30,8 @@ type PersonaContext struct {
 type SessionCursor struct {
 	// From is the first canonical turn its provider may receive.
 	From int `json:"from"`
+	// Provider is the backend the cursor belongs to.
+	Provider string `json:"provider,omitempty"`
 }
 
 type PersonaContexts map[string]PersonaContext
@@ -48,10 +51,10 @@ func (contexts PersonaContexts) Clone() PersonaContexts {
 }
 
 // SessionContext is the cursor of a persona whose provider keeps its own
-// session: the provider may receive canonical[from:] and holds
-// canonical[from:through].
-func SessionContext(canonical []Turn, from, through int) PersonaContext {
-	return PersonaContext{Through: through, PrefixHash: contextPrefixHash(canonical[:through]), Session: &SessionCursor{From: from}}
+// session: the provider may receive canonical[cursor.From:] and holds
+// canonical[cursor.From:through].
+func SessionContext(canonical []Turn, cursor SessionCursor, through int) PersonaContext {
+	return PersonaContext{Through: through, PrefixHash: contextPrefixHash(canonical[:through]), Session: &cursor}
 }
 
 // Matches reports whether canonical still begins with the prefix this

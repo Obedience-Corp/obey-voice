@@ -15,7 +15,8 @@ import (
 // turns; a turn recorded for a conversation that is no longer current is
 // refused rather than added to the next one. It also holds, for personas whose
 // provider keeps its own session, how much of the conversation that session
-// holds; a clear drops those cursors with the turns.
+// holds, and for personas whose provider keeps the shared history on a hosted
+// backend, the share it sends; a clear drops those cursors with the turns.
 type transcript struct {
 	mu       sync.Mutex
 	current  func() string
@@ -101,7 +102,7 @@ func (t *transcript) AppendSeen(epoch, personaID string, covered int, turns ...b
 	if recorded == covered {
 		through = len(t.turns)
 	}
-	t.sessions[personaID] = brain.SessionContext(t.turns, cursor.Session.From, through)
+	t.sessions[personaID] = brain.SessionContext(t.turns, *cursor.Session, through)
 	return nil
 }
 

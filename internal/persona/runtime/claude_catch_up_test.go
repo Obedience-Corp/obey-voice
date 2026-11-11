@@ -183,7 +183,7 @@ func TestCatchUpSharesSpokenLinesOnly(t *testing.T) {
 		{Role: "assistant", Content: "The vault code is cobalt.", PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
 	}
 	tr := newTranscript(func() string { return "epoch" }, turns)
-	cursor := brain.SessionContext(turns, 0, 2)
+	cursor := brain.SessionContext(turns, brain.SessionCursor{Provider: "claude"}, 2)
 	tr.setLive("mira", &cursor)
 	catchUp, covered, ok := tr.CatchUp("mira")
 	if !ok || covered != len(turns) || catchUp.Seen != 2 {
@@ -214,7 +214,7 @@ func TestClaudeNeverReceivesAnotherPersonasToolTraffic(t *testing.T) {
 		{Role: "tool", ToolName: "bash", ToolCallID: "c1", Content: "TOOL OUTPUT SECRET"},
 		{Role: "assistant", Content: "Your notes say hi.", PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
 	}
-	c.start("mira", turns, brain.PersonaContexts{"mira": brain.SessionContext(turns, 0, 2)})
+	c.start("mira", turns, brain.PersonaContexts{"mira": brain.SessionContext(turns, brain.SessionCursor{Provider: "claude"}, 2)})
 	for _, turn := range c.p.Brain.History() {
 		if len(turn.ToolCalls) > 0 || turn.ToolName != "" || turn.Role == "tool" {
 			t.Fatalf("the provider holds another persona's tool traffic: %+v", turn)

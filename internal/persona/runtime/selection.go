@@ -179,7 +179,8 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	}
 	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, startedOn, opts.HostedNotified)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
-	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok {
+	hostedShare := brain.HostedSharedHistory(opts.Pipeline.Brain)
+	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok && !hostedShare {
 		if state, exists := s.contexts[opts.Initial.PersonaID]; exists {
 			restored := state.Reconcile(opts.Pipeline.Brain.History())
 			if opts.InitialNative != nil {
@@ -196,7 +197,6 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 			}
 		}
 	}
-	captureContext(s.contexts, opts.Initial.PersonaID, opts.Pipeline.Brain)
 	if live := opts.Pipeline.Brain; brain.KeepsPersonaSession(live) {
 		turns := s.transcript.Turns()
 		cursor := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false)
@@ -205,7 +205,25 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		// The host loaded the whole conversation into a provider that has no
 		// session yet; keep only what it may receive.
 		live.LoadHistory(sessionHistory(turns, cursor, opts.Initial.Config()))
+	} else if hostedShare {
+		// The host loaded the whole conversation, which the provider keeps;
+		// it sends only its persona's share.
+		turns := live.History()
+		cursor := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false)
+		delete(s.contexts, opts.Initial.PersonaID)
+		view := shareView(cursor, turns)
+		if opts.Native != nil {
+			if err := brain.ValidateTextProjection(view.Working); err != nil {
+				return nil, err
+			}
+		}
+		if err := live.(brain.ContinuityTransferProvider).ImportContinuity(view); err != nil {
+			return nil, fmt.Errorf("restore persona context: %w", err)
+		}
+		held := heldShare(cursor, live)
+		s.transcript.setLive(opts.Initial.PersonaID, &held)
 	} else {
+		captureContext(s.contexts, opts.Initial.PersonaID, live)
 		if !brain.KeepsSharedHistory(live) && len(opts.Transcript) > 0 {
 			live.LoadHistory(sessionView(opts.Transcript, opts.Initial.Config()))
 		}

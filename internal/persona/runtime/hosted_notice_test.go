@@ -240,7 +240,7 @@ func TestHostedNoticeOfAResumedConversationSavedBeforeNoticesSaysWhatIsSent(t *t
 		{Role: "user", Content: "Note the door is teal."},
 		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
 	}
-	c.start("mira", turns, brain.PersonaContexts{"mira": brain.SessionContext(turns, 0, len(turns))})
+	c.start("mira", turns, brain.PersonaContexts{"mira": brain.SessionContext(turns, brain.SessionCursor{Provider: "claude"}, len(turns))})
 	c.say("Where were we?")
 	notices := c.hostedNotices()
 	if len(notices) != 1 || notices[0].message != "Mira runs on Claude, a hosted service. The whole conversation is sent to Claude." {

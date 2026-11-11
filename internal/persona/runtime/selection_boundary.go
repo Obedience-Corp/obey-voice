@@ -53,7 +53,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	token := rand.Text()
 	var turns []brain.Turn
 	var stagedContexts brain.PersonaContexts
-	var targetCursor *brain.PersonaContext // the selected persona's cursor when its provider keeps a session
+	var targetCursor *brain.PersonaContext // the selected persona's cursor when its provider keeps a session or a hosted share
 	var err, workerErr, durabilityErr error
 	unchanged, installed, rebind, keepLive := false, false, false, false
 	// reused marks a parked provider, which stays parked if selection fails;
@@ -272,14 +272,26 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				stagedContexts = make(brain.PersonaContexts)
 			}
 			if !s.requiresSelection {
-				captureContext(stagedContexts, previous.PersonaID, oldBrain)
+				if brain.HostedSharedHistory(oldBrain) {
+					s.refreshShare(previous.PersonaID, oldBrain)
+				} else {
+					captureContext(stagedContexts, previous.PersonaID, oldBrain)
+				}
 			}
-			if keepsSession {
+			// A provider keeping the shared history on a hosted backend keeps
+			// every turn but is given only its persona's share to send.
+			hostedShare := brain.HostedSharedHistory(nextBrain)
+			if keepsSession || hostedShare {
 				cursor := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, reason == "agent-handoff")
 				targetCursor = &cursor
 				delete(stagedContexts, binding.PersonaID)
 			}
-			targetView := stagedContexts[binding.PersonaID].Reconcile(turns)
+			var targetView brain.ContinuitySnapshot
+			if hostedShare {
+				targetView = shareView(*targetCursor, turns)
+			} else {
+				targetView = stagedContexts[binding.PersonaID].Reconcile(turns)
+			}
 			if native != nil {
 				if err := brain.ValidateNativeProjection(targetView.Working); err != nil {
 					return err
@@ -293,6 +305,10 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if err := target.ImportContinuity(targetView); err != nil {
 					return fmt.Errorf("restore persona continuity: %w", err)
 				}
+				if hostedShare {
+					held := heldShare(*targetCursor, nextBrain)
+					targetCursor = &held
+				}
 			} else if projects {
 				if err := projection.ImportHistory(turns); err != nil {
 					return fmt.Errorf("project conversation: %w", err)
@@ -303,7 +319,9 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				// A parked provider keeps its session; loading history would end it.
 				nextBrain.LoadHistory(sessionHistory(turns, *targetCursor, cfg))
 			}
-			captureContext(stagedContexts, binding.PersonaID, nextBrain)
+			if !hostedShare {
+				captureContext(stagedContexts, binding.PersonaID, nextBrain)
+			}
 
 			if s.opts.Voices != nil && native == nil && (s.opts.Native == nil || !s.opts.Native.Silent) {
 				voice, err = prepareResource(ctx, func() (*voiceagent.TTSSet, error) { return s.opts.NewVoice(ctx, cfg) }, func(v *voiceagent.TTSSet) { v.Close() })
@@ -440,13 +458,13 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			s.mu.Unlock()
 			s.requiresSelection = false
 			s.contexts = stagedContexts
-			if targetCursor != nil {
+			if brain.KeepsSharedHistory(nextBrain) {
+				// The projected provider now records the conversation itself.
+				s.transcript.reset(nil)
+			} else if targetCursor != nil {
 				// The host records the conversation again, starting from the
 				// turns the outgoing provider held.
 				s.transcript.reset(turns)
-			} else if brain.KeepsSharedHistory(nextBrain) {
-				// The projected provider now records the conversation itself.
-				s.transcript.reset(nil)
 			}
 			s.transcript.setLive(binding.PersonaID, targetCursor)
 			s.publicationMu.Unlock()

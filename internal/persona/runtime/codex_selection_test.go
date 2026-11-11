@@ -30,7 +30,8 @@ func TestCodexSelectorInitialSwitchReloadAndRestore(t *testing.T) {
 		writeTestProfile(t, catalog.Dir, profile)
 		writeTestPrompt(t, promptDir, id, "You are {agent_name}.")
 	}
-	base := &config.Config{ActivePersona: "santa", BrainProvider: "codex", PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, EnvironmentContextEnabled: true}
+	// Samantha takes over Santa's conversation, so she is given all of it.
+	base := &config.Config{ActivePersona: "santa", BrainProvider: "codex", PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, EnvironmentContextEnabled: true, HostedPersonaSharing: "whole_conversation"}
 	binding, err := catalog.ResolveBinding(base, "santa")
 	if err != nil {
 		t.Fatal(err)

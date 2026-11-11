@@ -104,11 +104,12 @@ func (p *Pipeline) beginOrdinaryCompletion(ctx context.Context, input, speaker s
 }
 
 // deliverableResult reports whether a pending result may reach the live
-// persona. A persona keeping its own session on a hosted backend receives only
-// the results of jobs it started, and not those it started while on a local
-// backend; the others wait for their own persona.
+// persona. A persona on a hosted backend that keeps its own session or is sent
+// only its share of the conversation receives only the results of jobs it
+// started, and not those it started while on a local backend; the others wait
+// for their own persona.
 func (p *Pipeline) deliverableResult(r work.ResultView) bool {
-	if !brain.KeepsPersonaSession(p.Brain) {
+	if !brain.KeepsPersonaSession(p.Brain) && !brain.HostedSharedHistory(p.Brain) {
 		return true
 	}
 	live := ""

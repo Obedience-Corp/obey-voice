@@ -190,7 +190,7 @@ func TestServeFailedResumeKeepsAPersonaOnClaudeWithinItsShare(t *testing.T) {
 		{Role: "user", Content: "Mira, hello."},
 		{Role: "assistant", Content: "Hello.", PersonaID: "mira", PersonaDisplayName: "mira", ResponseID: "two"},
 	}
-	if err := session.DefaultStore().SaveSelectionState(previous, turns, events.PersonaSelection{PersonaID: "mira", DisplayName: "mira", PromptHash: "saved-hash"}, brain.PersonaContexts{"mira": brain.SessionContext(turns, 2, 4)}); err != nil {
+	if err := session.DefaultStore().SaveSelectionState(previous, turns, events.PersonaSelection{PersonaID: "mira", DisplayName: "mira", PromptHash: "saved-hash"}, brain.PersonaContexts{"mira": brain.SessionContext(turns, brain.SessionCursor{From: 2, Provider: "claude"}, 4)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.resume(t.Context(), previous.ID); err != nil {

@@ -132,7 +132,10 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 	}
 	before := append([]brain.Turn(nil), history...)
 	tailSource := before
-	if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
+	if brain.HostedSharedHistory(p.Brain) {
+		// It sends only its persona's share; the seed must not add to it.
+		tailSource = working
+	} else if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
 		tailSource = canonical.CanonicalHistory()
 	}
 	tail := compactTail(tailSource)

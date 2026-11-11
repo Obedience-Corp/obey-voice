@@ -83,8 +83,8 @@ func providerLabel(provider string) string {
 	return provider
 }
 
-// sharesWholeConversation reports whether a persona on a hosted backend that
-// keeps its own session receives the conversation from its start.
+// sharesWholeConversation reports whether a persona on a hosted backend
+// receives the conversation from its start.
 func (s *Selector) sharesWholeConversation() bool {
 	return s.opts.Base != nil && s.opts.Base.HostedPersonaSharing == "whole_conversation"
 }
@@ -137,9 +137,10 @@ func (s *Selector) liveProvider() string {
 }
 
 // noticeScope says what the provider is about to receive, from the persona's
-// share of the conversation rather than from the setting alone.
+// share of the conversation rather than from the setting alone. A provider
+// that can only hold a conversation started on it receives all of it.
 func (s *Selector) noticeScope(personaID, provider, label string) string {
-	if !slices.Contains(sessionCatchUpProviders, provider) {
+	if !slices.Contains(sessionCatchUpProviders, provider) && !slices.Contains(sharedHistoryProviders, provider) {
 		return fmt.Sprintf("This conversation is sent to %s.", label)
 	}
 	turns := s.sharedTurns()

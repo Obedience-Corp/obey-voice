@@ -300,7 +300,7 @@ func (b *ObeyBrain) buildPrompt(input string, opts StreamOptions) string {
 	if !opts.AgentContinuation {
 		parts = append(parts, ApplicationRequestContext(b.cfg, "obey", input))
 	}
-	parts = append(parts, b.groupContext.prompt(b.cfg, b.cfg.AgentName, b.canonical))
+	parts = append(parts, b.groupContext.prompt(b.cfg, b.cfg.AgentName, b.working))
 	if len(b.working) > 0 {
 		parts = append(parts, systemPrompt(b.cfg, "daemon-history", nil))
 		for _, t := range b.working {

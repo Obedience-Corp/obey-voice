@@ -25,7 +25,11 @@ func (s *Selector) ContextSnapshots() brain.PersonaContexts {
 		contexts = make(brain.PersonaContexts)
 	}
 	if !restoring {
-		captureContext(contexts, id, s.opts.Pipeline.Brain)
+		if live := s.opts.Pipeline.Brain; brain.HostedSharedHistory(live) {
+			s.refreshShare(id, live)
+		} else {
+			captureContext(contexts, id, live)
+		}
 	}
 	s.transcript.addSessions(contexts, "")
 	return contexts

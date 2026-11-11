@@ -24,3 +24,19 @@ func IsHosted(provider string) bool {
 	hosted, known := hostedProviders[name]
 	return hosted || !known
 }
+
+// HostedSharedHistory reports whether a provider keeps the shared history and
+// sends it to a hosted service. Such a provider sends only its working view,
+// which the host limits to its persona's share of the conversation; the rest
+// of the history it keeps stays on this machine.
+func HostedSharedHistory(p Provider) bool {
+	_, ok := p.(interface {
+		ContinuityTransferProvider
+		sendsWorkingView()
+	})
+	return ok
+}
+
+func (*CodexBrain) sendsWorkingView()     {}
+func (*MuseSparkBrain) sendsWorkingView() {}
+func (*ObeyBrain) sendsWorkingView()      {}
