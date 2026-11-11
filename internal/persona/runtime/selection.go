@@ -185,7 +185,9 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	}
 	captureContext(s.contexts, opts.Initial.PersonaID, opts.Pipeline.Brain)
 	if err := s.persistContexts(s.Transcript(), s.selected, s.contexts); err != nil {
-		if !session.WriteCommitted(err) {
+		// A provider without shared history ran without persona selection
+		// before, where a failed save only reported an error.
+		if !session.WriteCommitted(err) && brain.KeepsSharedHistory(opts.Pipeline.Brain) {
 			return nil, fmt.Errorf("persist initial persona: %w", err)
 		}
 		s.warnPersistence(err)
@@ -355,6 +357,9 @@ func (s *Selector) Admit(ctx context.Context) (events.ResponseEnvelope, error) {
 	selected, err := s.selectAtBoundary(ctx, s.Snapshot().PersonaID, "response_boundary")
 	if err != nil {
 		return events.ResponseEnvelope{}, err
+	}
+	if s.fixedResponder() {
+		return responseEnvelope(selected), nil
 	}
 	if _, participants, err := s.conversationRoster(); err == nil {
 		s.setGroupParticipants(participants)

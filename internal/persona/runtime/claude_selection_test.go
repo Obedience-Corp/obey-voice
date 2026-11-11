@@ -29,6 +29,7 @@ import (
 const (
 	claudeSummary = "Summary: Mira noted the cobalt vault code."
 	claudeStall   = "STALL"
+	claudeHandoff = "HANDOFF"
 	claudePartial = "The vault code is"
 )
 
@@ -95,6 +96,9 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	if strings.Contains(req.Prompt, claudeStall) {
 		text = "Mira: " + claudePartial
 	}
+	if strings.Contains(req.Prompt, claudeHandoff) {
+		text = "Mira: Ask @ember about it."
+	}
 	_ = out.Encode(map[string]any{"type": "system", "subtype": "init", "session_id": "claude-fixture"})
 	_ = out.Encode(map[string]any{"type": "assistant", "session_id": "claude-fixture", "message": map[string]any{"content": []map[string]string{{"type": "text", "text": text}}}})
 	if strings.Contains(req.Prompt, claudeStall) {
@@ -140,6 +144,7 @@ type claudeConversation struct {
 	selector *Selector
 	initial  brain.Provider
 	work     bool
+	saveErr  error
 	mu       sync.Mutex
 	ollama   [][]ollamaMessage
 	ready    []events.ResponseReady
@@ -226,6 +231,9 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 	selector, err := NewSelector(SelectionOptions{Base: c.base, Catalog: c.catalog, Pipeline: p, SessionID: c.sess.ID, Initial: binding,
 		Transcript: turns, InitialContexts: contexts,
 		PersistContexts: func(turns []brain.Turn, s events.PersonaSelection, contexts brain.PersonaContexts) error {
+			if c.saveErr != nil {
+				return c.saveErr
+			}
 			return c.store.SaveSelectionState(c.sess, turns, s, contexts)
 		},
 	})
@@ -667,6 +675,121 @@ func TestClaudeTranscriptSurvivesClosingConversationWork(t *testing.T) {
 	c.p.OnTurn()
 	if turns := c.saved().Turns; len(turns) != 2 {
 		t.Fatalf("final save = %+v", turns)
+	}
+}
+
+// With no persona the conversation could move to, routing must not touch an
+// input: the model answers a bare name, and nothing switches persona.
+func TestClaudeWithoutReachablePersonasLeavesEveryInputToTheModel(t *testing.T) {
+	for name, setup := range map[string]func(*claudeConversation){
+		"only the live persona": func(c *claudeConversation) {
+			if err := os.RemoveAll(filepath.Join(c.catalog.Dir, "ember")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"other personas on claude": func(c *claudeConversation) {
+			ember := testProfile("ember", "Ember", "ember")
+			ember.Brain.Provider, ember.Brain.Model = "claude", ""
+			writeTestProfile(t, c.catalog.Dir, ember)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newClaudeConversation(t, 20)
+			setup(c)
+			c.start("mira", nil, nil)
+			c.say("Mira", "Ember, what do you think?", "switch to Ember")
+			ready := c.responses()
+			if len(ready) != 3 {
+				t.Fatalf("responses = %+v", ready)
+			}
+			for i, r := range ready {
+				if r.Response != fmt.Sprintf("Mira reply %d.", i+1) {
+					t.Fatalf("response %d = %q, want the model's answer", i, r.Response)
+				}
+			}
+			if got := c.selector.Snapshot().PersonaID; got != "mira" {
+				t.Fatalf("selection moved to %q", got)
+			}
+			for _, req := range readClaudeRequests(t, c.log) {
+				if strings.Contains(req.Prompt, "Other available agent personas") {
+					t.Fatalf("Claude received a persona roster:\n%s", req.Prompt)
+				}
+			}
+		})
+	}
+}
+
+func TestClaudeRefusesImplicitSwitchItCouldNotReturnFrom(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	c.say("Note that the vault code is cobalt.")
+	for _, input := range []string{"Ember, what do you think?", "Ember.", "Hey Ember"} {
+		err := c.p.RunTurnTextMode(t.Context(), input)
+		if err == nil || !strings.Contains(err.Error(), `say "switch to Ember"`) {
+			t.Fatalf("%q: err = %v", input, err)
+		}
+		if got := c.selector.Snapshot().PersonaID; got != "mira" {
+			t.Fatalf("%q moved the conversation to %q", input, got)
+		}
+	}
+	if len(c.ollamaRequests()) != 0 {
+		t.Fatal("a refused switch reached Ember")
+	}
+	c.say("@ember what do you think?")
+	if got := c.selector.Snapshot().PersonaID; got != "ember" {
+		t.Fatalf("explicit mention did not hand over: %q", got)
+	}
+}
+
+func TestClaudeReplyDoesNotHandOffTheConversation(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	c.p.RouteHandoff = c.selector.RouteHandoff
+	c.say("Who should look at this? " + claudeHandoff)
+	if got := c.selector.Snapshot().PersonaID; got != "mira" || len(c.ollamaRequests()) != 0 {
+		t.Fatalf("Mira's mention handed the conversation to %q", got)
+	}
+}
+
+func TestClaudeStartupSaveFailureWarnsInsteadOfAborting(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	c.saveErr = errors.New("disk full")
+	c.start("mira", nil, nil)
+	reported := false
+	for _, e := range c.errorEvents() {
+		reported = reported || (e.Stage == "session_durability" && strings.Contains(e.Message, "disk full"))
+	}
+	if !reported {
+		t.Fatalf("startup save failure was not reported: %+v", c.errorEvents())
+	}
+	c.saveErr = nil
+	c.say("Still works.")
+
+	binding, err := c.catalog.ResolveBinding(c.base, "ember")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ollama, err := brain.NewProvider(binding.Config())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &pipeline.Pipeline{Brain: ollama, Events: events.NewBus()}
+	t.Cleanup(func() { _ = p.CloseBrains() })
+	_, err = NewSelector(SelectionOptions{Base: c.base, Catalog: c.catalog, Pipeline: p, SessionID: c.sess.ID, Initial: binding,
+		PersistContexts: func([]brain.Turn, events.PersonaSelection, brain.PersonaContexts) error {
+			return errors.New("disk full")
+		}})
+	if err == nil {
+		t.Fatal("a provider that keeps shared history must still refuse to start without a durable selection")
+	}
+}
+
+func TestClaudeExplicitSelectionHandsOver(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	c.say("Note that the vault code is cobalt.")
+	if _, err := c.selector.Select(t.Context(), "ember", "ui"); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.selector.Snapshot().PersonaID; got != "ember" {
+		t.Fatalf("selection = %q", got)
 	}
 }
 

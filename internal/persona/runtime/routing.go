@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/internal/summon"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -22,6 +24,14 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 	if !background {
 		s.EndDiscussion("superseded")
 	}
+	if s.fixedResponder() {
+		envelope, err := s.Admit(ctx)
+		if err != nil {
+			return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
+		}
+		admitted.Envelope = envelope
+		return admitted, nil
+	}
 	roster, participants, err := s.conversationRoster()
 	if err != nil {
 		return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
@@ -32,6 +42,9 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 		exact := roster.ResolveForegroundControl(input)
 		switch exact.Kind {
 		case summon.ExactControlValid:
+			if err := s.refuseOneWaySwitch(exact.Address); err != nil {
+				return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
+			}
 			return s.routeExactControl(ctx, input, exact)
 		case summon.ExactControlInvalid:
 			if exact.Err != nil {
@@ -52,6 +65,9 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 			return admitted, classifyAdmissionFailure(ctx, "route", err)
 		}
 		if address.PersonaID != "" {
+			if err := s.refuseOneWaySwitch(address); err != nil {
+				return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
+			}
 			if _, err := s.Select(ctx, address.PersonaID, address.Reason); err != nil {
 				return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
 			}
@@ -79,4 +95,46 @@ func (s *Selector) warnCatalogIssues(issues []persona.CatalogIssue) {
 			Message: fmt.Sprintf("persona %q is unavailable until repaired: %v", issue.ID, issue.Err),
 		})
 	}
+}
+
+// fixedResponder reports whether this conversation cannot move to another
+// persona: its live provider keeps no shared history, and no other persona is
+// on a provider that could take it over. Routing then leaves every input to
+// the live persona, as before persona selection existed for that provider.
+func (s *Selector) fixedResponder() bool {
+	if brain.KeepsSharedHistory(s.opts.Pipeline.Brain) {
+		return false
+	}
+	profiles, _, err := s.opts.Catalog.ListWithIssues()
+	if err != nil {
+		return true
+	}
+	live := s.Snapshot().PersonaID
+	for _, p := range profiles {
+		if p.Inactive || p.ID == live {
+			continue
+		}
+		if cfg, _, err := persona.ResolveAudioConfig(s.opts.Base, p); err == nil && slices.Contains(sharedHistoryProviders, cfg.BrainProvider) {
+			return false
+		}
+	}
+	return true
+}
+
+// refuseOneWaySwitch keeps the conversation on a live provider that could not
+// take it back, unless the user asked for the move with an explicit switch or
+// @mention.
+func (s *Selector) refuseOneWaySwitch(address summon.Address) error {
+	live := s.Snapshot()
+	if brain.KeepsSharedHistory(s.opts.Pipeline.Brain) || address.PersonaID == "" || address.PersonaID == live.PersonaID {
+		return nil
+	}
+	if address.Reason == summon.ReasonExplicitSwitch || address.Reason == "explicit-mention" {
+		return nil
+	}
+	target := address.PersonaID
+	if p, err := s.opts.Catalog.Load(target); err == nil && p.DisplayName != "" {
+		target = p.DisplayName
+	}
+	return fmt.Errorf("%s cannot rejoin this conversation once %s takes it over; say \"switch to %s\" to hand it over", live.DisplayName, target, target)
 }
