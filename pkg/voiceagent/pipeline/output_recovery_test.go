@@ -28,6 +28,11 @@ func (e *generationTestEngine) BindPlaybackContext(ctx context.Context) context.
 	defer e.mu.Unlock()
 	return audio.WithPlaybackGeneration(ctx, e, e.generation)
 }
+func (e *generationTestEngine) RebindPlaybackContext(ctx context.Context) context.Context {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return audio.WithPlaybackGeneration(ctx, e, e.generation)
+}
 func (e *generationTestEngine) ResetOutput(context.Context) error {
 	e.mu.Lock()
 	e.generation++

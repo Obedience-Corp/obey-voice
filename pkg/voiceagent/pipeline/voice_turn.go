@@ -268,7 +268,11 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		if p.Player != nil {
 			p.Player.Stop()
 		}
-		return original, p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
+		routedCtx := ctx
+		if !interrupted && !isContinuation {
+			routedCtx = p.routedSpeechContext(ctx, metrics)
+		}
+		return original, p.completeRoutedTurn(routedCtx, turn, metrics, text, kind, source)
 	}
 	if err != nil {
 		if interrupted || errors.Is(err, context.Canceled) {

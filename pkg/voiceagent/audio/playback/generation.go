@@ -16,3 +16,12 @@ func (p *Player) BindPlaybackContext(ctx context.Context) context.Context {
 	p.mu.Unlock()
 	return audio.WithPlaybackGeneration(ctx, p, epoch)
 }
+
+// RebindPlaybackContext admits a new attempt on the current generation,
+// replacing a binding the caller's own Stop invalidated.
+func (p *Player) RebindPlaybackContext(ctx context.Context) context.Context {
+	p.mu.Lock()
+	epoch := p.epoch
+	p.mu.Unlock()
+	return audio.WithPlaybackGeneration(ctx, p, epoch)
+}
