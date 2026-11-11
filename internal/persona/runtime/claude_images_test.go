@@ -180,3 +180,36 @@ func TestHostedNoticeComesBeforeAFirstRequestThatCarriesAnImage(t *testing.T) {
 		t.Fatalf("claude requests = %+v", requests)
 	}
 }
+
+// TestClaudePersonaKeepsTalkingAfterAnEarlierImageIsDeleted removes Mira's
+// image from the store. Her resumed session goes on without it, and a fresh
+// one, which a 100-token session fuse starts on her return from Nova, is told
+// it is no longer attached.
+func TestClaudePersonaKeepsTalkingAfterAnEarlierImageIsDeleted(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+	c := newMixedConversation(t, 20, "ember")
+	c.base.ClaudeMaxSessionTokens = 100
+	c.start("ember", nil, nil)
+	c.addClaudePersona("nova", "Nova")
+	config.SetConfigDirForTest(t, t.TempDir())
+	ref := c.attachImage("diagram.png", 1)
+	c.say("switch to Mira")
+	c.sayWith([]chatmedia.Ref{ref}, "What is in this diagram?")
+	if err := os.Remove(chatmedia.DefaultStore().Path(ref)); err != nil {
+		t.Fatal(err)
+	}
+
+	c.say("And now?")
+	if resumed := lastClaudeRequest(t, c.log); resumed.Resume == "" || len(resumed.Images) != 0 {
+		t.Fatalf("request after the deletion = %+v", resumed)
+	}
+	c.say("switch to Nova", "Nova, tell me about the vault door please.", "switch to Mira", "Still with me?")
+	back := lastClaudeRequest(t, c.log)
+	if back.Resume != "" || back.Input != "stream-json" || len(back.Images) != 0 {
+		t.Fatalf("Mira's fresh session = %+v", back)
+	}
+	requireContains(t, back.Prompt, "Attached image "+ref.ID+" (diagram.png): no longer attached")
+	if transcript := c.selector.Transcript(); !slices.Equal(transcript[2].Attachments, []chatmedia.Ref{ref}) {
+		t.Fatalf("the transcript lost the attachment: %+v", transcript[2])
+	}
+}

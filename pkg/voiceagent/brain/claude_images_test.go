@@ -270,7 +270,8 @@ func TestClaudeFreshSessionReplaysThePersonasOwnImages(t *testing.T) {
 	_, resumed := splitContent(t, fake.content[2])
 	requireImages(t, resumed, again, own)
 	_, retried := splitContent(t, fake.content[3])
-	requireImages(t, retried, own, again)
+	// The new turn's images come in its order; an earlier line's copy is not repeated.
+	requireImages(t, retried, again, own)
 }
 
 func TestClaudeNeverSendsImagesFromCatchUpLines(t *testing.T) {
@@ -292,6 +293,7 @@ func TestClaudeNeverSendsImagesFromCatchUpLines(t *testing.T) {
 	}
 }
 
+// Only a request's new images can fail it.
 func TestClaudeRejectsBadImagesBeforeAnyCall(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	ok := importImage(t, "ok.png", testmedia.PNG())
@@ -301,21 +303,16 @@ func TestClaudeRejectsBadImagesBeforeAnyCall(t *testing.T) {
 	}
 	oversize := storedBlob(t, "huge.png", chatmedia.MaxBytes+1)
 	five := []chatmedia.Ref{ok, ok, ok, ok, ok}
-	var large []chatmedia.Ref
-	for i := range 5 {
-		large = append(large, storedBlob(t, "large"+string(rune('a'+i))+".png", 7<<20))
-	}
 
 	cases := map[string]struct {
 		held  []Turn
 		input []chatmedia.Ref
 		want  string
 	}{
-		"five images":       {input: five, want: "at most four images"},
-		"unreadable":        {input: []chatmedia.Ref{ok, missing}, want: "gone.gif"},
-		"over 8 MiB":        {input: []chatmedia.Ref{oversize}, want: "attachment content has changed"},
-		"replay too big":    {held: []Turn{{Role: "user", Content: "Look.", Attachments: large[:3]}, {Role: "samantha", Content: "Seen."}}, input: large[3:], want: "exceed 32 MiB"},
-		"replay unreadable": {held: []Turn{{Role: "user", Content: "Look.", Attachments: []chatmedia.Ref{missing}}, {Role: "samantha", Content: "Seen."}}, want: "gone.gif"},
+		"five images":     {input: five, want: "at most four images"},
+		"unreadable":      {input: []chatmedia.Ref{ok, missing}, want: "gone.gif"},
+		"over 8 MiB":      {input: []chatmedia.Ref{oversize}, want: "attachment content has changed"},
+		"earlier and new": {held: []Turn{{Role: "user", Content: "Look.", Attachments: []chatmedia.Ref{ok}}, {Role: "samantha", Content: "Seen."}}, input: []chatmedia.Ref{missing}, want: "gone.gif"},
 	}
 	for name, tc := range cases {
 		for _, blocking := range []bool{false, true} {

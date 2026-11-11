@@ -37,9 +37,12 @@ adapter and the Claude CLI, including background workers and group conversations
 actual recipient is validated before inference. Cursor, Grok, Muse Spark, and Obey
 daemon adapters currently reject image input explicitly. GIFs send their first frame
 as PNG; their original animation remains available in the UI. Codex replay resends
-retained images when it starts a new native thread, and Claude when it starts a new
-CLI session, with a 32 MiB aggregate limit. Neither resends an image attached to a
-line said to another persona: see [Hosted backends](personas.md#hosted-backends).
+retained images when it starts a new native thread, with a 32 MiB aggregate limit.
+Claude resends a persona's own earlier images when it starts a new CLI session, the
+newest first, as many as fit in 20 images and 32 MiB; older or missing ones are named
+as no longer attached instead of failing the request. Neither resends an image
+attached to a line said to another persona: see
+[Hosted backends](personas.md#hosted-backends).
 
 Agents can return local PNG, JPEG, or GIF files created through their existing tools.
 They attach files using a standalone Markdown image reference:

@@ -44,6 +44,9 @@ func loadImageData(refs []chatmedia.Ref) ([]api.ImageData, error) {
 	return out, nil
 }
 
+// maxRequestImageBytes bounds the images one request carries.
+const maxRequestImageBytes = 4 * chatmedia.MaxBytes
+
 // eachModelImage loads the images of one request in order, each once, and
 // passes add its label, media type and bytes. A request carries at most
 // 32 MiB of images; GIFs are sent as their first frame in PNG.
@@ -60,16 +63,25 @@ func eachModelImage(refs []chatmedia.Ref, add func(label, mediaType string, data
 			return err
 		}
 		total += len(data)
-		if total > 4*chatmedia.MaxBytes {
+		if total > maxRequestImageBytes {
 			return errors.New("retained images exceed 32 MiB; compact or start a new conversation")
 		}
-		mediaType := "image/" + ref.Format
-		if ref.Format == "gif" {
-			mediaType = "image/png"
-		}
-		add(fmt.Sprintf("Attached image %s (%s):", ref.ID, ref.Name), mediaType, data)
+		add(attachedImageLabel(ref), modelImageType(ref), data)
 	}
 	return nil
+}
+
+// attachedImageLabel is the text block that names the image after it.
+func attachedImageLabel(ref chatmedia.Ref) string {
+	return fmt.Sprintf("Attached image %s (%s):", ref.ID, ref.Name)
+}
+
+// modelImageType is the media type of an image as a model receives it.
+func modelImageType(ref chatmedia.Ref) string {
+	if ref.Format == "gif" {
+		return "image/png"
+	}
+	return "image/" + ref.Format
 }
 func (o *OllamaBrain) prepareImageHistory(ctx context.Context, refs []chatmedia.Ref) error {
 	if len(refs) == 0 {
