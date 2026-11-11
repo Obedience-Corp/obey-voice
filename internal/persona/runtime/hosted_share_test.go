@@ -287,24 +287,30 @@ func TestHostedSharedHistoryReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 			c.start("ember", nil, nil)
 			coordinator := c.p.WorkCoordinator()
 			scope := coordinator.Scope()
-			publish := func(id, persona, backend, text string) {
+			start := func(id, persona, backend, task string) work.JobKey {
 				t.Helper()
-				key, err := coordinator.Register(scope, work.Admission{JobID: id, Task: "task " + id, Origin: "agency", Config: map[string]string{"persona": persona, "brain": backend}})
+				key, err := coordinator.Register(scope, work.Admission{JobID: id, Task: task, Origin: "agency", Config: map[string]string{"persona": persona, "brain": backend}})
 				if err != nil {
 					t.Fatal(err)
 				}
 				if err := coordinator.Started(key); err != nil {
 					t.Fatal(err)
 				}
+				return key
+			}
+			finish := func(key work.JobKey, text string) {
+				t.Helper()
 				if _, err := coordinator.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeSucceeded, Text: text}); err != nil {
 					t.Fatal(err)
 				}
 			}
-			c.say("switch to Mira")
+			publish := func(id, persona, backend, text string) { finish(start(id, persona, backend, "task "+id), text) }
+			emberJob := start("ember-job", "ember", "ollama", "Read my private tax notes")
+			c.say("switch to Mira", "What do you think?")
 			if cfg := c.p.Agency.WorkerMigrationConfig(); cfg.ActivePersona != "mira" || cfg.BrainProvider != provider {
 				t.Fatalf("jobs would be recorded for %q on %q", cfg.ActivePersona, cfg.BrainProvider)
 			}
-			publish("ember-job", "ember", "ollama", "The tax refund is 1234.")
+			finish(emberJob, "The tax refund is 1234.")
 			publish("mira-local-job", "mira", "ollama", "The local diary says 5678.")
 			if c.p.BackgroundPending() {
 				t.Fatal("a result Mira did not start on a hosted backend is offered to her")
@@ -315,7 +321,7 @@ func TestHostedSharedHistoryReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 			}
 			c.say("And the build?")
 			requireContains(t, c.lastHostedPrompt(), "The build is green.")
-			requireOmits(t, c.hostedLog(), "1234", "5678", "tax refund", "diary")
+			requireOmits(t, c.hostedLog(), "1234", "5678", "tax refund", "tax notes", "diary")
 		})
 	}
 }
@@ -372,4 +378,52 @@ func TestLoadHistoryKeepsEveryTurnButGivesAHostedSharedHistoryOnlyItsShare(t *te
 			}
 		})
 	}
+}
+
+func TestPersonaOnTheSameHostedBackendIsSentOnlyItsOwnShare(t *testing.T) {
+	for _, provider := range hostedShareProviders {
+		t.Run(provider, func(t *testing.T) {
+			c := newConversation(t, 20, "mira", provider, "")
+			nova := testProfile("nova", "Nova", "nova")
+			nova.Brain.Provider, nova.Brain.Model = provider, ""
+			writeTestProfile(t, c.catalog.Dir, nova)
+			writeTestPrompt(t, c.base.PromptsDir, "nova", "You are {agent_name}.")
+			c.say(preInviteUser)
+			c.say("switch to Nova", "What do you know?")
+			novaPrompt := c.lastHostedPrompt()
+			requireContains(t, novaPrompt, "You are Nova.", "Nova here.", "What do you know?")
+			requireOmits(t, novaPrompt, "PRIVATE-4711", `"persona":"Mira"`)
+
+			c.say("switch to Mira", "Still with me?")
+			requireContains(t, c.lastHostedPrompt(), "You are Mira.", preInviteUser, "What do you know?", `"persona":"Nova"`, "Still with me?")
+			if transcript := c.selector.Transcript(); len(transcript) != 10 || transcript[0].Content != preInviteUser {
+				t.Fatalf("the canonical record lost lines: %+v", transcript)
+			}
+		})
+	}
+}
+
+func TestCodexPersonaKeepsTheImagesAttachedForIt(t *testing.T) {
+	c := newConversation(t, 20, "mira", "codex", "")
+	config.SetConfigDirForTest(t, t.TempDir())
+	ref, err := chatmedia.DefaultStore().Import("diagram.png", testmedia.PNG())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	c.vision = true
+	c.mu.Unlock()
+	if err := c.p.RunTurnTextMode(chatmedia.WithInput(t.Context(), []chatmedia.Ref{ref}), "What is in this diagram?"); err != nil {
+		t.Fatal(err)
+	}
+	attached := "Attached image " + ref.ID + " (diagram.png):"
+	requireContains(t, c.lastHostedPrompt(), attached)
+
+	saved := c.saved()
+	c.start("mira", saved.Turns, saved.PersonaContexts)
+	c.say("And now?")
+	requireContains(t, c.lastHostedPrompt(), attached, "What is in this diagram?", "And now?")
+
+	c.say("switch to Ember", "Hello Ember.", "switch to Mira", "Back to you.")
+	requireContains(t, c.lastHostedPrompt(), attached, "Hello Ember.", "Back to you.")
 }
