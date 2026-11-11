@@ -291,6 +291,10 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		}
 		rec.finish(result.Route, err)
 		if hasResult {
+			// The turn ends as the transcript records it.
+			if result.Err == nil {
+				result.Err = err
+			}
 			done <- result
 		}
 	}()
