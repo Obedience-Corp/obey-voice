@@ -22,14 +22,22 @@ categorical acceptance rule. These are experimental policies, not calibrated
 correctness guarantees. A proposal cannot choose an executable command, worker
 model, endpoint, permission or spending authorization.
 
-`Controller` owns independent `voice_work` and `text_work` points, an
-`addressee` point, configuration generations and at most one in-flight work
-evaluation plus one in-flight addressee evaluation. `Start` copies the input and
-runs asynchronously. `Attempt.Take` checks once, never waits, and cancels unfinished
-inference. Late, cancelled and old-generation results cannot be adopted. `ResolveAddressee`
-is the one call that waits, for at most the budget; it reports transport,
-timeout and invalid-output failures as admission classifier failures, and returns
-no answer (not an error) when off, busy, abstaining or reconfigured.
+`Controller` owns independent `voice_work`, `text_work` and `addressee` points,
+configuration generations and at most one in-flight work evaluation plus one
+in-flight addressee evaluation. `Start` copies the input and runs asynchronously.
+`Attempt.Take` checks once, never waits, and cancels unfinished inference. Late,
+cancelled and old-generation results cannot be adopted. `ResolveAddressee` is the
+one call that waits, for at most the budget. Its `AddresseeResult.Outcome` is
+`answered`, `abstained` or `skipped` (off, ineligible or reconfigured) with no
+error, or `busy`, `timeout`, `provider_error` or `invalid_output` with an
+admission classifier error. Busy means an earlier call outlived its deadline and
+is still running.
+
+The probabilistic addressee answer (local and Jev) is accepted only with target
+confidence ≥ 0.85 and a margin ≥ 0.20 over the next option; a user message is
+`bare` only with P(bare) ≥ 0.90. `bare` is a single yes probability, so 0.90
+already means a 0.80 lead over "no". OpenAI answers are categorical and have no
+threshold. The constants are in `addressee.go`.
 
 `Manager` prepares a provider asynchronously, exposing off/preparing/ready/
 unavailable status. The controller stays off until preparation succeeds. Managed

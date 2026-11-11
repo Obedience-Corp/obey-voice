@@ -110,13 +110,14 @@ cancellation still stops the request. It adds a model request before the reply;
 its latency depends on the installed model.
 
 That classifier exists only when the live brain is Ollama. When optional
-decisions are enabled and ready, the decision model answers the same question
-first (same inputs, same roster restriction and validation), so natural
-addressing and agent handoffs also work while a persona on Claude, Codex or
-another backend is live. A harness backend is never asked to classify. If the
-decision model fails, abstains or is not ready, an Ollama live brain classifies
-as above; any other brain keeps the current persona, or reports the routing
-failure when the decision model was reached and failed. Accuracy of the decision
+decisions and `decision_addressee` are on and the runtime is ready, the decision
+model answers the same question first (same inputs, same roster restriction and
+validation), so natural addressing and agent handoffs also work while a persona
+on Claude, Codex or another backend is live. A harness backend is never asked to
+classify. If the decision model fails, abstains or is not ready, an Ollama live
+brain classifies as above; any other brain falls back to the name grammar and
+otherwise keeps the current persona, as it did before the decision model existed.
+`persona_routing_timeout` bounds both models together. Accuracy of the decision
 model on real speech has not been measured. See
 [Who is being addressed](decision-routing.md#who-is-being-addressed).
 
