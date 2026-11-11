@@ -5,6 +5,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // personaKey names a persona the way an empty active_persona resolves.
@@ -30,8 +31,8 @@ func (p *Pipeline) livePersona() (string, bool) {
 
 // startedByLivePersona reports whether a job admitted with admission may be
 // shown to the live persona: the live persona started it, or, when the job
-// or the live persona is unnamed, no other persona is in the conversation for
-// it to belong to.
+// or the live persona is unnamed, no other persona has been live or replied
+// in the conversation for it to belong to.
 func (p *Pipeline) startedByLivePersona(admission map[string]string) bool {
 	origin, tagged := admission["persona"]
 	live, known := p.livePersona()
@@ -44,6 +45,14 @@ func (p *Pipeline) startedByLivePersona(admission map[string]string) bool {
 	}
 	if known {
 		seen[live] = true
+	}
+	if p.Agency != nil {
+		for _, id := range p.Agency.conversationPersonas() {
+			seen[id] = true
+		}
+	}
+	if len(seen) > 1 {
+		return false
 	}
 	for _, t := range p.conversationTurns() {
 		if (t.Role != "assistant" && t.Role != "samantha") || t.PersonaID == "" {
@@ -69,4 +78,36 @@ func (p *Pipeline) conversationTurns() []brain.Turn {
 		return canonical.CanonicalHistory()
 	}
 	return p.Brain.History()
+}
+
+// notePersonaLocked records cfg's persona as one the conversation has had
+// live. The caller holds a.mu.
+func (a *Agency) notePersonaLocked(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	if a.personas == nil {
+		a.personas = make(map[string]bool)
+	}
+	a.personas[personaKey(cfg.ActivePersona)] = true
+}
+
+// conversationPersonas are the personas the conversation has had live.
+func (a *Agency) conversationPersonas() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	ids := make([]string, 0, len(a.personas))
+	for id := range a.personas {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// restartPersonas keeps only the live persona when the conversation starts
+// again.
+func (a *Agency) restartPersonas() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.personas = nil
+	a.notePersonaLocked(a.cfg)
 }
