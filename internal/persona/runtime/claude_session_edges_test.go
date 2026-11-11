@@ -103,6 +103,57 @@ func TestLargeClaudeRequestKeepsEveryArgumentUnderTheArgvLimit(t *testing.T) {
 	requireContains(t, last.Prompt, "PASTE-START", "PASTE-END", "Line 9:", "omitted]")
 }
 
+// A prompt one byte under the inline limit travels as one argument, and one
+// at the limit on stdin, on the streaming and the blocking path alike. Either
+// way the whole prompt arrives and no argument reaches the 128 KiB Linux
+// allows.
+func TestClaudePromptsAtTheInlineLimitKeepEveryArgumentUnderTheArgvLimit(t *testing.T) {
+	const inline, argMax = 100 << 10, 128 << 10
+	c := newClaudeConversation(t, 20)
+	b := c.p.Brain.(*brain.Brain)
+	ask := func(stream bool, input string) claudeRequest {
+		t.Helper()
+		if stream {
+			s, err := b.ThinkStream(t.Context(), input, brain.StreamOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range s.Chunks {
+			}
+			if result := <-s.Done; result.Err != nil {
+				t.Fatal(result.Err)
+			}
+		} else if _, err := b.ThinkFull(t.Context(), input, brain.StreamOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		return lastClaudeRequest(t, c.log)
+	}
+	ask(true, "Hello.")
+	for _, stream := range []bool{true, false} {
+		for _, size := range []int{inline - 1, inline} {
+			probe := ask(stream, "probe")
+			if probe.Resume == "" {
+				t.Fatalf("the probe started a new session: %+v", probe)
+			}
+			const start, end = "PASTE-START ", " PASTE-END"
+			filler := size - (len(probe.Prompt) - len("probe")) - len(start) - len(end)
+			got := ask(stream, start+strings.Repeat("t", filler)+end)
+			if len(got.Prompt) != size || !strings.Contains(got.Prompt, start) || !strings.Contains(got.Prompt, end) {
+				t.Fatalf("stream %v: a %d byte prompt arrived as %d bytes", stream, size, len(got.Prompt))
+			}
+			if got.MaxArg >= argMax {
+				t.Fatalf("stream %v: one argument was %d bytes", stream, got.MaxArg)
+			}
+			if inArgv := got.MaxArg >= size; inArgv != (size < inline) {
+				t.Fatalf("stream %v: a %d byte prompt went as an argument: %v", stream, size, inArgv)
+			}
+			if !stream && got.Format != "json" || stream && got.Format != "stream-json" {
+				t.Fatalf("stream %v: request format %q", stream, got.Format)
+			}
+		}
+	}
+}
+
 func TestAppendSeenLeavesATurnRecordedDuringTheRequestUnseen(t *testing.T) {
 	tr := newTranscript(func() string { return "e" }, nil)
 	if err := tr.Append("e", brain.Turn{Role: "user", Content: "one"}, brain.Turn{Role: "assistant", Content: "Mira one.", PersonaID: "mira", ResponseID: "m1"}); err != nil {
