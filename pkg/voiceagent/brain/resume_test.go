@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -34,6 +35,8 @@ type fakeClaudeClient struct {
 	runPrompts []string
 	runOpts    []*claude.RunOptions
 	runCalls   int
+	// stdinPrompts are the prompts a blocking run piped on stdin.
+	stdinPrompts []string
 }
 
 var _ claudeRunner = (*fakeClaudeClient)(nil)
@@ -74,6 +77,15 @@ func (f *fakeClaudeClient) RunPromptCtx(_ context.Context, prompt string, opts *
 		return f.fullResults[i], nil
 	}
 	return &claude.ClaudeResult{}, nil
+}
+
+func (f *fakeClaudeClient) RunFromStdinCtx(ctx context.Context, stdin io.Reader, prompt string, opts *claude.RunOptions) (*claude.ClaudeResult, error) {
+	data, err := io.ReadAll(stdin)
+	if err != nil {
+		return nil, err
+	}
+	f.stdinPrompts = append(f.stdinPrompts, string(data))
+	return f.RunPromptCtx(ctx, prompt, opts)
 }
 
 func assistantMsg(text string) claude.Message {

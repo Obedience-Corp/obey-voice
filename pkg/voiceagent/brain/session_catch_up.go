@@ -16,8 +16,9 @@ type SessionCatchUp struct {
 }
 
 // maxCatchUpBytes bounds the conversation record one request carries: half
-// the harness request context bound, which leaves room for the request,
-// results and instructions in the single prompt argument the CLI receives.
+// the harness request context bound. It does not bound the request or its
+// results; a prompt past maxInlinePromptBytes is piped on stdin, so no
+// prompt becomes one argument over the 128 KiB Linux allows.
 const maxCatchUpBytes = harnessRouteContextBytes / 2
 
 // catchUpBudget also keeps a replay under half the session fuse when one is
