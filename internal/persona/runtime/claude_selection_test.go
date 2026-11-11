@@ -160,12 +160,16 @@ func readClaudeRequests(t *testing.T, log string) []claudeRequest {
 	return out
 }
 
-type ollamaMessage struct{ Role, Content string }
+type ollamaMessage struct {
+	Role, Content string
+	ToolCalls     json.RawMessage `json:"tool_calls"`
+}
 
-// claudeConversation is a conversation between Mira, a persona on Claude, and
-// Ember, a persona on a fake Ollama server.
+// claudeConversation is a conversation between Mira, a persona on Claude or
+// another hosted provider, and Ember, a persona on a fake Ollama server.
 type claudeConversation struct {
 	t        *testing.T
+	provider string
 	log      string
 	base     *config.Config
 	catalog  persona.Catalog
@@ -183,6 +187,8 @@ type claudeConversation struct {
 	notices  []hostedNoticeEvent
 	// emberSays replaces Ember's reply when set.
 	emberSays string
+	// vision makes the fake Ollama model accept images.
+	vision bool
 }
 
 func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
@@ -193,10 +199,33 @@ func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
 // newMixedConversation starts the conversation on the persona start.
 func newMixedConversation(t *testing.T, maxHistory int, start string) *claudeConversation {
 	t.Helper()
-	c := &claudeConversation{t: t, log: installClaudeFixture(t)}
+	return newConversation(t, maxHistory, start, "claude", "")
+}
+
+// newConversation starts a conversation between Mira, a persona on provider,
+// and Ember on Ollama, on the persona start, with hosted_persona_sharing set
+// to sharing.
+func newConversation(t *testing.T, maxHistory int, start, provider, sharing string) *claudeConversation {
+	t.Helper()
+	c := &claudeConversation{t: t, provider: provider}
+	switch provider {
+	case "claude":
+		c.log = installClaudeFixture(t)
+	case "codex":
+		c.log = installCodexSelectorFixture(t)
+	default:
+		c.log = installMixedProviderBinaries(t)
+	}
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		c.mu.Lock()
+		vision := c.vision
+		c.mu.Unlock()
+		if r.URL.Path == "/api/show" && vision {
+			_, _ = w.Write([]byte(`{"capabilities":["completion","vision"]}`))
+			return
+		}
 		if r.URL.Path != "/api/chat" {
 			_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
 			return
@@ -219,15 +248,18 @@ func newMixedConversation(t *testing.T, maxHistory int, start string) *claudeCon
 		profile := testProfile(id, display, id)
 		profile.Brain.Model = ""
 		if id == "mira" {
-			profile.Brain.Provider = "claude"
+			profile.Brain.Provider = provider
 		}
 		writeTestProfile(t, c.catalog.Dir, profile)
 		writeTestPrompt(t, promptDir, id, "You are {agent_name}.")
 	}
-	c.base = &config.Config{ActivePersona: "mira", BrainProvider: "claude", OllamaModel: "fixture:latest", OllamaHost: server.URL,
-		PromptsDir: promptDir, WorkDir: root, MaxHistory: maxHistory, OllamaNumCtx: 8192}
+	c.base = &config.Config{ActivePersona: "mira", BrainProvider: provider, OllamaModel: "fixture:latest", OllamaHost: server.URL,
+		PromptsDir: promptDir, WorkDir: root, MaxHistory: maxHistory, OllamaNumCtx: 8192, HostedPersonaSharing: sharing}
+	if provider == "obey" {
+		c.base.ObeyProvider, c.base.ObeyModel, c.base.ObeyToolPolicy = "fixture", "fixture", "daemon"
+	}
 	c.store = session.NewStore(filepath.Join(root, "sessions"))
-	c.sess = session.New("claude", "")
+	c.sess = session.New(provider, "")
 	c.start(start, nil, nil)
 	return c
 }
