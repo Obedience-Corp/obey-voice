@@ -310,24 +310,39 @@ A persona on Claude keeps its Claude session while other personas speak: Obey
 Voice parks it and resumes the same session when that persona is addressed
 again. Each request carries, as quoted conversation records, only the lines
 that session has not seen: your lines, other personas' replies, and replies
-Obey Voice recorded under that persona's name. Other personas' tool calls and
-tool output are not sent. Lines count as seen only after a reply completes, so
-an interrupted reply is sent again next time, marked as unfinished. A stopped
+Obey Voice recorded under that persona's name. Other personas' tool calls, tool
+output and the names of attached files are not sent. Lines count as seen only
+after a reply completes, so an interrupted reply is sent again next time, marked
+as unfinished, even if Claude reports success after it was stopped. A stopped
 reply finishes in the background; its session is not used again, and a parked
-session is not closed, until it has. Claude receives nothing said before its
-persona was first addressed in the conversation; when another agent hands it
-the floor, that agent's message is the first line it receives. When the unseen
-lines do not fit one request (64 KiB, or half of `claude_max_session_tokens`
-when that fuse is set), Obey Voice starts a fresh Claude session and sends the
-newest lines that fit, with a note of how many earlier lines were left out. At
-most four sessions stay parked; the least recently used one is closed first. A
-parked session is also closed when its persona's prompt, model, provider or
+session is not closed, until it has.
+
+Claude receives nothing said before its persona was first addressed while on
+Claude in the conversation. Lines from before that point are not sent,
+including the persona's own replies from when it ran on another backend. When
+another agent hands it the floor, that agent's message is the first line it
+receives. The one exception is a conversation saved before replies named their
+persona: when it is resumed with the persona it was saved with, on the backend
+its session was created on, and no reply in it names a persona, that persona
+receives it from the start. The point is saved with the conversation and still
+applies after a resume, including when serve resumes another conversation and
+that fails.
+
+A line longer than half of one request's limit (64 KiB, or half of
+`claude_max_session_tokens` when that fuse is set) is shortened, and its record
+says how much was left out. When the unseen lines still do not fit, Obey Voice
+starts a fresh Claude session and sends the newest lines that fit, with a note
+of how many earlier lines were left out. A persona on Claude receives the
+pending results of background jobs it started; results of jobs other personas
+started wait for those personas.
+
+At most four sessions stay parked; the least recently used one is closed first.
+A parked session is also closed when its persona's prompt, model, provider or
 other settings change, when the conversation is cleared, and when Obey Voice
 exits. After resuming a saved conversation, a persona on Claude starts a new
-session that receives the lines since it was first addressed, within the same
-limit. With group participation on, a persona on Claude can be addressed
-directly, but a discussion among several personas still requires every member
-to be on Ollama.
+session that receives the lines since that point, within the same limit. With
+group participation on, a persona on Claude can be addressed directly, but a
+discussion among several personas still requires every member to be on Ollama.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental
@@ -351,9 +366,10 @@ the canonical transcript and a `<id>.pre-compact.json` backup while producing
 a bounded model context with complete tool groups and attributed source facts.
 In a conversation that started on Grok or Cursor, the summary reseeds only that
 provider's session; the saved transcript stays complete. For a persona on
-Claude, the summary request also carries the lines its session had not seen,
-and the next request starts a fresh Claude session from the summary followed by
-only the lines said after it.
+Claude, the summary is taken from its live Claude session, which also receives
+the lines it had not seen (shortened or left out with a note when they do not
+fit), and the next request starts a fresh Claude session from the summary
+followed by only the lines said after it.
 A stored transcript alone does not prove a model received all of it: its
 configured history/context limits still govern the projection.
 
