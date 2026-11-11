@@ -420,13 +420,10 @@ func (g *GrokBrain) SessionInfo() SessionState {
 // LoadHistory restores conversation history from a saved samantha session. No
 // live CLI session exists for persisted history, so the id is cleared: the
 // first turn after load runs the flatten path, then captures a new session id
-// and resumes from there. The loaded view keeps the window a live turn keeps.
+// and resumes from there.
 func (g *GrokBrain) LoadHistory(turns []Turn) {
 	g.hostContext = ""
 	g.history = normalizePromptHistory(turns)
-	if g.cfg != nil && g.cfg.MaxHistory > 0 {
-		g.trimHistory()
-	}
 	g.dropSession()
 }
 

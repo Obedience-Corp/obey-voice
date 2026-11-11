@@ -243,7 +243,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 					return fmt.Errorf("project conversation: %w", err)
 				}
 			} else {
-				nextBrain.LoadHistory(turns)
+				nextBrain.LoadHistory(sessionView(turns, cfg))
 			}
 			captureContext(stagedContexts, binding.PersonaID, nextBrain)
 

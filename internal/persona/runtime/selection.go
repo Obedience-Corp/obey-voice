@@ -154,6 +154,9 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	}
 	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: opts.InitialContexts.Clone()}
 	s.transcript = newTranscript(func() string { return opts.Pipeline.ConversationScope().ConversationEpoch }, opts.Transcript)
+	if live := opts.Pipeline.Brain; !brain.KeepsSharedHistory(live) && len(opts.Transcript) > 0 {
+		live.LoadHistory(sessionView(opts.Transcript, opts.Initial.Config()))
+	}
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok {
 		if state, exists := s.contexts[opts.Initial.PersonaID]; exists {

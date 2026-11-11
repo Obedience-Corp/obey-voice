@@ -7,6 +7,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // transcript is the canonical conversation while the live provider keeps no
@@ -60,6 +61,16 @@ func (t *transcript) SetReplyMedia(text string, refs []chatmedia.Ref) error {
 		}
 	}
 	return errors.New("transcript: no assistant reply to attach images to")
+}
+
+// sessionView is the part of the transcript loaded into a provider without
+// shared history: the window it keeps after a live turn, so a long restored
+// conversation does not look like an overdue compaction.
+func sessionView(turns []brain.Turn, cfg *config.Config) []brain.Turn {
+	if cfg == nil || cfg.MaxHistory <= 0 || len(turns) <= cfg.MaxHistory {
+		return turns
+	}
+	return brain.HistoryWindow(turns, cfg.MaxHistory)
 }
 
 // canonicalTurns copies turns into the shared role scheme. Prompt-based
