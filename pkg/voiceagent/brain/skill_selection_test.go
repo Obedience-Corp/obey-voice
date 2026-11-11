@@ -61,7 +61,7 @@ func TestSkillActivationRequiresConfirmedCandidate(t *testing.T) {
 }
 func TestRejectedEmbeddingCandidatesDoNotActivateSkillBodies(t *testing.T) {
 	embedder := &routingEmbedder{catalog: [][]float32{{1, 0}}, queries: map[string][]float32{"weather": {1, 0}}}
-	router, err := newSemanticSkillRouter(context.Background(), embedder, "fixture", .55, []skills.Skill{{Name: "web-perf", Description: "Audit website loading performance", Body: "SPECIALIZED_BODY"}})
+	router, err := newSemanticSkillRouter(context.Background(), embedder, "fixture", .55, []skills.Skill{{Name: "web-perf", Description: "Audit website loading performance", Body: "SPECIALIZED_BODY"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

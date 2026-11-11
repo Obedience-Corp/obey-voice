@@ -186,16 +186,6 @@ func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probe
 	if err != nil {
 		return nil, err
 	}
-	embedCtx, embedCancel := context.WithTimeout(parent, 10*time.Second)
-	router, routerErr := newSharedSemanticSkillRouter(embedCtx, cfg.OllamaHost, client, cfg.OllamaEmbeddingModel, cfg.SkillsSimilarityThreshold, catalog)
-	embedCancel()
-	if err := parent.Err(); err != nil {
-		return nil, fmt.Errorf("initialize ollama: %w", err)
-	}
-	if routerErr != nil {
-		fmt.Fprintf(os.Stderr, "obey-voice: semantic skill routing unavailable (%v); continuing with the Agent Skills catalog\n", routerErr)
-	}
-
 	var keepAlive *api.Duration
 	if s := strings.TrimSpace(cfg.OllamaKeepAlive); s != "" {
 		if d, err := time.ParseDuration(s); err == nil {
@@ -203,6 +193,16 @@ func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probe
 		} else {
 			fmt.Fprintf(os.Stderr, "obey-voice: invalid ollama_keep_alive %q (%v); using the server default\n", s, err)
 		}
+	}
+
+	embedCtx, embedCancel := context.WithTimeout(parent, 10*time.Second)
+	router, routerErr := newSharedSemanticSkillRouter(embedCtx, cfg.OllamaHost, client, cfg.OllamaEmbeddingModel, cfg.SkillsSimilarityThreshold, catalog, keepAlive)
+	embedCancel()
+	if err := parent.Err(); err != nil {
+		return nil, fmt.Errorf("initialize ollama: %w", err)
+	}
+	if routerErr != nil {
+		fmt.Fprintf(os.Stderr, "obey-voice: semantic skill routing unavailable (%v); continuing with the Agent Skills catalog\n", routerErr)
 	}
 
 	return &OllamaBrain{

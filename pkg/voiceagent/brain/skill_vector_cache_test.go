@@ -60,7 +60,7 @@ func TestSharedSkillRouterEmbedsCatalogOncePerKey(t *testing.T) {
 	catalog := routingCatalog()
 	build := func(host, model string, catalog []skills.Skill) {
 		t.Helper()
-		router, err := newSharedSemanticSkillRouter(context.Background(), host, client, model, 0.55, catalog)
+		router, err := newSharedSemanticSkillRouter(context.Background(), host, client, model, 0.55, catalog, nil)
 		if err != nil || router == nil || len(router.vectors) != len(catalog) {
 			t.Fatalf("router = %v, err = %v", router, err)
 		}
@@ -107,7 +107,7 @@ func TestSharedSkillRouterConcurrentBuildsEmbedOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := newSharedSemanticSkillRouter(context.Background(), host, client, "embed", 0.55, routingCatalog()); err != nil {
+			if _, err := newSharedSemanticSkillRouter(context.Background(), host, client, "embed", 0.55, routingCatalog(), nil); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -136,11 +136,11 @@ func TestSharedSkillRouterDoesNotCacheFailures(t *testing.T) {
 	client := api.NewClient(base, srv.Client())
 	host := srv.URL + "/" + t.Name()
 
-	if _, err := newSharedSemanticSkillRouter(context.Background(), host, client, "embed", 0.55, routingCatalog()); err == nil {
+	if _, err := newSharedSemanticSkillRouter(context.Background(), host, client, "embed", 0.55, routingCatalog(), nil); err == nil {
 		t.Fatal("want error from failing server")
 	}
 	fail.Store(false)
-	router, err := newSharedSemanticSkillRouter(context.Background(), host, client, "embed", 0.55, routingCatalog())
+	router, err := newSharedSemanticSkillRouter(context.Background(), host, client, "embed", 0.55, routingCatalog(), nil)
 	if err != nil || router == nil {
 		t.Fatalf("retry after failure: router = %v, err = %v", router, err)
 	}
