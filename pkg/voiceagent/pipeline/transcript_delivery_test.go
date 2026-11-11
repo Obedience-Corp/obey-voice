@@ -456,3 +456,16 @@ func TestHostTranscriptAttachesReplyImagesOnlyToTheReplyTheTurnRecorded(t *testi
 		t.Fatalf("an unrecorded reply's images went to another reply: warned %v, transcript %+v", warned, after)
 	}
 }
+
+func TestHostTranscriptRecordsAReplyWhoseRouteTheTurnDoesNotFollow(t *testing.T) {
+	transcript := &recordedTranscript{}
+	p := &Pipeline{Brain: &fakeBrain{chunks: []string{"Here is the answer."}, route: "research"}, Events: events.NewBus(), Transcript: transcript}
+	p.AdmitInput = admitAs("unrouted", func(input string) string { return input })
+	if err := p.RunTurnTextMode(t.Context(), "What is the answer?"); err != nil {
+		t.Fatal(err)
+	}
+	turns := transcript.Turns()
+	if len(turns) != 2 || turns[0].Content != "What is the answer?" || turns[1].Content != "Here is the answer." || turns[1].Disposition != "" {
+		t.Fatalf("transcript = %+v", turns)
+	}
+}
