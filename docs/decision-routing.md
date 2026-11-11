@@ -6,8 +6,9 @@ policy, Obey Voice can start the worker without asking the speaking LLM to route
 that request. Otherwise it immediately follows its ordinary speaking-LLM path.
 
 The experiment is **off by default**. Voice and typed requests have independent
-switches. It currently proposes worker routing; it does not replace admission,
-transcription, the worker itself or speech synthesis.
+switches. The model answers two questions: worker routing, and, in a conversation
+with several personas, who is being addressed (see below). It does not replace
+admission, transcription, the worker itself or speech synthesis.
 
 ## Pipeline without optional decisions
 
@@ -53,6 +54,39 @@ conversation/history/persona/worker settings, cancellation and disabling invalid
 its result. Worker permissions and queue policy remain enforced by normal worker
 admission.
 
+## Who is being addressed
+
+In a shared conversation Obey Voice decides which persona a message is for.
+Resolution runs in this order and stops at the first step that answers:
+
+1. Exact controls and the name grammar (`@id`, `switch to Name`, `Hey Name`, a
+   leading `Name,`). These never call a model.
+2. The decision model, when decisions are enabled and ready. It sees the roster
+   names and aliases, the current responder, the speaker and up to eight recent
+   messages, and chooses one persona, nobody, or "ambiguous". A mention
+   (`what did Mira say?`) is not an address.
+3. The Ollama classifier, only when the live brain is Ollama. This is also the
+   fallback when the decision model fails, abstains or is not ready.
+4. Otherwise the current persona keeps the message.
+
+A persona running on any other backend (Claude, Codex, Cursor and so on) is never
+asked to classify; with no decision model and no Ollama brain only step 1 applies.
+An agent's reply that invites another persona by name goes through the same
+steps, so handoffs no longer depend on the live brain being Ollama.
+
+This question is not a separate switch: it is on whenever `decision_enabled` is
+on and the runtime is ready, even if both work switches are off. It waits for
+the model for at most `decision_budget_ms` (the work question never waits), and
+runs alongside a work decision for the same message rather than behind it. If
+the model is down or too slow, an Ollama live brain falls back to its classifier;
+any other brain reports the usual routing failure, and the message can be sent
+again or preceded by an exact control. A low-confidence answer is treated as no
+answer, not as "nobody". The two questions are separate calls today; they could
+be combined into one request per turn later, but are not.
+
+Accuracy of this question on real speech has not been measured, and the 750 ms
+default may be short for a cold model or a long conversation.
+
 ## Enable and manage
 
 Open **Settings → Brain → Decision shortcuts (experimental)**. Choose the provider
@@ -71,7 +105,7 @@ The equivalent persisted configuration keys are:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `decision_enabled` | `false` | Master switch |
+| `decision_enabled` | `false` | Master switch (also enables the addressee question) |
 | `decision_voice_work` | `true` | Voice worker routing |
 | `decision_text_work` | `true` | Typed worker routing |
 | `decision_provider` | `local` | `local`, `jev`, or `openai` |

@@ -22,7 +22,7 @@ func bindDecisions(p *pipeline.Pipeline, cfg *config.Config) func() {
 	p.ConfigureDecisions = func(cfg *config.Config) {
 		// Off must not inspect credentials, create directories, probe a server or
 		// install anything. Both independent points off have the same behavior.
-		if cfg == nil || !cfg.DecisionEnabled || (!cfg.DecisionVoiceWork && !cfg.DecisionTextWork) {
+		if cfg == nil || !cfg.DecisionEnabled {
 			manager.Configure(decision.Options{}, nil)
 			return
 		}
@@ -35,7 +35,7 @@ func bindDecisions(p *pipeline.Pipeline, cfg *config.Config) func() {
 		if mode == "" {
 			mode = decision.PolicyRouteChoice
 		}
-		options := decision.Options{Policy: decision.WorkPolicy{Mode: mode}, Budget: time.Duration(budget) * time.Millisecond, VoiceWork: snapshot.DecisionVoiceWork, TextWork: snapshot.DecisionTextWork}
+		options := decision.Options{Policy: decision.WorkPolicy{Mode: mode}, Budget: time.Duration(budget) * time.Millisecond, VoiceWork: snapshot.DecisionVoiceWork, TextWork: snapshot.DecisionTextWork, Addressee: true}
 		manager.Configure(options, func(ctx context.Context) (decision.Evaluator, io.Closer, error) {
 			provider, closer, err := prepareDecisions(ctx, snapshot)
 			if err != nil && ctx.Err() == nil && p.Events != nil {
