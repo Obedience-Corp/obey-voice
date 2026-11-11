@@ -437,7 +437,6 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// If model made tool calls, execute them and loop.
 			if len(toolCalls) > 0 {
 				hadTools = true
-				rounds.observe(toolCalls)
 				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
 					tier, reason := routeMetadata(toolCalls)
 					if sess.onStart != nil || sess.onEnd != nil {
@@ -478,8 +477,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}, opts.Identity)
 
 				// Execute each tool and add results (skills + full CLI tools).
+				results := make([]string, 0, len(toolCalls))
 				for _, tc := range toolCalls {
 					result := sess.execute(ctx, o.workDir, tc)
+					results = append(results, result)
 					if sess.limitErr != nil {
 						done <- StreamResult{Err: sess.limitErr}
 						return
@@ -491,6 +492,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					}
 					o.appendProjectedToolResult(tc, result, opts.Identity)
 				}
+				rounds.observe(toolCalls, results)
 				// Re-budget after tools: a large result can push the user
 				// query out of num_ctx. qwen3.8 on Ollama 0.32.14 then 500s
 				// with "no user query found in messages" (ollama#17778).

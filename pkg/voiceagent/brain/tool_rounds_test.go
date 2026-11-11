@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -245,7 +247,7 @@ func TestRepeatedToolCallForcesFinalAnswer(t *testing.T) {
 }
 
 func TestDistinctToolCallsDoNotTriggerRepeatGuard(t *testing.T) {
-	pattern := []string{"a", "a", "b", "a", "a", "b", "a"}
+	pattern := []string{"a", "a", "b", "b", "c", "c", "d", "d"}
 	eachMode(t, func(t *testing.T, streaming bool) {
 		run := runRounds(t, t.Context(), streaming, true, WorkerStreamOptions(true), func(n int, _ api.ChatRequest) api.ChatResponse {
 			if n <= len(pattern) {
@@ -333,20 +335,68 @@ func TestWorkerTimeReserveLeavesShortBudgetsRoomToWork(t *testing.T) {
 	}
 }
 
-func TestWorkerWithNoLimitsStopsAtBackstop(t *testing.T) {
+func TestWorkerWithNoLimitsIsNotStoppedByRoundCount(t *testing.T) {
 	r := newToolRounds(&config.Config{IsWorker: true}, WorkerStreamOptions(true))
-	if final, _ := r.final(t.Context(), maxUnboundedWorkerRounds-1); final {
-		t.Fatal("backstop fired early")
+	for i := range 500 {
+		if final, _ := r.final(t.Context(), i); final {
+			t.Fatalf("round %d was final", i)
+		}
+		r.observe(readFileCall("poll"), []string{fmt.Sprintf("output %d", i)})
 	}
-	if final, instruction := r.final(t.Context(), maxUnboundedWorkerRounds); !final || instruction != toolLimitAnswerInstruction {
-		t.Fatalf("final=%v instruction=%q", final, instruction)
-	}
+}
 
-	timed := newToolRounds(&config.Config{IsWorker: true}, WorkerStreamOptions(true))
-	ctx := WithWorkerDeadline(t.Context(), time.Now().Add(time.Hour))
-	if final, _ := timed.final(ctx, maxUnboundedWorkerRounds); final {
-		t.Fatal("backstop applied to a worker with a deadline")
+func TestRoundSignatureIncludesResults(t *testing.T) {
+	calls := readFileCall("x")
+	if roundSignature(calls, []string{"one"}) == roundSignature(calls, []string{"two"}) {
+		t.Fatal("different results shared a signature")
 	}
+	if roundSignature(calls, []string{"one"}) != roundSignature(readFileCall("x"), []string{"one"}) {
+		t.Fatal("equal rounds differed")
+	}
+}
+
+func TestChangingResultsDoNotTriggerRepeatGuard(t *testing.T) {
+	const polls = 20
+	eachMode(t, func(t *testing.T, streaming bool) {
+		path := filepath.Join(t.TempDir(), "status.txt")
+		run := runRounds(t, t.Context(), streaming, true, WorkerStreamOptions(true), func(n int, _ api.ChatRequest) api.ChatResponse {
+			if n <= polls {
+				if err := os.WriteFile(path, []byte(fmt.Sprintf("progress %d", n)), 0o600); err != nil {
+					t.Error(err)
+				}
+				return toolResponse(readFileCall(path))
+			}
+			return answerResponse("The job finished after polling its status.")
+		})
+		if run.err != nil || len(run.reqs) != polls+1 {
+			t.Fatalf("requests=%d err=%v", len(run.reqs), run.err)
+		}
+		for _, req := range run.reqs {
+			if len(req.Tools) == 0 || hasInstruction(req, toolRepeatAnswerInstruction) {
+				t.Fatal("repeat guard fired while results changed")
+			}
+		}
+	})
+}
+
+func TestAlternatingCallsWithSameResultsForceFinalAnswer(t *testing.T) {
+	eachMode(t, func(t *testing.T, streaming bool) {
+		run := runRounds(t, t.Context(), streaming, true, WorkerStreamOptions(true), func(n int, req api.ChatRequest) api.ChatResponse {
+			if len(req.Tools) == 0 {
+				return answerResponse("Two files keep failing to read, so the job is blocked.")
+			}
+			return toolResponse(readFileCall([]string{"a", "b"}[n%2]))
+		})
+		if run.err != nil || run.answer == "" {
+			t.Fatalf("answer=%q err=%v", run.answer, run.err)
+		}
+		if want := 2*maxRepeatedToolRounds - 1 + 1; len(run.reqs) != want {
+			t.Fatalf("requests=%d, want %d", len(run.reqs), want)
+		}
+		if last := run.reqs[len(run.reqs)-1]; len(last.Tools) != 0 || !hasInstruction(last, toolRepeatAnswerInstruction) {
+			t.Fatalf("last request is not the no-progress answer: %+v", last)
+		}
+	})
 }
 
 func TestSingleRequestWorkerAnswersWithoutTools(t *testing.T) {
