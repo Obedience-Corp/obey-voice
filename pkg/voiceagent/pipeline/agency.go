@@ -292,10 +292,15 @@ func (a *Agency) onJobStarted(id, task string) {
 }
 
 // liveHistory is the talking brain's conversation, or nil when there is no
-// brain to ask. A worker that gets nothing is handled by spawnLacksTask.
+// brain to ask. A worker that gets nothing is handled by spawnLacksTask. A
+// provider that sends a hosted service only its persona's share gives the
+// worker only that share.
 func (a *Agency) liveHistory() []brain.Turn {
 	if a.pipeline == nil || a.pipeline.Brain == nil {
 		return nil
+	}
+	if live := a.pipeline.Brain; brain.HostedSharedHistory(live) {
+		return live.(brain.ContinuityTransferProvider).ContinuitySnapshot().Working
 	}
 	return a.pipeline.Brain.History()
 }
