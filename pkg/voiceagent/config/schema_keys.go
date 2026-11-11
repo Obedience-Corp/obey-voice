@@ -273,7 +273,7 @@ func brainKeys() []KeySpec {
 		{
 			Key: "voice_worker_job_budget", Type: TypeInt, Default: DefaultVoiceWorkerJobBudget, Unit: "seconds", Min: num(0), Max: num(86400),
 			Group: GroupBrain, Title: "Job time budget",
-			Help: "Longest a spawned job may run before it is stopped and you are told. Zero means no limit.",
+			Help: "Optional limit on how long a spawned job may run before it is stopped and you are told. Zero, the default, means no limit.",
 		},
 		{
 			Key: "voice_worker_boundary", Type: TypeBool, Default: true,

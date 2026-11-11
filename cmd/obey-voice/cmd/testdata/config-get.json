@@ -695,7 +695,7 @@
       "source": "default"
     },
     "voice_worker_job_budget": {
-      "value": 600,
+      "value": 0,
       "source": "default"
     },
     "voice_worker_max_concurrent": {

@@ -14,7 +14,7 @@ import (
 // job runs longer than it, and the user sets it.
 const (
 	DefaultVoiceWorkerMaxConcurrent = 1
-	DefaultVoiceWorkerJobBudget     = 600
+	DefaultVoiceWorkerJobBudget     = 0
 )
 
 // DefaultKokoroVoice is what an unset tts_voice speaks as.
