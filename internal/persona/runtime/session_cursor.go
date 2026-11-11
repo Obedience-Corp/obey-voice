@@ -169,16 +169,11 @@ func (s *Selector) refreshShare(personaID string, provider brain.Provider) {
 func (s *Selector) LoadHistory(turns []brain.Turn) {
 	live := s.opts.Pipeline.Brain
 	if brain.HostedSharedHistory(live) {
-		id := s.Snapshot().PersonaID
-		s.refreshShare(id, live)
-		cursor, ok := s.transcript.session(id, turns)
+		cursor, ok := s.transcript.session(s.Snapshot().PersonaID, turns)
 		if !ok || cursor.Through == cursor.Session.From {
-			cursor = brain.SessionContext(turns, brain.SessionCursor{From: len(turns), Provider: s.liveProvider()}, len(turns))
+			cursor = brain.SessionContext(turns, brain.SessionCursor{From: len(turns)}, len(turns))
 		}
-		if live.(brain.ContinuityTransferProvider).ImportContinuity(shareView(cursor, turns)) == nil {
-			held := heldShare(cursor, live)
-			s.transcript.setLive(id, &held)
-		}
+		_ = live.(brain.ContinuityTransferProvider).ImportContinuity(shareView(cursor, turns))
 		return
 	}
 	if !brain.KeepsPersonaSession(live) {

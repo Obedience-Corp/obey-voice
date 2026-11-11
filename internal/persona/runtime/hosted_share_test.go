@@ -360,13 +360,15 @@ func TestLoadHistoryKeepsEveryTurnButGivesAHostedSharedHistoryOnlyItsShare(t *te
 			}
 			c.selector.LoadHistory(nil)
 			c.say("Note the door is teal.")
-			c.selector.LoadHistory(c.selector.Transcript())
-			if got := view(); len(got) != 2 || got[0].Content != "Note the door is teal." {
-				t.Fatalf("the persona's own share = %+v", got)
-			}
+			own := c.selector.Transcript()
 			c.selector.LoadHistory(other)
 			if got := view(); len(got) != 0 {
 				t.Fatalf("another conversation is sent: %+v", got)
+			}
+			// A host whose resume fails loads the previous conversation again.
+			c.selector.LoadHistory(own)
+			if got := view(); len(got) != 2 || got[0].Content != "Note the door is teal." || len(c.p.Brain.History()) != 2 {
+				t.Fatalf("the persona's own share = %+v", got)
 			}
 		})
 	}
