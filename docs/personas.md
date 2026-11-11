@@ -279,14 +279,24 @@ refused rather than silently replaced. The local acceptance uses Qwen3:8b and
 Kokoro voices `af_heart` and `am_michael`; it does not establish parity for every
 provider.
 
-A conversation can still start on a Claude, Grok, or Cursor persona, with the
-same persona controls. Those providers keep their own session history without
-speaker identity, so Obey Voice keeps the shared transcript itself and records
-each reply, including an interrupted one, under the persona that gave it.
-Selecting an Ollama, Codex, Muse Spark, or Obey persona from there hands it that
-attributed transcript. Clearing the conversation or changing its settings
-restarts the same persona's provider session from the transcript. Group
-participation is not offered while one of these personas is responding.
+A conversation can still start on a Claude, Grok, or Cursor persona. Those
+providers keep their own session history without speaker identity, so Obey
+Voice keeps the shared transcript itself and records each reply, including an
+interrupted one, under the persona that gave it.
+
+If no Ollama, Codex, Muse Spark, or Obey persona is enabled, such a
+conversation stays with its persona: every input, including the persona's name
+alone or another persona's name, goes to the model. Otherwise, because the
+conversation cannot come back once another persona takes it over, it moves only
+when you ask explicitly with `switch to Name`, `@id`, or `/personas`; addressing
+another persona by name is refused with that hint. Selecting an Ollama, Codex,
+Muse Spark, or Obey persona hands it the attributed transcript. Its replies
+never hand the conversation off by mentioning another persona.
+
+Voice and audio settings changes keep the provider session. Clearing the
+conversation, or changing the persona's provider, model, prompt, name or
+directory, restarts the session from the transcript. Group participation is
+not offered while one of these personas is responding.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental
