@@ -298,7 +298,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				nextBrain.LoadHistory(sessionView(turns, cfg))
 			} else if !reused {
 				// A parked provider keeps its session; loading history would end it.
-				nextBrain.LoadHistory(sessionView(turns[targetCursor.Session.From:], cfg))
+				nextBrain.LoadHistory(sessionHistory(turns, *targetCursor, cfg))
 			}
 			captureContext(stagedContexts, binding.PersonaID, nextBrain)
 

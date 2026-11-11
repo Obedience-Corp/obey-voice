@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -175,26 +176,54 @@ func TestCatchUpSharesSpokenLinesOnly(t *testing.T) {
 	turns := []brain.Turn{
 		{Role: "user", Content: "Note the door is teal."},
 		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
-		{Role: "user", Content: "Read the vault file."},
-		{Role: "assistant", ToolCalls: []brain.TurnToolCall{{ID: "c1", Name: "read"}}, PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
-		{Role: "tool", ToolName: "read", ToolCallID: "c1", Content: "secret tool output"},
+		{Role: "user", Content: "Read the vault file.", Attachments: []chatmedia.Ref{{ID: "a1", Name: "vault-scan.png"}}},
+		{Role: "assistant", Content: "Let me look.", ToolCalls: []brain.TurnToolCall{{ID: "c1", Name: "bash", Arguments: `{"command":"cat ~/private/vault.txt"}`}}, PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+		{Role: "tool", ToolName: "bash", ToolCallID: "c1", Content: "secret tool output"},
+		{Role: "assistant", ToolCalls: []brain.TurnToolCall{{ID: "c2", Name: "bash"}}, PersonaID: "ember", ResponseID: "e1"},
 		{Role: "assistant", Content: "The vault code is cobalt.", PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
 	}
 	tr := newTranscript(func() string { return "epoch" }, turns)
 	cursor := brain.SessionContext(turns, 0, 2)
 	tr.setLive("mira", &cursor)
 	catchUp, covered, ok := tr.CatchUp("mira")
-	if !ok || covered != len(turns) || catchUp.Seen != 2 || len(catchUp.Turns) != 4 {
+	if !ok || covered != len(turns) || catchUp.Seen != 2 {
 		t.Fatalf("catch-up = %+v, covered %d, ok %v", catchUp, covered, ok)
 	}
+	var lines []string
 	for _, turn := range catchUp.Turns {
-		if turn.Role == "tool" || len(turn.ToolCalls) > 0 {
-			t.Fatalf("catch-up carries tool traffic: %+v", catchUp.Turns)
+		if turn.Role == "tool" || len(turn.ToolCalls) > 0 || turn.ToolName != "" || turn.ToolCallID != "" || len(turn.Attachments) > 0 {
+			t.Fatalf("catch-up carries tool traffic or attachments: %+v", turn)
+		}
+		lines = append(lines, turn.Content)
+	}
+	if want := []string{"Note the door is teal.", "Noted.", "Read the vault file.", "Let me look.", "The vault code is cobalt."}; !slices.Equal(lines, want) {
+		t.Fatalf("shared lines = %q, want %q", lines, want)
+	}
+	if len(tr.Turns()[3].ToolCalls) != 1 {
+		t.Fatal("sharing a line rewrote the recorded transcript")
+	}
+}
+
+func TestClaudeNeverReceivesAnotherPersonasToolTraffic(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	turns := []brain.Turn{
+		{Role: "user", Content: "Mira, hello."},
+		{Role: "assistant", Content: "Hello.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
+		{Role: "user", Content: "Ember, check my notes."},
+		{Role: "assistant", Content: "Let me look.", ToolCalls: []brain.TurnToolCall{{ID: "c1", Name: "bash", Arguments: `{"command":"cat ~/private/diary.md"}`}}, PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+		{Role: "tool", ToolName: "bash", ToolCallID: "c1", Content: "TOOL OUTPUT SECRET"},
+		{Role: "assistant", Content: "Your notes say hi.", PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+	}
+	c.start("mira", turns, brain.PersonaContexts{"mira": brain.SessionContext(turns, 0, 2)})
+	for _, turn := range c.p.Brain.History() {
+		if len(turn.ToolCalls) > 0 || turn.ToolName != "" || turn.Role == "tool" {
+			t.Fatalf("the provider holds another persona's tool traffic: %+v", turn)
 		}
 	}
-	if got := catchUp.Turns[3].Content; got != "The vault code is cobalt." {
-		t.Fatalf("last shared line = %q", got)
-	}
+	c.say("What did Ember find?")
+	last := lastClaudeRequest(t, c.log)
+	requireContains(t, last.Prompt, `"content":"Let me look.","persona":"Ember"`, "Your notes say hi.")
+	requireOmits(t, last.Prompt, "diary.md", "TOOL OUTPUT SECRET", "tool_call", `"bash"`)
 }
 
 func TestSessionShareStartIsTheTurnThatFirstAddressedThePersona(t *testing.T) {

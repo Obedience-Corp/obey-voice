@@ -190,7 +190,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		s.transcript.setLive(opts.Initial.PersonaID, &cursor)
 		// The host loaded the whole conversation into a provider that has no
 		// session yet; keep only what it may receive.
-		live.LoadHistory(sessionView(turns[cursor.Session.From:], opts.Initial.Config()))
+		live.LoadHistory(sessionHistory(turns, cursor, opts.Initial.Config()))
 	} else {
 		if !brain.KeepsSharedHistory(live) && len(opts.Transcript) > 0 {
 			live.LoadHistory(sessionView(opts.Transcript, opts.Initial.Config()))

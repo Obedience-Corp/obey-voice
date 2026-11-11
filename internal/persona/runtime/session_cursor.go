@@ -2,8 +2,10 @@ package personaruntime
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // sessionShareStart is where a provider keeping its own session begins to
@@ -50,6 +52,30 @@ func (s *Selector) withSessions(contexts brain.PersonaContexts, personaID string
 		out[personaID] = *cursor
 	}
 	return out
+}
+
+// hostedTurn is what a provider keeping its own session may receive of a
+// turn: its spoken line. Tool calls, tool output and attachment names stay on
+// this machine.
+func hostedTurn(t brain.Turn) (brain.Turn, bool) {
+	if t.Role == "tool" || strings.TrimSpace(t.Content) == "" {
+		return brain.Turn{}, false
+	}
+	t = brain.CloneTurns([]brain.Turn{t})[0]
+	t.ToolCalls, t.ToolName, t.ToolCallID, t.Attachments = nil, "", "", nil
+	return t, true
+}
+
+// sessionHistory is the history loaded into a provider keeping its own
+// session: the spoken lines since its share start, in the window it keeps.
+func sessionHistory(turns []brain.Turn, cursor brain.PersonaContext, cfg *config.Config) []brain.Turn {
+	var out []brain.Turn
+	for _, t := range turns[cursor.Session.From:] {
+		if hosted, ok := hostedTurn(t); ok {
+			out = append(out, hosted)
+		}
+	}
+	return sessionView(out, cfg)
 }
 
 // replayContexts drops session cursors, which the transcript owns.
