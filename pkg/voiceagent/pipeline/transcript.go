@@ -132,7 +132,7 @@ func (r *transcriptRecording) finish(route string, err error) {
 	}
 	r.finished = true
 	defer close(r.recorded)
-	if route != "" {
+	if routeKindSkipsBrain(routeKindFromBrain(route)) {
 		r.route, r.routeErr = route, err
 		return
 	}
