@@ -204,7 +204,6 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 		if len(response.ToolCalls) > 0 {
 			hadTools = true
-			rounds.observe(response.ToolCalls)
 			hadThinking = hadThinking || messageHadThinking(response)
 			if sess.routerPolicy == RouterToolsRouteOnly {
 				// The live classifier's tool preamble is planning, not an
@@ -221,8 +220,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				ToolCalls: response.ToolCalls,
 			}, opts.Identity)
 
+			results := make([]string, 0, len(response.ToolCalls))
 			for _, tc := range response.ToolCalls {
 				result := sess.execute(ctx, o.workDir, tc)
+				results = append(results, result)
 				if sess.limitErr != nil {
 					return "", sess.limitErr
 				}
@@ -233,6 +234,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				}
 				o.appendProjectedToolResult(tc, result, opts.Identity)
 			}
+			rounds.observe(response.ToolCalls, results)
 			o.ensureContextBudget(skillCtx)
 			continue
 		}
