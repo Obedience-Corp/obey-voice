@@ -321,6 +321,19 @@ as unfinished, even if Claude reports success after it was stopped. A stopped
 reply finishes in the background; its session is not used again, and a parked
 session is not closed, until it has.
 
+An image you attach while a persona on Claude is answering is sent to Claude
+with that line. A resumed session already holds it, so later requests carry
+only new images. A fresh session for the persona, after the session fuse, a
+catch-up that does not fit or a rejected resume, is sent the images of the
+persona's own earlier lines again, up to 32 MiB in all; a line whose reply
+failed is not one of them. An image attached to a line said to another persona
+never reaches a persona on Claude, even with `hosted_persona_sharing` set to
+`whole_conversation`: the line reaches it as text, without the image or its
+file name. Only the persona's running Claude provider keeps its images: after
+a resume, or once Obey Voice closes the persona's parked session or starts its
+provider again, its earlier lines reach it as text and their images are not
+sent again. The saved conversation keeps every attachment.
+
 Claude receives nothing said before its persona was first addressed while on
 Claude in the conversation, unless `hosted_persona_sharing` is set to
 `whole_conversation` (see [Hosted backends](#hosted-backends)). Lines from

@@ -37,6 +37,9 @@ type fakeClaudeClient struct {
 	runCalls   int
 	// stdinPrompts are the prompts a blocking run piped on stdin.
 	stdinPrompts []string
+	// content holds the blocks of each content call, streaming or blocking.
+	// Content calls share the call index and scripts of their text path.
+	content [][]claude.ContentBlock
 }
 
 var _ claudeRunner = (*fakeClaudeClient)(nil)
@@ -86,6 +89,16 @@ func (f *fakeClaudeClient) RunFromStdinCtx(ctx context.Context, stdin io.Reader,
 	}
 	f.stdinPrompts = append(f.stdinPrompts, string(data))
 	return f.RunPromptCtx(ctx, prompt, opts)
+}
+
+func (f *fakeClaudeClient) StreamContent(ctx context.Context, blocks []claude.ContentBlock, opts *claude.RunOptions) (<-chan claude.Message, <-chan error) {
+	f.content = append(f.content, blocks)
+	return f.StreamPrompt(ctx, blocks[0].Text, opts)
+}
+
+func (f *fakeClaudeClient) RunContentCtx(ctx context.Context, blocks []claude.ContentBlock, opts *claude.RunOptions) (*claude.ClaudeResult, error) {
+	f.content = append(f.content, blocks)
+	return f.RunPromptCtx(ctx, blocks[0].Text, opts)
 }
 
 func assistantMsg(text string) claude.Message {

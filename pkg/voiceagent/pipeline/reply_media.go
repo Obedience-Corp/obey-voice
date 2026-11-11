@@ -18,7 +18,7 @@ func validateProviderImages(ctx context.Context, provider brain.Provider, refs [
 		ValidateImages(context.Context, []chatmedia.Ref) error
 	})
 	if !ok {
-		return fmt.Errorf("worker provider does not support image input; choose a vision-capable Ollama model or Codex")
+		return fmt.Errorf("worker provider does not support image input; choose a vision-capable Ollama model, Codex or Claude")
 	}
 	return validator.ValidateImages(ctx, refs)
 }

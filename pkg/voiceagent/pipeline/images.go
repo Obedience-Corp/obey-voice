@@ -26,7 +26,7 @@ func (p *Pipeline) ImageValidator() func(context.Context, []chatmedia.Ref) error
 			return nil
 		}
 		if !ok {
-			return errors.New("this provider does not support image input; choose a vision-capable Ollama model or Codex")
+			return errors.New("this provider does not support image input; choose a vision-capable Ollama model, Codex or Claude")
 		}
 		return validator.ValidateImages(ctx, refs)
 	}

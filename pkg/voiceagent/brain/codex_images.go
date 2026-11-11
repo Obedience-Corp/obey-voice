@@ -29,26 +29,11 @@ func (c *CodexBrain) imageInputs(opts StreamOptions) ([]any, error) {
 	}
 	refs = append(refs, opts.Attachments...)
 	var inputs []any
-	seen := map[string]bool{}
-	total := 0
-	for _, ref := range refs {
-		if seen[ref.ID] {
-			continue
-		}
-		seen[ref.ID] = true
-		data, err := chatmedia.DefaultStore().ModelImage(ref)
-		if err != nil {
-			return nil, err
-		}
-		total += len(data)
-		if total > 4*chatmedia.MaxBytes {
-			return nil, fmt.Errorf("retained images exceed 32 MiB; compact or start a new conversation")
-		}
-		mime := "image/" + ref.Format
-		if ref.Format == "gif" {
-			mime = "image/png"
-		}
-		inputs = append(inputs, map[string]any{"type": "text", "text": fmt.Sprintf("Attached image %s (%s):", ref.ID, ref.Name)}, map[string]any{"type": "image", "url": "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)})
+	err := eachModelImage(refs, func(label, mediaType string, data []byte) {
+		inputs = append(inputs, map[string]any{"type": "text", "text": label}, map[string]any{"type": "image", "url": "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data)})
+	})
+	if err != nil {
+		return nil, err
 	}
 	return inputs, nil
 }

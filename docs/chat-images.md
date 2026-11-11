@@ -32,12 +32,14 @@ bitmap clipboard may contain only one frame.
 
 ## Model input and saved conversations
 
-Image input works with vision-capable Ollama models and the Codex app-server
-adapter, including background workers and group conversations. The actual recipient
-is validated before inference. Claude, Cursor, Grok, Muse Spark, and Obey daemon
-adapters currently reject image input explicitly. GIFs send their first frame as PNG;
-their original animation remains available in the UI. Codex replay resends retained
-images when it starts a new native thread, with a 32 MiB aggregate limit.
+Image input works with vision-capable Ollama models, the Codex app-server
+adapter and the Claude CLI, including background workers and group conversations. The
+actual recipient is validated before inference. Cursor, Grok, Muse Spark, and Obey
+daemon adapters currently reject image input explicitly. GIFs send their first frame
+as PNG; their original animation remains available in the UI. Codex replay resends
+retained images when it starts a new native thread, and Claude when it starts a new
+CLI session, with a 32 MiB aggregate limit. Neither resends an image attached to a
+line said to another persona: see [Hosted backends](personas.md#hosted-backends).
 
 Agents can return local PNG, JPEG, or GIF files created through their existing tools.
 They attach files using a standalone Markdown image reference:
@@ -83,7 +85,7 @@ input, while returned files keep their caption in subsequent model history.
 Imports are copied into the session attachment store. Saved history contains references,
 so deleting the source screenshot does not remove it from a resumed conversation.
 Missing or changed stored assets produce an explicit error. Attachment storage is local;
-sending a message supplies its images to the configured Ollama server or Codex provider.
+sending a message supplies its images to the configured Ollama server, Codex or Claude provider.
 
 Limits: four images per message, 8 MiB per image, 4096 pixels per side, 16 megapixels.
 GIFs allow up to 64 frames and 16 megapixels of total logical-canvas work

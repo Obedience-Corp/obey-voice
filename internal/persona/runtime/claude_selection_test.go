@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,10 +60,50 @@ func installClaudeFixture(t *testing.T) string {
 }
 
 // claudeRequest is one fixture invocation: its prompt, flags, the session it
-// answered in, its process id, and the length of its longest argument.
+// answered in, its process id, and the length of its longest argument. A
+// request sent as stream-json content blocks has Input set, its text blocks
+// joined as Prompt, and an entry in Images for each image block.
 type claudeRequest struct {
-	Prompt, Format, Resume, Session string
-	PID, MaxArg                     int
+	Prompt, Format, Resume, Session, Input string
+	PID, MaxArg                            int
+	Images                                 []fixtureImage `json:",omitempty"`
+}
+
+// fixtureImage is an image block as the fixture received it: its media type
+// and the sha256 of its decoded bytes.
+type fixtureImage struct{ MediaType, SHA256 string }
+
+// decodeContentInput turns a stream-json user message into its text and images.
+func decodeContentInput(req *claudeRequest) {
+	var line struct {
+		Message struct {
+			Content []struct {
+				Type, Text string
+				Source     struct {
+					MediaType string `json:"media_type"`
+					Data      string
+				}
+			}
+		}
+	}
+	if err := json.Unmarshal([]byte(req.Prompt), &line); err != nil {
+		os.Exit(3)
+	}
+	var text []string
+	for _, block := range line.Message.Content {
+		switch block.Type {
+		case "text":
+			text = append(text, block.Text)
+		case "image":
+			data, err := base64.StdEncoding.DecodeString(block.Source.Data)
+			if err != nil {
+				os.Exit(3)
+			}
+			sum := sha256.Sum256(data)
+			req.Images = append(req.Images, fixtureImage{MediaType: block.Source.MediaType, SHA256: hex.EncodeToString(sum[:])})
+		}
+	}
+	req.Prompt = strings.Join(text, "\n")
 }
 
 var fixturePersonaName = regexp.MustCompile(`You are (\w+)\.`)
@@ -97,11 +140,16 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 			req.Format = args[i+1]
 		case "--resume":
 			req.Resume = args[i+1]
+		case "--input-format":
+			req.Input = args[i+1]
 		case "--system-prompt":
 			if m := fixturePersonaName.FindStringSubmatch(args[i+1]); m != nil {
 				name = m[1]
 			}
 		}
+	}
+	if req.Input == "stream-json" {
+		decodeContentInput(&req)
 	}
 	data, _ := os.ReadFile(log)
 	n := bytes.Count(data, []byte("\n")) + 1

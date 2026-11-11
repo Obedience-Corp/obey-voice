@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -34,13 +35,16 @@ func init() {
 }
 
 // claudeRunner is the slice of the claude client the interactive Brain needs:
-// the streaming path for voice/TUI turns and the blocking path for text turns.
+// the streaming path for voice/TUI turns and the blocking path for text turns,
+// each with a content-block variant for requests that carry images.
 // Narrowing it to an interface lets tests inject a fake without shelling out to
 // a real claude CLI. *claude.ClaudeClient satisfies it.
 type claudeRunner interface {
 	StreamPrompt(ctx context.Context, prompt string, opts *claude.RunOptions) (<-chan claude.Message, <-chan error)
 	RunPromptCtx(ctx context.Context, prompt string, opts *claude.RunOptions) (*claude.ClaudeResult, error)
 	RunFromStdinCtx(ctx context.Context, stdin io.Reader, prompt string, opts *claude.RunOptions) (*claude.ClaudeResult, error)
+	StreamContent(ctx context.Context, blocks []claude.ContentBlock, opts *claude.RunOptions) (<-chan claude.Message, <-chan error)
+	RunContentCtx(ctx context.Context, blocks []claude.ContentBlock, opts *claude.RunOptions) (*claude.ClaudeResult, error)
 }
 
 // maxInlinePromptBytes is where the SDK's streaming path stops passing the
@@ -277,9 +281,14 @@ func (b *Brain) refreshPrompts(onWarn func(string)) {
 func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts StreamOptions) (*Stream, error) {
 	b.refreshPrompts(streamOpts.OnPromptWarn)
 	b.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
+	held := len(b.history)
+	images, err := b.requestImages(b.history, streamOpts.Attachments)
+	if err != nil {
+		return nil, err
+	}
 	// A handoff from another agent is not a user turn.
 	if !streamOpts.AgentContinuation {
-		b.history = append(b.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
+		b.history = append(b.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC(), Attachments: slices.Clone(streamOpts.Attachments)})
 	}
 
 	out := make(chan string, 8)
@@ -289,7 +298,7 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 		defer close(done)
 
 		resuming := b.sessionID != ""
-		raw, streamedAny, err := b.streamAttempt(ctx, out, streamOpts)
+		raw, streamedAny, err := b.streamAttempt(ctx, out, streamOpts, images)
 		// A stale/rejected --resume session errors before any text streams. Drop
 		// the id and retry once via the flatten path so one bad CLI session file
 		// can't wedge the conversation. Guard on !streamedAny to avoid re-speaking
@@ -298,9 +307,16 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 		if err != nil && resuming && !streamedAny && ctx.Err() == nil {
 			fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
 			b.dropSession()
-			raw, _, err = b.streamAttempt(ctx, out, streamOpts)
+			var retry []claude.ContentBlock
+			if retry, err = b.requestImages(b.history[:held], streamOpts.Attachments); err == nil {
+				raw, _, err = b.streamAttempt(ctx, out, streamOpts, retry)
+			}
 		}
 		if err != nil {
+			// An unanswered line's images are not replayed into a later session.
+			if !streamOpts.AgentContinuation && held < len(b.history) {
+				b.history[held].Attachments = nil
+			}
 			done <- StreamResult{Err: err}
 			return
 		}
@@ -389,7 +405,7 @@ func (b *Brain) warnSessionSize(streamOpts StreamOptions) {
 // whether any chunk reached out, and any terminal stream error. It does not
 // touch b.history or the fallback text — the caller finalizes once, after any
 // resume-failure retry, so a failed first attempt never emits the fallback.
-func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts StreamOptions) (string, bool, error) {
+func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts StreamOptions, images []claude.ContentBlock) (string, bool, error) {
 	prompt := b.buildPrompt(streamOpts) + harnessRoutingContext(b.cfg, streamOpts) + currentRequestContext(b.cfg, streamOpts)
 	strip := newLabelStripper(b.agentName())
 
@@ -397,7 +413,13 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 	// per-assistant-message, so deltas would be discarded anyway.
 	opts := b.runOptions(claude.StreamJSONOutput, liveCLITools(streamOpts))
 
-	messages, errs := b.client.StreamPrompt(ctx, prompt, opts)
+	var messages <-chan claude.Message
+	var errs <-chan error
+	if len(images) > 0 {
+		messages, errs = b.client.StreamContent(ctx, contentBlocks(prompt, images), opts)
+	} else {
+		messages, errs = b.client.StreamPrompt(ctx, prompt, opts)
+	}
 
 	var fullResponse strings.Builder
 	streamedAny := false
@@ -542,19 +564,25 @@ func (b *Brain) ThinkFull(ctx context.Context, input string, streamOpts StreamOp
 	// unanswered prompt stays in the transcript as a user turn.
 	restore := len(b.history)
 	b.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
+	images, err := b.requestImages(b.history, streamOpts.Attachments)
+	if err != nil {
+		return "", err
+	}
 	if !streamOpts.AgentContinuation {
-		b.history = append(b.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
+		b.history = append(b.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC(), Attachments: slices.Clone(streamOpts.Attachments)})
 	}
 
 	resuming := b.sessionID != ""
-	response, err := b.thinkFullAttempt(ctx, streamOpts)
+	response, err := b.thinkFullAttempt(ctx, streamOpts, images)
 	// Same stale-session guard as ThinkStream: a rejected --resume fails the
 	// whole call, so drop the id and retry once via the flatten path. ctx.Err()
 	// gate keeps a user cancellation from being treated as a resume failure.
 	if err != nil && resuming && ctx.Err() == nil {
 		fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
 		b.dropSession()
-		response, err = b.thinkFullAttempt(ctx, streamOpts)
+		if images, err = b.requestImages(b.history[:restore], streamOpts.Attachments); err == nil {
+			response, err = b.thinkFullAttempt(ctx, streamOpts, images)
+		}
 	}
 	if err != nil {
 		b.history = b.history[:restore]
@@ -591,15 +619,19 @@ func (b *Brain) estimateSessionTokens() int {
 // thinkFullAttempt runs a single blocking Claude turn and captures the session
 // id for resume. JSON output is required here (not plain text): the SDK only
 // populates ClaudeResult.SessionID when it parses a JSON transcript.
-func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions) (string, error) {
+func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, images []claude.ContentBlock) (string, error) {
 	prompt := b.buildPrompt(streamOpts) + harnessRoutingContext(b.cfg, streamOpts) + currentRequestContext(b.cfg, streamOpts)
 	opts := b.runOptions(claude.JSONOutput, liveCLITools(streamOpts))
 
 	var result *claude.ClaudeResult
 	var err error
-	if len(prompt) >= maxInlinePromptBytes {
+	switch {
+	case len(images) > 0:
+		// Content blocks go on stdin as stream-json, whatever their size.
+		result, err = b.client.RunContentCtx(ctx, contentBlocks(prompt, images), opts)
+	case len(prompt) >= maxInlinePromptBytes:
 		result, err = b.client.RunFromStdinCtx(ctx, strings.NewReader(prompt), "", opts)
-	} else {
+	default:
 		result, err = b.client.RunPromptCtx(ctx, prompt, opts)
 	}
 	if err != nil {
