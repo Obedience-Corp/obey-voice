@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
@@ -14,6 +15,10 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
+
+// sharedHistoryProviders lists the brain providers whose shared-history
+// projection and reply attribution are covered by selection tests.
+var sharedHistoryProviders = []string{"ollama", "codex", "muse-spark", "obey"}
 
 func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reason string, preCommit func(context.Context) error) (events.PersonaSelection, error) {
 	if s.closed {
@@ -129,7 +134,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				unchanged = true
 				return nil
 			}
-			if cfg.BrainProvider != "ollama" && cfg.BrainProvider != "codex" {
+			if !slices.Contains(sharedHistoryProviders, cfg.BrainProvider) {
 				return fmt.Errorf("persona %q: provider %q has no verified shared history projection", id, cfg.BrainProvider)
 			}
 

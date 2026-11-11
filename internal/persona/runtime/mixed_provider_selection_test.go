@@ -1,0 +1,266 @@
+package personaruntime
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
+)
+
+const (
+	emberReply = "Ember says the vault code is cobalt."
+	scoutReply = "Scout says the vault door is teal."
+)
+
+// installMixedProviderBinaries puts fake muse and obey executables on PATH. Both
+// re-run this test binary, record the prompt they receive, and return a fixed reply.
+func installMixedProviderBinaries(t *testing.T) string {
+	t.Helper()
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for _, name := range []string{"muse", "obey"} {
+		script := "#!/bin/sh\nOBEY_MIXED_FIXTURE=" + name + " exec '" + binary + "' -test.run='^TestMixedProviderFixtureProcess$' -- \"$@\"\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	log := filepath.Join(dir, "prompts.jsonl")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("OBEY_MIXED_FIXTURE_LOG", log)
+	return log
+}
+
+func TestMixedProviderFixtureProcess(t *testing.T) {
+	kind, log := os.Getenv("OBEY_MIXED_FIXTURE"), os.Getenv("OBEY_MIXED_FIXTURE_LOG")
+	if kind == "" || log == "" {
+		return
+	}
+	args := os.Args
+	for i, a := range args {
+		if a == "--" {
+			args = args[i+1:]
+			break
+		}
+	}
+	record := func(prompt string) {
+		f, err := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			os.Exit(2)
+		}
+		line, _ := json.Marshal(map[string]string{"provider": kind, "prompt": prompt})
+		_, _ = f.Write(append(line, '\n'))
+		_ = f.Close()
+	}
+	out := json.NewEncoder(os.Stdout)
+	switch kind {
+	case "muse":
+		record(args[len(args)-1])
+		_ = out.Encode(map[string]any{"payload_type": "run.output.delta", "payload": map[string]string{"text": scoutReply}})
+		_ = out.Encode(map[string]any{"payload_type": "run.terminal.completed", "payload": map[string]string{"terminal": "completed", "text": scoutReply}})
+	case "obey":
+		if len(args) > 0 && args[0] == "--socket" {
+			args = args[2:]
+		}
+		if len(args) > 0 && args[0] == "doctor" {
+			_, _ = os.Stdout.WriteString(`{"schema":"obey.doctor","version":3,"status":"ok","capabilities":{"session_run":{"protocol":"obey.session.run","versions":[1]}}}` + "\n")
+			os.Exit(0)
+		}
+		stdin, _ := io.ReadAll(bufio.NewReader(os.Stdin))
+		record(string(stdin))
+		emit := func(kind string, fields map[string]any) {
+			fields["protocol"], fields["version"], fields["type"] = "obey.session.run", 1, kind
+			_ = out.Encode(fields)
+		}
+		emit("session_created", map[string]any{"session_id": "s1", "campaign_id": "c1"})
+		emit("assistant_content", map[string]any{"session_id": "s1", "content": scoutReply, "final": true})
+		emit("usage", map[string]any{"session_id": "s1", "input_tokens": 3, "output_tokens": 2, "cached_tokens": 0, "latency_ms": 1})
+		emit("terminal", map[string]any{"session_id": "s1", "status": "completed"})
+	}
+	os.Exit(0)
+}
+
+type fixturePrompt struct{ Provider, Prompt string }
+
+func readFixturePrompts(t *testing.T, log string) []fixturePrompt {
+	t.Helper()
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []fixturePrompt
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var p fixturePrompt
+		if err := json.Unmarshal([]byte(line), &p); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
+	for _, provider := range []string{"muse-spark", "obey"} {
+		t.Run(provider, func(t *testing.T) {
+			log := installMixedProviderBinaries(t)
+			root, _ := filepath.EvalSymlinks(t.TempDir())
+			var mu sync.Mutex
+			var ollamaRequests [][]struct{ Role, Content string }
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path != "/api/chat" {
+					_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
+					return
+				}
+				var req struct {
+					Messages []struct{ Role, Content string }
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Error(err)
+					return
+				}
+				mu.Lock()
+				ollamaRequests = append(ollamaRequests, req.Messages)
+				mu.Unlock()
+				_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": emberReply}, "done": true, "done_reason": "stop"})
+			}))
+			defer server.Close()
+
+			catalog := persona.Catalog{Dir: filepath.Join(root, "personas")}
+			promptDir := filepath.Join(root, "prompts")
+			for id, display := range map[string]string{"ember": "Ember", "scout": "Scout"} {
+				profile := testProfile(id, display, id)
+				profile.Brain.Model = ""
+				if id == "scout" {
+					profile.Brain.Provider = provider
+				}
+				writeTestProfile(t, catalog.Dir, profile)
+				writeTestPrompt(t, promptDir, id, "You are {agent_name}.")
+			}
+			base := &config.Config{ActivePersona: "ember", BrainProvider: "ollama", OllamaModel: "fixture:latest", OllamaHost: server.URL,
+				ObeyProvider: "fixture", ObeyModel: "fixture", ObeyToolPolicy: "daemon", PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, OllamaNumCtx: 8192}
+			binding, err := catalog.ResolveBinding(base, "ember")
+			if err != nil {
+				t.Fatal(err)
+			}
+			initial, err := brain.NewOllama(binding.Config())
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := &pipeline.Pipeline{Brain: initial, Events: events.NewBus()}
+			t.Cleanup(func() {
+				if err := p.CloseBrains(); err != nil {
+					t.Error(err)
+				}
+			})
+			store := session.NewStore(filepath.Join(root, "sessions"))
+			sess := session.New("ollama", "fixture:latest")
+			selector, err := NewSelector(SelectionOptions{Base: base, Catalog: catalog, Pipeline: p, SessionID: sess.ID, Initial: binding,
+				Persist: func(turns []brain.Turn, s events.PersonaSelection) error {
+					return store.SaveSelection(sess, turns, s.PersonaID, s.DisplayName, s.PromptHash, s.Directories)
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.AdmitInput = selector.Route
+			p.OnTurn = func() {
+				if err := store.Save(sess, p.Brain.History()); err != nil {
+					t.Error(err)
+				}
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			for _, input := range []string{"Note that the vault code is cobalt.", "switch to Scout", "What color is the door?", "switch to Ember", "What did we say about the door?"} {
+				if err := p.RunTurnTextMode(ctx, input); err != nil {
+					t.Fatalf("%q: %v", input, err)
+				}
+			}
+
+			loaded, err := store.Load(sess.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var replies []brain.Turn
+			for _, turn := range loaded.Turns {
+				if turn.Role == "assistant" {
+					replies = append(replies, turn)
+				}
+			}
+			wantIDs := []string{"ember", "scout", "scout", "ember", "ember"}
+			wantText := []string{emberReply, "Scout here.", scoutReply, "Ember here.", emberReply}
+			if len(replies) != len(wantIDs) {
+				t.Fatalf("stored replies = %+v", loaded.Turns)
+			}
+			for i, turn := range replies {
+				if turn.PersonaID != wantIDs[i] || turn.Content != wantText[i] || turn.ResponseID == "" || turn.PromptHash == "" {
+					t.Fatalf("reply %d stored as %+v, want persona %q text %q", i, turn, wantIDs[i], wantText[i])
+				}
+			}
+
+			prompts := readFixturePrompts(t, log)
+			if len(prompts) != 1 || prompts[0].Provider != map[string]string{"muse-spark": "muse", "obey": "obey"}[provider] {
+				t.Fatalf("%s calls = %+v", provider, prompts)
+			}
+			scoutPrompt := prompts[0].Prompt
+			if !strings.Contains(scoutPrompt, "You are Scout.") || !strings.Contains(scoutPrompt, emberReply) || !strings.Contains(scoutPrompt, `"persona":"Ember"`) {
+				t.Fatalf("%s did not receive Ember's attributed reply:\n%s", provider, scoutPrompt)
+			}
+			if strings.Contains(scoutPrompt, "You are Ember.") {
+				t.Fatalf("%s received Ember's identity prompt:\n%s", provider, scoutPrompt)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			if len(ollamaRequests) != 2 {
+				t.Fatalf("ollama requests = %d", len(ollamaRequests))
+			}
+			var returned strings.Builder
+			for _, m := range ollamaRequests[1] {
+				returned.WriteString(m.Role + ": " + m.Content + "\n")
+				if m.Role == "assistant" && strings.Contains(m.Content, scoutReply) {
+					t.Fatalf("Scout's statement was replayed as Ember's own:\n%s", returned.String())
+				}
+			}
+			if !strings.Contains(ollamaRequests[1][0].Content, "You are Ember.") || !strings.Contains(returned.String(), scoutReply) || !strings.Contains(returned.String(), "What color is the door?") {
+				t.Fatalf("returning Ember lacks what was said while away:\n%s", returned.String())
+			}
+		})
+	}
+}
+
+func TestSelectorRefusesUnverifiedProvider(t *testing.T) {
+	for _, provider := range []string{"claude", "grok", "cursor"} {
+		t.Run(provider, func(t *testing.T) {
+			scout := testProfile("scout", "Scout", "scout")
+			scout.Brain.Provider = provider
+			f := newSelectorTestFixture(t, testProfile("ember", "Ember", "ember"), scout)
+			defer f.close(t)
+			_, err := f.selector.Select(t.Context(), "scout", "explicit")
+			want := `persona "scout": provider "` + provider + `" has no verified shared history projection`
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("err = %v, want %q", err, want)
+			}
+			if got := f.selector.Snapshot().PersonaID; got != "ember" {
+				t.Fatalf("selection moved to %q", got)
+			}
+		})
+	}
+}
