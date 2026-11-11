@@ -284,8 +284,9 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		switch {
 		case !hasResult:
 			err = errors.New("provider ended without a result")
-		case err != nil && ctx.Err() != nil:
-			// Providers report a stopped request in their own terms.
+		case ctx.Err() != nil:
+			// The turn stopped this request, so what it delivered was cut
+			// short whatever the provider reports, in its own terms or not.
 			err = ctx.Err()
 		}
 		rec.finish(result.Route, err)

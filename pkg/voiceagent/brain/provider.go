@@ -246,9 +246,11 @@ func KeepsSharedHistory(p Provider) bool {
 // while another persona speaks instead of retiring it, and brings its session
 // up to date with StreamOptions.CatchUp instead of projecting history into it.
 func KeepsPersonaSession(p Provider) bool {
-	_, ok := p.(*Brain)
+	_, ok := p.(interface{ keepsPersonaSession() })
 	return ok
 }
+
+func (*Brain) keepsPersonaSession() {}
 
 // ContextHistoryProvider exposes the bounded model view for compaction only.
 // Its projected text is never an authority for persisted speaker identity.
