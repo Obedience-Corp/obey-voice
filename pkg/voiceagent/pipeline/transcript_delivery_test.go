@@ -180,6 +180,7 @@ type failingBrain struct {
 	partial     string
 	err         error
 	afterCancel bool
+	noResult    bool
 }
 
 func (b *failingBrain) ThinkStream(ctx context.Context, _ string, _ brain.StreamOptions) (*brain.Stream, error) {
@@ -190,6 +191,9 @@ func (b *failingBrain) ThinkStream(ctx context.Context, _ string, _ brain.Stream
 		close(out)
 		if b.afterCancel {
 			<-ctx.Done()
+		}
+		if b.noResult {
+			return
 		}
 		done <- brain.StreamResult{Err: b.err}
 	}()
@@ -223,21 +227,31 @@ func TestHostTranscriptKeepsTheProvidersReasonForAnUnfinishedReply(t *testing.T)
 			t.Fatalf("reply = %+v", reply)
 		}
 	})
-	t.Run("stopped provider reports its own error", func(t *testing.T) {
-		transcript := &recordedTranscript{}
-		p := &Pipeline{Brain: &failingBrain{partial: "The door is", err: errors.New("claude: signal: killed"), afterCancel: true}, Events: events.NewBus(), Transcript: transcript}
-		p.AdmitInput = admitAs("stopped", func(input string) string { return input })
-		ctx, cancel := context.WithCancel(t.Context())
-		defer cancel()
-		var once sync.Once
-		events.Subscribe(p.Events, func(events.ResponseDelta) { once.Do(cancel) })
-		if err := p.RunTurnTextMode(ctx, "What color is the door?"); !errors.Is(err, context.Canceled) {
-			t.Fatalf("err = %v", err)
-		}
-		if reply := recordedReply(t, transcript); reply.Content != "The door is" || reply.Disposition != "interrupted" {
-			t.Fatalf("reply = %+v", reply)
-		}
-	})
+	for name, b := range map[string]*failingBrain{
+		"stopped provider reports its own error": {partial: "The door is", err: errors.New("claude: signal: killed"), afterCancel: true},
+		"stopped provider ends without a result": {partial: "The door is", afterCancel: true, noResult: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			transcript := &recordedTranscript{}
+			p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
+			p.AdmitInput = admitAs("stopped", func(input string) string { return input })
+			var reported []events.Error
+			events.Subscribe(p.Events, func(e events.Error) { reported = append(reported, e) })
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var once sync.Once
+			events.Subscribe(p.Events, func(events.ResponseDelta) { once.Do(cancel) })
+			if err := p.RunTurnTextMode(ctx, "What color is the door?"); !errors.Is(err, context.Canceled) {
+				t.Fatalf("err = %v", err)
+			}
+			if reply := recordedReply(t, transcript); reply.Content != "The door is" || reply.Disposition != "interrupted" {
+				t.Fatalf("reply = %+v", reply)
+			}
+			if len(reported) != 0 {
+				t.Fatalf("a stopped turn reported a provider failure: %+v", reported)
+			}
+		})
+	}
 }
 
 // silentEndBrain delivers a reply and closes its result without reporting one.
