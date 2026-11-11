@@ -121,8 +121,12 @@ func sessionHistory(turns []brain.Turn, cursor brain.PersonaContext, cfg *config
 // shareView is what a provider keeping the shared history on a hosted backend
 // holds for its persona: every turn, and as the view it sends only the
 // persona's share. A view it held before is kept as it was; turns recorded
-// since are added as their spoken lines.
+// since are added as their spoken lines. A cursor that does not match turns
+// shares nothing.
 func shareView(cursor brain.PersonaContext, turns []brain.Turn) brain.ContinuitySnapshot {
+	if cursor.Session == nil || !cursor.Matches(turns) {
+		return brain.ContinuitySnapshot{Canonical: brain.CloneTurns(turns), Working: []brain.Turn{}}
+	}
 	start := cursor.Session.From
 	view := brain.ContinuitySnapshot{Working: []brain.Turn{}}
 	if cursor.Working != nil {
@@ -168,13 +172,23 @@ func (s *Selector) refreshShare(personaID string, provider brain.Provider) {
 // unless its session has received part of them: only then does the cursor's
 // prefix show that turns are this persona's conversation. A provider keeping
 // the shared history on a hosted backend keeps every turn but sends only
-// that share.
+// that share. Only a cursor of the live backend counts. The cursor is left as
+// it was, so a host whose resume fails can load the previous conversation
+// back with its share; a resume that succeeds restores the saved cursors.
 func (s *Selector) LoadHistory(turns []brain.Turn) {
 	live := s.opts.Pipeline.Brain
+	personaID, provider := s.Snapshot().PersonaID, ""
+	if cfg := s.Config(); cfg != nil {
+		provider = cfg.BrainProvider
+	}
+	liveCursor := func(turns []brain.Turn) (brain.PersonaContext, bool) {
+		cursor, ok := s.transcript.session(personaID, turns)
+		return cursor, ok && cursorProvider(cursor) == provider
+	}
 	if brain.HostedSharedHistory(live) {
-		cursor, ok := s.transcript.session(s.Snapshot().PersonaID, turns)
+		cursor, ok := liveCursor(turns)
 		if !ok || cursor.Through == cursor.Session.From {
-			cursor = brain.SessionContext(turns, brain.SessionCursor{From: len(turns)}, len(turns))
+			cursor = brain.SessionContext(turns, brain.SessionCursor{From: len(turns), Provider: provider}, len(turns))
 		}
 		_ = live.(brain.ContinuityTransferProvider).ImportContinuity(shareView(cursor, turns))
 		return
@@ -185,7 +199,7 @@ func (s *Selector) LoadHistory(turns []brain.Turn) {
 	}
 	turns = canonicalTurns(turns)
 	var held []brain.Turn
-	if cursor, ok := s.transcript.session(s.Snapshot().PersonaID, turns); ok && cursor.Through > cursor.Session.From {
+	if cursor, ok := liveCursor(turns); ok && cursor.Through > cursor.Session.From {
 		held = sessionHistory(turns, cursor, s.Config())
 	}
 	live.LoadHistory(held)

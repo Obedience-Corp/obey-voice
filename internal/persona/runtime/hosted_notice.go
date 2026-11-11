@@ -145,7 +145,7 @@ func (s *Selector) noticeScope(personaID, provider, label string) string {
 	}
 	turns := s.sharedTurns()
 	from := len(turns)
-	if cursor, ok := s.transcript.session(personaID, turns); ok {
+	if cursor, ok := s.transcript.session(personaID, turns); ok && cursorProvider(cursor) == provider {
 		from = cursor.Session.From
 	} else if s.sharesWholeConversation() {
 		from = 0

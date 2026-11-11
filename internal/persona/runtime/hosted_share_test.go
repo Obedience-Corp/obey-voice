@@ -3,6 +3,7 @@ package personaruntime
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -525,4 +526,126 @@ func TestCodexPersonaKeepsTheImagesAttachedForIt(t *testing.T) {
 
 	c.say("switch to Ember", "Hello Ember.", "switch to Mira", "Back to you.")
 	requireContains(t, c.lastHostedPrompt(), attached, "Hello Ember.", "Back to you.")
+}
+
+func TestShareViewSendsNothingFromACursorThatNoLongerMatches(t *testing.T) {
+	turns := []brain.Turn{
+		{Role: "user", Content: preInviteUser},
+		{Role: "assistant", Content: preInviteEmber, PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+		{Role: "user", Content: "Mira, what do you think?"},
+		{Role: "assistant", Content: "Mira here.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
+	}
+	replaced := brain.CloneTurns(turns)
+	replaced[0].Content = "A different conversation."
+	held := brain.SessionContext(replaced, brain.SessionCursor{From: 2, Provider: "codex"}, len(replaced))
+	held.Working = brain.CloneTurns(replaced[2:])
+	unheld := brain.SessionContext(replaced, brain.SessionCursor{From: 0, Provider: "codex"}, 2)
+	longer := brain.SessionContext(append(brain.CloneTurns(turns), brain.Turn{Role: "user", Content: "Later."}), brain.SessionCursor{From: 4, Provider: "codex"}, 5)
+	longer.Working = []brain.Turn{}
+	for name, cursor := range map[string]brain.PersonaContext{"held view": held, "no held view": unheld, "longer conversation": longer} {
+		t.Run(name, func(t *testing.T) {
+			view := shareView(cursor, turns)
+			if len(view.Working) != 0 || len(view.Canonical) != len(turns) {
+				t.Fatalf("a cursor that does not match the conversation opened its share: %+v", view.Working)
+			}
+		})
+	}
+}
+
+func TestLoadHistoryUsesOnlyACursorOfTheLiveBackend(t *testing.T) {
+	turns := []brain.Turn{
+		{Role: "user", Content: preInviteUser},
+		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
+	}
+	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+		t.Run(provider, func(t *testing.T) {
+			c := newConversation(t, 20, "mira", provider, "")
+			other := "claude"
+			if provider == "claude" {
+				other = "codex"
+			}
+			foreign := brain.SessionContext(turns, brain.SessionCursor{From: 0, Provider: other}, len(turns))
+			c.selector.transcript.setLive("mira", &foreign)
+			c.selector.LoadHistory(turns)
+			var sent []brain.Turn
+			if view, ok := c.p.Brain.(brain.ContextHistoryProvider); ok && provider != "claude" {
+				sent = view.ContextHistory()
+			} else {
+				sent = c.p.Brain.History()
+			}
+			if len(sent) != 0 {
+				t.Fatalf("a cursor from %s opened the share on %s: %+v", other, provider, sent)
+			}
+			if provider == "claude" {
+				return
+			}
+			label := providerLabelFor[provider]
+			if got, want := c.selector.noticeScope("mira", provider, label), "Only what is said from when it was invited is sent to "+label+"; earlier lines stay on this machine."; got != want {
+				t.Fatalf("notice = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestSavedCursorWithoutABackendIsNotTakenUpOnCodexMuseSparkOrObey(t *testing.T) {
+	for _, provider := range hostedShareProviders {
+		t.Run(provider, func(t *testing.T) {
+			c := newConversation(t, 20, "ember", provider, "")
+			c.say("switch to Mira", "What do you think?", "switch to Ember")
+			saved := c.saved()
+			cursor := saved.PersonaContexts["mira"]
+			if cursor.Session == nil || cursor.Session.Provider != provider {
+				t.Fatalf("saved cursor = %+v", cursor)
+			}
+			// Saved before cursors named their backend, when only Claude kept one.
+			cursor.Session.Provider = ""
+			saved.PersonaContexts["mira"] = cursor
+			c.start("ember", saved.Turns, saved.PersonaContexts)
+			c.say("switch to Mira", "And now?")
+			last := c.lastHostedPrompt()
+			requireContains(t, last, "And now?")
+			requireOmits(t, last, "What do you think?")
+			if after := c.saved().PersonaContexts["mira"]; after.Session == nil || after.Session.Provider != provider || after.Session.From <= cursor.Session.From {
+				t.Fatalf("cursor after = %+v", after)
+			}
+		})
+	}
+}
+
+func TestCompactedHostedShareComesBackAfterSaveAndResume(t *testing.T) {
+	for _, provider := range hostedShareProviders {
+		t.Run(provider, func(t *testing.T) {
+			c := newConversation(t, 20, "mira", provider, "")
+			c.say("Remember the code K-77.", "Second thought.", "Third line.")
+			c.p.CompactPrompt = "Summarize the conversation."
+			if err := c.p.CompactConversation(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			view := func() []brain.Turn { return c.p.Brain.(brain.ContextHistoryProvider).ContextHistory() }
+			compacted := view()
+			if len(compacted) == 0 || compacted[0].Role != "assistant" || strings.Contains(fmt.Sprint(compacted), "K-77") {
+				t.Fatalf("compacted view = %+v", compacted)
+			}
+			saved := c.saved()
+			if got := saved.PersonaContexts["mira"].Working; fmt.Sprint(contents(got)) != fmt.Sprint(contents(compacted)) {
+				t.Fatalf("saved view = %v, want %v", contents(got), contents(compacted))
+			}
+			c.start("mira", saved.Turns, saved.PersonaContexts)
+			if got := view(); fmt.Sprint(contents(got)) != fmt.Sprint(contents(compacted)) {
+				t.Fatalf("resumed view = %v, want %v", contents(got), contents(compacted))
+			}
+			c.say("And now?")
+			last := c.lastHostedPrompt()
+			requireContains(t, last, compacted[0].Content, "Third line.", "And now?")
+			requireOmits(t, last, "K-77")
+		})
+	}
+}
+
+func contents(turns []brain.Turn) []string {
+	out := make([]string, len(turns))
+	for i, t := range turns {
+		out[i] = t.Role + ": " + t.Content
+	}
+	return out
 }
