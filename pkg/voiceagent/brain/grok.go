@@ -140,6 +140,11 @@ func (g *GrokBrain) ThinkStream(ctx context.Context, input string, streamOpts St
 			g.dropSession()
 			raw, _, err = g.streamAttempt(ctx, out, streamOpts)
 		}
+		if err == nil {
+			// However the CLI ends a stopped request, it leaves this
+			// provider alone: the next request may already be running.
+			err = ctx.Err()
+		}
 		if err != nil {
 			done <- StreamResult{Err: err}
 			return

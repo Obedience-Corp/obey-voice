@@ -312,6 +312,11 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 				raw, _, err = b.streamAttempt(ctx, out, streamOpts, retry)
 			}
 		}
+		if err == nil {
+			// However the CLI ends a stopped request, it leaves this
+			// provider alone: the next request may already be running.
+			err = ctx.Err()
+		}
 		if err != nil {
 			// An unanswered line's images are not replayed into a later session.
 			if !streamOpts.AgentContinuation && held < len(b.history) {
