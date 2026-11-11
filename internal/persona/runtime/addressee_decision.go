@@ -31,8 +31,8 @@ type addresseeTrace struct {
 // and the provider classifier second. Neither is a harness backend: the
 // classifier exists only when the live brain is Ollama. It returns nil when no
 // semantic answer exists, leaving the current persona (or the legacy grammar).
-// A decision-model failure with no classifier behind it is reported once and
-// also returns nil; only the turn's own cancellation fails the turn here.
+// A decision-model failure with no classifier behind it also returns nil, with
+// a notice for a user message; only the turn's own cancellation fails here.
 func (s *Selector) classifyAddressee(ctx context.Context, resolver brain.AddresseeResolver, viaDecision bool, request brain.AddressRequest, trace *addresseeTrace) (*brain.Addressee, error) {
 	trace.disposition = "not_asked"
 	bounded := ctx
@@ -53,7 +53,9 @@ func (s *Selector) classifyAddressee(ctx context.Context, resolver brain.Address
 		case err != nil && ctx.Err() != nil:
 			return nil, err
 		case err != nil && resolver == nil:
-			if s.opts.Pipeline.Events != nil {
+			// A persona's reply has no user waiting on it; the diagnostic
+			// records that failure, so a turn gets at most one notice.
+			if s.opts.Pipeline.Events != nil && request.Account == "user" {
 				s.opts.Pipeline.Events.Emit(events.Info{Message: fmt.Sprintf("The decision model did not answer who was addressed (%s); routing by name only.", result.Outcome)})
 			}
 		}

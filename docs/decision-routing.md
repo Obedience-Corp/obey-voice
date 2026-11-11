@@ -78,14 +78,16 @@ the live brain is not Ollama, the turn is not failed: step 4 applies, exactly as
 it did before the decision model existed, and one notice says the decision model
 did not answer and why. Cancelling the turn still cancels it. An agent's reply
 that invites another persona by name goes through the same steps; on a failure
-without Ollama the reply stays with its speaker.
+without Ollama the reply stays with its speaker, with no notice (the diagnostic
+below records it).
 
 ### What the addressee question sends
 
-For every message that names a persona (or carries a spoken-name hint) and is
-not an exact control, the decision provider receives:
+For every user message that names a persona (or carries a spoken-name hint) and
+is not an exact control, and for every persona reply that names a persona (the
+handoff check), the decision provider receives:
 
-- the message itself (up to 4,000 characters; longer messages are not sent);
+- the message or reply itself (up to 4,000 characters; longer ones are not sent);
 - up to eight earlier messages of the conversation, each cut to 1,000
   characters, each labelled with its speaker's name (the human speaker's name,
   or the persona's display name for a persona reply);
@@ -128,8 +130,9 @@ is answered by the current persona, as the Ollama classifier's instructions also
 require. The two questions are separate calls; they could be combined into one
 request per turn later, but are not.
 
-Each resolution that reaches a model emits a `decision.evaluated` diagnostic with
-point `addressee`, the decision model's outcome as its disposition (`answered`,
+When the decision model or the Ollama classifier is configured, each message or
+reply that names a persona emits a `decision.evaluated` diagnostic with point
+`addressee`, the decision model's outcome as its disposition (`answered`,
 `abstained`, `skipped`, `busy`, `timeout`, `provider_error`, `invalid_output`,
 `cancelled`, or `not_asked` when the decision model is off), the step that
 settled it as `resolver` (`decision_model`, `ollama_classifier`, `grammar`,

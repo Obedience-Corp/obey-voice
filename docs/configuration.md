@@ -693,7 +693,8 @@ nothing is prepared even when `decision_enabled` is on: no credential is read an
 no model is installed, loaded or contacted. These keys have no environment
 variables; `DECISION_API_KEY` is read only for an enabled hosted provider.
 
-The addressee question sends the message, up to eight earlier messages (each cut
+The addressee question sends the message (or a persona's reply, when checking
+for a handoff), up to eight earlier messages (each cut
 to 1,000 characters and labelled with its speaker's name), the speaker's name,
 the current persona's name, and every persona name and alias in the conversation
 to the configured `decision_provider`. With `local` that stays on this computer;
