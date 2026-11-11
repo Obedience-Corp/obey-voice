@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -330,4 +331,47 @@ func TestWorkerTimeReserveLeavesShortBudgetsRoomToWork(t *testing.T) {
 			t.Errorf("reserve(%v)=%v, want %v", total, got, want)
 		}
 	}
+}
+
+func TestWorkerWithNoLimitsStopsAtBackstop(t *testing.T) {
+	r := newToolRounds(&config.Config{IsWorker: true}, WorkerStreamOptions(true))
+	if final, _ := r.final(t.Context(), maxUnboundedWorkerRounds-1); final {
+		t.Fatal("backstop fired early")
+	}
+	if final, instruction := r.final(t.Context(), maxUnboundedWorkerRounds); !final || instruction != toolLimitAnswerInstruction {
+		t.Fatalf("final=%v instruction=%q", final, instruction)
+	}
+
+	timed := newToolRounds(&config.Config{IsWorker: true}, WorkerStreamOptions(true))
+	ctx := WithWorkerDeadline(t.Context(), time.Now().Add(time.Hour))
+	if final, _ := timed.final(ctx, maxUnboundedWorkerRounds); final {
+		t.Fatal("backstop applied to a worker with a deadline")
+	}
+}
+
+func TestSingleRequestWorkerAnswersWithoutTools(t *testing.T) {
+	eachMode(t, func(t *testing.T, streaming bool) {
+		opts := WorkerStreamOptions(true)
+		opts.WorkerBudget = NewWorkerBudget(BudgetLimits{MaxRequests: 1})
+		run := runRounds(t, t.Context(), streaming, false, opts, func(_ int, _ api.ChatRequest) api.ChatResponse {
+			return answerResponse("Answered from what was given.")
+		})
+		if run.err != nil || len(run.reqs) != 1 || len(run.reqs[0].Tools) != 0 {
+			t.Fatalf("requests=%d err=%v", len(run.reqs), run.err)
+		}
+	})
+}
+
+func TestFinalRoundFailureNamesItsCause(t *testing.T) {
+	eachMode(t, func(t *testing.T, streaming bool) {
+		run := runRounds(t, t.Context(), streaming, true, WorkerStreamOptions(true), func(_ int, req api.ChatRequest) api.ChatResponse {
+			if len(req.Tools) == 0 {
+				return answerResponse("")
+			}
+			return toolResponse(readFileCall("same.txt"))
+		})
+		if run.err == nil || !strings.Contains(run.err.Error(), stopRepeat) {
+			t.Fatalf("err=%v", run.err)
+		}
+	})
 }

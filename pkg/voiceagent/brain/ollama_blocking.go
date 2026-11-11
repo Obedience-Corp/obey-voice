@@ -243,7 +243,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		raw := stripReplyConventions(o.cfg.AgentName, response.Content)
 		text := cleanForVoice(stripHistoricalAssistantMarkers(raw))
 		if finalAnswer && (!responseComplete || !hasSpeakableContent(text)) {
-			return "", fmt.Errorf("tool round limit reached: model returned no final answer")
+			return "", rounds.stopErr("model returned no final answer")
 		}
 		if opts.Discussion != nil && !hasSpeakableContent(text) {
 			return "", fmt.Errorf("group reply was empty")

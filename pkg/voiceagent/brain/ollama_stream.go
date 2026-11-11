@@ -506,7 +506,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			raw := stripReplyConventions(o.cfg.AgentName, textBuf.String())
 			cleaned := cleanForVoice(stripHistoricalAssistantMarkers(raw))
 			if finalAnswer && (!responseComplete || doneReason == "length" || !hasSpeakableContent(cleaned)) {
-				done <- StreamResult{Err: fmt.Errorf("tool round limit reached: model returned an empty or incomplete final answer"), Recovered: ctx.Err() == nil}
+				done <- StreamResult{Err: rounds.stopErr("model returned an empty or incomplete final answer"), Recovered: ctx.Err() == nil}
 				return
 			}
 			if opts.Discussion != nil && !hasSpeakableContent(cleaned) {

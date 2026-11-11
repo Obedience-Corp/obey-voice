@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,16 @@ const toolTimeAnswerInstruction = "The time budget for this job is nearly used. 
 const toolRepeatAnswerInstruction = "The same tool call was repeated several times without progress. No more tools are available. Answer now using the results already collected. State what was completed, what remains, and the concrete blocker that stopped progress. Do not claim unfinished work succeeded, promise to answer later, or describe tool-loop reasoning."
 
 const maxRepeatedToolRounds = 3
+
+// maxUnboundedWorkerRounds stops a worker that has neither a deadline nor a
+// request budget, so one that never repeats itself exactly still ends.
+const maxUnboundedWorkerRounds = 200
+
+const (
+	stopRoundLimit = "tool round limit reached"
+	stopTime       = "worker time budget nearly used"
+	stopRepeat     = "worker repeated the same tool call"
+)
 
 // workerTimeReserve is how much of a deadline a worker keeps for its final
 // answer, never more than half of it. It is a variable so tests need not wait
@@ -32,6 +43,7 @@ type toolRounds struct {
 	start       time.Time
 	budget      *WorkerBudget
 	instruction string
+	stop        string
 	lastCalls   string
 	repeats     int
 }
@@ -39,6 +51,7 @@ type toolRounds struct {
 func newToolRounds(cfg *config.Config, opts StreamOptions) *toolRounds {
 	return &toolRounds{
 		worker: (cfg != nil && cfg.IsWorker) || opts.workerBudget() != nil,
+		stop:   stopRoundLimit,
 		start:  time.Now(),
 		budget: opts.workerBudget(),
 	}
@@ -59,21 +72,30 @@ func (r *toolRounds) final(ctx context.Context, i int) (bool, string) {
 		return false, ""
 	}
 	if r.instruction == "" {
-		r.instruction = r.limitInstruction(ctx)
+		r.instruction = r.limitInstruction(ctx, i)
 	}
 	return r.instruction != "", r.instruction
 }
 
-func (r *toolRounds) limitInstruction(ctx context.Context) string {
-	if deadline, ok := WorkerDeadline(ctx); ok {
-		if time.Until(deadline) <= workerTimeReserve(deadline.Sub(r.start)) {
-			return toolTimeAnswerInstruction
-		}
+func (r *toolRounds) limitInstruction(ctx context.Context, i int) string {
+	deadline, timed := WorkerDeadline(ctx)
+	if timed && time.Until(deadline) <= workerTimeReserve(deadline.Sub(r.start)) {
+		r.stop = stopTime
+		return toolTimeAnswerInstruction
 	}
-	if left, ok := r.budget.RemainingRequests(); ok && left <= 1 {
+	left, counted := r.budget.RemainingRequests()
+	if counted && left <= 1 {
+		return toolLimitAnswerInstruction
+	}
+	if !timed && !counted && i >= maxUnboundedWorkerRounds {
 		return toolLimitAnswerInstruction
 	}
 	return ""
+}
+
+// stopErr describes a final round that produced no usable answer.
+func (r *toolRounds) stopErr(detail string) error {
+	return fmt.Errorf("%s: %s", r.stop, detail)
 }
 
 // observe records the tool calls of a completed round for the no-progress guard.
@@ -88,7 +110,7 @@ func (r *toolRounds) observe(calls []api.ToolCall) {
 		r.lastCalls, r.repeats = sig, 1
 	}
 	if r.repeats >= maxRepeatedToolRounds && r.instruction == "" {
-		r.instruction = toolRepeatAnswerInstruction
+		r.instruction, r.stop = toolRepeatAnswerInstruction, stopRepeat
 	}
 }
 
