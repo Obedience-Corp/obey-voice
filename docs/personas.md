@@ -359,12 +359,13 @@ A line longer than half of one request's limit (64 KiB, or half of
 says how much was left out. When the unseen lines still do not fit, Obey Voice
 starts a fresh Claude session and sends the newest lines that fit, with a note
 of how many earlier lines were left out. A persona on Claude receives the
-pending results of background jobs it started while it was on Claude; results
-of jobs other personas started wait for those personas, and results of jobs the
-persona started on another backend, local or hosted, wait until it is back on
-that backend or on a local one. A job saved before jobs recorded their persona
-goes to the persona answering when no other persona is in the conversation, and
-an unset `active_persona` counts as the default persona.
+pending results of background jobs it started, whichever backend it was on when
+it started them: a job it started on another backend, local or hosted, before
+it was moved onto Claude has its task and result sent to Claude when they are
+delivered. Results of jobs other personas started wait for those personas. A
+job saved before jobs recorded their persona goes to the persona answering when
+no other persona is in the conversation, and an unset `active_persona` counts
+as the default persona.
 
 A fresh Claude session therefore starts with a replay of up to 64 KiB of the
 persona's share, where it used to receive only the last six lines. This
@@ -404,10 +405,11 @@ within the share, including those whose lines compaction or `max_history` has
 since dropped from what is replayed. The share start is saved with the
 conversation and still applies after a resume. It starts again when the persona
 is moved to another backend, so a persona moved from a local backend sends
-nothing from its local turns. Compaction summarizes only the share, and the
-exchange kept after the summary is the last one in the share. Like a persona on
-Claude, it receives only the pending results of background jobs it started
-while on its current backend.
+none of its local turns; the task and result of a job it started there are
+still sent when the result is delivered. Compaction summarizes only the share,
+and the exchange kept after the summary is the last one in the share. Like a
+persona on Claude, it receives the pending results of background jobs it
+started, on whichever backend it started them, and not those of other personas.
 Its hosted notice follows its share as for Claude: in a conversation it has to
 itself it reads "What is said to it is sent to Codex." (or Muse Spark, or Obey),
 not "This conversation is sent to Codex."
@@ -490,9 +492,9 @@ Obey receives of a conversation shared with other personas:
 
 Under both, other personas' tool calls, tool ids, tool output and attached file
 names are never sent, and the persona receives only the results of jobs it
-started on that backend. Asked what is happening, such a persona names only the
-jobs whose results it would receive, with their progress; any other running or
-queued job is only counted ("One other job is running."). That answer is
+started, on any backend. Asked what is happening, such a persona names only the
+jobs it started, with their progress; any other running or queued job is only
+counted ("One other job is running."). That answer is
 recorded as the persona's reply and sent with its share, so it never carries
 another job's task or tool activity. On Claude, whole-conversation catch-up is
 bounded like any other: the line and request limits above still apply. On

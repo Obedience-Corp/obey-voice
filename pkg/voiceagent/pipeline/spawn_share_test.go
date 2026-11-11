@@ -62,10 +62,10 @@ func TestJobStatusNamesOnlyTheJobsAHostedPersonaMayReceive(t *testing.T) {
 		spawns []spawn
 		want   string
 	}{
-		{"its own job is named and the others counted", true, []spawn{ember, mira, miraLocal},
-			"Still working on audit the config. So far: listed 1 folder (1 unknown). 2 other jobs are running or queued."},
+		{"its own jobs are named, one started on Ollama, and the other counted", true, []spawn{ember, mira, miraLocal},
+			"Still working on audit the config. So far: listed 1 folder (1 unknown). Also 1 queued. One other job is running."},
 		{"only other jobs", true, []spawn{ember}, "One other job is running."},
-		{"its job from another hosted backend", true, []spawn{miraOnClaude, mira}, "Still working on audit the config. So far: listed 1 folder (1 unknown). One other job is running."},
+		{"its job from another hosted backend is named", true, []spawn{miraOnClaude, mira}, "Still working on draft the memo. So far: listed 1 folder (1 unknown). Also 1 more running."},
 		{"its own job queued behind others", true, []spawn{ember, ember, mira}, "Queued: audit the config. 2 other jobs are running."},
 		{"on ollama every job is named", false, []spawn{ember, mira, miraLocal},
 			"Still working on read my private tax notes. So far: listed 1 folder (1 unknown). Also 1 more running and 1 queued."},

@@ -89,27 +89,30 @@ func TestClaudeOnlyConversationDeliversItsPendingResult(t *testing.T) {
 	}
 }
 
-func TestDeliverableResultWithholdsJobsStartedOnALocalBackend(t *testing.T) {
+// Some saved jobs record a "brain" key; delivery does not read it.
+func TestDeliverableResultIgnoresTheBackendAJobStartedOn(t *testing.T) {
 	mira := &config.Config{BrainProvider: "claude", ActivePersona: "mira"}
 	cases := []struct {
 		name      string
 		admission map[string]string
 		want      bool
 	}{
-		{"started on Claude", map[string]string{"persona": "mira", "brain": "claude"}, true},
-		{"started on Ollama", map[string]string{"persona": "mira", "brain": "ollama"}, false},
-		{"started with the backend unset", map[string]string{"persona": "mira", "brain": ""}, false},
-		{"saved before jobs recorded their backend", map[string]string{"persona": "mira"}, true},
+		{"its job", map[string]string{"persona": "mira"}, true},
+		{"its job recorded on Claude", map[string]string{"persona": "mira", "brain": "claude"}, true},
+		{"its job recorded on Ollama", map[string]string{"persona": "mira", "brain": "ollama"}, true},
+		{"its job recorded with the backend unset", map[string]string{"persona": "mira", "brain": ""}, true},
+		{"another persona's job recorded on Claude", map[string]string{"persona": "ember", "brain": "claude"}, false},
+		{"another persona's job", map[string]string{"persona": "ember"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := claudePipeline(t, mira, reply("mira"))
+			p := claudePipeline(t, mira, reply("mira"), reply("ember"))
 			if got := p.deliverableResult(resultFrom(tc.admission)); got != tc.want {
 				t.Fatalf("on Claude: deliverableResult = %v, want %v", got, tc.want)
 			}
 			p.Brain = &fakeBrain{}
 			if !p.deliverableResult(resultFrom(tc.admission)) {
-				t.Fatal("withheld after the persona returned to a local backend")
+				t.Fatal("a persona on a local backend was not given the result")
 			}
 		})
 	}

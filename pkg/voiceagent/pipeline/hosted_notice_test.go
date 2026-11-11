@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -112,13 +111,6 @@ func TestHostedNoticeStoppedTurnSendsNothing(t *testing.T) {
 	}
 	if len(b.at) != 0 {
 		t.Fatalf("the request was sent after the turn was stopped (%d)", len(b.at))
-	}
-}
-
-func TestJobsRecordTheBackendTheirPersonaWasOn(t *testing.T) {
-	got := frozenConfig(&config.Config{BrainProvider: "claude", ActivePersona: "mira"})
-	if got["brain"] != "claude" || got["persona"] != "mira" {
-		t.Fatalf("frozen config = %v", got)
 	}
 }
 

@@ -29,27 +29,6 @@ func (p *Pipeline) livePersona() (string, bool) {
 	return personaKey(cfg.ActivePersona), true
 }
 
-// backendKey names a provider the way an empty brain_provider resolves.
-func backendKey(provider string) string {
-	if provider = strings.ToLower(strings.TrimSpace(provider)); provider == "" {
-		return "ollama"
-	}
-	return provider
-}
-
-// liveBackend is the selected persona's provider, or "" when the pipeline has
-// no configuration to name it.
-func (p *Pipeline) liveBackend() string {
-	if p.Agency == nil {
-		return ""
-	}
-	cfg := p.Agency.currentConfig()
-	if cfg == nil {
-		return ""
-	}
-	return backendKey(cfg.BrainProvider)
-}
-
 // startedByLivePersona reports whether a job admitted with admission may be
 // shown to the live persona: the live persona started it, or, when the job
 // or the live persona is unnamed, no other persona has been live or replied

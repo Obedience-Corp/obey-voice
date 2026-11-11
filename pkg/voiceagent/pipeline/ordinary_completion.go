@@ -112,15 +112,11 @@ func (p *Pipeline) deliverableResult(r work.ResultView) bool {
 // receivesJob reports whether the live persona may be told what a job admitted
 // with admission is doing or produced. A persona on a hosted backend that
 // keeps its own session or is sent only its share of the conversation
-// receives only jobs it started on that backend, as its share starts again
-// on another; the others wait for their own persona and backend. It takes the
-// Agency's lock.
+// receives only jobs it started, whichever backend it started them on; the
+// others wait for their own persona. It takes the Agency's lock.
 func (p *Pipeline) receivesJob(admission map[string]string) bool {
 	if !brain.KeepsPersonaSession(p.Brain) && !brain.HostedSharedHistory(p.Brain) {
 		return true
-	}
-	if started, tagged := admission["brain"]; tagged && backendKey(started) != p.liveBackend() {
-		return false
 	}
 	return p.startedByLivePersona(admission)
 }

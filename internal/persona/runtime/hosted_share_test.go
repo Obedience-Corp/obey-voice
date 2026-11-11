@@ -283,51 +283,117 @@ func TestSinglePersonaConversationOnAHostedSharedHistoryKeepsItsWholeConversatio
 	}
 }
 
-func TestHostedSharedHistoryReceivesOnlyResultsOfJobsItStartedOnItsBackend(t *testing.T) {
+// startJob registers and starts a job for persona.
+func (c *claudeConversation) startJob(id, persona, task string) work.JobKey {
+	c.t.Helper()
+	coordinator := c.p.WorkCoordinator()
+	key, err := coordinator.Register(coordinator.Scope(), work.Admission{JobID: id, Task: task, Origin: "agency", Config: map[string]string{"persona": persona}})
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if err := coordinator.Started(key); err != nil {
+		c.t.Fatal(err)
+	}
+	return key
+}
+
+func (c *claudeConversation) finishJob(key work.JobKey, text string) {
+	c.t.Helper()
+	if _, err := c.p.WorkCoordinator().Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeSucceeded, Text: text}); err != nil {
+		c.t.Fatal(err)
+	}
+}
+
+// resultWaiting reports whether the result of job is still to be delivered.
+func (c *claudeConversation) resultWaiting(job work.JobKey) bool {
+	for _, r := range c.p.WorkCoordinator().Pending(job.Scope) {
+		if r.Outcome.JobID == job.JobID && (r.State == work.Pending || r.State == work.Ready) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestHostedSharedHistoryReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 	for _, provider := range hostedShareProviders {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "ember", provider, "")
 			c.work = true
 			c.start("ember", nil, nil)
-			coordinator := c.p.WorkCoordinator()
-			scope := coordinator.Scope()
-			start := func(id, persona, backend, task string) work.JobKey {
-				t.Helper()
-				key, err := coordinator.Register(scope, work.Admission{JobID: id, Task: task, Origin: "agency", Config: map[string]string{"persona": persona, "brain": backend}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := coordinator.Started(key); err != nil {
-					t.Fatal(err)
-				}
-				return key
-			}
-			finish := func(key work.JobKey, text string) {
-				t.Helper()
-				if _, err := coordinator.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeSucceeded, Text: text}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			publish := func(id, persona, backend, text string) { finish(start(id, persona, backend, "task "+id), text) }
-			emberJob := start("ember-job", "ember", "ollama", "Read my private tax notes")
+			emberJob := c.startJob("ember-job", "ember", "Read my private tax notes")
 			c.say("switch to Mira", "What do you think?")
 			if cfg := c.p.Agency.WorkerMigrationConfig(); cfg.ActivePersona != "mira" || cfg.BrainProvider != provider {
 				t.Fatalf("jobs would be recorded for %q on %q", cfg.ActivePersona, cfg.BrainProvider)
 			}
-			finish(emberJob, "The tax refund is 1234.")
-			publish("mira-local-job", "mira", "ollama", "The local diary says 5678.")
-			publish("mira-claude-job", "mira", "claude", "The Claude memo says 9012.")
+			c.finishJob(emberJob, "The tax refund is 1234.")
 			if c.p.BackgroundPending() {
-				t.Fatal("a result Mira did not start on her current backend is offered to her")
+				t.Fatal("Ember's result is offered to Mira")
 			}
-			publish("mira-job", "mira", provider, "The build is green.")
+			c.finishJob(c.startJob("mira-job", "mira", "Check the build"), "The build is green.")
 			if !c.p.BackgroundPending() {
 				t.Fatal("Mira's own result is not offered to her")
 			}
 			c.say("And the build?")
 			requireContains(t, c.lastHostedPrompt(), "The build is green.")
-			requireOmits(t, c.hostedLog(), "1234", "5678", "9012", "tax refund", "tax notes", "diary", "Claude memo")
+			requireOmits(t, c.hostedLog(), "1234", "tax refund", "tax notes")
+			if !c.resultWaiting(emberJob) {
+				t.Fatal("Ember's result left without her")
+			}
 		})
+	}
+}
+
+func TestJobStartedOnClaudeIsDeliveredToItsPersonaMovedToCodex(t *testing.T) {
+	c := newConversation(t, 20, "mira", "claude", "")
+	c.work = true
+	c.start("mira", nil, nil)
+	c.say("Hello.")
+	if cfg := c.p.Agency.WorkerMigrationConfig(); cfg.ActivePersona != "mira" || cfg.BrainProvider != "claude" {
+		t.Fatalf("the job would start for %q on %q", cfg.ActivePersona, cfg.BrainProvider)
+	}
+	miraJob := c.startJob("mira-job", "mira", "Check the build")
+	emberJob := c.startJob("ember-job", "ember", "Read my private tax notes")
+
+	c.provider, c.log = "codex", installCodexSelectorFixture(t)
+	moved := testProfile("mira", "Mira", "mira")
+	moved.Brain.Provider, moved.Brain.Model = "codex", ""
+	writeTestProfile(t, c.catalog.Dir, moved)
+	c.finishJob(miraJob, "The build is green.")
+	c.finishJob(emberJob, "The tax refund is 1234.")
+	c.say("Any news?")
+
+	if cfg := c.p.Agency.WorkerMigrationConfig(); cfg.BrainProvider != "codex" {
+		t.Fatalf("Mira is on %q", cfg.BrainProvider)
+	}
+	prompts := c.hostedPrompts()
+	if len(prompts) != 1 {
+		t.Fatalf("codex requests = %d", len(prompts))
+	}
+	requireContains(t, prompts[0], "Check the build", "The build is green.")
+	requireOmits(t, c.hostedLog(), "1234", "tax refund", "tax notes")
+	var notice *hostedNoticeEvent
+	for _, n := range c.hostedNotices() {
+		if strings.Contains(n.message, "Codex") {
+			notice = &n
+		}
+	}
+	if notice == nil {
+		t.Fatalf("no Codex notice: %+v", c.hostedNotices())
+	}
+	for line := range strings.Lines(strings.Join(strings.SplitAfter(c.hostedLog(), "\n")[:notice.claudeRequests], "")) {
+		if strings.Contains(line, `"turn/start"`) {
+			t.Fatal("the result reached Codex before the hosted notice")
+		}
+	}
+	var spoken bool
+	for _, turn := range c.selector.Transcript() {
+		spoken = spoken || turn.Role == "assistant" && turn.PersonaID == "mira" && strings.Contains(turn.Content, "The build is green.")
+	}
+	if !spoken {
+		t.Fatalf("Mira on Codex did not say the result: %+v", c.selector.Transcript())
+	}
+	if c.resultWaiting(miraJob) || !c.resultWaiting(emberJob) {
+		t.Fatalf("Mira's result waiting = %v, Ember's = %v; want false, true", c.resultWaiting(miraJob), c.resultWaiting(emberJob))
 	}
 }
 
