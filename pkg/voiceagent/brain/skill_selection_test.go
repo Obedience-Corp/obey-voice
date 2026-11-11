@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 	"github.com/ollama/ollama/api"
@@ -92,6 +93,12 @@ func TestOptionalSkillSelectionPreservesTheTaskBudget(t *testing.T) {
 
 func recordingSelectionServer(t *testing.T, chats *[]api.ChatRequest) *api.Client {
 	t.Helper()
+	return recordingSelectionServerWith(t, chats, `{"relevant":false,"names":[]}`)
+}
+
+func recordingSelectionServerWith(t *testing.T, chats *[]api.ChatRequest, selection string) *api.Client {
+	t.Helper()
+	encoded, _ := json.Marshal(selection)
 	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req api.ChatRequest
@@ -104,7 +111,7 @@ func recordingSelectionServer(t *testing.T, chats *[]api.ChatRequest) *api.Clien
 		mu.Unlock()
 		switch {
 		case len(req.Format) > 0:
-			_, _ = io.WriteString(w, `{"message":{"role":"assistant","content":"{\"relevant\":false,\"names\":[]}"},"done":true}`+"\n")
+			_, _ = io.WriteString(w, `{"message":{"role":"assistant","content":`+string(encoded)+`},"done":true}`+"\n")
 		case len(req.Tools) > 0:
 			_, _ = io.WriteString(w, `{"message":{"role":"assistant","tool_calls":[{"function":{"name":"route","arguments":{"kind":"chat"}}}]},"done":true}`+"\n")
 		default:
@@ -205,5 +212,97 @@ func TestLiveSkillSelectionKeepsItsInputBound(t *testing.T) {
 	_, err := o.confirmSkillMatches(t.Context(), strings.Repeat("x", 8000), candidates)
 	if err == nil || !strings.Contains(err.Error(), "safe context budget") || len(chats) != 0 {
 		t.Fatalf("oversized selection err=%v requests=%d", err, len(chats))
+	}
+}
+
+func runSelectionTurn(t *testing.T, o *OllamaBrain) {
+	t.Helper()
+	stream, err := o.ThinkStream(t.Context(), "hello", StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainStream(t, stream)
+	if result := <-stream.Done; result.Err != nil {
+		t.Fatal(result.Err)
+	}
+}
+
+func selectionTestRouter(t *testing.T, body string) *semanticSkillRouter {
+	t.Helper()
+	embedder := &routingEmbedder{catalog: [][]float32{{1, 0}}, queries: map[string][]float32{"hello": {1, 0}}}
+	router, err := newSemanticSkillRouter(t.Context(), embedder, "embed", .55, []skills.Skill{{Name: "greeter", Description: "Greet people", Body: body}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return router
+}
+
+func TestLiveSkillSelectionSharesAnExpandedWindowWithTheTurn(t *testing.T) {
+	var chats []api.ChatRequest
+	o := &OllamaBrain{client: recordingSelectionServer(t, &chats), skillRouter: selectionTestRouter(t, "body"), model: "m", workDir: t.TempDir(),
+		cfg: &config.Config{OllamaNumCtx: 2048, ContinuityNumCtxCeil: 32768, MaxHistory: 10, PromptsDir: t.TempDir()}}
+	o.contextHighWater = 8192
+	runSelectionTurn(t, o)
+	if len(chats) != 3 {
+		t.Fatalf("chat requests = %d, want selection, route and answer", len(chats))
+	}
+	for i, req := range chats {
+		if got := runnerOptions(t, req).NumCtx; got != 8192 {
+			t.Errorf("request %d num_ctx = %d, want the carried high-water mark 8192", i, got)
+		}
+	}
+}
+
+// The window grows when an activated skill pushes the prompt past the current
+// one, which is only known after the selection returns. The route round then
+// reloads once, the same single reload the growth costs whichever call
+// carries it; selection cannot size itself for a body it has not chosen yet.
+func TestLiveSkillSelectionWindowGrowsOnceWhenTheSkillBodyDoesNotFit(t *testing.T) {
+	var chats []api.ChatRequest
+	client := recordingSelectionServerWith(t, &chats, `{"relevant":true,"names":["greeter"]}`)
+	o := &OllamaBrain{client: client, skillRouter: selectionTestRouter(t, strings.Repeat("x", 30000)), model: "m", workDir: t.TempDir(),
+		cfg: &config.Config{OllamaNumCtx: 2048, ContinuityNumCtxCeil: 32768, MaxHistory: 10, PromptsDir: t.TempDir()}}
+	o.contextHighWater = 8192
+	runSelectionTurn(t, o)
+	if len(chats) != 3 {
+		t.Fatalf("chat requests = %d, want selection, route and answer", len(chats))
+	}
+	selection, route, answer := runnerOptions(t, chats[0]), runnerOptions(t, chats[1]), runnerOptions(t, chats[2])
+	if selection.NumCtx != 8192 || route.NumCtx <= selection.NumCtx || route.NumCtx != answer.NumCtx || route.NumCtx != o.numCtxFor(o.contextHighWater) {
+		t.Fatalf("num_ctx selection=%d route=%d answer=%d high-water=%d", selection.NumCtx, route.NumCtx, answer.NumCtx, o.contextHighWater)
+	}
+}
+
+func TestLiveSkillSelectionWithAnAudioResolverSharesTruncationOptions(t *testing.T) {
+	media := chatmedia.NewAudioSession()
+	defer media.Close()
+	var chats []api.ChatRequest
+	o := &OllamaBrain{client: recordingSelectionServer(t, &chats), audioResolver: media, model: "m", workDir: t.TempDir(),
+		cfg: &config.Config{OllamaNumBatch: 128, PromptsDir: t.TempDir()}}
+	if _, err := o.confirmSkillMatches(t.Context(), "hello", []skills.Skill{{Name: "greeter", Description: "Greet people"}}); err != nil {
+		t.Fatal(err)
+	}
+	want := o.newChatRequest(nil, nil)
+	got := chats[0]
+	if got.Truncate == nil || got.Shift == nil || *got.Truncate || *got.Shift {
+		t.Fatalf("selection truncate=%v shift=%v, want both false", got.Truncate, got.Shift)
+	}
+	if !reflect.DeepEqual(got.Truncate, want.Truncate) || !reflect.DeepEqual(got.Shift, want.Shift) {
+		t.Fatalf("selection truncate/shift differ from the turn request")
+	}
+	if r := runnerOptions(t, got); r.NumCtx != nativeContextCeiling || r.NumBatch != 128 {
+		t.Fatalf("selection runner options = %+v, want num_ctx %d", r, nativeContextCeiling)
+	}
+}
+
+func TestLiveSkillSelectionSendsNoWindowWhenNoneIsConfigured(t *testing.T) {
+	var chats []api.ChatRequest
+	o := &OllamaBrain{client: recordingSelectionServer(t, &chats), model: "m", cfg: &config.Config{PromptsDir: t.TempDir()}}
+	if _, err := o.confirmSkillMatches(t.Context(), "hello", []skills.Skill{{Name: "greeter", Description: "Greet people"}}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"num_predict": float64(128), "seed": float64(42), "temperature": float64(0)}
+	if !reflect.DeepEqual(chats[0].Options, want) {
+		t.Fatalf("selection options = %v, want only the private sampling options", chats[0].Options)
 	}
 }

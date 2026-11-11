@@ -59,6 +59,7 @@ func (o *OllamaBrain) confirmSkillMatches(ctx context.Context, input string, can
 	}
 	ctx, cancel := context.WithTimeout(ctx, config.PersonaRoutingTimeoutOf(o.cfg))
 	defer cancel()
+	// ctxSize bounds the selection input only; the request window follows the turn.
 	ctxSize := 4096
 	if o.cfg != nil && o.cfg.OllamaNumCtx > 0 {
 		ctxSize = min(ctxSize, o.cfg.OllamaNumCtx)
@@ -69,6 +70,7 @@ func (o *OllamaBrain) confirmSkillMatches(ctx context.Context, input string, can
 		// Share the conversation's runner options: any difference makes Ollama
 		// reload the model for this call and again for the turn that follows.
 		req = o.newChatRequest(messages, nil)
+		// requestOptions is nil when neither a window nor a batch is configured.
 		if req.Options == nil {
 			req.Options = map[string]any{}
 		}
