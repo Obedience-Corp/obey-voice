@@ -86,11 +86,16 @@ const (
 	providerSettleTimeout = 5 * time.Second
 )
 
-// providerStopTimeout bounds how long a new turn waits for a request an
-// earlier turn stopped. A variable so tests can shorten it.
+// providerStopTimeout bounds how long a new request waits, unannounced, for
+// one an earlier turn stopped before it gives up on it. A variable so tests
+// can shorten it.
 var providerStopTimeout = providerSettleTimeout
 
-var errProviderStopping = errors.New("the last reply is still stopping; try again in a moment")
+const providerStoppingInfo = "Waiting for the last reply to finish stopping before answering."
+
+// serialProvider is a provider that cannot take a request while an earlier
+// one is still ending on it, as when its session stays locked until then.
+type serialProvider interface{ SerialRequests() }
 
 // transcriptRecording records one live provider request in the host
 // transcript exactly once: when the provider finishes, or when the turn
@@ -114,6 +119,9 @@ type transcriptRecording struct {
 	route      string
 	routeErr   error
 	routeTaken bool
+	// abandoned is set once a later request stops waiting for this one;
+	// waited once a later request has said it is waiting for it.
+	abandoned, waited bool
 }
 
 func (r *transcriptRecording) deliver(text string) {
@@ -196,20 +204,97 @@ func (r *transcriptRecording) settle() {
 	}
 }
 
-// awaitProvider waits, for at most providerStopTimeout, until every request
-// that an earlier turn stopped has ended on the live provider.
-func (p *Pipeline) awaitProvider(ctx context.Context) error {
-	wait, cancel := context.WithTimeout(ctx, providerStopTimeout)
-	defer cancel()
-	err := p.awaitRequests(wait, p.Brain)
-	if err != nil && ctx.Err() == nil {
-		p.emit(events.Error{Stage: "brain", Message: errProviderStopping.Error()})
-		return errProviderStopping
-	}
-	return err
+// abandon gives up on a stopped request that is still ending: it stays
+// recorded as the turn left it, and nothing it sends later is delivered or
+// recorded.
+func (r *transcriptRecording) abandon() {
+	r.cancel()
+	r.finish("", r.ctx.Err())
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.abandoned = true
 }
 
-// awaitRequests waits until provider has no recorded request still ending.
+// ended reports whether the request has ended or been abandoned.
+func (r *transcriptRecording) ended() bool {
+	select {
+	case <-r.drained:
+		return true
+	default:
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.abandoned
+}
+
+// firstWait reports whether this is the first time a later request waits
+// past providerStopTimeout for this one.
+func (r *transcriptRecording) firstWait() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	first := !r.waited
+	r.waited = true
+	return first
+}
+
+// awaitProvider waits until requests earlier turns stopped have ended on the
+// live provider, so two never share its session. One still ending after
+// providerStopTimeout is abandoned and the caller goes ahead. A request still
+// in use, or one on a provider that cannot take another until it ends, is
+// waited for, said once as a status line. It fails only when ctx ends.
+func (p *Pipeline) awaitProvider(ctx context.Context) error {
+	pending := p.stillEnding(p.Brain)
+	if len(pending) == 0 {
+		return nil
+	}
+	wait, cancel := context.WithTimeout(ctx, providerStopTimeout)
+	err := awaitEnded(wait, pending)
+	cancel()
+	if err == nil || ctx.Err() != nil {
+		return ctx.Err()
+	}
+	_, serial := p.Brain.(serialProvider)
+	announce := false
+	for _, r := range p.stillEnding(p.Brain) {
+		if !serial && r.ctx.Err() != nil {
+			r.abandon()
+		} else if r.firstWait() {
+			announce = true
+		}
+	}
+	if announce {
+		p.emit(events.Info{Message: providerStoppingInfo})
+	}
+	return awaitEnded(ctx, p.stillEnding(p.Brain))
+}
+
+func awaitEnded(ctx context.Context, requests []*transcriptRecording) error {
+	for _, r := range requests {
+		select {
+		case <-r.drained:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+// stillEnding returns provider's recorded requests that have neither ended
+// nor been abandoned.
+func (p *Pipeline) stillEnding(provider brain.Provider) []*transcriptRecording {
+	p.requestMu.Lock()
+	defer p.requestMu.Unlock()
+	var pending []*transcriptRecording
+	for _, r := range p.requests {
+		if r.provider == provider && !r.ended() {
+			pending = append(pending, r)
+		}
+	}
+	return pending
+}
+
+// awaitRequests waits until provider has no recorded request still ending,
+// abandoned or not.
 // A provider can be parked and taken up again while one is.
 func (p *Pipeline) awaitRequests(ctx context.Context, provider brain.Provider) error {
 	p.requestMu.Lock()
