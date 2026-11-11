@@ -269,7 +269,7 @@ func (b *Brain) refreshPrompts(onWarn func(string)) {
 
 func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts StreamOptions) (*Stream, error) {
 	b.refreshPrompts(streamOpts.OnPromptWarn)
-	b.prepareCatchUp(streamOpts.CatchUp)
+	b.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
 	// A handoff from another agent is not a user turn.
 	if !streamOpts.AgentContinuation {
 		b.history = append(b.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
@@ -534,7 +534,7 @@ func (b *Brain) ThinkFull(ctx context.Context, input string, streamOpts StreamOp
 	// the call — and rolled back if the turn never produced an answer, or the
 	// unanswered prompt stays in the transcript as a user turn.
 	restore := len(b.history)
-	b.prepareCatchUp(streamOpts.CatchUp)
+	b.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
 	if !streamOpts.AgentContinuation {
 		b.history = append(b.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
 	}

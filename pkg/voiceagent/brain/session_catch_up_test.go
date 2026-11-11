@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -79,27 +80,91 @@ func TestCatchUpReplaysEverythingSharedIntoFreshSession(t *testing.T) {
 	}
 }
 
+func TestCatchUpShortensOneOversizedLineAndKeepsTheRest(t *testing.T) {
+	fake := &fakeClaudeClient{streamScripts: []streamScript{{msgs: []claude.Message{assistantMsg("Agreed."), resultMsg("sess-1")}}}}
+	b := newTestBrain(fake)
+	b.sessionID = "sess-1"
+	b.cfg.ClaudeMaxSessionTokens = 2000
+	turns := []Turn{
+		{Role: "user", Content: "Mira, the door is teal."},
+		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
+		{Role: "user", Content: "Ember, the safe code changed to 9921."},
+		{Role: "assistant", Content: strings.Repeat("long answer ", 400), PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+	}
+	if res := streamOnce(t, b, "Mira, what is the new code?", StreamOptions{CatchUp: &SessionCatchUp{Turns: turns, Seen: 2}}); res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	prompt := fake.streamPrompts[0]
+	if fake.streamOpts[0].ResumeID != "sess-1" {
+		t.Fatalf("one long line ended the live session: %q", fake.streamOpts[0].ResumeID)
+	}
+	requireCatchUp(t, prompt, []string{"9921", "more characters of this line omitted]", `"persona":"Ember"`}, []string{"earlier conversation records omitted]", strings.Repeat("long answer ", 400), "teal"})
+}
+
 func TestCatchUpTooLargeForOneRequestStartsFreshSessionWithBoundedReplay(t *testing.T) {
 	fake := &fakeClaudeClient{streamScripts: []streamScript{{msgs: []claude.Message{assistantMsg("Agreed."), resultMsg("sess-2")}}}}
 	b := newTestBrain(fake)
 	b.sessionID = "sess-1"
 	turns := catchUpTurns()
-	turns = append(turns[:2], append([]Turn{{Role: "user", Content: strings.Repeat("long ", maxCatchUpBytes/5)}}, turns[2:]...)...)
+	for i := range 12 {
+		turns = append(turns, Turn{Role: "user", Content: fmt.Sprintf("Line %d: %s", i, strings.Repeat("x", 8<<10))})
+	}
+	turns = append(turns, Turn{Role: "user", Content: "Newest line."})
 	if res := streamOnce(t, b, "Rex, do you agree?", StreamOptions{CatchUp: &SessionCatchUp{Turns: turns, Seen: 2}}); res.Err != nil {
 		t.Fatal(res.Err)
 	}
 	prompt := fake.streamPrompts[0]
 	if fake.streamOpts[0].ResumeID != "" {
-		t.Fatalf("an oversized catch-up resumed %q", fake.streamOpts[0].ResumeID)
+		t.Fatalf("lines that do not fit together resumed %q", fake.streamOpts[0].ResumeID)
 	}
-	if !strings.Contains(prompt, "[3 earlier conversation records omitted]") || strings.Contains(prompt, "long long") || strings.Contains(prompt, "cobalt") {
-		t.Fatalf("replay is not bounded with an omission marker:\n%.2000s", prompt)
-	}
-	if !strings.Contains(prompt, "Mira, what color is the door?") || !strings.Contains(prompt, "The door is teal.") {
-		t.Fatalf("replay lost the newest lines:\n%s", prompt)
-	}
-	if len(prompt) > maxCatchUpBytes {
+	requireCatchUp(t, prompt, []string{"earlier conversation records omitted]", "Newest line.", "Line 11:"}, []string{"cobalt", "Line 0:"})
+	if len(prompt) > maxCatchUpBytes+1024 {
 		t.Fatalf("prompt = %d bytes", len(prompt))
+	}
+}
+
+func TestCatchUpForASummaryKeepsTheLiveSession(t *testing.T) {
+	fake := &fakeClaudeClient{fullResults: []*claude.ClaudeResult{{Result: "Summary.", SessionID: "sess-1"}}}
+	b := newTestBrain(fake)
+	b.sessionID = "sess-1"
+	turns := catchUpTurns()
+	for i := range 12 {
+		turns = append(turns, Turn{Role: "user", Content: fmt.Sprintf("Line %d: %s", i, strings.Repeat("x", 8<<10))})
+	}
+	if _, err := b.ThinkFull(context.Background(), "Summarize.", StreamOptions{OmitTurnInstruction: true, TransientHistory: true, CatchUp: &SessionCatchUp{Turns: turns, Seen: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.runOpts[0].ResumeID != "sess-1" {
+		t.Fatalf("the summary did not come from the live session: %q", fake.runOpts[0].ResumeID)
+	}
+	requireCatchUp(t, fake.runPrompts[0], []string{"earlier conversation records omitted]", "Line 11:"}, []string{"cobalt"})
+}
+
+func TestCatchUpKeepsTheCompactionSummaryAheadOfLongLines(t *testing.T) {
+	fake := &fakeClaudeClient{streamScripts: []streamScript{{msgs: []claude.Message{assistantMsg("Agreed."), resultMsg("sess-2")}}}}
+	b := newTestBrain(fake)
+	b.ReseedContinuity([]Turn{{Role: "assistant", Content: "Summary: the vault code is cobalt."}})
+	turns := catchUpTurns()
+	for i := range 12 {
+		turns = append(turns, Turn{Role: "user", Content: fmt.Sprintf("Line %d: %s", i, strings.Repeat("x", 8<<10))})
+	}
+	if res := streamOnce(t, b, "Rex, do you agree?", StreamOptions{CatchUp: &SessionCatchUp{Turns: turns, Seen: 4}}); res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	requireCatchUp(t, fake.streamPrompts[0], []string{`"content":"Summary: the vault code is cobalt."`, "earlier conversation records omitted]", "Line 11:"}, []string{"Line 0:"})
+}
+
+func requireCatchUp(t *testing.T, prompt string, want, unwanted []string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(prompt, w) {
+			t.Fatalf("prompt lacks %q:\n%.3000s", w, prompt)
+		}
+	}
+	for _, u := range unwanted {
+		if strings.Contains(prompt, u) {
+			t.Fatalf("prompt carries %q:\n%.3000s", u, prompt)
+		}
 	}
 }
 
