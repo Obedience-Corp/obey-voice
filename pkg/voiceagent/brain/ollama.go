@@ -187,7 +187,7 @@ func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probe
 		return nil, err
 	}
 	embedCtx, embedCancel := context.WithTimeout(parent, 10*time.Second)
-	router, routerErr := newSemanticSkillRouter(embedCtx, client, cfg.OllamaEmbeddingModel, cfg.SkillsSimilarityThreshold, catalog)
+	router, routerErr := newSharedSemanticSkillRouter(embedCtx, cfg.OllamaHost, client, cfg.OllamaEmbeddingModel, cfg.SkillsSimilarityThreshold, catalog)
 	embedCancel()
 	if err := parent.Err(); err != nil {
 		return nil, fmt.Errorf("initialize ollama: %w", err)

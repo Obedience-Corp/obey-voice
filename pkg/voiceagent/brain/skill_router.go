@@ -35,11 +35,41 @@ type semanticSkillRouter struct {
 }
 
 func newSemanticSkillRouter(ctx context.Context, embedder skillEmbedder, model string, minScore float64, catalog []skills.Skill) (*semanticSkillRouter, error) {
+	return buildSemanticSkillRouter(ctx, embedder, model, minScore, catalog, embedSkillCatalog)
+}
+
+// newSharedSemanticSkillRouter reuses catalog embeddings across routers built
+// for the same host, embedding model and catalog text.
+func newSharedSemanticSkillRouter(ctx context.Context, host string, embedder skillEmbedder, model string, minScore float64, catalog []skills.Skill) (*semanticSkillRouter, error) {
+	model = strings.TrimSpace(model)
+	return buildSemanticSkillRouter(ctx, embedder, model, minScore, catalog, func(ctx context.Context, embedder skillEmbedder, model string, catalog []skills.Skill) ([][]float32, error) {
+		return sharedCatalogVectors.get(ctx, catalogVectorKey(host, model, catalog), func(ctx context.Context) ([][]float32, error) {
+			return embedSkillCatalog(ctx, embedder, model, catalog)
+		})
+	})
+}
+
+type catalogEmbedFunc func(context.Context, skillEmbedder, string, []skills.Skill) ([][]float32, error)
+
+func buildSemanticSkillRouter(ctx context.Context, embedder skillEmbedder, model string, minScore float64, catalog []skills.Skill, embed catalogEmbedFunc) (*semanticSkillRouter, error) {
 	model = strings.TrimSpace(model)
 	if embedder == nil || model == "" || len(catalog) == 0 {
 		return nil, nil
 	}
+	vectors, err := embed(ctx, embedder, model, catalog)
+	if err != nil {
+		return nil, err
+	}
+	return &semanticSkillRouter{
+		embedder: embedder,
+		model:    model,
+		catalog:  catalog,
+		vectors:  vectors,
+		minScore: semanticSkillThreshold(minScore),
+	}, nil
+}
 
+func embedSkillCatalog(ctx context.Context, embedder skillEmbedder, model string, catalog []skills.Skill) ([][]float32, error) {
 	inputs := make([]string, len(catalog))
 	for i, skill := range catalog {
 		inputs[i] = skillRoutingText(skill)
@@ -56,14 +86,7 @@ func newSemanticSkillRouter(ctx context.Context, embedder skillEmbedder, model s
 			return nil, fmt.Errorf("embedding skill catalog with model %q: skill %q returned an empty vector", model, catalog[i].Name)
 		}
 	}
-
-	return &semanticSkillRouter{
-		embedder: embedder,
-		model:    model,
-		catalog:  catalog,
-		vectors:  resp.Embeddings,
-		minScore: semanticSkillThreshold(minScore),
-	}, nil
+	return resp.Embeddings, nil
 }
 
 func semanticSkillThreshold(value float64) float64 {
