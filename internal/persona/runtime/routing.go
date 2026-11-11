@@ -114,11 +114,21 @@ func (s *Selector) fixedResponder() bool {
 		if p.Inactive || p.ID == live {
 			continue
 		}
-		if cfg, _, err := persona.ResolveAudioConfig(s.opts.Base, p); err == nil && slices.Contains(sharedHistoryProviders, cfg.BrainProvider) {
+		if _, ok := s.canTakeOver(p); ok {
 			return false
 		}
 	}
 	return true
+}
+
+// canTakeOver resolves the provider a persona would answer on and reports
+// whether the conversation can be handed to it.
+func (s *Selector) canTakeOver(p *persona.Profile) (string, bool) {
+	cfg, _, err := persona.ResolveAudioConfig(s.opts.Base, p)
+	if err != nil {
+		return "", false
+	}
+	return cfg.BrainProvider, slices.Contains(sharedHistoryProviders, cfg.BrainProvider)
 }
 
 // refuseOneWaySwitch keeps the conversation on a live provider that could not
@@ -133,7 +143,14 @@ func (s *Selector) refuseOneWaySwitch(address summon.Address) error {
 		return nil
 	}
 	target := address.PersonaID
-	if p, err := s.opts.Catalog.Load(target); err == nil && p.DisplayName != "" {
+	p, err := s.opts.Catalog.Load(target)
+	if err != nil {
+		return err
+	}
+	if provider, ok := s.canTakeOver(p); !ok {
+		return fmt.Errorf("persona %q: provider %q has no verified shared history projection", p.ID, provider)
+	}
+	if p.DisplayName != "" {
 		target = p.DisplayName
 	}
 	return fmt.Errorf("%s cannot rejoin this conversation once %s takes it over; say \"switch to %s\" to hand it over", live.DisplayName, target, target)

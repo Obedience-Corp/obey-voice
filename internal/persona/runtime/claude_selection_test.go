@@ -692,14 +692,22 @@ func TestClaudeWithoutReachablePersonasLeavesEveryInputToTheModel(t *testing.T) 
 			ember.Brain.Provider, ember.Brain.Model = "claude", ""
 			writeTestProfile(t, c.catalog.Dir, ember)
 		},
+		"shipped personas inheriting claude": func(c *claudeConversation) {
+			if err := os.RemoveAll(filepath.Join(c.catalog.Dir, "ember")); err != nil {
+				t.Fatal(err)
+			}
+			for _, p := range persona.Builtins(nil) {
+				writeTestProfile(t, c.catalog.Dir, *p)
+			}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := newClaudeConversation(t, 20)
 			setup(c)
 			c.start("mira", nil, nil)
-			c.say("Mira", "Ember, what do you think?", "switch to Ember")
+			c.say("Mira", "Ember, what do you think?", "switch to Ember", "Samantha, what do you think?")
 			ready := c.responses()
-			if len(ready) != 3 {
+			if len(ready) != 4 {
 				t.Fatalf("responses = %+v", ready)
 			}
 			for i, r := range ready {
@@ -733,6 +741,12 @@ func TestClaudeRefusesImplicitSwitchItCouldNotReturnFrom(t *testing.T) {
 	}
 	if len(c.ollamaRequests()) != 0 {
 		t.Fatal("a refused switch reached Ember")
+	}
+	nova := testProfile("nova", "Nova", "nova")
+	nova.Brain.Provider, nova.Brain.Model = "claude", ""
+	writeTestProfile(t, c.catalog.Dir, nova)
+	if err := c.p.RunTurnTextMode(t.Context(), "Nova, what do you think?"); err == nil || strings.Contains(err.Error(), "switch to") || !strings.Contains(err.Error(), `provider "claude" has no verified shared history projection`) {
+		t.Fatalf("a persona that cannot take over was offered a switch: %v", err)
 	}
 	c.say("@ember what do you think?")
 	if got := c.selector.Snapshot().PersonaID; got != "ember" {
