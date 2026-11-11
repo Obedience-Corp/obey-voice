@@ -270,8 +270,8 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 		}
 	})
 	selector, err := NewSelector(SelectionOptions{Base: c.base, Catalog: c.catalog, Pipeline: p, SessionID: c.sess.ID, Initial: binding,
-		Transcript: turns, InitialContexts: contexts, SessionProvider: c.sess.Provider, HostedNotified: c.sess.HostedNotified,
-		PersistHostedNotified: func(providers []string) error { return c.store.SaveHostedNotified(c.sess, providers) },
+		Transcript: turns, InitialContexts: contexts, SessionProvider: c.sess.Provider, HostedNotified: c.sess.HostedNotified, HostedNotifiedWhole: c.sess.HostedNotifiedWhole,
+		PersistHostedNotified: func(told, whole []string) error { return c.store.SaveHostedNotified(c.sess, told, whole) },
 		PersistContexts: func(turns []brain.Turn, s events.PersonaSelection, contexts brain.PersonaContexts) error {
 			if c.saveErr != nil {
 				return c.saveErr
@@ -285,7 +285,7 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 	// Runs before CloseBrains, so the brains it parks are joined there.
 	t.Cleanup(selector.Close)
 	p.AdmitInput = selector.Route
-	p.HostedNotice = selector.HostedNotice
+	p.HostedNotice, p.LiveHostedNotice = selector.HostedNotice, selector.LiveHostedNotice
 	events.Subscribe(p.Events, func(e events.Info) {
 		sent := 0
 		if data, err := os.ReadFile(c.log); err == nil {

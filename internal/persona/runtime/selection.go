@@ -44,9 +44,11 @@ type SelectionOptions struct {
 	Persist         func([]brain.Turn, events.PersonaSelection) error
 	InitialContexts brain.PersonaContexts
 	// HostedNotified lists the hosted providers a restored conversation has
-	// already told the user about; PersistHostedNotified saves that list.
+	// already told the user about, and HostedNotifiedWhole those of them told
+	// that the whole conversation is sent; PersistHostedNotified saves both.
 	HostedNotified        []string
-	PersistHostedNotified func([]string) error
+	HostedNotifiedWhole   []string
+	PersistHostedNotified func(told, whole []string) error
 	// Transcript is the restored canonical conversation. It is authoritative
 	// while the live provider keeps no shared history of its own.
 	Transcript []brain.Turn
@@ -177,7 +179,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	if len(opts.Transcript) > 0 {
 		startedOn = opts.SessionProvider
 	}
-	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, startedOn, opts.HostedNotified)
+	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, startedOn, opts.HostedNotified, opts.HostedNotifiedWhole)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok {
 		if state, exists := s.contexts[opts.Initial.PersonaID]; exists {
@@ -444,7 +446,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.opts.UseDefaults = false
 	s.retireParked(retireAll)
 	s.restored = restoredConversation{}
-	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, s.liveProvider(), nil)
+	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, s.liveProvider(), nil, nil)
 	s.transcript.reset(nil)
 	s.transcript.restoreSessions(nil)
 	s.mu.Lock()

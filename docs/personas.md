@@ -390,12 +390,19 @@ The second sentence follows what that persona's session will actually receive:
 their persona), and "What is said to it is sent to Claude." when the
 conversation is still empty. For a hosted persona whose provider receives the shared
 transcript (Codex, Muse Spark, Obey) it is "This conversation is sent to
-Muse Spark." The notice is given once per conversation and provider, is
+Muse Spark." The notice is given once per conversation and provider, and once
+more if a persona on that provider would receive the whole conversation after
+the user was told it receives only what is said from its invitation (a later
+persona first addressed under `whole_conversation`, for example). It also comes
+before `/compact` when compaction is the first request to that provider. It is
 forgotten when the conversation is cleared, and is saved with the session so a
 resumed conversation does not repeat it (a session saved before this existed
-repeats it once). It is shown by the host: no model receives it and it is not
-recorded as any persona's reply. A bare `Mira here.` address sends nothing and
-does not trigger it.
+repeats it once, and one saved before the whole-conversation case was recorded
+gives that notice again when it applies). It counts as given only once it was
+shown and spoken and the request went ahead: a turn stopped during the notice
+gives it again next time. It is shown by the host: no model receives it and it
+is not recorded as any persona's reply. A bare `Mira here.` address sends
+nothing and does not trigger it.
 
 A conversation that started on the hosted provider itself, such as a Claude-only
 install, gets the info line but no spoken notice, so it does not announce itself
