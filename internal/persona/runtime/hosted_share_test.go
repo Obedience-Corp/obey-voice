@@ -693,3 +693,23 @@ func TestHostedShareNamesWhoSpokeInItAfterItsViewIsSummarized(t *testing.T) {
 		})
 	}
 }
+
+func TestHostedShareNamesWhoSpokeInItAfterMaxHistoryTrimsTheirLines(t *testing.T) {
+	for _, provider := range hostedShareProviders {
+		t.Run(provider, func(t *testing.T) {
+			c := newConversation(t, 2, "ember", provider, "")
+			nova := testProfile("nova", "Nova", "nova")
+			nova.Brain.Model = ""
+			writeTestProfile(t, c.catalog.Dir, nova)
+			writeTestPrompt(t, c.base.PromptsDir, "nova", "You are {agent_name}.")
+			c.say(preInviteUser, "switch to Mira", "What do you think?", "switch to Nova", "Your view?", "switch to Mira", "One.", "Two.", "Three.")
+			last := c.lastHostedPrompt()
+			if provider != "codex" {
+				requireOmits(t, last, "Your view?")
+			}
+			spoken := spokenLine(t, last)
+			requireContains(t, spoken, "Nova")
+			requireOmits(t, spoken, "Ember")
+		})
+	}
+}
