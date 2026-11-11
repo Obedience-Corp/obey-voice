@@ -90,12 +90,20 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 		os.Exit(0)
 	}
 	text := fmt.Sprintf("Mira: Mira reply %d.", n)
-	if strings.Contains(req.Prompt, claudeStall) {
+	// Only the current request stalls; a conversation record line may quote
+	// an earlier stalled request.
+	stall := false
+	for line := range strings.Lines(req.Prompt) {
+		if !strings.HasPrefix(line, "{") && strings.Contains(line, claudeStall) {
+			stall = true
+		}
+	}
+	if stall {
 		text = "Mira: " + claudePartial
 	}
 	_ = out.Encode(map[string]any{"type": "system", "subtype": "init", "session_id": "claude-fixture"})
 	_ = out.Encode(map[string]any{"type": "assistant", "session_id": "claude-fixture", "message": map[string]any{"content": []map[string]string{{"type": "text", "text": text}}}})
-	if strings.Contains(req.Prompt, claudeStall) {
+	if stall {
 		time.Sleep(time.Minute)
 		os.Exit(0)
 	}

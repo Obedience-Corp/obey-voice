@@ -49,6 +49,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	token := rand.Text()
 	var turns []brain.Turn
 	var stagedContexts brain.PersonaContexts
+	var targetCursor *brain.PersonaContext // the selected persona's cursor when its provider keeps a session
 	var err, workerErr, durabilityErr error
 	unchanged, installed, rebind := false, false, false
 	// reused marks a parked provider, which stays parked if selection fails;
@@ -200,10 +201,18 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if !s.opts.Native.Silent {
 					voice = native.Voice
 				}
-			} else if parked := s.parkedFor(binding.PersonaID, next.BindingHash, scope.ConversationEpoch); parked != nil {
-				nextBrain, reused = parked, true
 			} else {
-				nextBrain, err = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewBrain(ctx, cfg) }, closeBrain)
+				if parked := s.parkedFor(binding.PersonaID, next.BindingHash, scope.ConversationEpoch); parked != nil {
+					// A session no longer aligned with the transcript cannot be caught up.
+					if _, ok := s.transcript.session(binding.PersonaID, s.sharedTurns()); ok {
+						nextBrain, reused = parked, true
+					} else {
+						s.retireParked(func(p parkedBrain) bool { return p.provider == parked })
+					}
+				}
+				if nextBrain == nil {
+					nextBrain, err = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewBrain(ctx, cfg) }, closeBrain)
+				}
 			}
 			if err != nil {
 				return fmt.Errorf("prepare persona brain: %w", err)
@@ -230,6 +239,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if !s.requiresSelection {
 				captureContext(stagedContexts, previous.PersonaID, oldBrain)
 			}
+			keepsSession := brain.KeepsPersonaSession(nextBrain)
+			if keepsSession {
+				cursor := s.sessionCursor(binding.PersonaID, turns)
+				targetCursor = &cursor
+				delete(stagedContexts, binding.PersonaID)
+			}
 			targetView := stagedContexts[binding.PersonaID].Reconcile(turns)
 			if native != nil {
 				if err := brain.ValidateNativeProjection(targetView.Working); err != nil {
@@ -248,9 +263,11 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if err := projection.ImportHistory(turns); err != nil {
 					return fmt.Errorf("project conversation: %w", err)
 				}
-			} else if !reused {
-				// Loading history would end a parked provider's session.
+			} else if !keepsSession {
 				nextBrain.LoadHistory(turns)
+			} else if !reused {
+				// A parked provider keeps its session; loading history would end it.
+				nextBrain.LoadHistory(turns[targetCursor.Session.From:])
 			}
 			captureContext(stagedContexts, binding.PersonaID, nextBrain)
 
@@ -342,7 +359,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if generation != s.generation || oldBrain != p.Brain || scope != p.ConversationScope() || p.ConversationRetired() {
 					return errors.New("persona selection belongs to a retired conversation boundary")
 				}
-				err := s.persistContexts(turns, next, stagedContexts)
+				err := s.persistContexts(turns, next, s.withSessions(stagedContexts, binding.PersonaID, targetCursor))
 				if session.WriteCommitted(err) {
 					// The file already contains this selection. Install the same
 					// binding and report uncertainty without pretending rollback.
@@ -385,10 +402,15 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			s.mu.Unlock()
 			s.requiresSelection = false
 			s.contexts = stagedContexts
-			if brain.KeepsSharedHistory(nextBrain) {
+			if targetCursor != nil {
+				// The host records the conversation again, starting from the
+				// turns the outgoing provider held.
+				s.transcript.reset(turns)
+			} else if brain.KeepsSharedHistory(nextBrain) {
 				// The projected provider now records the conversation itself.
 				s.transcript.reset(nil)
 			}
+			s.transcript.setSession(binding.PersonaID, targetCursor)
 			s.publicationMu.Unlock()
 			publicationLocked = false
 			if oldNative != nil {

@@ -153,8 +153,9 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	if err != nil {
 		return nil, fmt.Errorf("persona selection: pin response identity: %w", err)
 	}
-	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: opts.InitialContexts.Clone()}
+	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: replayContexts(opts.InitialContexts)}
 	s.transcript = newTranscript(func() string { return opts.Pipeline.ConversationScope().ConversationEpoch }, opts.Transcript)
+	s.transcript.restoreSessions(opts.InitialContexts)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok {
 		if state, exists := s.contexts[opts.Initial.PersonaID]; exists {
@@ -174,7 +175,18 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		}
 	}
 	captureContext(s.contexts, opts.Initial.PersonaID, opts.Pipeline.Brain)
-	if err := s.persistContexts(s.Transcript(), s.selected, s.contexts); err != nil {
+	if live := opts.Pipeline.Brain; brain.KeepsPersonaSession(live) {
+		turns := s.transcript.Turns()
+		cursor := s.sessionCursor(opts.Initial.PersonaID, turns)
+		delete(s.contexts, opts.Initial.PersonaID)
+		s.transcript.setSession(opts.Initial.PersonaID, &cursor)
+		// The host loaded the whole conversation into a provider that has no
+		// session yet; keep only what it may receive.
+		live.LoadHistory(turns[cursor.Session.From:])
+	} else {
+		s.transcript.setSession(opts.Initial.PersonaID, nil)
+	}
+	if err := s.persistContexts(s.Transcript(), s.selected, s.withSessions(s.contexts, "", nil)); err != nil {
 		if !session.WriteCommitted(err) {
 			return nil, fmt.Errorf("persist initial persona: %w", err)
 		}
@@ -395,6 +407,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.opts.UseDefaults = false
 	s.retireParked(retireAll)
 	s.transcript.reset(nil)
+	s.transcript.restoreSessions(nil)
 	s.mu.Lock()
 	s.requiresSelection = true
 	s.contexts = make(brain.PersonaContexts)

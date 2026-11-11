@@ -27,6 +27,7 @@ func (s *Selector) ContextSnapshots() brain.PersonaContexts {
 	if !restoring {
 		captureContext(contexts, id, s.opts.Pipeline.Brain)
 	}
+	s.transcript.addSessions(contexts, "")
 	return contexts
 }
 
@@ -34,7 +35,8 @@ func (s *Selector) ContextSnapshots() brain.PersonaContexts {
 func (s *Selector) RestoreContexts(contexts brain.PersonaContexts) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.contexts = contexts.Clone()
+	s.contexts = replayContexts(contexts)
+	s.transcript.restoreSessions(contexts)
 }
 func (s *Selector) persistContexts(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
 	if s.opts.PersistContexts != nil {

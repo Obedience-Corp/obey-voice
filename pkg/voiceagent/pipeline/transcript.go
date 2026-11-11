@@ -20,6 +20,18 @@ type Transcript interface {
 	brain.ReplyMediaWriter
 }
 
+// SessionTranscript is a Transcript that also tracks, per persona, how much
+// of the conversation a provider keeping its own session already holds.
+type SessionTranscript interface {
+	Transcript
+	// CatchUp returns what the persona's session may receive and the
+	// transcript length it covers, or false when the persona has no cursor.
+	CatchUp(personaID string) (brain.SessionCatchUp, int, bool)
+	// AppendSeen records a completed request whose catch-up covered the
+	// transcript up to covered, and marks its turns seen by the persona.
+	AppendSeen(epoch, personaID string, covered int, turns ...brain.Turn) error
+}
+
 // transcriptFor returns the host transcript when provider does not keep the
 // shared history itself.
 func (p *Pipeline) transcriptFor(provider brain.Provider) Transcript {
@@ -74,7 +86,9 @@ func (r *transcriptRecording) wait() {
 
 // startRecordedStream starts the live provider. When the host owns the
 // transcript, the request and the text delivered from it are recorded under
-// the response identity once the provider finishes.
+// the response identity once the provider finishes. A provider keeping its
+// own session receives the turns it has not seen, and they count as seen only
+// once the provider finishes without error.
 func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, *transcriptRecording, error) {
 	t := p.transcriptFor(p.Brain)
 	if t == nil {
@@ -83,6 +97,13 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 	}
 	epoch := p.ConversationScope().ConversationEpoch
 	started := time.Now().UTC()
+	var sessions SessionTranscript
+	covered := 0
+	if s, ok := t.(SessionTranscript); ok && opts.Identity != nil && brain.KeepsPersonaSession(p.Brain) {
+		if catchUp, n, ok := s.CatchUp(opts.Identity.PersonaID); ok {
+			opts.CatchUp, sessions, covered = &catchUp, s, n
+		}
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := p.startBrainStream(ctx, input, opts)
 	if err != nil {
@@ -153,7 +174,11 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 				err = ctx.Err()
 			}
 			if turns := requestTurns(input, opts, delivered.String(), err, started); len(turns) > 0 {
-				_ = t.Append(epoch, turns...)
+				if sessions != nil && err == nil {
+					_ = sessions.AppendSeen(epoch, opts.Identity.PersonaID, covered, turns...)
+				} else {
+					_ = t.Append(epoch, turns...)
+				}
 			}
 		}
 		if hasResult {

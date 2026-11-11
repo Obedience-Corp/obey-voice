@@ -29,6 +29,9 @@ type LiveRouteRequest struct {
 // work when this limit is reached, preserving the complete request and history.
 var ErrHarnessRouteContextLimit = errors.New("harness route context exceeds 128 KiB")
 
+// harnessRouteContextBytes is the most context one harness request carries.
+const harnessRouteContextBytes = 128 << 10
+
 // HarnessRouting is request-local host guidance, never persisted as user text.
 type HarnessRouting struct {
 	WorkersAvailable bool
@@ -84,7 +87,7 @@ func classifyHarnessRoute(ctx context.Context, cfg *config.Config, req LiveRoute
 	}
 	// Do not silently discard user constraints to admit work. The host handles
 	// this routing-only limit by continuing the normal conversational path.
-	if len(payload) > 128<<10 {
+	if len(payload) > harnessRouteContextBytes {
 		return StreamResult{}, ErrHarnessRouteContextLimit
 	}
 	text, err := infer(ctx, BatchRequest{

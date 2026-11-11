@@ -47,7 +47,7 @@ func TestApplicationContextIsRequestSpecificAcrossProviders(t *testing.T) {
 				switch provider {
 				case providerClaude:
 					b := &Brain{cfg: cfg, history: turns, sessionID: session}
-					return b.buildPrompt(true)
+					return b.buildPrompt(StreamOptions{OmitTurnInstruction: true})
 				case providerCursor:
 					b := &CursorBrain{cfg: cfg, history: turns, sessionID: session}
 					return b.buildPrompt(true)
