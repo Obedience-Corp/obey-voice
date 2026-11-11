@@ -389,18 +389,16 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		}
 		err := result.Err
 		switch {
-		case !hasResult:
-			err = errors.New("provider ended without a result")
 		case ctx.Err() != nil:
 			// The turn stopped this request, so what it delivered was cut
 			// short whatever the provider reports, in its own terms or not.
-			err = ctx.Err()
+			err, result.Recovered = ctx.Err(), false
+		case !hasResult:
+			err = errors.New("provider ended without a result")
 		}
 		rec.finish(result.Route, err)
 		// The turn ends as the transcript records it.
-		if result.Err == nil {
-			result.Err = err
-		}
+		result.Err = err
 		done <- result
 	}()
 	return &brain.Stream{Chunks: out, Thinking: thinking, Done: done}, rec, nil
