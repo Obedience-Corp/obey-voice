@@ -162,10 +162,12 @@ In legacy mode, two singleton limits bound spawned work.
 `voice_worker_max_concurrent` (default `1`) is how many jobs run at once; the
 rest wait in order, and "what's happening" names the running job first, then
 counts the others ("Also 1 more running and 1 queued.").
-`voice_worker_job_budget` (default `600` seconds) is the longest any one job
-may run: past it the job is stopped, `job_aborted` carries `reason: budget`,
-and she says so once — "I stopped {task} after 10 minutes. It ran past its
-budget." A job you cancel yourself carries `reason: cancelled`; the cancel
+`voice_worker_job_budget` (default `0`, no limit) optionally caps how long any
+one job may run. With no limit a job runs until it finishes or you cancel it,
+and with one job at a time a stuck job holds the queue until then. When a
+limit is set and a job passes it, the job is stopped, `job_aborted` carries
+`reason: budget`, and she says so once — "I stopped {task} after 10 minutes.
+It ran past its budget." A job you cancel yourself carries `reason: cancelled`; the cancel
 line above is spoken once for the batch, never once per job.
 
 Both stops are the job table's own act, not a request to the worker: at the

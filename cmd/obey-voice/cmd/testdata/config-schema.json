@@ -1363,11 +1363,11 @@
     {
       "key": "voice_worker_job_budget",
       "type": "int",
-      "default": 600,
+      "default": 0,
       "allows_empty": false,
       "group": "brain",
       "title": "Job time budget",
-      "help": "Longest a spawned job may run before it is stopped and you are told. Zero means no limit.",
+      "help": "Optional limit on how long a spawned job may run before it is stopped and you are told. Zero, the default, means no limit.",
       "unit": "seconds",
       "min": 0,
       "max": 86400,
