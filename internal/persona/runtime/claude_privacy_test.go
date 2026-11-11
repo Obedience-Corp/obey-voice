@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -67,5 +68,33 @@ func TestClaudeReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 		if r.State == work.Pending || r.State == work.Ready {
 			t.Fatalf("a result is still waiting: %+v", r)
 		}
+	}
+}
+
+func TestLoadHistoryGivesAPersonaOnClaudeOnlyItsShare(t *testing.T) {
+	other := []brain.Turn{
+		{Role: "user", Content: "Another conversation: the safe code is 4711."},
+		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "other"},
+	}
+	held := func(c *claudeConversation) []string {
+		var lines []string
+		for _, turn := range c.p.Brain.History() {
+			lines = append(lines, turn.Content)
+		}
+		return lines
+	}
+	c := newClaudeConversation(t, 20)
+	c.selector.LoadHistory(other)
+	if got := held(c); len(got) != 0 {
+		t.Fatalf("a persona never addressed holds %q", got)
+	}
+	c.say("Note the door is teal.")
+	c.selector.LoadHistory(c.selector.Transcript())
+	if got := held(c); len(got) != 2 || got[0] != "Note the door is teal." {
+		t.Fatalf("the persona's own share = %q", got)
+	}
+	c.selector.LoadHistory(other)
+	if got := held(c); len(got) != 0 {
+		t.Fatalf("another conversation was loaded: %q", got)
 	}
 }
