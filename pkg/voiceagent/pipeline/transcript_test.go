@@ -135,3 +135,28 @@ func TestHostTranscriptRecordsLocalAcknowledgement(t *testing.T) {
 		t.Fatalf("acknowledgement transcript = %+v", turns)
 	}
 }
+
+func TestHostTranscriptRecordsVoiceTurns(t *testing.T) {
+	transcript := &recordedTranscript{}
+	p := &Pipeline{STT: &fakeSTT{text: "what's for dinner"}, Brain: &fakeBrain{chunks: []string{"Soup tonight."}}, VAD: &fakeVAD{}, Capture: newFakeCapture(), Events: events.NewBus(), Transcript: transcript}
+	p.AdmitInput = admitAs("voice-1", func(input string) string { return input })
+	if _, err := p.RunTurn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	turns := transcript.Turns()
+	if len(turns) != 2 || turns[0].Content != "what's for dinner" || turns[1].Content != "Soup tonight." || turns[1].ResponseID != "voice-1" || turns[1].Disposition != "" {
+		t.Fatalf("voice transcript = %+v", turns)
+	}
+
+	p.Brain = &stallingBrain{partial: "Soup, and then"}
+	p.AdmitInput = admitAs("voice-2", func(input string) string { return input })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var once sync.Once
+	events.Subscribe(p.Events, func(events.ResponseDelta) { once.Do(cancel) })
+	_, _ = p.RunTurn(ctx)
+	turns = transcript.Turns()
+	if len(turns) != 4 || turns[3].Content != "Soup, and then" || turns[3].Disposition != "interrupted" || turns[3].ResponseID != "voice-2" {
+		t.Fatalf("interrupted voice transcript = %+v", turns)
+	}
+}

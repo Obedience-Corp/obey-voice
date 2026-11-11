@@ -145,8 +145,12 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		}
 		if result.Route == "" {
 			err := result.Err
-			if !hasResult {
+			switch {
+			case !hasResult:
 				err = errors.New("provider ended without a result")
+			case err != nil && ctx.Err() != nil:
+				// Providers report a stopped request in their own terms.
+				err = ctx.Err()
 			}
 			if turns := requestTurns(input, opts, delivered.String(), err, started); len(turns) > 0 {
 				_ = t.Append(epoch, turns...)
