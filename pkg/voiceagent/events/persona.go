@@ -31,6 +31,9 @@ type PersonaSelection struct {
 	AudioTranscript   string                          `json:"audio_transcript,omitempty"`
 	AudioRetained     bool                            `json:"audio_retained,omitempty"`
 	Reason            string                          `json:"reason"`
+	// Hosted is set when the persona's backend sends conversation text off
+	// this machine.
+	Hosted bool `json:"hosted,omitempty"`
 }
 
 func (PersonaSelection) eventType() string { return "persona_selected" }
@@ -49,6 +52,10 @@ type ResponseEnvelope struct {
 	SelectionRevision uint64 `json:"selection_revision"`
 	VoiceProvider     string `json:"voice_provider"`
 	Voice             string `json:"voice"`
+	BrainProvider     string `json:"brain_provider,omitempty"`
+	// Hosted is set when the responding persona's backend sends conversation
+	// text off this machine.
+	Hosted bool `json:"hosted,omitempty"`
 }
 
 // WithResponse carries admitted identity through asynchronous speech stages.

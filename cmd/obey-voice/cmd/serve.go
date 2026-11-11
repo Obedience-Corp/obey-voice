@@ -610,6 +610,12 @@ func (s *servePersonaSwitcher) initialize() error {
 		Participation:   s.sessions.sess.Participation,
 		InitialContexts: s.sessions.sess.PersonaContexts,
 		Transcript:      s.sessions.sess.Turns,
+		HostedNotified:  s.sessions.sess.HostedNotified,
+		PersistHostedNotified: func(providers []string) error {
+			s.sessions.mu.Lock()
+			defer s.sessions.mu.Unlock()
+			return session.DefaultStore().SaveHostedNotified(s.sessions.sess, providers)
+		},
 		PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
 			s.sessions.mu.Lock()
 			defer s.sessions.mu.Unlock()
@@ -640,6 +646,7 @@ func (s *servePersonaSwitcher) initialize() error {
 	s.sessions.transcript = s.selector.Transcript
 	s.sessions.load = s.selector.LoadHistory
 	s.pipeline.AdmitInput = s.selector.Route
+	s.pipeline.HostedNotice = s.selector.HostedNotice
 	s.pipeline.RouteHandoff = s.selector.RouteHandoff
 	s.pipeline.EndDiscussion = s.selector.EndDiscussion
 	s.pipeline.CompleteDiscussion = s.selector.RecordDiscussionResponse
@@ -771,6 +778,7 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, cfg.ConversationDirectories)
 	s.selector.RestoreContexts(restored.PersonaContexts)
 	s.selector.RestoreTranscript(restored.Turns, restored.Provider)
+	s.selector.RestoreNotices(restored.HostedNotified)
 	_, err = s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
 	if err != nil && s.pipeline.Events != nil {
 		s.pipeline.Events.Emit(events.Error{Stage: "persona", Message: fmt.Sprintf("Conversation restored; select a valid persona before continuing: %v", err)})

@@ -43,6 +43,10 @@ type SelectionOptions struct {
 	Initial         *persona.SessionBinding
 	Persist         func([]brain.Turn, events.PersonaSelection) error
 	InitialContexts brain.PersonaContexts
+	// HostedNotified lists the hosted providers a restored conversation has
+	// already told the user about; PersistHostedNotified saves that list.
+	HostedNotified        []string
+	PersistHostedNotified func([]string) error
 	// Transcript is the restored canonical conversation. It is authoritative
 	// while the live provider keeps no shared history of its own.
 	Transcript []brain.Turn
@@ -85,6 +89,7 @@ type Selector struct {
 	transcript          *transcript
 	parked              []parkedBrain // least recently used first; guarded by transitionMu
 	restored            restoredConversation
+	notices             hostedNotices
 	requiresSelection   bool // explicit restore may have no usable saved persona
 }
 
@@ -168,6 +173,11 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	s.transcript = newTranscript(func() string { return opts.Pipeline.ConversationScope().ConversationEpoch }, opts.Transcript)
 	s.transcript.restoreSessions(opts.InitialContexts)
 	s.restored = restoredConversation{personaID: opts.Initial.PersonaID, provider: opts.SessionProvider}
+	startedOn := ""
+	if len(opts.Transcript) == 0 {
+		startedOn = opts.Initial.BrainProvider
+	}
+	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, startedOn, opts.HostedNotified)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok {
 		if state, exists := s.contexts[opts.Initial.PersonaID]; exists {
@@ -283,6 +293,9 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 	// Saving them must not trigger a responder brain/voice reload next turn.
 	responseCfg := cfg.Clone()
 	responseCfg.VoiceWorkers = nil
+	// Sharing applies to personas first addressed after a change; it must not
+	// reselect the persona that is already answering.
+	responseCfg.HostedPersonaSharing = ""
 	// Only the digest is exposed; credential-bearing config is never logged.
 	effectiveAudio := b.AudioConfig()
 	// Saved inactive native settings do not change a Standard response binding.
@@ -303,6 +316,7 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 		Generation: generation, BrainProvider: b.BrainProvider, BrainModel: b.BrainModel,
 		VoiceProvider: cfg.TTSProvider, Voice: config.TTSVoiceFor(cfg, cfg.TTSProvider), Reason: reason,
 		AudioMode: effectiveAudio.Mode, AudioControls: effectiveAudio.Controls, AudioTranscript: effectiveAudio.Transcript, AudioRetained: effectiveAudio.RetainAudio,
+		Hosted: brain.IsHosted(b.BrainProvider),
 	}
 }
 
@@ -401,6 +415,7 @@ func responseEnvelope(selected events.PersonaSelection) events.ResponseEnvelope 
 		SessionID: selected.SessionID, ConversationEpoch: selected.ConversationEpoch, ResponseID: rand.Text(),
 		PersonaID: selected.PersonaID, DisplayName: selected.DisplayName, PromptHash: selected.PromptHash,
 		BindingHash: selected.BindingHash, SelectionRevision: selected.Revision, VoiceProvider: selected.VoiceProvider, Voice: selected.Voice,
+		BrainProvider: selected.BrainProvider, Hosted: selected.Hosted,
 	}
 }
 
@@ -429,6 +444,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.opts.UseDefaults = false
 	s.retireParked(retireAll)
 	s.restored = restoredConversation{}
+	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, s.liveProvider(), nil)
 	s.transcript.reset(nil)
 	s.transcript.restoreSessions(nil)
 	s.mu.Lock()

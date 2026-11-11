@@ -13,12 +13,12 @@ import (
 // at the end of the transcript or at the reply that handed it the floor. The
 // persona's cursor keeps that point for as long as it stays on the provider;
 // lines from before it, including the persona's own on another backend, are
-// never sent. The one exception is a conversation the persona inherits (see
-// inheritedConversation), which it receives from the start. Returning 0 here
-// would share the whole conversation instead.
-func sessionShareStart(turns []brain.Turn, handoff, inherited bool) int {
+// never sent. The exceptions are a conversation the persona inherits (see
+// inheritedConversation) and the user's choice to share the whole
+// conversation; either way it receives the conversation from the start.
+func sessionShareStart(turns []brain.Turn, handoff, inherited, whole bool) int {
 	switch {
-	case inherited:
+	case inherited || whole:
 		return 0
 	case handoff && len(turns) > 0 && turns[len(turns)-1].Role == "assistant":
 		return len(turns) - 1
@@ -65,7 +65,7 @@ func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn,
 			return cursor
 		}
 	}
-	from := sessionShareStart(turns, handoff, s.restored.inheritedConversation(personaID, provider, turns))
+	from := sessionShareStart(turns, handoff, s.restored.inheritedConversation(personaID, provider, turns), s.sharesWholeConversation())
 	return brain.SessionContext(turns, from, from)
 }
 

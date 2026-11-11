@@ -167,6 +167,10 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		return original, p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
 	}
 	text = admission.Request
+	if err := p.announceHosted(ctx, metrics, turn); err != nil {
+		turn.finish(TurnInterrupted)
+		return original, err
+	}
 	if err := p.validateRetainedImages(ctx); err != nil {
 		turn.finish(TurnFailed)
 		return original, err

@@ -428,6 +428,10 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			InitialContexts: sess.PersonaContexts,
 			Transcript:      sess.Turns,
 			SessionProvider: sess.Provider,
+			HostedNotified:  sess.HostedNotified,
+			PersistHostedNotified: func(providers []string) error {
+				return session.DefaultStore().SaveHostedNotified(sess, providers)
+			},
 			PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
 				return session.DefaultStore().SaveSelectionState(sess, turns, selected, contexts)
 			},
@@ -461,6 +465,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			return pipeline.ResponseAdmission{Envelope: envelope}, err
 		}
 		p.AdmitInput = selector.Route
+		p.HostedNotice = selector.HostedNotice
 		p.RouteHandoff = selector.RouteHandoff
 		p.EndDiscussion = selector.EndDiscussion
 		p.CompleteDiscussion = selector.RecordDiscussionResponse

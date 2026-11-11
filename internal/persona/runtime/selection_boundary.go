@@ -89,6 +89,9 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			}
 			previous = s.Snapshot()
 			currentScope := s.opts.Pipeline.ConversationScope()
+			if dropped, stale := s.notices.sync(currentScope.ConversationEpoch, s.liveProvider()), s.notices.takeStale(); dropped || stale {
+				s.persistNotices()
+			}
 			if s.opts.Native != nil && (!currentScope.Valid() || currentScope.SessionID != s.opts.SessionID) {
 				return errors.New("native selection requires a live matching conversation scope")
 			}

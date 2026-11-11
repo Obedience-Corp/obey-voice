@@ -116,6 +116,10 @@ type Pipeline struct {
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.
 	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)
+	// HostedNotice is asked, once the responding persona is known and before
+	// anything is sent to the live provider, whether the user must first be told
+	// that the persona's backend is hosted.
+	HostedNotice func(events.ResponseEnvelope) (HostedNotice, bool)
 	// Decisions is off by default. The host configures independent points; a
 	// ready proposal still passes the ordinary worker admission policy.
 	Decisions decision.Controller

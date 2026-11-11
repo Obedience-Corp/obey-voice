@@ -240,14 +240,17 @@ func TestSessionShareStartIsWhereThePersonaIsAddressedOnItsProvider(t *testing.T
 		name               string
 		turns              []brain.Turn
 		handoff, inherited bool
+		whole              bool
 		want               int
 	}{
-		{"addressed now, after answering on another provider", answered, false, false, 3},
-		{"handed the floor", handedOff, true, false, 1},
-		{"addressed after a user line", handedOff[:1], true, false, 1},
-		{"inherits the restored conversation", answered, false, true, 0},
+		{"addressed now, after answering on another provider", answered, false, false, false, 3},
+		{"handed the floor", handedOff, true, false, false, 1},
+		{"addressed after a user line", handedOff[:1], true, false, false, 1},
+		{"inherits the restored conversation", answered, false, true, false, 0},
+		{"shares the whole conversation", answered, false, false, true, 0},
+		{"shares the whole conversation when handed the floor", handedOff, true, false, true, 0},
 	} {
-		if got := sessionShareStart(tc.turns, tc.handoff, tc.inherited); got != tc.want {
+		if got := sessionShareStart(tc.turns, tc.handoff, tc.inherited, tc.whole); got != tc.want {
 			t.Errorf("%s: share start = %d, want %d", tc.name, got, tc.want)
 		}
 	}

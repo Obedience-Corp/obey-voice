@@ -194,6 +194,9 @@ type Config struct {
 	PersonaRoutingTimeout     int    `mapstructure:"persona_routing_timeout"`
 	GroupParticipationEnabled bool   `mapstructure:"group_participation_enabled"`
 	GroupParticipationMode    string `mapstructure:"group_participation_mode"`
+	// HostedPersonaSharing is what a persona on a hosted backend receives of a
+	// shared conversation: "from_invite" (default) or "whole_conversation".
+	HostedPersonaSharing string `mapstructure:"hosted_persona_sharing"`
 
 	BrainProvider      string `mapstructure:"brain_provider"`
 	DecisionEnabled    bool   `mapstructure:"decision_enabled"`
