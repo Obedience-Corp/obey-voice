@@ -240,10 +240,23 @@ func (b *slowStopBrain) ThinkStream(ctx context.Context, _ string, _ brain.Strea
 	return &brain.Stream{Chunks: out, Done: done}, nil
 }
 
+func (b *slowStopBrain) AppendAssistantResponseWithIdentity(string, brain.TurnIdentity) error {
+	if b.active.Load() > 0 {
+		b.overlaps.Add(1)
+	}
+	return nil
+}
+
 func TestHostTranscriptInterruptDoesNotWaitForProviderToStop(t *testing.T) {
 	transcript := &recordedTranscript{}
 	b := &slowStopBrain{stop: 1500 * time.Millisecond}
 	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
+	if err := p.BeginConversationIdentity("interrupt"); err != nil {
+		t.Fatal(err)
+	}
+	jobs := job.NewTable(t.Context())
+	t.Cleanup(jobs.Close)
+	NewAgency(p, jobs, nil, &config.Config{}, nil).Wire()
 	p.AdmitInput = admitAs("first", func(input string) string { return input })
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -261,15 +274,18 @@ func TestHostTranscriptInterruptDoesNotWaitForProviderToStop(t *testing.T) {
 		t.Fatalf("interrupted reply was not recorded when the turn returned: %+v", turns)
 	}
 
+	p.Agency.mu.Lock()
+	p.Agency.workerReplies = append(p.Agency.workerReplies, workerReply{workerOrigin: workerOrigin{Envelope: events.ResponseEnvelope{PersonaID: "mira", ResponseID: "worker"}}, Text: "The report is ready."})
+	p.Agency.mu.Unlock()
 	p.AdmitInput = admitAs("second", func(input string) string { return input })
 	if err := p.RunTurnTextMode(t.Context(), "Try again."); err != nil {
 		t.Fatal(err)
 	}
 	if n := b.overlaps.Load(); n != 0 {
-		t.Fatalf("next request ran while the stopped one was still ending (%d overlaps)", n)
+		t.Fatalf("the provider was used while the stopped request was still ending (%d overlaps)", n)
 	}
 	turns = transcript.Turns()
-	if len(turns) != 4 || turns[3].Content != "Second answer." || turns[3].ResponseID != "second" {
+	if len(turns) != 5 || turns[2].ResponseID != "worker" || turns[4].Content != "Second answer." || turns[4].ResponseID != "second" {
 		t.Fatalf("stopped reply was recorded again or out of order: %+v", turns)
 	}
 }

@@ -55,6 +55,9 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 	if !p.BackgroundPending() || p.HasCapturedInput() || ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if err := p.awaitProvider(ctx); err != nil {
+		return err
+	}
 	if p.hasWorkerReplies() {
 		return p.commitWorkerReplies()
 	}
