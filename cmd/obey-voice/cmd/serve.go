@@ -769,7 +769,7 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	}
 	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, cfg.ConversationDirectories)
 	s.selector.RestoreContexts(restored.PersonaContexts)
-	s.selector.RestoreTranscript(restored.Turns)
+	s.selector.RestoreTranscript(restored.Turns, restored.Provider)
 	_, err = s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
 	if err != nil && s.pipeline.Events != nil {
 		s.pipeline.Events.Emit(events.Error{Stage: "persona", Message: fmt.Sprintf("Conversation restored; select a valid persona before continuing: %v", err)})

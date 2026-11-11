@@ -269,7 +269,7 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 		}
 	})
 	selector, err := NewSelector(SelectionOptions{Base: c.base, Catalog: c.catalog, Pipeline: p, SessionID: c.sess.ID, Initial: binding,
-		Transcript: turns, InitialContexts: contexts,
+		Transcript: turns, InitialContexts: contexts, SessionProvider: c.sess.Provider,
 		PersistContexts: func(turns []brain.Turn, s events.PersonaSelection, contexts brain.PersonaContexts) error {
 			if c.saveErr != nil {
 				return c.saveErr

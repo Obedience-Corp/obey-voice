@@ -237,16 +237,17 @@ func TestSessionShareStartIsWhereThePersonaIsAddressedOnItsProvider(t *testing.T
 		{Role: "assistant", Content: "@Mira what do you think?", PersonaID: "ember"},
 	}
 	for _, tc := range []struct {
-		name    string
-		turns   []brain.Turn
-		handoff bool
-		want    int
+		name               string
+		turns              []brain.Turn
+		handoff, inherited bool
+		want               int
 	}{
-		{"addressed now, after answering on another provider", answered, false, 3},
-		{"handed the floor", handedOff, true, 1},
-		{"addressed after a user line", handedOff[:1], true, 1},
+		{"addressed now, after answering on another provider", answered, false, false, 3},
+		{"handed the floor", handedOff, true, false, 1},
+		{"addressed after a user line", handedOff[:1], true, false, 1},
+		{"inherits the restored conversation", answered, false, true, 0},
 	} {
-		if got := sessionShareStart(tc.turns, tc.handoff); got != tc.want {
+		if got := sessionShareStart(tc.turns, tc.handoff, tc.inherited); got != tc.want {
 			t.Errorf("%s: share start = %d, want %d", tc.name, got, tc.want)
 		}
 	}
@@ -278,6 +279,55 @@ func TestPersonaMovedOntoClaudeSendsNothingFromItsLocalTurns(t *testing.T) {
 	for _, req := range requests {
 		requireOmits(t, req.Prompt, "4711", "Thanks.")
 	}
+}
+
+func TestRestoredConversationFromBeforePersonaIdentityKeepsItsContext(t *testing.T) {
+	legacy := []brain.Turn{{Role: "user", Content: "Remember the code cobalt."}, {Role: "samantha", Content: "Noted, cobalt."}}
+	c := newClaudeConversation(t, 20)
+	c.start("mira", legacy, nil)
+	c.say("What was the code?")
+	requireContains(t, lastClaudeRequest(t, c.log).Prompt, `"content":"Remember the code cobalt."`, `"content":"Noted, cobalt."`)
+	if cursor := c.saved().PersonaContexts["mira"]; cursor.Session == nil || cursor.Session.From != 0 {
+		t.Fatalf("saved cursor = %+v", cursor)
+	}
+
+	nova := testProfile("nova", "Nova", "nova")
+	nova.Brain.Provider, nova.Brain.Model = "claude", ""
+	for name, setup := range map[string]func(*claudeConversation) []brain.Turn{
+		"a reply from another persona": func(*claudeConversation) []brain.Turn {
+			return append(slices.Clone(legacy), brain.Turn{Role: "assistant", Content: "Ember agrees.", PersonaID: "ember", PersonaDisplayName: "Ember"})
+		},
+		"a session created on another backend": func(c *claudeConversation) []brain.Turn {
+			c.sess.Provider = "ollama"
+			return legacy
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newClaudeConversation(t, 20)
+			c.start("mira", setup(c), nil)
+			c.say("What was the code?")
+			requireOmits(t, lastClaudeRequest(t, c.log).Prompt, "cobalt")
+		})
+	}
+	t.Run("restored into a running host", func(t *testing.T) {
+		c := newClaudeConversation(t, 20)
+		c.selector.RestoreSession(c.sess.ID, "mira", "Mira", "")
+		c.selector.RestoreContexts(nil)
+		c.selector.RestoreTranscript(legacy, "claude")
+		if _, err := c.selector.Select(t.Context(), "mira", "resume"); err != nil {
+			t.Fatal(err)
+		}
+		c.say("What was the code?")
+		requireContains(t, lastClaudeRequest(t, c.log).Prompt, `"content":"Noted, cobalt."`)
+	})
+	t.Run("another persona selected first", func(t *testing.T) {
+		c := newClaudeConversation(t, 20)
+		writeTestProfile(t, c.catalog.Dir, nova)
+		writeTestPrompt(t, c.base.PromptsDir, "nova", "You are {agent_name}.")
+		c.start("mira", legacy, nil)
+		c.say("switch to Nova", "What was the code?")
+		requireOmits(t, lastClaudeRequest(t, c.log).Prompt, "cobalt")
+	})
 }
 
 func TestClaudeSelectedAtLaunchButNeverAddressedStartsWhereItIsAddressed(t *testing.T) {

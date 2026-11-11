@@ -13,12 +13,42 @@ import (
 // at the end of the transcript or at the reply that handed it the floor. The
 // persona's cursor keeps that point for as long as it stays on the provider;
 // lines from before it, including the persona's own on another backend, are
-// never sent. Returning 0 here would share the whole conversation instead.
-func sessionShareStart(turns []brain.Turn, handoff bool) int {
-	if handoff && len(turns) > 0 && turns[len(turns)-1].Role == "assistant" {
+// never sent. The one exception is a conversation the persona inherits (see
+// inheritedConversation), which it receives from the start. Returning 0 here
+// would share the whole conversation instead.
+func sessionShareStart(turns []brain.Turn, handoff, inherited bool) int {
+	switch {
+	case inherited:
+		return 0
+	case handoff && len(turns) > 0 && turns[len(turns)-1].Role == "assistant":
 		return len(turns) - 1
 	}
 	return len(turns)
+}
+
+// restoredConversation is a saved conversation from before replies carried a
+// persona, and the backend its session was created on.
+type restoredConversation struct{ personaID, provider string }
+
+// inheritedConversation reports whether personaID, on provider, receives a
+// restored conversation from its start: it is the persona the conversation was
+// restored with, the session was created on that provider, and every reply
+// still carries no persona, so that one responder gave them all.
+func (r restoredConversation) inheritedConversation(personaID, provider string, turns []brain.Turn) bool {
+	if r.personaID == "" || r.personaID != personaID || r.provider != provider {
+		return false
+	}
+	replied := false
+	for _, t := range turns {
+		if t.Role != "assistant" && t.Role != "samantha" {
+			continue
+		}
+		if t.PersonaID != "" || t.PersonaDisplayName != "" {
+			return false
+		}
+		replied = true
+	}
+	return replied
 }
 
 func answeredBy(personaID string) func(brain.Turn) bool {
@@ -29,13 +59,13 @@ func answeredBy(personaID string) func(brain.Turn) bool {
 // otherwise a new one that has seen nothing from its share start. A cursor
 // whose persona has neither received nor answered anything belongs to a
 // persona selected but never addressed, so it starts again where it is.
-func (s *Selector) sessionCursor(personaID string, turns []brain.Turn, handoff bool) brain.PersonaContext {
+func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn, handoff bool) brain.PersonaContext {
 	if cursor, ok := s.transcript.session(personaID, turns); ok {
 		if from := cursor.Session.From; cursor.Through > from || slices.ContainsFunc(turns[from:], answeredBy(personaID)) {
 			return cursor
 		}
 	}
-	from := sessionShareStart(turns, handoff)
+	from := sessionShareStart(turns, handoff, s.restored.inheritedConversation(personaID, provider, turns))
 	return brain.SessionContext(turns, from, from)
 }
 

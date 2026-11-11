@@ -45,7 +45,9 @@ type SelectionOptions struct {
 	InitialContexts brain.PersonaContexts
 	// Transcript is the restored canonical conversation. It is authoritative
 	// while the live provider keeps no shared history of its own.
-	Transcript      []brain.Turn
+	Transcript []brain.Turn
+	// SessionProvider is the backend the restored session was created on.
+	SessionProvider string
 	PersistContexts func([]brain.Turn, events.PersonaSelection, brain.PersonaContexts) error
 	NewBrain        func(context.Context, *config.Config) (brain.Provider, error)
 	NewWorker       func(context.Context, *config.Config) (brain.Provider, error)
@@ -82,7 +84,8 @@ type Selector struct {
 	contexts            brain.PersonaContexts
 	transcript          *transcript
 	parked              []parkedBrain // least recently used first; guarded by transitionMu
-	requiresSelection   bool          // explicit restore may have no usable saved persona
+	restored            restoredConversation
+	requiresSelection   bool // explicit restore may have no usable saved persona
 }
 
 func NewSelector(opts SelectionOptions) (*Selector, error) {
@@ -164,6 +167,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: replayContexts(opts.InitialContexts)}
 	s.transcript = newTranscript(func() string { return opts.Pipeline.ConversationScope().ConversationEpoch }, opts.Transcript)
 	s.transcript.restoreSessions(opts.InitialContexts)
+	s.restored = restoredConversation{personaID: opts.Initial.PersonaID, provider: opts.SessionProvider}
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok {
 		if state, exists := s.contexts[opts.Initial.PersonaID]; exists {
@@ -185,7 +189,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	captureContext(s.contexts, opts.Initial.PersonaID, opts.Pipeline.Brain)
 	if live := opts.Pipeline.Brain; brain.KeepsPersonaSession(live) {
 		turns := s.transcript.Turns()
-		cursor := s.sessionCursor(opts.Initial.PersonaID, turns, false)
+		cursor := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false)
 		delete(s.contexts, opts.Initial.PersonaID)
 		s.transcript.setLive(opts.Initial.PersonaID, &cursor)
 		// The host loaded the whole conversation into a provider that has no
@@ -247,7 +251,9 @@ func (s *Selector) sharedTurns() []brain.Turn {
 }
 
 // RestoreTranscript follows RestoreSession at the same serialized boundary.
-func (s *Selector) RestoreTranscript(turns []brain.Turn) {
+// provider is the backend the restored session was created on.
+func (s *Selector) RestoreTranscript(turns []brain.Turn, provider string) {
+	s.restored = restoredConversation{personaID: s.Snapshot().PersonaID, provider: provider}
 	s.transcript.reset(turns)
 }
 
@@ -422,6 +428,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.opts.SessionID = sessionID
 	s.opts.UseDefaults = false
 	s.retireParked(retireAll)
+	s.restored = restoredConversation{}
 	s.transcript.reset(nil)
 	s.transcript.restoreSessions(nil)
 	s.mu.Lock()

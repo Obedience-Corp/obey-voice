@@ -163,7 +163,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if keepLive {
 				nextBrain, turns, stagedContexts = oldBrain, s.sharedTurns(), s.contexts.Clone()
 				if brain.KeepsPersonaSession(nextBrain) {
-					cursor := s.sessionCursor(binding.PersonaID, turns, false)
+					cursor := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, false)
 					targetCursor = &cursor
 				}
 				if s.opts.Voices != nil && (s.opts.Native == nil || !s.opts.Native.Silent) {
@@ -272,7 +272,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				captureContext(stagedContexts, previous.PersonaID, oldBrain)
 			}
 			if keepsSession {
-				cursor := s.sessionCursor(binding.PersonaID, turns, reason == "agent-handoff")
+				cursor := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, reason == "agent-handoff")
 				targetCursor = &cursor
 				delete(stagedContexts, binding.PersonaID)
 			}

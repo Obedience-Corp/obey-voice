@@ -394,7 +394,7 @@ func TestRestoredSessionReachesClaudeThroughSelection(t *testing.T) {
 		t.Fatalf("restoring a session kept a parked provider: %+v", c.selector.parked)
 	}
 	c.selector.RestoreContexts(saved.PersonaContexts)
-	c.selector.RestoreTranscript(saved.Turns)
+	c.selector.RestoreTranscript(saved.Turns, saved.Provider)
 	if _, err := c.selector.Select(t.Context(), saved.SelectedPersonaID, "resume"); err != nil {
 		t.Fatal(err)
 	}

@@ -427,6 +427,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			Participation:   sess.Participation,
 			InitialContexts: sess.PersonaContexts,
 			Transcript:      sess.Turns,
+			SessionProvider: sess.Provider,
 			PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
 				return session.DefaultStore().SaveSelectionState(sess, turns, selected, contexts)
 			},
