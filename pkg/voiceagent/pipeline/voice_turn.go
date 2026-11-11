@@ -167,10 +167,6 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		return original, p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
 	}
 	text = admission.Request
-	if err := p.announceHosted(ctx, metrics, turn); err != nil {
-		turn.finish(TurnInterrupted)
-		return original, err
-	}
 	if err := p.validateRetainedImages(ctx); err != nil {
 		turn.finish(TurnFailed)
 		return original, err
@@ -196,6 +192,13 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 
 	if !nativeConversation && admission.Discussion == nil && p.takeWorkDecision(ctx, pendingDecision, text, metrics) {
 		return original, p.completeRoutedTurn(ctx, turn, metrics, text, RouteSpawn, "decision")
+	}
+
+	// The hosted notice comes after every exit that sends nothing to the
+	// provider, and before a completion lease counts the turn's playback.
+	if err := p.announceHostedRequest(ctx, metrics, turn); err != nil {
+		turn.finish(TurnInterrupted)
+		return original, err
 	}
 
 	// turnCtx scopes the whole turn so the playback watchdog can abort the brain

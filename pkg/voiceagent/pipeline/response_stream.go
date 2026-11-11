@@ -684,6 +684,14 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				modelDone = nil
 				continue
 			}
+			if err := ctx.Err(); err != nil {
+				// The turn stopped this request, so it ends as the stop does,
+				// whatever the provider reports with it.
+				if interrupted {
+					return strings.TrimSpace(fullResponse.String()), interrupted, nil
+				}
+				return strings.TrimSpace(fullResponse.String()), interrupted, err
+			}
 			modelDone = nil
 			modelFinished = true
 			metrics.modelComplete = time.Now()
@@ -908,6 +916,11 @@ func (p *Pipeline) collectTextStream(ctx context.Context, cancel context.CancelF
 	select {
 	case res := <-stream.Done:
 		metrics.route.Tier, metrics.route.ReasonCode = res.RouteTier, res.RouteReasonCode
+		if err := ctx.Err(); err != nil {
+			// The turn stopped this request, so what it read was cut short
+			// whatever the provider reports with the stop.
+			return strings.TrimSpace(b.String()), "", mapIdleDeadline(ctx, err)
+		}
 		if res.Err != nil {
 			if res.Recovered {
 				// Preserve genuine partial text and report the failure

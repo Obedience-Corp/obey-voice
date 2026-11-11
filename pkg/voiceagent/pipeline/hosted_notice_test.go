@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -179,5 +180,45 @@ func TestCompactionAnnouncesAHostedLivePersonaFirst(t *testing.T) {
 	}
 	if len(infos) != 2 || requestsAtNotice != 0 || len(b.thinkInputs) != 1 || delivered != 1 {
 		t.Fatalf("infos %q, requests at notice %d, requests %d, delivered %d", infos, requestsAtNotice, len(b.thinkInputs), delivered)
+	}
+}
+
+// The notice is recorded only when a request goes out: a turn that fails its
+// image check, or that is routed away from the persona's provider, sends
+// nothing and records nothing.
+func TestHostedNoticeIsRecordedOnlyWhenARequestGoesOut(t *testing.T) {
+	const notice = "Mira runs on Claude, a hosted service."
+	b := &streamClock{}
+	b.history = []brain.Turn{{Role: "user", Content: "Look.", Attachments: []chatmedia.Ref{{ID: "gone", Name: "gone.png", Format: "png"}}}}
+	bus := events.NewBus()
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	p := &Pipeline{Brain: b, Events: bus}
+	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", Hosted: true}}, nil
+	}
+	var delivered []time.Time
+	p.HostedNotice = func(events.ResponseEnvelope) (HostedNotice, bool) {
+		return HostedNotice{Text: notice, Delivered: func() { delivered = append(delivered, time.Now()) }}, len(delivered) == 0
+	}
+
+	if err := p.RunTurnTextMode(t.Context(), "hello"); err == nil {
+		t.Fatal("a turn whose retained image fails its check went ahead")
+	}
+	if len(delivered) != 0 || len(b.at) != 0 || slices.Contains(infos, notice) {
+		t.Fatalf("a turn that sent nothing gave the notice (%q) or recorded it %d times", infos, len(delivered))
+	}
+
+	b.history[0].Attachments = nil
+	_ = p.RunTurnTextMode(t.Context(), "tell me a long story")
+	if len(delivered) != 0 || len(b.at) != 0 || slices.Contains(infos, notice) {
+		t.Fatalf("a routed turn gave the notice (%q) or recorded it %d times, requests %d", infos, len(delivered), len(b.at))
+	}
+
+	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if len(delivered) != 1 || len(b.at) != 1 || !delivered[0].Before(b.at[0]) {
+		t.Fatalf("delivered %d times, requests %d: the notice must be recorded once, before the request", len(delivered), len(b.at))
 	}
 }
