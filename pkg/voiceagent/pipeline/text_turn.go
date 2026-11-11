@@ -194,7 +194,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	}
 	metrics.modelRequest = time.Now()
 	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)
-	stream, err := p.startBrainStream(brainCtx, input, streamOpts)
+	stream, recording, err := p.startRecordedStream(brainCtx, input, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -203,6 +203,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("brain: %w", err))
 		return nil
 	}
+	defer recording.wait()
 
 	if background {
 		return p.finishBackgroundStream(ctx, brainCtx, brainCancel, stream, metrics, turn, repair)
@@ -215,6 +216,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		stream = ordinary.wrap(stream)
 	}
 	response, route, err := p.collectTextStream(brainCtx, brainCancel, stream, metrics)
+	recording.wait()
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)

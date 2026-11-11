@@ -131,7 +131,7 @@ func (p *Pipeline) runCanonicalCompletion(ctx context.Context, lease work.Comple
 	}
 	committed := false
 	if strings.TrimSpace(response) != "" {
-		if appendErr := appendResponse(provider, response, metrics.responseIdentity()); appendErr == nil {
+		if appendErr := p.appendReply(provider, response, metrics.responseIdentity(), nil); appendErr == nil {
 			committed = true
 		} else {
 			p.emit(events.Error{Stage: "completion", Message: fmt.Sprintf("record background reply: %v", appendErr)})

@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-func incompleteDisposition(err error) string {
+// IncompleteDisposition names why an assistant response ended unfinished.
+func IncompleteDisposition(err error) string {
 	if errors.Is(err, ErrResponseRepetition) {
 		return "repetition"
 	}

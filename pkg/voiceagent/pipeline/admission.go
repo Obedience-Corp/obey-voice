@@ -88,7 +88,9 @@ func (p *Pipeline) bindAdmission(ctx context.Context, input string, admitted Res
 	metrics.originalInput = input
 	metrics.trace = responseTrace(metrics.trace, admitted.Envelope)
 	ctx = events.WithTrace(ctx, metrics.trace)
-	if p.Brain != nil {
+	if t := p.transcriptFor(p.Brain); t != nil {
+		metrics.historyAtAdmission = len(t.Turns())
+	} else if p.Brain != nil {
 		metrics.historyAtAdmission = len(p.Brain.History())
 	}
 	p.ttsMu.RLock()
@@ -183,6 +185,10 @@ func (p *Pipeline) completeLocalReply(ctx context.Context, input, reply string, 
 	additions := []brain.Turn{user, response}
 	if continuity, ok := p.Brain.(brain.ContinuityTransferProvider); ok {
 		if err := appendContinuityHistory(continuity, additions); err != nil {
+			return err
+		}
+	} else if t := p.transcriptFor(p.Brain); t != nil {
+		if err := p.appendTranscript(t, additions...); err != nil {
 			return err
 		}
 	} else {

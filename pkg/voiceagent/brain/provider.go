@@ -226,6 +226,17 @@ type HistoryProjectionProvider interface{ ImportHistory([]Turn) error }
 // caller needs to persist it separately from a provider's native projection.
 type CanonicalHistoryProvider interface{ CanonicalHistory() []Turn }
 
+// KeepsSharedHistory reports whether a provider records the shared, attributed
+// transcript itself and accepts it back on a persona switch. The host records
+// the transcript for every other provider.
+func KeepsSharedHistory(p Provider) bool {
+	switch p.(type) {
+	case HistoryProjectionProvider, ContinuityTransferProvider:
+		return true
+	}
+	return false
+}
+
 // ContextHistoryProvider exposes the bounded model view for compaction only.
 // Its projected text is never an authority for persisted speaker identity.
 type ContextHistoryProvider interface{ ContextHistory() []Turn }
