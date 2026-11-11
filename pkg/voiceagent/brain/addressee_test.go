@@ -169,7 +169,27 @@ func TestDecisionNormalizationMatchesOllamaClassifier(t *testing.T) {
 				if (wantErr != nil) != (gotErr != nil) || (wantErr == nil && (got.Kind != want.Kind || got.Name != want.Name || got.Bare != want.Bare)) {
 					t.Fatalf("classifier=%+v/%v decision=%+v/%v", want, wantErr, got, gotErr)
 				}
+				// A name outside the roster, and a stray name on none, both end
+				// as a plain none on each path rather than an error.
+				if strings.Contains(body, "Charles") || strings.HasPrefix(body, `{"kind":"none"`) {
+					if wantErr != nil || want != (Addressee{Kind: "none"}) {
+						t.Fatalf("classifier=%+v/%v, want plain none", want, wantErr)
+					}
+				}
 			})
 		}
+	}
+}
+
+func TestResolveAddresseeNoneClearsAStrayName(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: `{"kind":"none","name":"Santa","bare":true}`}, Done: true})
+	}))
+	defer server.Close()
+	host, _ := url.Parse(server.URL)
+	o := &OllamaBrain{client: api.NewClient(host, server.Client()), model: "test", cfg: &config.Config{OllamaNumCtx: 8192}}
+	got, err := o.ResolveAddressee(t.Context(), AddressRequest{Participants: []GroupParticipant{{Name: "Jarvis"}, {Name: "Santa"}}, Account: "user", Text: "I think Santa had a long day."})
+	if err != nil || got != (Addressee{Kind: "none"}) {
+		t.Fatalf("got %+v err=%v, want an accepted none with no name or bare", got, err)
 	}
 }

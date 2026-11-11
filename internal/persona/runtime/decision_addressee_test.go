@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -158,6 +162,7 @@ func TestDecisionModelDownFallsBackToOllamaClassifier(t *testing.T) {
 	server := newDecisionServer(t, nil)
 	server.status = http.StatusServiceUnavailable
 	server.enable(t, f.pipeline)
+	watch := watchRouting(f.pipeline)
 	var classifier atomic.Int32
 	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
 		classifier.Add(1)
@@ -166,6 +171,105 @@ func TestDecisionModelDownFallsBackToOllamaClassifier(t *testing.T) {
 	got, err := f.selector.Route(t.Context(), "Could we hear from Santa on that?", false)
 	if err != nil || got.Envelope.PersonaID != "santa" || server.calls.Load() != 1 || classifier.Load() != 1 {
 		t.Fatalf("admission=%+v err=%v decision=%d classifier=%d", got, err, server.calls.Load(), classifier.Load())
+	}
+	infos, diagnostics := watch.snapshot()
+	if len(infos) != 0 || len(diagnostics) != 1 || diagnostics[0].Resolver != "ollama_classifier" || diagnostics[0].Disposition != "provider_error" {
+		t.Fatalf("infos=%q diagnostics=%+v", infos, diagnostics)
+	}
+}
+
+// The decision model sits in front of the Ollama classifier, so without a
+// shared bound a slow decider plus a slow classifier would wait for
+// decision_budget_ms + persona_routing_timeout.
+func TestAddresseeResolutionStaysWithinPersonaRoutingTimeout(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+	defer f.close(t)
+	f.selector.opts.Base.PersonaRoutingTimeout = 1
+	watch := watchRouting(f.pipeline)
+	slow := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-r.Context().Done()
+	}))
+	defer slow.Close()
+	provider, err := decision.NewSystemOne(decision.SystemOneConfig{Provider: "local", Endpoint: slow.URL + "/v1/systemone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.pipeline.Decisions.Configure(decision.Options{Policy: decision.WorkPolicy{Evaluator: provider}, Budget: 500 * time.Millisecond, Addressee: true})
+	defer f.pipeline.Decisions.Close()
+	var classifierDeadline time.Time
+	// Mirrors OllamaBrain.ResolveAddressee: its own persona_routing_timeout,
+	// and a parent error that is reported unclassified.
+	f.selector.opts.AddressResolver = addressResolverFunc(func(ctx context.Context, _ brain.AddressRequest) (brain.Addressee, error) {
+		classifierDeadline, _ = ctx.Deadline()
+		local, cancel := context.WithTimeout(ctx, config.PersonaRoutingTimeoutOf(f.selector.opts.Base))
+		defer cancel()
+		<-local.Done()
+		if err := ctx.Err(); err != nil {
+			return brain.Addressee{}, fmt.Errorf("resolve conversation addressee: %w", err)
+		}
+		return brain.Addressee{}, admission.WrapClassifierFailure(admission.ClassifierLocalTimeout, local.Err())
+	})
+	started := time.Now()
+	_, err = f.selector.Route(t.Context(), "Could we hear from Santa on that?", false)
+	elapsed := time.Since(started)
+	if err == nil || failureCategory(t, err) != admission.FailureClassifierLocalTimeout {
+		t.Fatalf("err=%v", err)
+	}
+	if classifierDeadline.IsZero() || classifierDeadline.Sub(started) > time.Second+50*time.Millisecond {
+		t.Fatalf("classifier deadline %v after start, want within persona_routing_timeout", classifierDeadline.Sub(started))
+	}
+	// Unbounded this is 0.5 s + 1 s; the margin absorbs -race scheduling.
+	if elapsed < 900*time.Millisecond || elapsed > 1400*time.Millisecond {
+		t.Fatalf("elapsed = %v, want about persona_routing_timeout (1s)", elapsed)
+	}
+	if _, diagnostics := watch.snapshot(); len(diagnostics) != 1 || diagnostics[0].Resolver != "failed" || diagnostics[0].Disposition != "timeout" || diagnostics[0].Elapsed < 900*time.Millisecond {
+		t.Fatalf("diagnostics = %+v", diagnostics)
+	}
+}
+
+func TestAddresseeDiagnosticNamesTheResolver(t *testing.T) {
+	abstain := `{"answers":{"target":{"choice":"person_1","confidence":0.4,"probabilities":{"none":0.2,"ambiguous":0.1,"unavailable":0.1,"person_0":0.2,"person_1":0.4}}}}`
+	for _, tc := range []struct {
+		name, input, body     string
+		status                int
+		ollama, decisionOff   bool
+		resolver, disposition string
+		wantPersona           string
+	}{
+		{name: "decision model", input: "Could we hear from Santa on that?", resolver: "decision_model", disposition: "answered", wantPersona: "santa"},
+		{name: "decision says none", input: "What did Santa say?", resolver: "decision_model", disposition: "answered", wantPersona: "jarvis"},
+		{name: "abstain then grammar", input: "Santa tell me a story", body: abstain, resolver: "grammar", disposition: "abstained", wantPersona: "santa"},
+		{name: "abstain then current", input: "Could we hear from Santa on that?", body: abstain, resolver: "current_persona", disposition: "abstained", wantPersona: "jarvis"},
+		{name: "failure then classifier", input: "Could we hear from Santa on that?", status: http.StatusServiceUnavailable, ollama: true, resolver: "ollama_classifier", disposition: "provider_error", wantPersona: "santa"},
+		{name: "classifier only", input: "Could we hear from Santa on that?", decisionOff: true, ollama: true, resolver: "ollama_classifier", disposition: "not_asked", wantPersona: "santa"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+			defer f.close(t)
+			watch := watchRouting(f.pipeline)
+			if !tc.decisionOff {
+				server := newDecisionServer(t, map[string]string{"Could we hear from Santa on that?": "Santa"})
+				if tc.status != 0 {
+					server.status = tc.status
+				}
+				server.body = tc.body
+				server.enable(t, f.pipeline)
+			}
+			if tc.ollama {
+				f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+					return brain.Addressee{Kind: "address", Name: "Santa"}, nil
+				})
+			}
+			got, err := f.selector.Route(t.Context(), tc.input, false)
+			if err != nil || got.Envelope.PersonaID != tc.wantPersona {
+				t.Fatalf("admission=%+v err=%v", got, err)
+			}
+			_, diagnostics := watch.snapshot()
+			if len(diagnostics) != 1 || diagnostics[0].Resolver != tc.resolver || diagnostics[0].Disposition != tc.disposition || diagnostics[0].Elapsed <= 0 {
+				t.Fatalf("diagnostics = %+v", diagnostics)
+			}
+		})
 	}
 }
 
@@ -184,47 +288,150 @@ func TestDecisionModelAnswerSkipsOllamaClassifier(t *testing.T) {
 	}
 }
 
-func TestDecisionModelDownWithoutOllamaReportsRetryableFailure(t *testing.T) {
+// stuckEvaluator ignores cancellation until released, like a provider whose
+// HTTP stack does not honour the deadline.
+type stuckEvaluator struct {
+	calls   atomic.Int32
+	release chan struct{}
+}
+
+func (e *stuckEvaluator) Evaluate(context.Context, decision.Request) (decision.Response, error) {
+	e.calls.Add(1)
+	<-e.release
+	return decision.Response{}, errors.New("released")
+}
+
+type routingEvents struct {
+	mu        sync.Mutex
+	infos     []string
+	addressee []events.DecisionEvaluated
+}
+
+func watchRouting(p *pipeline.Pipeline) *routingEvents {
+	if p.Events == nil {
+		p.Events = events.NewBus()
+	}
+	w := &routingEvents{}
+	events.Subscribe(p.Events, func(e events.Info) { w.mu.Lock(); w.infos = append(w.infos, e.Message); w.mu.Unlock() })
+	events.Subscribe(p.Events, func(e events.DecisionEvaluated) {
+		if e.Point == "addressee" {
+			w.mu.Lock()
+			w.addressee = append(w.addressee, e)
+			w.mu.Unlock()
+		}
+	})
+	return w
+}
+
+func (w *routingEvents) snapshot() ([]string, []events.DecisionEvaluated) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.infos), slices.Clone(w.addressee)
+}
+
+func TestDecisionModelFailureWithoutOllamaKeepsNameGrammar(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		status int
-		body   string
-		want   admission.FailureCategory
+		name, outcome string
+		setup         func(t *testing.T, p *pipeline.Pipeline)
 	}{
-		{name: "unavailable", status: http.StatusServiceUnavailable, want: admission.FailureClassifierUnavailable},
-		{name: "invalid output", status: http.StatusOK, body: "not json", want: admission.FailureClassifierInvalidOutput},
+		{name: "unavailable", outcome: "provider_error", setup: func(t *testing.T, p *pipeline.Pipeline) {
+			server := newDecisionServer(t, nil)
+			server.status = http.StatusServiceUnavailable
+			server.enable(t, p)
+		}},
+		{name: "invalid output", outcome: "invalid_output", setup: func(t *testing.T, p *pipeline.Pipeline) {
+			server := newDecisionServer(t, nil)
+			server.body = "not json"
+			server.enable(t, p)
+		}},
+		{name: "timeout", outcome: "timeout", setup: func(t *testing.T, p *pipeline.Pipeline) {
+			release := make(chan struct{})
+			slow := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+			t.Cleanup(slow.Close)
+			t.Cleanup(func() { close(release) })
+			provider, err := decision.NewSystemOne(decision.SystemOneConfig{Provider: "local", Endpoint: slow.URL + "/v1/systemone"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.Decisions.Configure(decision.Options{Policy: decision.WorkPolicy{Evaluator: provider}, Budget: 40 * time.Millisecond, Addressee: true})
+			t.Cleanup(p.Decisions.Close)
+		}},
+		{name: "busy", outcome: "busy", setup: func(t *testing.T, p *pipeline.Pipeline) {
+			stuck := &stuckEvaluator{release: make(chan struct{})}
+			t.Cleanup(func() { close(stuck.release) })
+			p.Decisions.Configure(decision.Options{Policy: decision.WorkPolicy{Evaluator: stuck}, Budget: 40 * time.Millisecond, Addressee: true})
+			t.Cleanup(p.Decisions.Close)
+			// The first question times out and leaves its call running.
+			_, _ = p.Decisions.ResolveAddressee(t.Context(), decision.AddresseeInput{Participants: []decision.AddresseeParticipant{{Name: "Santa"}}, Text: "Santa?"}, "")
+			if stuck.calls.Load() != 1 {
+				t.Fatalf("priming calls = %d", stuck.calls.Load())
+			}
+			t.Cleanup(func() {
+				if stuck.calls.Load() != 1 {
+					t.Errorf("busy decider was called again: %d", stuck.calls.Load())
+				}
+			})
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 			defer f.close(t)
-			server := newDecisionServer(t, nil)
-			server.status, server.body = tc.status, tc.body
-			server.enable(t, f.pipeline)
-			before := f.selector.Snapshot()
-			_, err := f.selector.Route(t.Context(), "Could we hear from Santa on that?", false)
-			if err == nil || failureCategory(t, err) != tc.want || f.selector.Snapshot() != before {
-				t.Fatalf("err=%v selection=%+v", err, f.selector.Snapshot())
+			watch := watchRouting(f.pipeline)
+			tc.setup(t, f.pipeline)
+
+			// Without a decision model or Ollama this is the grammar's imperative
+			// address, so only the grammar can route it to Santa.
+			got, err := f.selector.Route(t.Context(), "Santa tell me a story", false)
+			if err != nil || got.Envelope.PersonaID != "santa" || got.Request != "tell me a story" {
+				t.Fatalf("admission=%+v err=%v", got, err)
+			}
+			got, err = f.selector.Route(t.Context(), "Could we hear from Jarvis on that?", false)
+			if err != nil || got.Envelope.PersonaID != "santa" {
+				t.Fatalf("grammar miss did not stay with the current persona: %+v err=%v", got, err)
+			}
+			infos, diagnostics := watch.snapshot()
+			if len(infos) != 2 {
+				t.Fatalf("want one notice per turn, got %q", infos)
+			}
+			for _, info := range infos {
+				if !strings.Contains(info, "did not answer") || !strings.Contains(info, tc.outcome) || strings.Contains(info, "story") || strings.Contains(info, "hear from") {
+					t.Fatalf("notice = %q", info)
+				}
+			}
+			if len(diagnostics) != 2 || diagnostics[0].Resolver != "grammar" || diagnostics[1].Resolver != "current_persona" ||
+				diagnostics[0].Disposition != tc.outcome || diagnostics[1].Disposition != tc.outcome {
+				t.Fatalf("diagnostics = %+v", diagnostics)
 			}
 		})
 	}
 }
 
-func TestDecisionModelTimeoutWithoutOllamaReportsLocalTimeout(t *testing.T) {
+func TestTurnCancellationDuringDecisionStillCancels(t *testing.T) {
 	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 	defer f.close(t)
-	release := make(chan struct{})
-	slow := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	watch := watchRouting(f.pipeline)
+	entered := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		close(entered)
+		<-r.Context().Done()
+	}))
 	defer slow.Close()
-	defer close(release)
 	provider, err := decision.NewSystemOne(decision.SystemOneConfig{Provider: "local", Endpoint: slow.URL + "/v1/systemone"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.pipeline.Decisions.Configure(decision.Options{Policy: decision.WorkPolicy{Evaluator: provider}, Budget: 40 * time.Millisecond, Addressee: true})
+	f.pipeline.Decisions.Configure(decision.Options{Policy: decision.WorkPolicy{Evaluator: provider}, Budget: 3 * time.Second, Addressee: true})
 	defer f.pipeline.Decisions.Close()
-	_, err = f.selector.Route(t.Context(), "Could we hear from Santa on that?", false)
-	if err == nil || failureCategory(t, err) != admission.FailureClassifierLocalTimeout {
-		t.Fatalf("err=%v", err)
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() { <-entered; cancel() }()
+	before := f.selector.Snapshot()
+	_, err = f.selector.Route(ctx, "Santa tell me a story", false)
+	if err == nil || failureCategory(t, err) != admission.FailureParentCancellation || f.selector.Snapshot() != before {
+		t.Fatalf("err=%v selection=%+v", err, f.selector.Snapshot())
+	}
+	if infos, _ := watch.snapshot(); len(infos) != 0 {
+		t.Fatalf("cancelled turn produced a notice: %q", infos)
 	}
 }
 
@@ -272,11 +479,17 @@ func TestAgentHandoffUsesDecisionModelWithoutOllama(t *testing.T) {
 		t.Fatalf("accepted=%v proposal=%+v err=%v calls=%d", accepted, proposal, err, server.calls.Load())
 	}
 
+	// A down decision model leaves the reply with its speaker, as before the
+	// decision model existed, and says so once.
+	watch := watchRouting(f.pipeline)
 	other := newDecisionServer(t, nil)
 	other.status = http.StatusServiceUnavailable
 	other.enable(t, f.pipeline)
-	if _, accepted, err := f.selector.RouteHandoff(t.Context(), brain.Turn{Role: "assistant", PersonaID: "obey", Content: text}, nil); accepted || err == nil {
+	if _, accepted, err := f.selector.RouteHandoff(t.Context(), brain.Turn{Role: "assistant", PersonaID: "obey", Content: text}, nil); accepted || err != nil {
 		t.Fatalf("handoff with a down decision model: accepted=%v err=%v", accepted, err)
+	}
+	if infos, _ := watch.snapshot(); len(infos) != 1 || !strings.Contains(infos[0], "did not answer") {
+		t.Fatalf("notices = %q", infos)
 	}
 }
 

@@ -61,6 +61,18 @@ const (
 	personPrefix         = "person_"
 )
 
+// Probabilistic (local, Jev) answers only; docs/decision-routing.md lists them.
+// bare is one P(yes), so 0.90 already leaves a 0.80 margin over "no"; a
+// false bare drops the user's question, which is why it is stricter than target.
+const (
+	addresseeMinConfidence = 0.85
+	addresseeMinMargin     = 0.20
+	addresseeMinBare       = 0.90
+	// thresholdTolerance keeps 0.60 against 0.40 at the documented margin
+	// despite float64 subtraction landing just below 0.20.
+	thresholdTolerance = 1e-9
+)
+
 // AddresseeRequest builds the addressee question. guidance is the private
 // addressee instruction text for providers that accept free-form instructions.
 func AddresseeRequest(in AddresseeInput, guidance string) Request {
@@ -175,7 +187,7 @@ func InterpretAddressee(in AddresseeInput, response Response) (Addressee, bool, 
 	if math.Abs(sum-1) > .02 {
 		return Addressee{}, false, fmt.Errorf("%w: target distribution does not sum to one", ErrInvalidOutput)
 	}
-	if *target.Confidence < .85 || target.Probabilities[target.Choice]-other < .20 {
+	if *target.Confidence < addresseeMinConfidence || target.Probabilities[target.Choice]-other < addresseeMinMargin-thresholdTolerance {
 		return Addressee{}, false, nil
 	}
 	var raw Addressee
@@ -192,27 +204,62 @@ func InterpretAddressee(in AddresseeInput, response Response) (Addressee, bool, 
 			if !validProbability(bare.Noul) {
 				return Addressee{}, false, fmt.Errorf("%w: missing bare probability", ErrInvalidOutput)
 			}
-			raw.Bare = *bare.Noul >= .90
+			raw.Bare = *bare.Noul >= addresseeMinBare
 		}
 	}
 	result, err := NormalizeAddressee(raw, in)
 	return result, err == nil, err
 }
 
+// AddresseeOutcome says what happened to one addressee question.
+type AddresseeOutcome string
+
+const (
+	AddresseeAnswered AddresseeOutcome = "answered"
+	// AddresseeAbstained is a valid answer below the confidence or margin threshold.
+	AddresseeAbstained AddresseeOutcome = "abstained"
+	// AddresseeSkipped means no question was asked: off, ineligible input, or
+	// the configuration changed while it ran.
+	AddresseeSkipped       AddresseeOutcome = "skipped"
+	AddresseeBusy          AddresseeOutcome = "busy"
+	AddresseeTimeout       AddresseeOutcome = "timeout"
+	AddresseeProviderError AddresseeOutcome = "provider_error"
+	AddresseeInvalidOutput AddresseeOutcome = "invalid_output"
+	AddresseeCancelled     AddresseeOutcome = "cancelled"
+)
+
+// ErrAddresseeBusy refuses a question while an earlier one is still running,
+// which happens only after that call outlived its deadline.
+var ErrAddresseeBusy = errors.New("decision model is still answering an earlier addressee question")
+
+type AddresseeResult struct {
+	Addressee Addressee
+	Outcome   AddresseeOutcome
+	Model     string
+}
+
+func (r AddresseeResult) Answered() bool { return r.Outcome == AddresseeAnswered }
+
 // ResolveAddressee asks the decision model who is being addressed. It blocks
-// for at most the configured budget. ok is false, with no error, when the
-// point is off, ineligible, busy, abstained or the configuration changed
-// meanwhile; the caller then continues with its next resolver. Errors are
-// admission classifier failures, or the parent context's own error.
-func (c *Controller) ResolveAddressee(ctx context.Context, in AddresseeInput, guidance string) (result Addressee, ok bool, err error) {
-	if c == nil || ctx.Err() != nil || !eligibleAddressee(in) {
-		return Addressee{}, false, nil
+// for at most the configured budget. Skipped and abstained outcomes carry no
+// error. Busy, timeout, provider and invalid-output failures are admission
+// classifier failures; a done parent context returns its own error.
+func (c *Controller) ResolveAddressee(ctx context.Context, in AddresseeInput, guidance string) (AddresseeResult, error) {
+	if c == nil || !eligibleAddressee(in) {
+		return AddresseeResult{Outcome: AddresseeSkipped}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return AddresseeResult{Outcome: parentOutcome(err)}, err
 	}
 	c.mu.Lock()
 	g := c.current
-	if g == nil || !g.options.Addressee || c.addresseeBusy {
+	if g == nil || !g.options.Addressee {
 		c.mu.Unlock()
-		return Addressee{}, false, nil
+		return AddresseeResult{Outcome: AddresseeSkipped}, nil
+	}
+	if c.addresseeBusy {
+		c.mu.Unlock()
+		return AddresseeResult{Outcome: AddresseeBusy}, admission.WrapClassifierFailure(admission.ClassifierUnavailable, fmt.Errorf("resolve addressee with decision model: %w", ErrAddresseeBusy))
 	}
 	c.addresseeBusy = true
 	c.mu.Unlock()
@@ -239,24 +286,34 @@ func (c *Controller) ResolveAddressee(ctx context.Context, in AddresseeInput, gu
 		got.err = budgetCtx.Err()
 	}
 	if err := ctx.Err(); err != nil {
-		return Addressee{}, false, err
+		return AddresseeResult{Outcome: parentOutcome(err)}, err
 	}
 	if g.ctx.Err() != nil {
-		return Addressee{}, false, nil
+		return AddresseeResult{Outcome: AddresseeSkipped}, nil
 	}
 	if got.err == nil {
-		if result, accepted, ierr := InterpretAddressee(in, got.response); ierr != nil {
-			got.err = ierr
-		} else {
-			return result, accepted, nil
+		result, accepted, ierr := InterpretAddressee(in, got.response)
+		if ierr == nil {
+			if !accepted {
+				return AddresseeResult{Outcome: AddresseeAbstained, Model: got.response.Model}, nil
+			}
+			return AddresseeResult{Addressee: result, Outcome: AddresseeAnswered, Model: got.response.Model}, nil
 		}
+		got.err = ierr
 	}
 	wrapped := fmt.Errorf("resolve addressee with decision model: %w", got.err)
 	switch {
 	case errors.Is(got.err, ErrInvalidOutput):
-		return Addressee{}, false, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, wrapped)
+		return AddresseeResult{Outcome: AddresseeInvalidOutput, Model: got.response.Model}, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, wrapped)
 	case errors.Is(budgetCtx.Err(), context.DeadlineExceeded):
-		return Addressee{}, false, admission.WrapClassifierFailure(admission.ClassifierLocalTimeout, wrapped)
+		return AddresseeResult{Outcome: AddresseeTimeout}, admission.WrapClassifierFailure(admission.ClassifierLocalTimeout, wrapped)
 	}
-	return Addressee{}, false, admission.WrapClassifierFailure(admission.ClassifierUnavailable, wrapped)
+	return AddresseeResult{Outcome: AddresseeProviderError}, admission.WrapClassifierFailure(admission.ClassifierUnavailable, wrapped)
+}
+
+func parentOutcome(err error) AddresseeOutcome {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return AddresseeTimeout
+	}
+	return AddresseeCancelled
 }

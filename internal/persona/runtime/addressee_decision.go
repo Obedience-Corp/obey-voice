@@ -2,37 +2,80 @@ package personaruntime
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 )
+
+// Resolver names reported by the addressee diagnostic.
+const (
+	resolvedByDecision   = "decision_model"
+	resolvedByClassifier = "ollama_classifier"
+	resolvedByGrammar    = "grammar"
+	resolvedByCurrent    = "current_persona"
+	resolutionFailed     = "failed"
+)
+
+type addresseeTrace struct {
+	resolver, disposition, model string
+}
 
 // classifyAddressee resolves a candidate address with the decision model first
 // and the provider classifier second. Neither is a harness backend: the
 // classifier exists only when the live brain is Ollama. It returns nil when no
 // semantic answer exists, leaving the current persona (or the legacy grammar).
-func (s *Selector) classifyAddressee(ctx context.Context, resolver brain.AddresseeResolver, viaDecision bool, request brain.AddressRequest) (*brain.Addressee, error) {
+// A decision-model failure with no classifier behind it is reported once and
+// also returns nil; only the turn's own cancellation fails the turn here.
+func (s *Selector) classifyAddressee(ctx context.Context, resolver brain.AddresseeResolver, viaDecision bool, request brain.AddressRequest, trace *addresseeTrace) (*brain.Addressee, error) {
+	trace.disposition = "not_asked"
+	bounded := ctx
 	if viaDecision {
+		// persona_routing_timeout bounds the whole question, so the decision
+		// budget cannot be added on top of the classifier's own timeout.
+		var cancel context.CancelFunc
+		bounded, cancel = context.WithTimeout(ctx, config.PersonaRoutingTimeoutOf(s.opts.Base))
+		defer cancel()
 		request = request.WithoutRedundantAcousticName()
-		answer, ok, err := s.opts.Pipeline.Decisions.ResolveAddressee(ctx, decisionAddresseeInput(request), s.addresseeGuidance(request))
+		result, err := s.opts.Pipeline.Decisions.ResolveAddressee(bounded, decisionAddresseeInput(request), s.addresseeGuidance(request))
+		trace.disposition, trace.model = string(result.Outcome), result.Model
 		switch {
-		case err == nil && ok:
+		case err == nil && result.Answered():
+			trace.resolver = resolvedByDecision
+			answer := result.Addressee
 			return &brain.Addressee{Kind: answer.Kind, Name: answer.Name, Bare: answer.Bare}, nil
-		case err != nil && (resolver == nil || ctx.Err() != nil):
+		case err != nil && ctx.Err() != nil:
 			return nil, err
+		case err != nil && resolver == nil:
+			if s.opts.Pipeline.Events != nil {
+				s.opts.Pipeline.Events.Emit(events.Info{Message: fmt.Sprintf("The decision model did not answer who was addressed (%s); routing by name only.", result.Outcome)})
+			}
 		}
 	}
 	if resolver == nil {
 		return nil, nil
 	}
-	answer, err := resolver.ResolveAddressee(ctx, request)
+	answer, err := resolver.ResolveAddressee(bounded, request)
 	if err != nil {
+		if _, classified := admission.ClassifierFailureKindOf(err); !classified && ctx.Err() == nil && bounded.Err() != nil {
+			err = admission.WrapClassifierFailure(admission.ClassifierLocalTimeout, err)
+		}
 		return nil, err
 	}
+	trace.resolver = resolvedByClassifier
 	return &answer, nil
+}
+
+func (s *Selector) emitAddresseeTrace(trace addresseeTrace, started time.Time) {
+	if s.opts.Pipeline.Events != nil {
+		s.opts.Pipeline.Events.Emit(events.DecisionEvaluated{Point: string(decision.AddresseeResolution), Disposition: trace.disposition, Resolver: trace.resolver, Model: trace.model, Elapsed: time.Since(started)})
+	}
 }
 
 func (s *Selector) addresseeGuidance(request brain.AddressRequest) string {

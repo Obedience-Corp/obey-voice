@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
@@ -123,20 +124,31 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 		request.Conversation = append(request.Conversation, brain.AddressMessage{Name: name, Account: kind, Text: string(content)})
 	}
 	slices.Reverse(request.Conversation)
-	decided, err := s.classifyAddressee(ctx, resolver, viaDecision, request)
+	started := time.Now()
+	var trace addresseeTrace
+	decided, err := s.classifyAddressee(ctx, resolver, viaDecision, request, &trace)
 	if err != nil {
+		trace.resolver = resolutionFailed
+		s.emitAddresseeTrace(trace, started)
 		return summon.Address{}, classifyAdmissionFailure(ctx, "resolve_addressee", err)
 	}
 	if decided == nil {
+		trace.resolver = resolvedByCurrent
 		if account == "agent" {
+			s.emitAddresseeTrace(trace, started)
 			return summon.Address{Remainder: text}, nil
 		}
 		address, err := roster.Resolve(text)
+		if err != nil || address.PersonaID != "" {
+			trace.resolver = resolvedByGrammar
+		}
+		s.emitAddresseeTrace(trace, started)
 		if err != nil {
 			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
 		}
 		return address, nil
 	}
+	s.emitAddresseeTrace(trace, started)
 	chosen := *decided
 	if err := ctx.Err(); err != nil {
 		return summon.Address{}, classifyAdmissionFailure(ctx, "resolve_addressee", err)
