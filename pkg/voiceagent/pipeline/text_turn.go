@@ -111,10 +111,6 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		return p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
 	}
 	input = admission.Request
-	if err := p.announceHosted(ctx, metrics, turn); err != nil {
-		turn.finish(TurnInterrupted)
-		return err
-	}
 	if err := p.validateRetainedImages(ctx); err != nil {
 		turn.finish(TurnFailed)
 		return err
@@ -144,6 +140,13 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 	if admission.Discussion == nil && p.takeWorkDecision(ctx, pendingDecision, input, metrics) {
 		return p.completeRoutedTurn(ctx, turn, metrics, input, RouteSpawn, "decision")
+	}
+
+	// The hosted notice comes after every exit that sends nothing to the
+	// provider, and before a completion lease counts the turn's playback.
+	if err := p.announceHostedRequest(ctx, metrics, turn); err != nil {
+		turn.finish(TurnInterrupted)
+		return err
 	}
 
 	requestCtx := ctx
