@@ -24,6 +24,8 @@ func decisionField(cfg *config.Config, key string) any {
 		return &cfg.DecisionVoiceWork
 	case "decision_text_work":
 		return &cfg.DecisionTextWork
+	case "decision_addressee":
+		return &cfg.DecisionAddressee
 	case "decision_provider":
 		return &cfg.DecisionProvider
 	case "decision_runtime":
@@ -47,7 +49,7 @@ func decisionField(cfg *config.Config, key string) any {
 }
 
 func (m settingsModel) decisionRows() []settingRow {
-	keys := []string{"decision_enabled", "decision_voice_work", "decision_text_work", "decision_provider", "decision_runtime", "decision_local_model", "decision_device", "decision_endpoint", "decision_model", "decision_api_key", "decision_budget_ms", "decision_policy"}
+	keys := []string{"decision_enabled", "decision_voice_work", "decision_text_work", "decision_addressee", "decision_provider", "decision_runtime", "decision_local_model", "decision_device", "decision_endpoint", "decision_model", "decision_api_key", "decision_budget_ms", "decision_policy"}
 	var rows []settingRow
 	for _, key := range keys {
 		spec, _ := config.SpecFor(key)
@@ -163,7 +165,7 @@ func (m settingsModel) decisionRows() []settingRow {
 		}
 	}})
 	rows = append(rows, m.decisionSetupRows()...)
-	return append(rows, settingRow{key: "decision_status", name: "Decision runtime", kind: rowInfo, value: status, help: "Experimental shortcuts require enabled worker tiers. Late, uncertain or unavailable decisions use the ordinary brain."})
+	return append(rows, settingRow{key: "decision_status", name: "Decision runtime", kind: rowInfo, value: status, help: "Work shortcuts require enabled worker tiers. Late, uncertain or unavailable decisions use ordinary routing."})
 }
 
 func (m *settingsModel) saveDecision(key string, value any) tea.Cmd {

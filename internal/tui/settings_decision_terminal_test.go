@@ -91,10 +91,11 @@ func TestDecisionSettingsTerminalPersistenceAndIndependentPoints(t *testing.T) {
 	}
 	change("decision_enabled")
 	change("decision_voice_work")
+	change("decision_addressee")
 	change("decision_local_model")
 	change("decision_device")
 	loaded, err := config.LoadWithoutHooks()
-	if err != nil || !loaded.DecisionEnabled || loaded.DecisionVoiceWork || !loaded.DecisionTextWork || loaded.DecisionProvider != "local" || loaded.DecisionLocalModel != "0.8b" || loaded.DecisionDevice != "cpu" {
+	if err != nil || !loaded.DecisionEnabled || loaded.DecisionVoiceWork || !loaded.DecisionTextWork || loaded.DecisionAddressee || loaded.DecisionProvider != "local" || loaded.DecisionLocalModel != "0.8b" || loaded.DecisionDevice != "cpu" {
 		t.Fatalf("saved settings=%+v err=%v", loaded, err)
 	}
 	navigate("decision_test")
@@ -122,7 +123,7 @@ func TestDecisionSettingsTerminalPersistenceAndIndependentPoints(t *testing.T) {
 	}
 	change("decision_enabled")
 	loaded, err = config.LoadWithoutHooks()
-	if err != nil || loaded.DecisionEnabled || loaded.DecisionVoiceWork || !loaded.DecisionTextWork {
+	if err != nil || loaded.DecisionEnabled || loaded.DecisionVoiceWork || !loaded.DecisionTextWork || loaded.DecisionAddressee {
 		t.Fatal("disable changed independent point preferences")
 	}
 	navigate("decision_install")
