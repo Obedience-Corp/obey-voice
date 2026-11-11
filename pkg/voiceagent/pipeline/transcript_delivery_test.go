@@ -452,3 +452,104 @@ func TestHostTranscriptRecordsAReplyWhoseRouteTheTurnDoesNotFollow(t *testing.T)
 		t.Fatalf("transcript = %+v", turns)
 	}
 }
+
+// A turn can read a chunk and stop at once. The chunk it read is recorded
+// even when the stop finishes the record before the forwarder has.
+func TestHostTranscriptRecordsTheLastTextTheTurnReadWhenItStopsAtOnce(t *testing.T) {
+	for _, stop := range []string{"settle", "abandon"} {
+		t.Run(stop, func(t *testing.T) {
+			transcript := &recordedTranscript{}
+			b := newHeldBrain()
+			p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
+			stream, recording, err := p.startRecordedStream(t.Context(), "What is the code?", brain.StreamOptions{Identity: &brain.TurnIdentity{ResponseID: "r"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			paused, resume := make(chan struct{}), make(chan struct{})
+			recording.afterSend = func(v string) {
+				if v == "Read last." {
+					close(paused)
+					<-resume
+				}
+			}
+			s := <-b.streams
+			s.chunks <- "Heard. "
+			<-stream.Chunks
+			s.chunks <- "Read last."
+			<-stream.Chunks
+			<-paused
+			stopped := make(chan struct{})
+			go func() {
+				defer close(stopped)
+				if stop == "settle" {
+					recording.settle()
+				} else {
+					recording.abandon()
+				}
+			}()
+			// Without the wait for the chunk in hand, the stop records at once.
+			select {
+			case <-recording.recorded:
+			case <-time.After(3 * recordingGrace):
+			}
+			close(resume)
+			<-stopped
+			close(s.chunks)
+			s.done <- brain.StreamResult{Err: context.Canceled}
+			if reply := recordedReply(t, transcript); reply.Content != "Heard. Read last." || reply.Disposition != "interrupted" {
+				t.Fatalf("recorded reply = %+v", reply)
+			}
+		})
+	}
+}
+
+// stoppedResultBrain sends part of a reply and reports err as the turn stops
+// it, so the turn finds the result and the stop both ready.
+type stoppedResultBrain struct {
+	fakeBrain
+	err  error
+	done chan brain.StreamResult
+}
+
+func (b *stoppedResultBrain) ThinkStream(ctx context.Context, _ string, _ brain.StreamOptions) (*brain.Stream, error) {
+	out := make(chan string, 1)
+	b.done = make(chan brain.StreamResult, 1)
+	out <- "The door is"
+	go func() {
+		<-ctx.Done()
+		close(out)
+	}()
+	return &brain.Stream{Chunks: out, Done: b.done}, nil
+}
+
+// Without a host transcript the turn reads the provider's result itself. A
+// stop still ends it as interrupted, whatever the provider reports with it.
+func TestStoppedTurnWithoutAHostTranscriptIsInterruptedWhateverItsProviderReports(t *testing.T) {
+	for name, err := range map[string]error{"its own error": errors.New("claude: signal: killed"), "success": nil} {
+		t.Run(name, func(t *testing.T) {
+			for range 50 {
+				b := &stoppedResultBrain{err: err}
+				p := &Pipeline{Brain: b, Events: events.NewBus()}
+				p.AdmitInput = admitAs("stopped", func(input string) string { return input })
+				var reported []events.Error
+				events.Subscribe(p.Events, func(e events.Error) { reported = append(reported, e) })
+				ctx, cancel := context.WithCancel(t.Context())
+				var once sync.Once
+				events.Subscribe(p.Events, func(events.ResponseDelta) {
+					once.Do(func() {
+						b.done <- brain.StreamResult{Err: err}
+						close(b.done)
+						cancel()
+					})
+				})
+				if err := p.RunTurnTextMode(ctx, "What color is the door?"); !errors.Is(err, context.Canceled) {
+					t.Fatalf("err = %v", err)
+				}
+				cancel()
+				if len(reported) != 0 {
+					t.Fatalf("a stopped turn reported a provider failure: %+v", reported)
+				}
+			}
+		})
+	}
+}
