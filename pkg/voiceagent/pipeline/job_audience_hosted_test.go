@@ -17,12 +17,14 @@ func TestReceivesJobOnAPersonaSentOnlyItsShare(t *testing.T) {
 		admission map[string]string
 		want      bool
 	}{
-		{"its job on this backend", map[string]string{"persona": "mira", "brain": "muse-spark"}, true},
-		{"its job from Claude", map[string]string{"persona": "mira", "brain": "claude"}, false},
-		{"its job from Ollama", map[string]string{"persona": "mira", "brain": "ollama"}, false},
-		{"its job with the backend unset", map[string]string{"persona": "mira", "brain": ""}, false},
-		{"another persona's job here", map[string]string{"persona": "ember", "brain": "muse-spark"}, false},
-		{"a job saved before jobs recorded persona or backend", map[string]string{"provider": "ollama"}, true},
+		{"its job", map[string]string{"persona": "mira"}, true},
+		{"its job recorded on this backend", map[string]string{"persona": "mira", "brain": "muse-spark"}, true},
+		{"its job recorded on Claude", map[string]string{"persona": "mira", "brain": "claude"}, true},
+		{"its job recorded on Ollama", map[string]string{"persona": "mira", "brain": "ollama"}, true},
+		{"its job recorded with the backend unset", map[string]string{"persona": "mira", "brain": ""}, true},
+		{"another persona's job", map[string]string{"persona": "ember"}, false},
+		{"another persona's job recorded on this backend", map[string]string{"persona": "ember", "brain": "muse-spark"}, false},
+		{"a job saved before jobs recorded their persona", map[string]string{"provider": "ollama"}, true},
 		{"a job started outside a spawn", nil, true},
 	}
 	for _, tc := range cases {
@@ -44,22 +46,29 @@ func TestReceivesJobOnAPersonaSentOnlyItsShare(t *testing.T) {
 	})
 }
 
-func TestJobFromAPreviousBackendReachesThePersonaBackThere(t *testing.T) {
-	fromClaude := map[string]string{"persona": "mira", "brain": "claude"}
-	p := &Pipeline{Brain: museSparkBrain(t)}
-	NewAgency(p, job.NewTable(t.Context()), nil, &config.Config{BrainProvider: "muse-spark", ActivePersona: "mira"}, nil).Wire()
-	if p.receivesJob(fromClaude) {
-		t.Fatal("Mira on Muse Spark received a job she started on Claude")
-	}
-	p.Brain = &brain.Brain{}
-	p.Agency.ReplaceWorker(nil, &config.Config{BrainProvider: "claude", ActivePersona: "mira"}, nil)
-	if !p.receivesJob(fromClaude) {
-		t.Fatal("Mira back on Claude did not receive the job she started there")
-	}
-	p.Brain = &fakeBrain{}
-	p.Agency.ReplaceWorker(nil, &config.Config{BrainProvider: "ollama", ActivePersona: "mira"}, nil)
-	if !p.receivesJob(fromClaude) {
-		t.Fatal("a persona on a local backend did not receive the job")
+func TestJobFollowsThePersonaThatStartedItAcrossBackends(t *testing.T) {
+	onClaude := &config.Config{BrainProvider: "claude", ActivePersona: "mira"}
+	p := &Pipeline{Brain: &brain.Brain{}}
+	NewAgency(p, job.NewTable(t.Context()), nil, &config.Config{BrainProvider: "ollama", ActivePersona: "ember"}, nil).Wire()
+	p.Agency.ReplaceWorker(nil, onClaude, nil)
+	miras, embers := frozenConfig(onClaude), map[string]string{"persona": "ember"}
+	for _, step := range []struct {
+		backend string
+		live    brain.Provider
+		ember   bool
+	}{
+		{"claude", &brain.Brain{}, false},
+		{"muse-spark", museSparkBrain(t), false},
+		{"ollama", &fakeBrain{}, true},
+	} {
+		p.Brain = step.live
+		p.Agency.ReplaceWorker(nil, &config.Config{BrainProvider: step.backend, ActivePersona: "mira"}, nil)
+		if !p.receivesJob(miras) {
+			t.Fatalf("Mira on %s did not receive the job she started on Claude", step.backend)
+		}
+		if got := p.receivesJob(embers); got != step.ember {
+			t.Fatalf("Mira on %s receives Ember's job = %v, want %v", step.backend, got, step.ember)
+		}
 	}
 }
 
