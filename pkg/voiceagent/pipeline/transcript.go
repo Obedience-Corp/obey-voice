@@ -315,9 +315,11 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 			err = ctx.Err()
 		}
 		rec.finish(result.Route, err)
-		if hasResult {
-			done <- result
+		// The turn ends as the transcript records it.
+		if result.Err == nil {
+			result.Err = err
 		}
+		done <- result
 	}()
 	return &brain.Stream{Chunks: out, Thinking: thinking, Done: done}, rec, nil
 }

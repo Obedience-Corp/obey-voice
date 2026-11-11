@@ -240,6 +240,36 @@ func TestHostTranscriptKeepsTheProvidersReasonForAnUnfinishedReply(t *testing.T)
 	})
 }
 
+// silentEndBrain delivers a reply and closes its result without reporting one.
+type silentEndBrain struct {
+	fakeBrain
+}
+
+func (b *silentEndBrain) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
+	out, done := make(chan string, 1), make(chan brain.StreamResult)
+	out <- "The door is teal."
+	close(out)
+	close(done)
+	return &brain.Stream{Chunks: out, Done: done}, nil
+}
+
+func TestHostTranscriptTurnEndsAsItIsRecordedWhenTheProviderSendsNoResult(t *testing.T) {
+	transcript := &recordedTranscript{}
+	p := &Pipeline{Brain: &silentEndBrain{}, Events: events.NewBus(), Transcript: transcript}
+	p.AdmitInput = admitAs("silent", func(input string) string { return input })
+	var reported []events.Error
+	events.Subscribe(p.Events, func(e events.Error) { reported = append(reported, e) })
+	if err := p.RunTurnTextMode(t.Context(), "What color is the door?"); err != nil {
+		t.Fatal(err)
+	}
+	if reply := recordedReply(t, transcript); reply.Disposition != "failed" {
+		t.Fatalf("reply = %+v", reply)
+	}
+	if len(reported) == 0 || !strings.Contains(reported[0].Message, "without a result") {
+		t.Fatalf("the turn finished as a success the transcript records as failed: %+v", reported)
+	}
+}
+
 // routeAfterStopBrain chooses a route only after the turn has stopped it, and
 // reports that a little later, so the turn has returned before the route is
 // known.
