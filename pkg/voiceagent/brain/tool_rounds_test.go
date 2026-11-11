@@ -316,3 +316,18 @@ func TestWorkerDeadlinePrefersTheEarlier(t *testing.T) {
 		t.Fatal("deadline reported without one")
 	}
 }
+
+func TestWorkerTimeReserveLeavesShortBudgetsRoomToWork(t *testing.T) {
+	for total, want := range map[time.Duration]time.Duration{
+		10 * time.Second: 5 * time.Second,
+		20 * time.Second: 10 * time.Second,
+		2 * time.Minute:  15 * time.Second,
+		5 * time.Minute:  30 * time.Second,
+		10 * time.Minute: time.Minute,
+		time.Hour:        time.Minute,
+	} {
+		if got := workerTimeReserve(total); got != want {
+			t.Errorf("reserve(%v)=%v, want %v", total, got, want)
+		}
+	}
+}

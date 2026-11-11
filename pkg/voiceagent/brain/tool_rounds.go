@@ -18,9 +18,10 @@ const toolRepeatAnswerInstruction = "The same tool call was repeated several tim
 const maxRepeatedToolRounds = 3
 
 // workerTimeReserve is how much of a deadline a worker keeps for its final
-// answer. It is a variable so tests need not wait out the real reserve.
+// answer, never more than half of it. It is a variable so tests need not wait
+// out the real reserve.
 var workerTimeReserve = func(total time.Duration) time.Duration {
-	return min(max(total/10, 15*time.Second), time.Minute)
+	return min(max(total/10, 15*time.Second), time.Minute, total/2)
 }
 
 // toolRounds decides when a turn's tool loop must stop and answer. Live turns
