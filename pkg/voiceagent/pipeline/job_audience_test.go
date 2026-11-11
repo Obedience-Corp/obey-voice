@@ -129,3 +129,43 @@ func TestUnnamedJobWaitsWhileAnotherPersonaHasBeenLive(t *testing.T) {
 		t.Fatal("after the conversation started again, Mira alone did not receive the unnamed job")
 	}
 }
+
+// guardedClaude is a Claude provider whose own history belongs to the turn
+// goroutine and must not be read to decide who receives a job.
+type guardedClaude struct {
+	*brain.Brain
+	t *testing.T
+}
+
+func (b guardedClaude) History() []brain.Turn {
+	b.t.Error("a job's audience was decided from the provider's own history")
+	return nil
+}
+
+func TestJobAudienceNeverReadsTheProvidersOwnHistory(t *testing.T) {
+	p := &Pipeline{Brain: guardedClaude{Brain: &brain.Brain{}, t: t}}
+	NewAgency(p, job.NewTable(t.Context()), nil, &config.Config{BrainProvider: "claude", ActivePersona: "mira"}, nil).Wire()
+	if !p.deliverableResult(resultFrom(map[string]string{"provider": "ollama"})) {
+		t.Fatal("Mira alone did not receive an unnamed job")
+	}
+}
+
+func TestNewConversationForgetsWhichPersonasWereLive(t *testing.T) {
+	p, _, _ := newCompletionLeasePipeline(t, false)
+	p.Brain, p.Transcript = &brain.Brain{}, &recordedTranscript{}
+	legacy := resultFrom(map[string]string{"provider": "ollama"})
+	p.Agency.ReplaceWorker(nil, &config.Config{ActivePersona: "ember"}, nil)
+	p.Agency.ReplaceWorker(nil, &config.Config{ActivePersona: "mira"}, nil)
+	if p.deliverableResult(legacy) {
+		t.Fatal("Mira received an unnamed job while Ember had been live")
+	}
+	if err := p.CloseWork(); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EnableConversationWork("next-conversation", nil, &config.Config{ActivePersona: "mira"}); err != nil {
+		t.Fatal(err)
+	}
+	if !p.deliverableResult(legacy) {
+		t.Fatal("a new conversation still counted Ember from the previous one")
+	}
+}

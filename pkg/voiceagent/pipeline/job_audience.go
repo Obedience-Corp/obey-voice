@@ -86,19 +86,13 @@ func (p *Pipeline) startedByLivePersona(admission map[string]string) bool {
 	return true
 }
 
-// conversationTurns is the whole conversation as the host or the live
-// provider records it.
+// conversationTurns is the conversation as the host records it, or nil when
+// the live provider keeps it: that history belongs to the turn goroutine.
 func (p *Pipeline) conversationTurns() []brain.Turn {
 	if t := p.transcriptFor(p.Brain); t != nil {
 		return t.Turns()
 	}
-	if p.Brain == nil {
-		return nil
-	}
-	if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
-		return canonical.CanonicalHistory()
-	}
-	return p.Brain.History()
+	return nil
 }
 
 // notePersonaLocked records cfg's persona as one the conversation has had

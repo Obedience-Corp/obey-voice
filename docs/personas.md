@@ -484,6 +484,11 @@ send earlier lines to a persona whose share has already started; it applies to
 personas first addressed after the change. A persona on Grok or Cursor can only
 hold a conversation that started on it, and is sent all of it.
 
+The notice covers a persona's conversation backend only. Two other paths can
+send conversation text off this machine without it: a background job on a
+hosted worker provider, and [decision routing](decision-routing.md) when set to
+Jev or OpenAI.
+
 The brief a new background job is given carries up to eight recent spoken
 lines to the worker provider: with a persona on Claude, Codex, Muse Spark or
 Obey answering, only lines from that persona's share.
