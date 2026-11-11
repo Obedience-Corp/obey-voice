@@ -99,8 +99,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	imageResultRetry := false
 	routeRetried := false
 	continuations := 0
-	for i := 0; i <= maxToolIterations; i++ {
-		finalAnswer := i == maxToolIterations
+	rounds := newToolRounds(o.cfg, opts)
+	for i := 0; rounds.more(i); i++ {
+		finalAnswer, finalInstruction := rounds.final(ctx, i)
 		var tools api.Tools
 		if opts.ToolsEnabled && !routedChat && !finalAnswer {
 			tools = sess.tools()
@@ -136,7 +137,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			messages = o.compactionMessages(skillCtx)
 		}
 		if finalAnswer {
-			messages = append(messages, api.Message{Role: "user", Content: toolLimitAnswerInstruction})
+			messages = append(messages, api.Message{Role: "user", Content: finalInstruction})
 		}
 		if err := o.messagesBudgetError(messages, tools); err != nil {
 			return "", err
@@ -203,6 +204,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 		if len(response.ToolCalls) > 0 {
 			hadTools = true
+			rounds.observe(response.ToolCalls)
 			hadThinking = hadThinking || messageHadThinking(response)
 			if sess.routerPolicy == RouterToolsRouteOnly {
 				// The live classifier's tool preamble is planning, not an

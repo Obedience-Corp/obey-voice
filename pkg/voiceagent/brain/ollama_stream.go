@@ -108,8 +108,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		repetitionAllowed := false
 		imageResultRetry := false
 
-		for i := 0; i <= maxToolIterations; i++ {
-			finalAnswer := i == maxToolIterations
+		rounds := newToolRounds(o.cfg, opts)
+		for i := 0; rounds.more(i); i++ {
+			finalAnswer, finalInstruction := rounds.final(ctx, i)
 			var tools api.Tools
 			if opts.ToolsEnabled && !routedChat && !finalAnswer {
 				tools = sess.tools()
@@ -145,7 +146,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				tools = nil
 			}
 			if finalAnswer {
-				messages = append(messages, api.Message{Role: "user", Content: toolLimitAnswerInstruction})
+				messages = append(messages, api.Message{Role: "user", Content: finalInstruction})
 			}
 			if budgetErr := o.messagesBudgetError(messages, tools); budgetErr != nil {
 				done <- StreamResult{Err: budgetErr, Recovered: ctx.Err() == nil}
@@ -436,6 +437,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// If model made tool calls, execute them and loop.
 			if len(toolCalls) > 0 {
 				hadTools = true
+				rounds.observe(toolCalls)
 				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
 					tier, reason := routeMetadata(toolCalls)
 					if sess.onStart != nil || sess.onEnd != nil {

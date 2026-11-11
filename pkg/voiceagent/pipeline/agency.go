@@ -320,6 +320,9 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 			return "", errors.New("worker provider is not configured")
 		}
 		worker = a.freshWorker(worker)
+		if end, ok := job.BudgetEnd(ctx); ok {
+			ctx = brain.WithWorkerDeadline(ctx, end)
+		}
 		if a.workEnabled() && !tieredWorkers(cfg) && providerName(cfg) == "ollama" {
 			if validator, ok := worker.(brain.LegacyWorkerValidator); ok {
 				if err := validator.ValidateLegacyWorker(ctx); err != nil {

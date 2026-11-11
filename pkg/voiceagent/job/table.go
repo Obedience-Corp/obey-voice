@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,6 +44,22 @@ func WithID(ctx context.Context, id string) context.Context {
 func IDFromContext(ctx context.Context) string {
 	id, _ := ctx.Value(idKey{}).(string)
 	return id
+}
+
+type budgetEndKey struct{}
+
+// BudgetEnd returns when the job's runtime budget stops it. ok is false
+// outside a job and for a job with no budget.
+func BudgetEnd(ctx context.Context) (end time.Time, ok bool) {
+	holder, _ := ctx.Value(budgetEndKey{}).(*atomic.Int64)
+	if holder == nil {
+		return time.Time{}, false
+	}
+	nanos := holder.Load()
+	if nanos == 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(0, nanos), true
 }
 
 // Spec describes work the table should run asynchronously.
@@ -140,6 +157,7 @@ type entry struct {
 	announced bool
 	// budgetTimer fires the budget stop.
 	budgetTimer *time.Timer
+	budgetEnd   *atomic.Int64
 	// finished is set once the job reached a terminal state. A stop (cancel
 	// or budget) finishes the job without waiting for its run function, so
 	// a run function that returns late finds this set and changes nothing.
@@ -253,12 +271,15 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		t.mu.Unlock()
 		return "", fmt.Errorf("job %q already exists", id)
 	}
-	jobCtx, cancel := context.WithCancel(WithID(context.WithoutCancel(t.lifetime), id))
+	budgetEnd := new(atomic.Int64)
+	base := context.WithValue(WithID(context.WithoutCancel(t.lifetime), id), budgetEndKey{}, budgetEnd)
+	jobCtx, cancel := context.WithCancel(base)
 	e := &entry{
-		info:   Info{ID: id, Task: spec.Task, State: StateQueued, Provider: spec.Provider, Model: spec.Model},
-		spec:   spec,
-		ctx:    jobCtx,
-		cancel: cancel,
+		info:      Info{ID: id, Task: spec.Task, State: StateQueued, Provider: spec.Provider, Model: spec.Model},
+		spec:      spec,
+		ctx:       jobCtx,
+		cancel:    cancel,
+		budgetEnd: budgetEnd,
 	}
 	t.jobs[id] = e
 	t.queue = append(t.queue, id)
@@ -450,6 +471,7 @@ func (t *Table) run(jobCtx context.Context, id string) {
 			budget = e.spec.RuntimeBudget
 		}
 		if budget > 0 {
+			e.budgetEnd.Store(e.info.Started.Add(budget).UnixNano())
 			e.budgetTimer = time.AfterFunc(budget, func() { t.exceedBudget(id) })
 		}
 	}

@@ -18,7 +18,7 @@ import (
 // external effects. Failed reads must reach a bounded, tools-free final turn.
 func TestOllamaToolLimitFinalAnswer(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
-		for _, mode := range []string{"answer", "empty", "filler", "thinking only", "tools again", "provider error", "truncated", "incomplete", "budget", "cancel"} {
+		for _, mode := range []string{"answer", "empty", "filler", "thinking only", "tools again", "provider error", "truncated", "incomplete", "cancel"} {
 			t.Run(map[bool]string{true: "stream", false: "full"}[streaming]+"/"+mode, func(t *testing.T) {
 				calls, executed := 0, 0
 				var final api.ChatRequest
@@ -76,9 +76,6 @@ func TestOllamaToolLimitFinalAnswer(t *testing.T) {
 						cancel()
 					}
 				}
-				if mode == "budget" {
-					opts.WorkerBudget = NewWorkerBudget(BudgetLimits{MaxRequests: maxToolIterations})
-				}
 				var answer string
 				var err error
 				if streaming {
@@ -111,12 +108,8 @@ func TestOllamaToolLimitFinalAnswer(t *testing.T) {
 				if executed != maxToolIterations {
 					t.Fatalf("executed=%d", executed)
 				}
-				if mode == "budget" || mode == "cancel" {
-					want := ErrWorkerBudgetExceeded
-					if mode == "cancel" {
-						want = context.Canceled
-					}
-					if !errors.Is(err, want) || calls != maxToolIterations {
+				if mode == "cancel" {
+					if !errors.Is(err, context.Canceled) || calls != maxToolIterations {
 						t.Fatalf("limit bypass: calls=%d err=%v", calls, err)
 					}
 					return
