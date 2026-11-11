@@ -50,8 +50,11 @@ type SelectionOptions struct {
 	NewBrain        func(context.Context, *config.Config) (brain.Provider, error)
 	NewWorker       func(context.Context, *config.Config) (brain.Provider, error)
 	NewVoice        func(context.Context, *config.Config) (*voiceagent.TTSSet, error)
-	Native          *NativeSelectionHooks
-	InitialNative   *voiceagent.NativeCandidate
+	// VoiceAssets installs what a voice needs before it is built in place of
+	// a live provider that keeps its session.
+	VoiceAssets   func(context.Context, *config.Config) error
+	Native        *NativeSelectionHooks
+	InitialNative *voiceagent.NativeCandidate
 }
 
 // Selector replaces response resources at the host's serialized boundary. It
@@ -113,6 +116,11 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	if opts.NewVoice == nil {
 		opts.NewVoice = func(_ context.Context, cfg *config.Config) (*voiceagent.TTSSet, error) {
 			return voiceagent.NewTTSSet(cfg)
+		}
+	}
+	if opts.VoiceAssets == nil {
+		opts.VoiceAssets = func(ctx context.Context, cfg *config.Config) error {
+			return config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedTTS: true}, nil)
 		}
 	}
 	settings := discussion.DefaultSettings()

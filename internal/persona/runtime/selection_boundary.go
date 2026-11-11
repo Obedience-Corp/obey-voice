@@ -49,7 +49,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	var turns []brain.Turn
 	var stagedContexts brain.PersonaContexts
 	var err, workerErr, durabilityErr error
-	unchanged, installed, rebind := false, false, false
+	unchanged, installed, rebind, keepLive := false, false, false, false
 	defer func() {
 		if prepared != nil {
 			_ = prepared.Discard()
@@ -60,7 +60,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 		if !installed {
 			if native != nil {
 				_ = native.Close()
-			} else {
+			} else if !keepLive {
 				closeBrain(nextBrain)
 			}
 			if inputCleanup != nil {
@@ -140,12 +140,33 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if !rebind && !slices.Contains(sharedHistoryProviders, cfg.BrainProvider) {
 				return fmt.Errorf("persona %q: provider %q has no verified shared history projection", id, cfg.BrainProvider)
 			}
+			// Such a provider keeps its session through a voice or audio change,
+			// as it did before persona selection existed for it.
+			keepLive = rebind && !s.requiresSelection && previous.ConversationEpoch == scope.ConversationEpoch &&
+				binding.AudioConfig().Mode != persona.AudioNative && sameResponder(s.binding, binding, previous.PromptHash, hash)
 
 			return nil
 		},
 		Prepare: func(ctx context.Context) error {
 			if unchanged {
 				return nil
+			}
+			if keepLive {
+				nextBrain, turns, stagedContexts = oldBrain, s.sharedTurns(), s.contexts.Clone()
+				if s.opts.Voices != nil && (s.opts.Native == nil || !s.opts.Native.Silent) {
+					if err := s.opts.VoiceAssets(ctx, cfg); err != nil {
+						return fmt.Errorf("prepare persona voice: %w", err)
+					}
+					voice, err = prepareResource(ctx, func() (*voiceagent.TTSSet, error) { return s.opts.NewVoice(ctx, cfg) }, func(v *voiceagent.TTSSet) { v.Close() })
+					if err != nil {
+						return fmt.Errorf("prepare persona voice: %w", err)
+					}
+					if voice == nil || voice.Primary == nil || !voice.Primary.Available() {
+						return errors.New("persona voice is unavailable")
+					}
+				}
+				prepared, err = p.PrepareConversationBrain(nextBrain, nil, cfg, nil)
+				return err
 			}
 			if s.opts.Native != nil {
 				if err = p.QuiesceNative(ctx); err != nil {
@@ -351,8 +372,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if inputPrepared != nil {
 				inputPrepared.Publish()
 			}
-			oldNative, oldInputCleanup := s.nativeCandidate, s.inputCleanup
-			s.nativeCandidate, s.inputCleanup = native, inputCleanup
+			var oldNative *voiceagent.NativeCandidate
+			var oldInputCleanup func()
+			if !keepLive {
+				oldNative, oldInputCleanup = s.nativeCandidate, s.inputCleanup
+				s.nativeCandidate, s.inputCleanup = native, inputCleanup
+			}
 			if native != nil {
 				native.TransferBrainOwnership()
 			}
@@ -381,6 +406,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			}
 			if p.Events != nil {
 				p.Events.Emit(next)
+				if keepLive && voice != nil && voice.VoiceNotice != nil {
+					p.Events.Emit(events.Error{Stage: "tts-voice", Message: voice.VoiceNotice.Error()})
+				}
+				if keepLive && voice != nil && voice.FallbackWarning != nil {
+					p.Events.Emit(events.Error{Stage: events.StageTTSFallback, Message: voice.FallbackWarning.Error()})
+				}
 			}
 			s.warnPersistence(durabilityErr)
 
@@ -394,4 +425,13 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 		return previous, nil
 	}
 	return next, nil
+}
+
+// sameResponder reports whether a rebinding leaves unchanged everything the
+// live provider was built from: provider, model, prompts, persona name and
+// working directory.
+func sameResponder(live, next *persona.SessionBinding, liveHash, nextHash string) bool {
+	a, b := live.Config(), next.Config()
+	return liveHash == nextHash && live.BrainProvider == next.BrainProvider && live.BrainModel == next.BrainModel &&
+		a.AgentName == b.AgentName && a.Persona == b.Persona && a.TurnPrompt == b.TurnPrompt && config.WorkDirFrom(a) == config.WorkDirFrom(b)
 }

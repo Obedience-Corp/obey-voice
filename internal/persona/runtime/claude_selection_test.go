@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -141,6 +143,7 @@ type claudeConversation struct {
 	mu       sync.Mutex
 	ollama   [][]ollamaMessage
 	ready    []events.ResponseReady
+	errors   []events.Error
 }
 
 func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
@@ -200,6 +203,11 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 		initial.LoadHistory(turns)
 	}
 	p := &pipeline.Pipeline{Brain: initial, Events: events.NewBus()}
+	events.Subscribe(p.Events, func(e events.Error) {
+		c.mu.Lock()
+		c.errors = append(c.errors, e)
+		c.mu.Unlock()
+	})
 	if c.work {
 		jobs := job.NewTable(t.Context())
 		t.Cleanup(jobs.Close)
@@ -253,6 +261,12 @@ func (c *claudeConversation) responses() []events.ResponseReady {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]events.ResponseReady(nil), c.ready...)
+}
+
+func (c *claudeConversation) errorEvents() []events.Error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]events.Error(nil), c.errors...)
 }
 
 func (c *claudeConversation) ollamaRequests() [][]ollamaMessage {
@@ -475,7 +489,7 @@ func TestClaudeConversationResumesWithoutLosingForeignTurns(t *testing.T) {
 	}
 }
 
-func TestClaudeConversationClearAndReloadRebindTheSamePersona(t *testing.T) {
+func TestClaudeConversationClearAndPromptEditRestartTheSessionButVoiceChangesKeepIt(t *testing.T) {
 	c := newClaudeConversation(t, 20)
 	c.say("Note that the vault code is cobalt.")
 	if err := c.p.ClearConversation(); err != nil {
@@ -491,18 +505,90 @@ func TestClaudeConversationClearAndReloadRebindTheSamePersona(t *testing.T) {
 	}
 
 	reloaded := c.base.Clone()
-	reloaded.MaxHistory = 30
+	reloaded.VADSilenceDuration = 1.3
 	if err := c.selector.Reload(t.Context(), reloaded); err != nil {
 		t.Fatal(err)
 	}
-	c.say("Still there?", "And now?")
+	c.say("Still there?")
+	writeTestPrompt(t, c.base.PromptsDir, "mira", "You are {agent_name}, and you speak briefly.")
+	c.say("And now?", "Once more.")
 	turns := c.selector.Transcript()
-	if len(turns) != 6 || turns[3].PersonaID != "mira" || turns[5].PersonaID != "mira" || c.selector.Snapshot().PersonaID != "mira" {
-		t.Fatalf("transcript after reload = %+v", turns)
+	if len(turns) != 8 || turns[7].PersonaID != "mira" || c.selector.Snapshot().PersonaID != "mira" {
+		t.Fatalf("transcript = %+v", turns)
 	}
 	requests := readClaudeRequests(t, c.log)
-	if len(requests) != 4 || requests[1].Resume != "" || requests[2].Resume != "" || requests[3].Resume != "claude-fixture" {
-		t.Fatalf("clear and reload must start a fresh provider session, later turns resume it: %+v", requests)
+	if len(requests) != 5 {
+		t.Fatalf("requests = %+v", requests)
+	}
+	if requests[1].Resume != "" {
+		t.Fatalf("a cleared conversation resumed its old session: %+v", requests[1])
+	}
+	if requests[2].Resume != "claude-fixture" {
+		t.Fatalf("an audio settings change restarted the session: %+v", requests[2])
+	}
+	if requests[3].Resume != "" || requests[4].Resume != "claude-fixture" {
+		t.Fatalf("a prompt edit must start a fresh session that later turns resume: %+v", requests[3:])
+	}
+}
+
+func TestClaudeVoiceOnlyReloadKeepsProviderSession(t *testing.T) {
+	for name, change := range map[string]func(*config.Config){
+		"tts_voice":             func(c *config.Config) { c.TTSVoice = "am_michael" },
+		"vad_silence_duration":  func(c *config.Config) { c.VADSilenceDuration = 1.3 },
+		"barge_in_enabled":      func(c *config.Config) { c.BargeInEnabled = !c.BargeInEnabled },
+		"tts_fallback_provider": func(c *config.Config) { c.TTSFallbackProvider = "say" },
+		"tts_worker_url":        func(c *config.Config) { c.TTSWorkerURL = "http://127.0.0.1:9" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newClaudeConversation(t, 20)
+			live := c.p.Brain
+			c.say("one", "two")
+			reloaded := c.base.Clone()
+			change(reloaded)
+			if err := c.selector.Reload(t.Context(), reloaded); err != nil {
+				t.Fatal(err)
+			}
+			c.say("three")
+			requests := readClaudeRequests(t, c.log)
+			if last := requests[len(requests)-1]; last.Resume != "claude-fixture" || c.p.Brain != live {
+				t.Fatalf("%s change replaced the live provider session: %+v", name, last)
+			}
+			if turns := c.selector.Transcript(); len(turns) != 6 {
+				t.Fatalf("transcript = %+v", turns)
+			}
+		})
+	}
+}
+
+func TestClaudeVoiceOnlyReloadWarnsInsteadOfFailing(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	voices := &voiceagent.LiveTTSManager{RetireDelay: -1}
+	t.Cleanup(voices.Close)
+	assets := 0
+	c.selector.opts.Voices = voices
+	c.selector.opts.VoiceAssets = func(context.Context, *config.Config) error { assets++; return nil }
+	c.selector.opts.NewVoice = func(context.Context, *config.Config) (*voiceagent.TTSSet, error) {
+		return &voiceagent.TTSSet{Primary: selectorNativeVoice{}, VoiceNotice: errors.New("voice Harper is not installed; using the default"), FallbackWarning: errors.New("fallback voice is unavailable")}, nil
+	}
+	c.say("one")
+	reloaded := c.base.Clone()
+	reloaded.TTSWorkerURL = "http://127.0.0.1:9"
+	if err := c.selector.Reload(t.Context(), reloaded); err != nil {
+		t.Fatal(err)
+	}
+	if assets != 1 {
+		t.Fatalf("voice assets checked %d times, want once before building the voice", assets)
+	}
+	stages := map[string]bool{}
+	for _, e := range c.errorEvents() {
+		stages[e.Stage] = true
+	}
+	if !stages["tts-voice"] || !stages[events.StageTTSFallback] {
+		t.Fatalf("voice warnings were not reported: %+v", c.errorEvents())
+	}
+	c.say("two")
+	if requests := readClaudeRequests(t, c.log); requests[len(requests)-1].Resume != "claude-fixture" {
+		t.Fatalf("voice change restarted the session: %+v", requests)
 	}
 }
 
@@ -555,11 +641,7 @@ func TestClaudeRestoreDoesNotLookLikeAnOverdueCompaction(t *testing.T) {
 	c.start("mira", long, nil)
 	c.p.CompactPrompt, c.p.AutoCompactAfter = "Summarize the conversation.", 2*c.base.MaxHistory
 	c.say("What was fact 5?")
-	reloaded := c.base.Clone()
-	reloaded.MaxHistory = 3
-	if err := c.selector.Reload(t.Context(), reloaded); err != nil {
-		t.Fatal(err)
-	}
+	writeTestPrompt(t, c.base.PromptsDir, "mira", "You are {agent_name}, and you speak briefly.")
 	c.say("And fact 4?")
 	for _, req := range readClaudeRequests(t, c.log) {
 		if req.Format == "json" {
@@ -585,5 +667,47 @@ func TestClaudeTranscriptSurvivesClosingConversationWork(t *testing.T) {
 	c.p.OnTurn()
 	if turns := c.saved().Turns; len(turns) != 2 {
 		t.Fatalf("final save = %+v", turns)
+	}
+}
+
+func TestSameResponderSeparatesSessionChangesFromVoiceChanges(t *testing.T) {
+	root := t.TempDir()
+	catalog := persona.Catalog{Dir: filepath.Join(root, "personas")}
+	mira := testProfile("mira", "Mira", "mira")
+	mira.Brain.Provider, mira.Brain.Model = "grok", ""
+	writeTestProfile(t, catalog.Dir, mira)
+	writeTestPrompt(t, filepath.Join(root, "prompts"), "mira", "You are {agent_name}.")
+	base := &config.Config{BrainProvider: "grok", GrokModel: "grok-4", PromptsDir: filepath.Join(root, "prompts"), WorkDir: root}
+	resolve := func(cfg *config.Config) *persona.SessionBinding {
+		b, err := catalog.ResolveBinding(cfg, "mira")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	live := resolve(base)
+	for name, tc := range map[string]struct {
+		change func(*config.Config)
+		same   bool
+	}{
+		"voice":     {func(c *config.Config) { c.TTSProvider = "say" }, true},
+		"audio":     {func(c *config.Config) { c.VADSilenceDuration = 1.3 }, true},
+		"model":     {func(c *config.Config) { c.GrokModel = "grok-5" }, false},
+		"directory": {func(c *config.Config) { c.WorkDir = t.TempDir() }, false},
+	} {
+		next := base.Clone()
+		tc.change(next)
+		if got := sameResponder(live, resolve(next), "hash", "hash"); got != tc.same {
+			t.Errorf("%s change: same responder = %v, want %v", name, got, tc.same)
+		}
+	}
+	if sameResponder(live, live, "hash", "edited") {
+		t.Error("a prompt edit kept the responder")
+	}
+	renamed := testProfile("mira", "Mira Two", "mira")
+	renamed.Brain.Provider, renamed.Brain.Model = "grok", ""
+	writeTestProfile(t, catalog.Dir, renamed)
+	if sameResponder(live, resolve(base), "hash", "hash") {
+		t.Error("a name change kept the responder")
 	}
 }
