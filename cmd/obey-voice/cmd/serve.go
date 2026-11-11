@@ -638,6 +638,7 @@ func (s *servePersonaSwitcher) initialize() error {
 	}
 	s.sessions.contexts = s.selector.ContextSnapshots
 	s.sessions.transcript = s.selector.Transcript
+	s.sessions.load = s.selector.LoadHistory
 	s.pipeline.AdmitInput = s.selector.Route
 	s.pipeline.RouteHandoff = s.selector.RouteHandoff
 	s.pipeline.EndDiscussion = s.selector.EndDiscussion
@@ -1009,6 +1010,8 @@ type sessionRef struct {
 	checkpoint *workCheckpoint
 	contexts   func() brain.PersonaContexts
 	transcript func() []brain.Turn
+	// load puts a conversation into the live provider once selection is bound.
+	load func([]brain.Turn)
 }
 
 // history is the conversation to save: the selector's canonical transcript
@@ -1018,6 +1021,14 @@ func (r *sessionRef) history(p *pipeline.Pipeline) []brain.Turn {
 		return r.transcript()
 	}
 	return p.Brain.History()
+}
+
+func (r *sessionRef) loadHistory(p *pipeline.Pipeline, turns []brain.Turn) {
+	if r.load != nil {
+		r.load(turns)
+		return
+	}
+	p.Brain.LoadHistory(turns)
 }
 
 func (r *sessionRef) save(turns []brain.Turn) error {
@@ -1071,9 +1082,9 @@ func (r *sessionRef) resume(p *pipeline.Pipeline, cfg *config.Config, id string)
 			return err
 		}
 	}
-	p.Brain.LoadHistory(next.Turns)
+	r.loadHistory(p, next.Turns)
 	if err := r.bindWork(p, cfg, next); err != nil {
-		p.Brain.LoadHistory(history)
+		r.loadHistory(p, history)
 		previous, loadErr := session.Load(previousID)
 		if loadErr == nil {
 			loadErr = r.bindWork(p, cfg, previous)

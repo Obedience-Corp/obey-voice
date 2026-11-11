@@ -105,6 +105,24 @@ func sessionHistory(turns []brain.Turn, cursor brain.PersonaContext, cfg *config
 	return sessionView(out, cfg)
 }
 
+// LoadHistory loads turns into the live provider for a host that restores or
+// replaces the conversation outside selection. A provider keeping its own
+// session holds only what its persona may receive of turns, and nothing when
+// the persona's cursor does not belong to them.
+func (s *Selector) LoadHistory(turns []brain.Turn) {
+	live := s.opts.Pipeline.Brain
+	if !brain.KeepsPersonaSession(live) {
+		live.LoadHistory(turns)
+		return
+	}
+	turns = canonicalTurns(turns)
+	var held []brain.Turn
+	if cursor, ok := s.transcript.session(s.Snapshot().PersonaID, turns); ok {
+		held = sessionHistory(turns, cursor, s.Config())
+	}
+	live.LoadHistory(held)
+}
+
 // replayContexts drops session cursors, which the transcript owns.
 func replayContexts(contexts brain.PersonaContexts) brain.PersonaContexts {
 	out := contexts.Clone()
