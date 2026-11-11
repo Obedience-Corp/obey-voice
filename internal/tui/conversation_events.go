@@ -285,13 +285,17 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			spoken = b
 		}
 		name := m.agentName
+		hosted := false
 		if e.Envelope != nil && e.Envelope.DisplayName != "" {
 			name = e.Envelope.DisplayName
+		}
+		if e.Envelope != nil {
+			hosted = e.Envelope.Hosted
 		}
 		if spoken != "" {
 			m.rememberAssistant(spoken)
 			m.attachAssistantMedia(e.Attachments)
-			m.appendAgentTurn(chatItem{name: name, think: thought, spoken: spoken, attachments: e.Attachments})
+			m.appendAgentTurn(chatItem{name: name, hosted: hosted, think: thought, spoken: spoken, attachments: e.Attachments})
 		} else if e.Interrupted || e.Degraded {
 			m.refreshContent()
 			m.applyFollow()
@@ -299,7 +303,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			// Thinking-only empty: keep the thought for Ctrl+K; stay off the
 			// thread while showThink is false so we do not paint a blank bubble.
 			m.appendActivity("model", fmt.Sprintf("thought %d chars", len(thought)), 0)
-			m.appendAgentTurn(chatItem{name: name, think: thought})
+			m.appendAgentTurn(chatItem{name: name, hosted: hosted, think: thought})
 		} else {
 			// Tool-only or empty model finishes must still leave a visible
 			// trail so "looking into it" never ends in total silence.

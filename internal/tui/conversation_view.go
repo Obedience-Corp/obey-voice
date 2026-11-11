@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -235,7 +236,11 @@ func (m conversationModel) brainBadgeLabel() string {
 	if model == "" {
 		model = "default"
 	}
-	return "brain " + provider + " · " + model
+	label := "brain " + provider + " · " + model
+	if brain.IsHosted(provider) {
+		label += " · hosted"
+	}
+	return label
 }
 
 func (m conversationModel) View() string {

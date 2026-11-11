@@ -52,6 +52,8 @@ func (e *PersonaListIssues) Error() string { return "some persona profiles are u
 type PersonaBrain struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
+	// Hosted is set when the provider sends conversation text off this machine.
+	Hosted bool `json:"hosted"`
 }
 
 // PersonaTTS is a persona's effective speech settings. Tier is empty for

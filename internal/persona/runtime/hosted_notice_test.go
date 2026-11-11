@@ -1,0 +1,225 @@
+package personaruntime
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+)
+
+const miraNotice = "Mira runs on Claude, a hosted service. What is said from here on is sent to Claude; earlier lines stay on this machine."
+
+type hostedNoticeEvent struct {
+	message        string
+	claudeRequests int
+}
+
+func (c *claudeConversation) hostedNotices() []hostedNoticeEvent {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []hostedNoticeEvent
+	for _, n := range c.notices {
+		if strings.Contains(n.message, "a hosted service") {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func (c *claudeConversation) addClaudePersona(id, display string) {
+	c.t.Helper()
+	profile := testProfile(id, display, id)
+	profile.Brain.Provider, profile.Brain.Model = "claude", ""
+	writeTestProfile(c.t, c.catalog.Dir, profile)
+	writeTestPrompt(c.t, c.base.PromptsDir, id, "You are {agent_name}.")
+}
+
+func TestHostedNoticeComesOnceBeforeTheFirstRequestToTheHostedProvider(t *testing.T) {
+	c := newMixedConversation(t, 20, "ember")
+	c.say("Note that the vault code is cobalt.", "switch to Mira")
+	if got := c.hostedNotices(); len(got) != 0 {
+		t.Fatalf("a notice came before a hosted persona was asked anything: %+v", got)
+	}
+
+	c.say("What do you think?")
+	got := c.hostedNotices()
+	if len(got) != 1 || got[0].message != miraNotice || got[0].claudeRequests != 0 {
+		t.Fatalf("notices = %+v, want %q before any request to Claude", got, miraNotice)
+	}
+	if n := len(readClaudeRequests(t, c.log)); n != 1 {
+		t.Fatalf("claude requests = %d", n)
+	}
+
+	c.say("And now?", "switch to Ember", "Anything new?", "switch to Mira", "Back again.")
+	if got := c.hostedNotices(); len(got) != 1 {
+		t.Fatalf("a second notice for the same provider: %+v", got)
+	}
+
+	c.p.ClearConversation()
+	c.say("Fresh start.")
+	got = c.hostedNotices()
+	if len(got) != 2 || got[1].message != miraNotice {
+		t.Fatalf("clearing did not reset the notice: %+v", got)
+	}
+}
+
+func TestHostedNoticeIsSavedWithTheSessionAndNotRepeatedOnResume(t *testing.T) {
+	c := newMixedConversation(t, 20, "ember")
+	c.say("Hello.", "switch to Mira", "What do you think?")
+	if saved := c.saved(); !slices.Equal(saved.HostedNotified, []string{"claude"}) {
+		t.Fatalf("saved notices = %q", saved.HostedNotified)
+	}
+	c.sess = c.saved()
+	c.start("mira", c.sess.Turns, c.sess.PersonaContexts)
+	c.say("Still there?")
+	if got := c.hostedNotices(); len(got) != 1 {
+		t.Fatalf("resume repeated the notice: %+v", got)
+	}
+}
+
+func TestClearingDropsTheSavedNotices(t *testing.T) {
+	c := newMixedConversation(t, 20, "ember")
+	c.say("Hello.", "switch to Mira", "What do you think?", "switch to Ember")
+	c.p.ClearConversation()
+	c.say("Fresh start.")
+	if saved := c.saved(); len(saved.HostedNotified) != 0 {
+		t.Fatalf("a cleared conversation kept its notices: %q", saved.HostedNotified)
+	}
+	c.say("switch to Mira", "Hello again.")
+	if saved := c.saved(); !slices.Equal(saved.HostedNotified, []string{"claude"}) || len(c.hostedNotices()) != 2 {
+		t.Fatalf("saved = %q, notices = %+v", saved.HostedNotified, c.hostedNotices())
+	}
+}
+
+func TestHostedNoticeNeverReachesAModelOrTheTranscript(t *testing.T) {
+	c := newMixedConversation(t, 20, "ember")
+	c.say("Hello.", "switch to Mira", "What do you think?", "switch to Ember", "Thoughts?", "switch to Mira", "Anything else?")
+	if len(c.hostedNotices()) != 1 {
+		t.Fatalf("notices = %+v", c.hostedNotices())
+	}
+	for _, req := range readClaudeRequests(t, c.log) {
+		requireOmits(t, req.Prompt, "hosted service")
+	}
+	for _, request := range c.ollamaRequests() {
+		for _, m := range request {
+			requireOmits(t, m.Content, "hosted service")
+		}
+	}
+	for _, turn := range c.selector.Transcript() {
+		requireOmits(t, turn.Content, "hosted service")
+	}
+	for _, r := range c.responses() {
+		requireOmits(t, r.Response, "hosted service")
+	}
+	for _, turn := range c.saved().Turns {
+		requireOmits(t, turn.Content, "hosted service")
+	}
+}
+
+func TestHostedNoticeIsOnlySpokenWhenTheConversationDidNotStartOnThatProvider(t *testing.T) {
+	spoken := func(c *claudeConversation, id string) (pipelineNotice string, spoken bool) {
+		t.Helper()
+		selected, err := c.selector.Select(t.Context(), id, "explicit")
+		if err != nil {
+			t.Fatal(err)
+		}
+		notice, ok := c.selector.HostedNotice(responseEnvelope(selected))
+		if !ok {
+			t.Fatal("no notice for a hosted persona")
+		}
+		return notice.Text, notice.Spoken
+	}
+	mixed := newMixedConversation(t, 20, "ember")
+	if text, voiced := spoken(mixed, "mira"); !voiced || text != miraNotice {
+		t.Fatalf("conversation started on Ollama: spoken = %v, %q", voiced, text)
+	}
+	plain := newClaudeConversation(t, 20)
+	if text, voiced := spoken(plain, "mira"); voiced || text != miraNotice {
+		t.Fatalf("conversation started on Claude: spoken = %v, %q; the line must be shown but not spoken", voiced, text)
+	}
+}
+
+func TestMarkersIdentifyHostedPersonasOnSelectionsAndReplies(t *testing.T) {
+	c := newMixedConversation(t, 20, "ember")
+	if c.selector.Snapshot().Hosted {
+		t.Fatal("a persona on Ollama is marked hosted")
+	}
+	c.say("Hello.", "switch to Mira", "What do you think?")
+	if s := c.selector.Snapshot(); !s.Hosted || s.BrainProvider != "claude" {
+		t.Fatalf("selection = %+v", s)
+	}
+	byPersona := map[string]events.ResponseEnvelope{}
+	for _, r := range c.responses() {
+		if r.Envelope != nil {
+			byPersona[r.Envelope.PersonaID] = *r.Envelope
+		}
+	}
+	if m := byPersona["mira"]; !m.Hosted || m.BrainProvider != "claude" {
+		t.Fatalf("Mira's reply envelope = %+v", m)
+	}
+	if e := byPersona["ember"]; e.Hosted {
+		t.Fatalf("Ember's reply envelope = %+v", e)
+	}
+}
+
+func TestWholeConversationSharingStillStripsOtherPersonasToolTraffic(t *testing.T) {
+	turns := []brain.Turn{
+		{Role: "user", Content: "Ember, check my notes.", Attachments: []chatmedia.Ref{{ID: "a1", Name: "vault-scan.png"}}},
+		{Role: "assistant", Content: "Let me look.", ToolCalls: []brain.TurnToolCall{{ID: "c1", Name: "bash", Arguments: `{"command":"cat ~/private/diary.md"}`}}, PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+		{Role: "tool", ToolName: "bash", ToolCallID: "c1", Content: "TOOL OUTPUT SECRET"},
+		{Role: "assistant", Content: "Your notes say hi.", PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
+	}
+	for _, tc := range []struct {
+		name, sharing string
+		earlier       bool
+	}{
+		{"default sends from the invitation", "", false},
+		{"from_invite sends from the invitation", "from_invite", false},
+		{"whole_conversation sends from the start", "whole_conversation", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newMixedConversation(t, 20, "ember")
+			c.base.HostedPersonaSharing = tc.sharing
+			c.start("ember", turns, nil)
+			c.say("switch to Mira", "What did Ember find?")
+			prompt := readClaudeRequests(t, c.log)[0].Prompt
+			requireContains(t, prompt, "What did Ember find?")
+			requireOmits(t, prompt, "diary.md", "TOOL OUTPUT SECRET", "tool_call", `"bash"`, "vault-scan.png")
+			if tc.earlier {
+				requireContains(t, prompt, "Ember, check my notes.", "Your notes say hi.")
+			} else {
+				requireOmits(t, prompt, "Ember, check my notes.", "Your notes say hi.")
+			}
+		})
+	}
+}
+
+func TestSharingSettingAppliesToPersonasFirstAddressedAfterTheChange(t *testing.T) {
+	c := newMixedConversation(t, 20, "ember")
+	c.addClaudePersona("nova", "Nova")
+	c.say("The vault code is cobalt.", "switch to Mira", "Hello Mira.")
+	from := c.saved().PersonaContexts["mira"].Session.From
+
+	widened := c.base.Clone()
+	widened.HostedPersonaSharing = "whole_conversation"
+	if err := c.selector.Reload(t.Context(), widened); err != nil {
+		t.Fatal(err)
+	}
+	c.say("Anything more?")
+	if cursor := c.saved().PersonaContexts["mira"]; cursor.Session == nil || cursor.Session.From != from {
+		t.Fatalf("a session already started under from_invite moved its share start: %+v, was %d", cursor, from)
+	}
+	for _, req := range readClaudeRequests(t, c.log) {
+		requireOmits(t, req.Prompt, "cobalt")
+	}
+
+	c.say("switch to Nova", "What was the code?")
+	last := lastClaudeRequest(t, c.log)
+	requireContains(t, last.Prompt, "The vault code is cobalt.")
+	if cursor := c.saved().PersonaContexts["nova"]; cursor.Session == nil || cursor.Session.From != 0 {
+		t.Fatalf("Nova's cursor = %+v, want the whole conversation", cursor)
+	}
+}

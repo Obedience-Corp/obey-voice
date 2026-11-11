@@ -536,6 +536,7 @@ func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error
 				Brain: netapi.PersonaBrain{
 					Provider: brainProvider,
 					Model:    brainModel,
+					Hosted:   brain.IsHosted(brainProvider),
 				},
 				TTS: netapi.PersonaTTS{
 					Provider: snap.TTSProvider,

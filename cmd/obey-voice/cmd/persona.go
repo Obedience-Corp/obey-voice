@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func init() {
@@ -76,6 +78,7 @@ func personaListCmd() *cobra.Command {
 					Builtin           bool           `json:"builtin"`
 					Active            bool           `json:"active"`
 					Inactive          bool           `json:"inactive"`
+					Hosted            bool           `json:"hosted"`
 					Path              string         `json:"path"`
 				}
 				active := persona.ActiveID(cfg)
@@ -93,6 +96,7 @@ func personaListCmd() *cobra.Command {
 						Builtin:           p.Builtin,
 						Active:            p.ID == active,
 						Inactive:          p.Inactive,
+						Hosted:            personaHosted(cfg, p),
 						Path:              p.Path,
 					})
 				}
@@ -117,7 +121,11 @@ func personaListCmd() *cobra.Command {
 					status += " " + dimStyle.Render("inactive")
 				}
 				fmt.Fprintf(out, "\n  %s %s%s\n", sectionStyle.Render(p.DisplayName), dimStyle.Render("("+p.ID+")"), status)
-				fmt.Fprintf(out, "    %s  %s / %s\n", keyStyle.Render("Brain "), personaListValue(p.Brain.Provider), personaListValue(p.Brain.Model))
+				hosted := ""
+				if personaHosted(cfg, p) {
+					hosted = " " + valueStyle.Render("[hosted]")
+				}
+				fmt.Fprintf(out, "    %s  %s / %s%s\n", keyStyle.Render("Brain "), personaListValue(p.Brain.Provider), personaListValue(p.Brain.Model), hosted)
 				fmt.Fprintf(out, "    %s  %s / %s\n", keyStyle.Render("Worker"), personaListValue(p.Brain.Worker.Provider), personaListValue(p.Brain.Worker.Model))
 				fmt.Fprintf(out, "    %s  %s / %s\n", keyStyle.Render("Voice "), personaListValue(p.TTS.Provider), personaListValue(p.TTS.Voice))
 				fmt.Fprintf(out, "    %s  %s\n", keyStyle.Render("Prompt"), p.Prompts.Persona)
@@ -242,4 +250,12 @@ func printPersonaShow(cmd *cobra.Command, r *personaResultJSON) {
 		}
 	}
 	fmt.Fprintln(out)
+}
+
+// personaHosted reports whether the persona's effective brain, after it
+// inherits the app default, sends conversation text off this machine.
+func personaHosted(cfg *config.Config, p *persona.Profile) bool {
+	effective := cfg.Clone()
+	persona.Apply(effective, p)
+	return brain.IsHosted(effective.BrainProvider)
 }

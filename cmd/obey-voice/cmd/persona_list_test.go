@@ -65,3 +65,44 @@ func TestPersonaListJSONIncludesBrain(t *testing.T) {
 	}
 	t.Fatal("samantha missing from list")
 }
+
+func TestPersonaListMarksPersonasOnAHostedBackend(t *testing.T) {
+	personaEnv(t)
+	writePersona(t, &persona.Profile{
+		Schema: persona.Schema, ID: "mira", DisplayName: "Mira",
+		Brain:   persona.Brain{Provider: "claude"},
+		Prompts: persona.PromptRefs{Persona: "mira"},
+	})
+	var out bytes.Buffer
+	cmd := newPersonaCmd()
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"list", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var rows []struct {
+		ID     string `json:"id"`
+		Hosted bool   `json:"hosted"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &rows); err != nil {
+		t.Fatalf("invalid JSON: %v: %s", err, out.String())
+	}
+	got := map[string]bool{}
+	for _, row := range rows {
+		got[row.ID] = row.Hosted
+	}
+	if !got["mira"] || got["samantha"] {
+		t.Fatalf("hosted markers = %v", got)
+	}
+
+	out.Reset()
+	cmd = newPersonaCmd()
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"list"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out.String(), "[hosted]") != 1 {
+		t.Fatalf("expected exactly Mira marked in:\n%s", out.String())
+	}
+}

@@ -181,6 +181,9 @@ func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
 				t.Fatal(err)
 			}
 			p.AdmitInput = selector.Route
+			p.HostedNotice = selector.HostedNotice
+			var notices []string
+			events.Subscribe(p.Events, func(e events.Info) { notices = append(notices, e.Message) })
 			p.OnTurn = func() {
 				if err := store.Save(sess, p.Brain.History()); err != nil {
 					t.Error(err)
@@ -215,6 +218,10 @@ func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
 				}
 			}
 
+			label := map[string]string{"muse-spark": "Muse Spark", "obey": "Obey"}[provider]
+			if want := "Scout runs on " + label + ", a hosted service. This conversation is sent to " + label + "."; len(notices) != 1 || notices[0] != want {
+				t.Fatalf("notices = %q, want %q", notices, want)
+			}
 			prompts := readFixturePrompts(t, log)
 			if len(prompts) != 1 || prompts[0].Provider != map[string]string{"muse-spark": "muse", "obey": "obey"}[provider] {
 				t.Fatalf("%s calls = %+v", provider, prompts)
