@@ -2,7 +2,8 @@ package personaruntime
 
 import (
 	"errors"
-	"slices"
+	"fmt"
+	"os"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -23,6 +24,8 @@ type transcript struct {
 	turns    []brain.Turn
 	sessions brain.PersonaContexts
 	live     string // the selected persona when its provider keeps a session
+	// cleared runs after a clear, outside the lock.
+	cleared func()
 }
 
 func newTranscript(current func() string, turns []brain.Turn) *transcript {
@@ -39,8 +42,12 @@ func (t *transcript) reset(turns []brain.Turn) {
 
 func (t *transcript) Clear() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.turns, t.sessions = nil, nil
+	cleared := t.cleared
+	t.mu.Unlock()
+	if cleared != nil {
+		cleared()
+	}
 }
 
 func (t *transcript) Turns() []brain.Turn {
@@ -61,13 +68,25 @@ func (t *transcript) Append(epoch string, turns ...brain.Turn) error {
 
 // CatchUp returns what personaID's provider session may receive and the
 // transcript length it covers. It reports false when the persona has no
-// cursor that still matches the transcript.
+// cursor that still matches the transcript. The selected persona's cursor is
+// then started again at the end of the transcript, so its session receives
+// nothing said before but stays caught up from here on.
 func (t *transcript) CatchUp(personaID string) (brain.SessionCatchUp, int, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cursor, ok := t.sessions[personaID]
 	if !ok || cursor.Session == nil || !cursor.Matches(t.turns) {
-		return brain.SessionCatchUp{}, 0, false
+		if personaID == "" || personaID != t.live {
+			return brain.SessionCatchUp{}, 0, false
+		}
+		if len(t.turns) > 0 {
+			fmt.Fprintf(os.Stderr, "obey-voice: persona %q lost its place in the conversation; its session receives only what is said from now on\n", personaID)
+		}
+		if t.sessions == nil {
+			t.sessions = make(brain.PersonaContexts)
+		}
+		t.sessions[personaID] = brain.SessionContext(t.turns, brain.SessionCursor{From: len(t.turns), Provider: "claude"}, len(t.turns))
+		return brain.SessionCatchUp{}, len(t.turns), true
 	}
 	var catchUp brain.SessionCatchUp
 	for i := cursor.Session.From; i < len(t.turns); i++ {
@@ -165,19 +184,12 @@ func (t *transcript) addSessions(contexts brain.PersonaContexts, except string) 
 	}
 }
 
-// SetReplyMedia moves a reply's images into attachments, as the providers do
-// for their own replies.
-func (t *transcript) SetReplyMedia(text string, refs []chatmedia.Ref) error {
+// SetRecordedReplyMedia moves a reply's images into attachments, as the
+// providers do for their own replies.
+func (t *transcript) SetRecordedReplyMedia(reply brain.Turn, text string, refs []chatmedia.Ref) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	for i := len(t.turns) - 1; i >= 0; i-- {
-		if t.turns[i].Role == "assistant" && len(t.turns[i].ToolCalls) == 0 {
-			t.turns[i].Content = text
-			t.turns[i].Attachments = slices.Clone(refs)
-			return nil
-		}
-	}
-	return errors.New("transcript: no assistant reply to attach images to")
+	return brain.SetRecordedReplyMedia(t.turns, reply, text, refs)
 }
 
 // sessionView is the part of the transcript loaded into a provider without

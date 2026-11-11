@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -56,10 +57,10 @@ func installClaudeFixture(t *testing.T) string {
 }
 
 // claudeRequest is one fixture invocation: its prompt, flags, the session it
-// answered in, and its process id.
+// answered in, its process id, and the length of its longest argument.
 type claudeRequest struct {
 	Prompt, Format, Resume, Session string
-	PID                             int
+	PID, MaxArg                     int
 }
 
 var fixturePersonaName = regexp.MustCompile(`You are (\w+)\.`)
@@ -78,10 +79,20 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	}
 	var req claudeRequest
 	name := "Mira"
+	for _, a := range args {
+		req.MaxArg = max(req.MaxArg, len(a))
+	}
+	// The SDK leaves -p without a value and pipes a large prompt on stdin.
+	if len(args) > 0 && args[0] == "-p" && (len(args) == 1 || strings.HasPrefix(args[1], "--")) {
+		data, _ := io.ReadAll(os.Stdin)
+		req.Prompt = string(data)
+	}
 	for i := 0; i+1 < len(args); i++ {
 		switch args[i] {
 		case "-p":
-			req.Prompt = args[i+1]
+			if !strings.HasPrefix(args[i+1], "--") {
+				req.Prompt = args[i+1]
+			}
 		case "--output-format":
 			req.Format = args[i+1]
 		case "--resume":
@@ -302,8 +313,8 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 		}
 	})
 	selector, err := NewSelector(SelectionOptions{Base: c.base, Catalog: c.catalog, Pipeline: p, SessionID: c.sess.ID, Initial: binding,
-		Transcript: turns, InitialContexts: contexts, SessionProvider: c.sess.Provider, HostedNotified: c.sess.HostedNotified,
-		PersistHostedNotified: func(providers []string) error { return c.store.SaveHostedNotified(c.sess, providers) },
+		Transcript: turns, InitialContexts: contexts, SessionProvider: c.sess.Provider, HostedNotified: c.sess.HostedNotified, HostedNotifiedWhole: c.sess.HostedNotifiedWhole,
+		PersistHostedNotified: func(told, whole []string) error { return c.store.SaveHostedNotified(c.sess, told, whole) },
 		PersistContexts: func(turns []brain.Turn, s events.PersonaSelection, contexts brain.PersonaContexts) error {
 			if c.saveErr != nil {
 				return c.saveErr
@@ -317,7 +328,7 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 	// Runs before CloseBrains, so the brains it parks are joined there.
 	t.Cleanup(selector.Close)
 	p.AdmitInput = selector.Route
-	p.HostedNotice = selector.HostedNotice
+	p.HostedNotice, p.LiveHostedNotice = selector.HostedNotice, selector.LiveHostedNotice
 	events.Subscribe(p.Events, func(e events.Info) {
 		sent := 0
 		if data, err := os.ReadFile(c.log); err == nil {

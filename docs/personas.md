@@ -304,8 +304,11 @@ of it (see below).
 
 Voice and audio settings changes keep the provider session. Clearing the
 conversation, or changing the persona's provider, model, prompt, name or
-directory, restarts the session from the transcript. Group participation is
-not offered while one of these personas is responding.
+directory, restarts the session from the transcript: the provider's own
+session is dropped. A new Grok or Cursor session starts with the transcript's
+last `max_history` turns; a new Claude session receives the persona's share as
+described below. Group participation is not offered while one of these
+personas is responding.
 
 A persona on Claude keeps its Claude session while other personas speak: Obey
 Voice parks it and resumes the same session when that persona is addressed
@@ -339,7 +342,18 @@ of how many earlier lines were left out. A persona on Claude receives the
 pending results of background jobs it started while it was on Claude; results
 of jobs other personas started wait for those personas, and results of jobs the
 persona started on another backend, local or hosted, wait until it is back on
-that backend or on a local one.
+that backend or on a local one. A job saved before jobs recorded their persona
+goes to the persona answering when no other persona is in the conversation, and
+an unset `active_persona` counts as the default persona.
+
+A fresh Claude session therefore starts with a replay of up to 64 KiB of the
+persona's share, where it used to receive only the last six lines. This
+applies to a conversation with a single persona on Claude too: the first
+request after a resume, after the session fuse resets the session, or when the
+unseen lines do not fit, sends more input tokens and costs more than before.
+After a compaction the fresh session starts from the summary instead. A prompt
+of 100 KiB or more reaches the Claude CLI on stdin rather than as one
+command-line argument.
 
 At most four sessions stay parked; the least recently used one is closed first.
 A parked session is also closed when its persona's prompt, model, provider or
@@ -428,12 +442,19 @@ their persona), and "What is said to it is sent to Claude." when the
 conversation is still empty. A persona on Codex, Muse Spark or Obey is
 described the same way. A persona on Grok or Cursor, which only holds a
 conversation that started on it, gets "This conversation is sent to Grok." The
-notice is given once per conversation and provider, is forgotten when the
-conversation is cleared, and is saved with the session so a
+notice is given once per conversation and provider, and once more if a persona
+on that provider would receive the whole conversation after the user was told
+it receives only what is said from its invitation (a later persona first
+addressed under `whole_conversation`, for example). It also comes before
+`/compact` when compaction is the first request to that provider. It is
+forgotten when the conversation is cleared, and is saved with the session so a
 resumed conversation does not repeat it (a session saved before this existed
-repeats it once). It is shown by the host: no model receives it and it is not
-recorded as any persona's reply. A bare `Mira here.` address sends nothing and
-does not trigger it.
+repeats it once, and one saved before the whole-conversation case was recorded
+gives that notice again when it applies). It counts as given only once it was
+shown and spoken and the request went ahead: a turn stopped during the notice
+gives it again next time. It is shown by the host: no model receives it and it
+is not recorded as any persona's reply. A bare `Mira here.` address sends
+nothing and does not trigger it.
 
 A conversation that started on the hosted provider itself, such as a Claude-only
 install, gets the info line but no spoken notice, so it does not announce itself
@@ -505,7 +526,9 @@ Claude, the summary is taken from its live Claude session, which also receives
 the lines it had not seen (shortened or left out with a note when they do not
 fit), and the next request starts a fresh Claude session from the summary
 followed by only the lines said after it. For a persona on Codex, Muse Spark or
-Obey, only its share is summarized and the saved transcript stays complete.
+Obey, only its share is summarized and the saved transcript stays complete. As
+with the other providers' saved history, the transcript keeps every turn, in
+memory and on disk, until the conversation is cleared.
 A stored transcript alone does not prove a model received all of it: its
 configured history/context limits still govern the projection.
 

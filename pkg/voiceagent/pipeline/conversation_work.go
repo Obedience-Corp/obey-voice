@@ -132,7 +132,7 @@ func (p *Pipeline) ClearConversation() error {
 	}
 	if p.Brain != nil {
 		settle, cancel := context.WithTimeout(context.Background(), providerSettleTimeout)
-		_ = p.awaitProvider(settle)
+		_ = p.awaitRequests(settle, p.Brain)
 		cancel()
 		turns := p.Brain.History()
 		if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {

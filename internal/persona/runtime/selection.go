@@ -44,9 +44,11 @@ type SelectionOptions struct {
 	Persist         func([]brain.Turn, events.PersonaSelection) error
 	InitialContexts brain.PersonaContexts
 	// HostedNotified lists the hosted providers a restored conversation has
-	// already told the user about; PersistHostedNotified saves that list.
+	// already told the user about, and HostedNotifiedWhole those of them told
+	// that the whole conversation is sent; PersistHostedNotified saves both.
 	HostedNotified        []string
-	PersistHostedNotified func([]string) error
+	HostedNotifiedWhole   []string
+	PersistHostedNotified func(told, whole []string) error
 	// Transcript is the restored canonical conversation. It is authoritative
 	// while the live provider keeps no shared history of its own.
 	Transcript []brain.Turn
@@ -172,12 +174,17 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: replayContexts(opts.InitialContexts)}
 	s.transcript = newTranscript(func() string { return opts.Pipeline.ConversationScope().ConversationEpoch }, opts.Transcript)
 	s.transcript.restoreSessions(opts.InitialContexts)
+	s.transcript.cleared = func() {
+		s.transitionMu.Lock()
+		defer s.transitionMu.Unlock()
+		s.retireParked(retireAll)
+	}
 	s.restored = restoredConversation{personaID: opts.Initial.PersonaID, provider: opts.SessionProvider}
 	startedOn := opts.Initial.BrainProvider
 	if len(opts.Transcript) > 0 {
 		startedOn = opts.SessionProvider
 	}
-	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, startedOn, opts.HostedNotified)
+	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, startedOn, opts.HostedNotified, opts.HostedNotifiedWhole)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	hostedShare := brain.HostedSharedHistory(opts.Pipeline.Brain)
 	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok && !hostedShare {
@@ -462,7 +469,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.opts.UseDefaults = false
 	s.retireParked(retireAll)
 	s.restored = restoredConversation{}
-	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, s.liveProvider(), nil)
+	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, s.liveProvider(), nil, nil)
 	s.transcript.reset(nil)
 	s.transcript.restoreSessions(nil)
 	s.mu.Lock()

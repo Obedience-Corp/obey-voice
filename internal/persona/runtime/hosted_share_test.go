@@ -580,8 +580,9 @@ func TestLoadHistoryUsesOnlyACursorOfTheLiveBackend(t *testing.T) {
 				return
 			}
 			label := providerLabelFor[provider]
-			if got, want := c.selector.noticeScope("mira", provider, label), "Only what is said from when it was invited is sent to "+label+"; earlier lines stay on this machine."; got != want {
-				t.Fatalf("notice = %q, want %q", got, want)
+			want := "Only what is said from when it was invited is sent to " + label + "; earlier lines stay on this machine."
+			if got, whole := c.selector.noticeScope("mira", provider, label); whole || got != want {
+				t.Fatalf("notice = %q (whole %v), want %q", got, whole, want)
 			}
 		})
 	}

@@ -1002,16 +1002,16 @@ which one it is using right now.
 ```json
 {"personas": [
   {"id": "obey", "display_name": "Obey", "active": false, "builtin": true,
-   "brain": {"provider": "ollama", "model": "qwen2.5:14b"},
+   "brain": {"provider": "ollama", "model": "qwen2.5:14b", "hosted": false},
    "tts": {"provider": "kokoro", "voice": "af_heart", "tier": ""}},
   {"id": "samantha", "display_name": "Samantha", "active": false, "builtin": true,
-   "brain": {"provider": "ollama", "model": "qwen2.5:14b"},
+   "brain": {"provider": "ollama", "model": "qwen2.5:14b", "hosted": false},
    "tts": {"provider": "kokoro", "voice": "af_heart", "tier": ""}},
   {"id": "jarvis", "display_name": "Jarvis", "active": false, "builtin": true,
-   "brain": {"provider": "ollama", "model": "qwen2.5:14b"},
+   "brain": {"provider": "ollama", "model": "qwen2.5:14b", "hosted": false},
    "tts": {"provider": "kokoro", "voice": "bm_george", "tier": ""}},
   {"id": "uncle-fu", "display_name": "Uncle Fu", "active": true, "builtin": false,
-   "brain": {"provider": "ollama", "model": "qwen2.5:14b"},
+   "brain": {"provider": "ollama", "model": "qwen2.5:14b", "hosted": false},
    "tts": {"provider": "qwen3-tts", "voice": "Uncle_Fu", "tier": "1.7b"}}
 ]}
 ```
@@ -1019,6 +1019,15 @@ which one it is using right now.
 `brain` and `tts` are the **effective** stack: a persona leaves a field empty to
 inherit the app default, and this route resolves that inheritance so a client
 never has to. `tier` is empty for providers that do not select a model tier.
+
+`brain.hosted` is `true` when the persona's conversation backend sends
+conversation text to a service outside this machine: every provider except
+`ollama`, and any provider the build does not classify (see
+[Hosted backends](personas.md#hosted-backends)). It is always present, `false`
+included, on a serve that has it; a serve from before it omits it, so decode it
+as optional and treat a missing value as unknown rather than local. It
+describes the conversation backend only, not the persona's worker provider, and
+`ollama` counts as local even when `ollama_host` points at another machine.
 
 `active` is the **runtime** persona. A `set_persona` deliberately does not write
 `config.yaml`, so this field can name a persona the persisted config does not —

@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -118,5 +119,73 @@ func TestJobsRecordTheBackendTheirPersonaWasOn(t *testing.T) {
 	got := frozenConfig(&config.Config{BrainProvider: "claude", ActivePersona: "mira"})
 	if got["brain"] != "claude" || got["persona"] != "mira" {
 		t.Fatalf("frozen config = %v", got)
+	}
+}
+
+func TestHostedNoticeIsRecordedOnlyWhenItsRequestGoesAhead(t *testing.T) {
+	b := &streamClock{}
+	p := &Pipeline{Brain: b, Events: events.NewBus()}
+	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", Hosted: true}}, nil
+	}
+	var delivered []time.Time
+	stop := func() {}
+	p.HostedNotice = func(events.ResponseEnvelope) (HostedNotice, bool) {
+		stop()
+		return HostedNotice{Text: "Mira runs on Claude, a hosted service.", Delivered: func() { delivered = append(delivered, time.Now()) }}, true
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	stop = cancel
+	if err := p.RunTurnTextMode(ctx, "hello"); err == nil {
+		t.Fatal("a stopped turn reported success")
+	}
+	if len(delivered) != 0 || len(b.at) != 0 {
+		t.Fatalf("a notice whose turn stopped was recorded (%d) or its request sent (%d)", len(delivered), len(b.at))
+	}
+
+	stop = func() {}
+	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if len(delivered) != 1 || len(b.at) != 1 || !delivered[0].Before(b.at[0]) {
+		t.Fatalf("delivered %d times, requests %d: the notice must be recorded once, before the request", len(delivered), len(b.at))
+	}
+}
+
+func TestCompactionAnnouncesAHostedLivePersonaFirst(t *testing.T) {
+	const notice = "Mira runs on Claude, a hosted service."
+	history := []brain.Turn{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
+	b := &compactBrain{history: slices.Clone(history), summary: "Summary."}
+	bus := events.NewBus()
+	var infos []string
+	requestsAtNotice := -1
+	events.Subscribe(bus, func(e events.Info) {
+		if e.Message == notice {
+			infos = append(infos, e.Message)
+			requestsAtNotice = len(b.thinkInputs)
+		}
+	})
+	p := &Pipeline{Brain: b, Events: bus, CompactPrompt: "Summarize."}
+	ctx, cancel := context.WithCancel(t.Context())
+	delivered := 0
+	p.LiveHostedNotice = func() (HostedNotice, bool) {
+		return HostedNotice{Text: notice, Delivered: func() { delivered++ }}, delivered == 0
+	}
+	stopped := p.LiveHostedNotice
+	p.LiveHostedNotice = func() (HostedNotice, bool) { cancel(); return stopped() }
+	if err := p.CompactConversation(ctx); err == nil {
+		t.Fatal("compaction stopped during its notice reported success")
+	}
+	if len(b.thinkInputs) != 0 || delivered != 0 {
+		t.Fatalf("stopped compaction sent %d requests and recorded the notice %d times", len(b.thinkInputs), delivered)
+	}
+
+	p.LiveHostedNotice = stopped
+	if err := p.CompactConversation(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 2 || requestsAtNotice != 0 || len(b.thinkInputs) != 1 || delivered != 1 {
+		t.Fatalf("infos %q, requests at notice %d, requests %d, delivered %d", infos, requestsAtNotice, len(b.thinkInputs), delivered)
 	}
 }

@@ -423,14 +423,15 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		selector, err = personaruntime.NewSelector(personaruntime.SelectionOptions{
 			Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
 			Native: recordings.hooks(p, textMode, noVoice), InitialNative: recordings.initial,
-			UseDefaults:     sessionBindID == appTUI.StartDefaultsID,
-			Participation:   sess.Participation,
-			InitialContexts: sess.PersonaContexts,
-			Transcript:      sess.Turns,
-			SessionProvider: sess.Provider,
-			HostedNotified:  sess.HostedNotified,
-			PersistHostedNotified: func(providers []string) error {
-				return session.DefaultStore().SaveHostedNotified(sess, providers)
+			UseDefaults:         sessionBindID == appTUI.StartDefaultsID,
+			Participation:       sess.Participation,
+			InitialContexts:     sess.PersonaContexts,
+			Transcript:          sess.Turns,
+			SessionProvider:     sess.Provider,
+			HostedNotified:      sess.HostedNotified,
+			HostedNotifiedWhole: sess.HostedNotifiedWhole,
+			PersistHostedNotified: func(told, whole []string) error {
+				return session.DefaultStore().SaveHostedNotified(sess, told, whole)
 			},
 			PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
 				return session.DefaultStore().SaveSelectionState(sess, turns, selected, contexts)
@@ -466,6 +467,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		}
 		p.AdmitInput = selector.Route
 		p.HostedNotice = selector.HostedNotice
+		p.LiveHostedNotice = selector.LiveHostedNotice
 		p.RouteHandoff = selector.RouteHandoff
 		p.EndDiscussion = selector.EndDiscussion
 		p.CompleteDiscussion = selector.RecordDiscussionResponse

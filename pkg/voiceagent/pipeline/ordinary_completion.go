@@ -8,7 +8,6 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
@@ -120,17 +119,10 @@ func (p *Pipeline) receivesJob(admission map[string]string) bool {
 	if !brain.KeepsPersonaSession(p.Brain) && !brain.HostedSharedHistory(p.Brain) {
 		return true
 	}
-	var live *config.Config
-	if p.Agency != nil {
-		live = p.Agency.currentConfig()
-	}
-	if live == nil || live.ActivePersona == "" {
+	if started, tagged := admission["brain"]; tagged && backendKey(started) != p.liveBackend() {
 		return false
 	}
-	if started := admission["brain"]; started != "" && started != live.BrainProvider {
-		return false
-	}
-	return admission["persona"] == live.ActivePersona
+	return p.startedByLivePersona(admission)
 }
 
 func (o *ordinaryCompletion) close() {

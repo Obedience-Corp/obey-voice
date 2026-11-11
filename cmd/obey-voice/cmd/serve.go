@@ -608,14 +608,15 @@ func (s *servePersonaSwitcher) initialize() error {
 	}
 	opts := personaruntime.SelectionOptions{Base: base, Pipeline: s.pipeline, Voices: s.tts,
 		SessionID: s.sessions.id(), Initial: binding,
-		Participation:   s.sessions.sess.Participation,
-		InitialContexts: s.sessions.sess.PersonaContexts,
-		Transcript:      s.sessions.sess.Turns,
-		HostedNotified:  s.sessions.sess.HostedNotified,
-		PersistHostedNotified: func(providers []string) error {
+		Participation:       s.sessions.sess.Participation,
+		InitialContexts:     s.sessions.sess.PersonaContexts,
+		Transcript:          s.sessions.sess.Turns,
+		HostedNotified:      s.sessions.sess.HostedNotified,
+		HostedNotifiedWhole: s.sessions.sess.HostedNotifiedWhole,
+		PersistHostedNotified: func(told, whole []string) error {
 			s.sessions.mu.Lock()
 			defer s.sessions.mu.Unlock()
-			return session.DefaultStore().SaveHostedNotified(s.sessions.sess, providers)
+			return session.DefaultStore().SaveHostedNotified(s.sessions.sess, told, whole)
 		},
 		PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
 			s.sessions.mu.Lock()
@@ -648,6 +649,7 @@ func (s *servePersonaSwitcher) initialize() error {
 	s.sessions.load = s.selector.LoadHistory
 	s.pipeline.AdmitInput = s.selector.Route
 	s.pipeline.HostedNotice = s.selector.HostedNotice
+	s.pipeline.LiveHostedNotice = s.selector.LiveHostedNotice
 	s.pipeline.RouteHandoff = s.selector.RouteHandoff
 	s.pipeline.EndDiscussion = s.selector.EndDiscussion
 	s.pipeline.CompleteDiscussion = s.selector.RecordDiscussionResponse
@@ -779,7 +781,7 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, cfg.ConversationDirectories)
 	s.selector.RestoreContexts(restored.PersonaContexts)
 	s.selector.RestoreTranscript(restored.Turns, restored.Provider)
-	s.selector.RestoreNotices(restored.HostedNotified)
+	s.selector.RestoreNotices(restored.HostedNotified, restored.HostedNotifiedWhole)
 	_, err = s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
 	if err != nil && s.pipeline.Events != nil {
 		s.pipeline.Events.Emit(events.Error{Stage: "persona", Message: fmt.Sprintf("Conversation restored; select a valid persona before continuing: %v", err)})

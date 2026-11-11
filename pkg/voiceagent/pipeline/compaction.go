@@ -164,6 +164,9 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 			return nil
 		}
 	}
+	if err := p.announceLiveHosted(ctx); err != nil {
+		return err
+	}
 	ctx, cancel := p.withBrainTimeout(ctx)
 	defer cancel()
 	// The dense briefing replaces voice instructions. Tools and durable-history

@@ -120,6 +120,9 @@ type Pipeline struct {
 	// anything is sent to the live provider, whether the user must first be told
 	// that the persona's backend is hosted.
 	HostedNotice func(events.ResponseEnvelope) (HostedNotice, bool)
+	// LiveHostedNotice is HostedNotice for the live persona, asked before a
+	// request made outside an admitted turn, such as compaction.
+	LiveHostedNotice func() (HostedNotice, bool)
 	// Decisions is off by default. The host configures independent points; a
 	// ready proposal still passes the ordinary worker admission policy.
 	Decisions decision.Controller

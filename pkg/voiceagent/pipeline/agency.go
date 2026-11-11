@@ -57,6 +57,7 @@ type Agency struct {
 	managedCurrent *delegation.Runtime
 	managedClosing map[*delegation.Runtime]bool
 	liveManaged    func() *delegation.Runtime // guarded by mu; provider accessor is concurrency-safe
+	personas       map[string]bool            // guarded by mu
 }
 
 // pendingDelivery is one completed job waiting to be spoken when the pipeline
@@ -95,6 +96,7 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 	if jobs != nil && cfg != nil {
 		jobs.SetEnabled(!cfg.VoiceWorkersDisabled)
 	}
+	a.notePersonaLocked(a.cfg)
 	return a
 }
 
