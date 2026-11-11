@@ -33,7 +33,7 @@ func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Con
 	var selected []work.ResultView
 	var refs []work.ResultRef
 	for _, r := range c.Pending(scope) {
-		if r.State != work.Pending && r.State != work.Ready {
+		if (r.State != work.Pending && r.State != work.Ready) || !p.deliverableResult(r) {
 			continue
 		}
 		selected = append(selected, r)

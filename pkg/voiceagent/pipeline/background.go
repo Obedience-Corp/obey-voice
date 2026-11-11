@@ -36,7 +36,7 @@ func (p *Pipeline) BackgroundPending() bool {
 			return false
 		}
 		for _, r := range c.Pending(c.Scope()) {
-			if r.State == work.Pending || r.State == work.Ready {
+			if (r.State == work.Pending || r.State == work.Ready) && p.deliverableResult(r) {
 				return true
 			}
 		}

@@ -41,7 +41,7 @@ func (p *Pipeline) beginOrdinaryCompletion(ctx context.Context, input, speaker s
 	var selected []work.ResultView
 	var refs []work.ResultRef
 	for _, r := range c.Pending(scope) {
-		if r.State != work.Pending && r.State != work.Ready {
+		if (r.State != work.Pending && r.State != work.Ready) || !p.deliverableResult(r) {
 			continue
 		}
 		selected = append(selected, r)
@@ -102,6 +102,23 @@ func (p *Pipeline) beginOrdinaryCompletion(ctx context.Context, input, speaker s
 	}()
 	return audio.WithPlaybackAttempt(attempt, audio.PlaybackAttempt{ID: lease.AttemptID, CaptureEpoch: lease.CaptureEpoch, Fence: lease, Render: &audio.FirstRenderBoundary{}}), o, nil
 }
+
+// deliverableResult reports whether a pending result may reach the live
+// persona. A persona keeping its own session on a hosted backend receives only
+// the results of jobs it started; the others wait for their own persona.
+func (p *Pipeline) deliverableResult(r work.ResultView) bool {
+	if !brain.KeepsPersonaSession(p.Brain) {
+		return true
+	}
+	live := ""
+	if p.Agency != nil {
+		if cfg := p.Agency.currentConfig(); cfg != nil {
+			live = cfg.ActivePersona
+		}
+	}
+	return live != "" && r.Outcome.Config["persona"] == live
+}
+
 func (o *ordinaryCompletion) close() {
 	if o == nil {
 		return
