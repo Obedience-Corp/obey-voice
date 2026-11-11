@@ -141,7 +141,12 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 	}
 	playback, err := p.Player.PlayStream(ctx, stream)
 	if err != nil {
-		p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", err)})
+		// A stopped or superseded attempt is refused by design, not a failure.
+		if errors.Is(err, context.Canceled) {
+			p.emit(events.Info{Message: "speech not played: output was stopped"})
+		} else {
+			p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", err)})
+		}
 		return err
 	}
 	if metrics != nil {

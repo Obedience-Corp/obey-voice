@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
@@ -152,6 +153,21 @@ func (p *Pipeline) routeContext() RouteContext {
 		ctx.TieredWorkers = tieredWorkers(p.Agency.currentConfig())
 	}
 	return ctx
+}
+
+// routedSpeechContext admits the routed acknowledgement after the turn stopped
+// its own pre-route speech, which invalidated the turn's playback binding. A
+// stop the user asked for stays fenced: it is checked after the fresh bind so
+// a stop racing this call still invalidates whichever binding is returned.
+func (p *Pipeline) routedSpeechContext(ctx context.Context, metrics *turnMetrics) context.Context {
+	if p.Player == nil || ctx.Err() != nil {
+		return ctx
+	}
+	fresh := audio.RebindPlaybackContext(ctx, p.Player)
+	if metrics != nil && metrics.speechStopped() {
+		return ctx
+	}
+	return fresh
 }
 
 func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, transcript string, kind RouteKind, source string) error {
