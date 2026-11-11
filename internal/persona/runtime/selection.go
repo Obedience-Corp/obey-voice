@@ -173,9 +173,9 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	s.transcript = newTranscript(func() string { return opts.Pipeline.ConversationScope().ConversationEpoch }, opts.Transcript)
 	s.transcript.restoreSessions(opts.InitialContexts)
 	s.restored = restoredConversation{personaID: opts.Initial.PersonaID, provider: opts.SessionProvider}
-	startedOn := ""
-	if len(opts.Transcript) == 0 {
-		startedOn = opts.Initial.BrainProvider
+	startedOn := opts.Initial.BrainProvider
+	if len(opts.Transcript) > 0 {
+		startedOn = opts.SessionProvider
 	}
 	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, startedOn, opts.HostedNotified)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")

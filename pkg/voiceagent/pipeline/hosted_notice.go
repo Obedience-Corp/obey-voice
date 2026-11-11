@@ -28,11 +28,13 @@ func (p *Pipeline) announceHosted(ctx context.Context, metrics *turnMetrics, tur
 		return nil
 	}
 	p.emit(events.Info{Message: notice.Text})
-	if notice.Spoken {
+	if notice.Spoken && turn != nil {
 		first := metrics.firstSegment
 		p.speakBestEffort(ctx, notice.Text, metrics, turn)
 		metrics.firstSegment = first
 		turn.to(TurnThinking)
+	} else if notice.Spoken {
+		_ = p.speakStandalone(ctx, nil, nil, notice.Text)
 	}
 	return ctx.Err()
 }

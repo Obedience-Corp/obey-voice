@@ -692,7 +692,9 @@ the persona is first addressed on that backend; `whole_conversation` sends the
 spoken lines from the start. Tool calls, tool output and attachment names of
 other personas are never sent in either mode. Changing it applies to personas
 first addressed after the change and does not widen a session that has already
-started. It governs personas on Claude, the backend that keeps its own session;
+started. A running conversation picks the change up only when its settings
+reload; it has no Settings row, so set it with
+`obey-voice config set hosted_persona_sharing whole_conversation`. It governs personas on Claude, the backend that keeps its own session;
 see [Hosted backends](personas.md#hosted-backends) for what the others receive
 and for how hosted personas are marked.
 

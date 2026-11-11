@@ -65,8 +65,12 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 		var err error
 		// Refresh selection before acquiring the completion lease: replacing a
 		// responder revokes the previous binding's capture permission.
-		ctx, _, err = p.admitInput(ctx, "", true, newTurnMetrics())
+		metrics := newTurnMetrics()
+		ctx, _, err = p.admitInput(ctx, "", true, metrics)
 		if err != nil {
+			return err
+		}
+		if err := p.announceHosted(ctx, metrics, nil); err != nil {
 			return err
 		}
 		return p.withCompletionLease(ctx, func(attemptCtx context.Context, lease work.CompletionLease, selected []work.ResultView) error {

@@ -1122,7 +1122,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Hosted persona sharing",
-      "help": "What a persona on a hosted backend such as Claude receives of a conversation shared with other personas. from_invite sends only what is said from when the persona is first addressed. whole_conversation sends the spoken lines from the start; tool calls, tool output and attachment names are never sent. Applies to personas first addressed after the change.",
+      "help": "What a persona on a hosted backend such as Claude receives of a conversation shared with other personas. from_invite sends only what is said from when the persona is first addressed. whole_conversation sends the spoken lines from the start; tool calls, tool output and attachment names are never sent. Read when a persona is first addressed; a running conversation applies a change only after settings reload, and only to personas first addressed afterwards.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,

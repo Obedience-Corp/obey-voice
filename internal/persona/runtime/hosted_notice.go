@@ -106,15 +106,7 @@ func (s *Selector) HostedNotice(envelope events.ResponseEnvelope) (pipeline.Host
 	if name == "" {
 		name = "This persona"
 	}
-	var scope string
-	switch {
-	case !slices.Contains(sessionCatchUpProviders, envelope.BrainProvider):
-		scope = fmt.Sprintf("This conversation is sent to %s.", label)
-	case s.sharesWholeConversation():
-		scope = fmt.Sprintf("The whole conversation is sent to %s.", label)
-	default:
-		scope = fmt.Sprintf("What is said from here on is sent to %s; earlier lines stay on this machine.", label)
-	}
+	scope := s.noticeScope(envelope.PersonaID, envelope.BrainProvider, label)
 	return pipeline.HostedNotice{
 		Text:   fmt.Sprintf("%s runs on %s, a hosted service. %s", name, label, scope),
 		Spoken: !started,
@@ -133,7 +125,7 @@ func (s *Selector) persistNotices() {
 // serialized boundary, with the providers a saved conversation already told
 // the user about.
 func (s *Selector) RestoreNotices(providers []string) {
-	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, "", providers)
+	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, s.restored.provider, providers)
 	s.notices.takeStale()
 }
 
@@ -142,4 +134,26 @@ func (s *Selector) liveProvider() string {
 		return ""
 	}
 	return s.binding.BrainProvider
+}
+
+// noticeScope says what the provider is about to receive, from the persona's
+// share of the conversation rather than from the setting alone.
+func (s *Selector) noticeScope(personaID, provider, label string) string {
+	if !slices.Contains(sessionCatchUpProviders, provider) {
+		return fmt.Sprintf("This conversation is sent to %s.", label)
+	}
+	turns := s.sharedTurns()
+	from := len(turns)
+	if cursor, ok := s.transcript.session(personaID, turns); ok {
+		from = cursor.Session.From
+	} else if s.sharesWholeConversation() {
+		from = 0
+	}
+	switch {
+	case len(turns) == 0:
+		return fmt.Sprintf("What is said to it is sent to %s.", label)
+	case from == 0:
+		return fmt.Sprintf("The whole conversation is sent to %s.", label)
+	}
+	return fmt.Sprintf("Only what is said from when it was invited is sent to %s; earlier lines stay on this machine.", label)
 }

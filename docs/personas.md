@@ -381,11 +381,14 @@ be sent anything, Obey Voice says so once, before the request: an info line in
 the conversation and, in voice mode, the same sentence spoken. For a persona on
 Claude:
 
-> Mira runs on Claude, a hosted service. What is said from here on is sent to
-> Claude; earlier lines stay on this machine.
+> Mira runs on Claude, a hosted service. Only what is said from when it was
+> invited is sent to Claude; earlier lines stay on this machine.
 
-With `whole_conversation` the second sentence is "The whole conversation is
-sent to Claude." For a hosted persona whose provider receives the shared
+The second sentence follows what that persona's session will actually receive:
+"The whole conversation is sent to Claude." when it starts from the beginning
+(`whole_conversation`, or a resumed conversation saved before replies named
+their persona), and "What is said to it is sent to Claude." when the
+conversation is still empty. For a hosted persona whose provider receives the shared
 transcript (Codex, Muse Spark, Obey) it is "This conversation is sent to
 Muse Spark." The notice is given once per conversation and provider, is
 forgotten when the conversation is cleared, and is saved with the session so a

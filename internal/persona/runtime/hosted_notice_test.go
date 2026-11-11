@@ -10,7 +10,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
-const miraNotice = "Mira runs on Claude, a hosted service. What is said from here on is sent to Claude; earlier lines stay on this machine."
+const miraNotice = "Mira runs on Claude, a hosted service. Only what is said from when it was invited is sent to Claude; earlier lines stay on this machine."
 
 type hostedNoticeEvent struct {
 	message        string
@@ -63,7 +63,7 @@ func TestHostedNoticeComesOnceBeforeTheFirstRequestToTheHostedProvider(t *testin
 	}
 	c.say("Fresh start.")
 	got = c.hostedNotices()
-	if len(got) != 2 || got[1].message != miraNotice {
+	if len(got) != 2 || got[1].message != "Mira runs on Claude, a hosted service. What is said to it is sent to Claude." {
 		t.Fatalf("clearing did not reset the notice: %+v", got)
 	}
 }
@@ -137,11 +137,13 @@ func TestHostedNoticeIsOnlySpokenWhenTheConversationDidNotStartOnThatProvider(t 
 		return notice.Text, notice.Spoken
 	}
 	mixed := newMixedConversation(t, 20, "ember")
+	mixed.say("Hello.")
 	if text, voiced := spoken(mixed, "mira"); !voiced || text != miraNotice {
 		t.Fatalf("conversation started on Ollama: spoken = %v, %q", voiced, text)
 	}
 	plain := newClaudeConversation(t, 20)
-	if text, voiced := spoken(plain, "mira"); voiced || text != miraNotice {
+	const plainNotice = "Mira runs on Claude, a hosted service. What is said to it is sent to Claude."
+	if text, voiced := spoken(plain, "mira"); voiced || text != plainNotice {
 		t.Fatalf("conversation started on Claude: spoken = %v, %q; the line must be shown but not spoken", voiced, text)
 	}
 }
@@ -190,6 +192,10 @@ func TestWholeConversationSharingStillStripsOtherPersonasToolTraffic(t *testing.
 			c.start("ember", turns, nil)
 			c.say("switch to Mira", "What did Ember find?")
 			prompt := readClaudeRequests(t, c.log)[0].Prompt
+			notices := c.hostedNotices()
+			if len(notices) != 1 || strings.Contains(notices[0].message, "The whole conversation") != tc.earlier || strings.Contains(notices[0].message, "stay on this machine") == tc.earlier {
+				t.Fatalf("the notice does not describe what is sent (earlier lines sent: %v): %+v", tc.earlier, notices)
+			}
 			requireContains(t, prompt, "What did Ember find?")
 			requireOmits(t, prompt, "diary.md", "TOOL OUTPUT SECRET", "tool_call", `"bash"`, "vault-scan.png")
 			if tc.earlier {
@@ -225,5 +231,19 @@ func TestSharingSettingAppliesToPersonasFirstAddressedAfterTheChange(t *testing.
 	requireContains(t, last.Prompt, "The vault code is cobalt.")
 	if cursor := c.saved().PersonaContexts["nova"]; cursor.Session == nil || cursor.Session.From != 0 {
 		t.Fatalf("Nova's cursor = %+v, want the whole conversation", cursor)
+	}
+}
+
+func TestHostedNoticeOfAResumedConversationSavedBeforeNoticesSaysWhatIsSent(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	turns := []brain.Turn{
+		{Role: "user", Content: "Note the door is teal."},
+		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
+	}
+	c.start("mira", turns, brain.PersonaContexts{"mira": brain.SessionContext(turns, 0, len(turns))})
+	c.say("Where were we?")
+	notices := c.hostedNotices()
+	if len(notices) != 1 || notices[0].message != "Mira runs on Claude, a hosted service. The whole conversation is sent to Claude." {
+		t.Fatalf("notices = %+v", notices)
 	}
 }

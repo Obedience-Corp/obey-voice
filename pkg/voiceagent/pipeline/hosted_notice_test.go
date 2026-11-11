@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -40,8 +41,9 @@ func TestHostedNoticeIsShownAndSpokenBeforeTheRequestAndNeverSent(t *testing.T) 
 	player := newFakePlayer(time.Millisecond)
 	defer player.Close()
 	bus := events.NewBus()
-	var infos []string
+	var infos, replies []string
 	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	events.Subscribe(bus, func(e events.ResponseReady) { replies = append(replies, e.Response) })
 	p := &Pipeline{Brain: b, TTS: tts, Player: player, Events: bus}
 	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
 		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", Hosted: true}}, nil
@@ -73,6 +75,14 @@ func TestHostedNoticeIsShownAndSpokenBeforeTheRequestAndNeverSent(t *testing.T) 
 			t.Fatalf("the notice reached the model: %q", input)
 		}
 	}
+	if len(replies) != 1 || replies[0] != "ok" {
+		t.Fatalf("the notice was recorded as part of the reply: %q", replies)
+	}
+	for _, turn := range b.history {
+		if strings.Contains(turn.Content, "hosted service") {
+			t.Fatalf("the notice entered history: %+v", turn)
+		}
+	}
 
 	if err := p.RunTurnTextMode(t.Context(), "again"); err != nil {
 		t.Fatal(err)
@@ -101,5 +111,12 @@ func TestHostedNoticeStoppedTurnSendsNothing(t *testing.T) {
 	}
 	if len(b.at) != 0 {
 		t.Fatalf("the request was sent after the turn was stopped (%d)", len(b.at))
+	}
+}
+
+func TestJobsRecordTheBackendTheirPersonaWasOn(t *testing.T) {
+	got := frozenConfig(&config.Config{BrainProvider: "claude", ActivePersona: "mira"})
+	if got["brain"] != "claude" || got["persona"] != "mira" {
+		t.Fatalf("frozen config = %v", got)
 	}
 }

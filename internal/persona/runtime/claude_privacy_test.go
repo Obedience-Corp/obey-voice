@@ -134,6 +134,9 @@ func TestJobStartedOnALocalBackendIsNotDeliveredAfterThePersonaMovesToClaude(t *
 	ember.Brain.Provider, ember.Brain.Model = "claude", ""
 	writeTestProfile(t, c.catalog.Dir, ember)
 	c.say("Hello.")
+	if got := c.p.Agency.WorkerMigrationConfig().BrainProvider; got != "claude" {
+		t.Fatalf("jobs would record backend %q while Ember is on Claude", got)
+	}
 	if c.p.BackgroundPending() {
 		t.Fatal("a result of a job started on Ollama is offered to Ember on Claude")
 	}
