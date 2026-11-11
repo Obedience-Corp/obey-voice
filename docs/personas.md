@@ -318,7 +318,9 @@ reply finishes in the background; its session is not used again, and a parked
 session is not closed, until it has.
 
 Claude receives nothing said before its persona was first addressed while on
-Claude in the conversation. Lines from before that point are not sent,
+Claude in the conversation, unless `hosted_persona_sharing` is set to
+`whole_conversation` (see [Hosted backends](#hosted-backends)). Lines from
+before that point are not sent,
 including the persona's own replies from when it ran on another backend. When
 another agent hands it the floor, that agent's message is the first line it
 receives. The one exception is a conversation saved before replies named their
@@ -333,8 +335,10 @@ A line longer than half of one request's limit (64 KiB, or half of
 says how much was left out. When the unseen lines still do not fit, Obey Voice
 starts a fresh Claude session and sends the newest lines that fit, with a note
 of how many earlier lines were left out. A persona on Claude receives the
-pending results of background jobs it started; results of jobs other personas
-started wait for those personas.
+pending results of background jobs it started while it was on a hosted
+backend; results of jobs other personas started wait for those personas, and so
+do results of jobs the persona started while it was on a local backend, if it
+has since been moved onto Claude.
 
 At most four sessions stay parked; the least recently used one is closed first.
 A parked session is also closed when its persona's prompt, model, provider or
@@ -343,6 +347,81 @@ exits. After resuming a saved conversation, a persona on Claude starts a new
 session that receives the lines since that point, within the same limit. With
 group participation on, a persona on Claude can be addressed directly, but a
 discussion among several personas still requires every member to be on Ollama.
+
+### Hosted backends
+
+A persona's backend is hosted when it sends conversation text to a service
+outside this machine. Claude, Codex, Cursor, Grok and Muse Spark are hosted.
+Obey is treated as hosted too: it passes the conversation to whichever provider
+its daemon is configured with, which Obey Voice cannot see. Only Ollama is
+local. A provider that is not classified is treated as hosted. The
+classification covers a persona's conversation backend. It does not cover its
+worker provider, and Ollama is local even when `ollama_host` points at another
+machine.
+
+Wherever personas are shown, a persona on a hosted backend is marked:
+
+- the Personas list in the terminal UI shows `[hosted]` after the provider and
+  model, and its detail pane says that conversation text leaves this machine;
+- `obey-voice persona list` prints `[hosted]` after the brain and its `--json`
+  rows carry `"hosted": true|false`; `GET /v1/personas` carries
+  `brain.hosted`;
+- the conversation header badge reads `brain claude · default · hosted`, and
+  each reply from such a persona is headed `Name [hosted]`;
+- persona selection events carry `hosted`, and the response envelope on every
+  reply, speech and metrics event carries `hosted` and `brain_provider`. The
+  desktop state carries `brain_hosted`, and each turn carries `hosted`.
+
+Replies restored from a saved session do not record the backend they were given
+on, so a resumed conversation marks new replies only; the header badge and the
+Personas list still show the persona's backend as it is now.
+
+The first time in a conversation that a persona on a hosted backend is about to
+be sent anything, Obey Voice says so once, before the request: an info line in
+the conversation and, in voice mode, the same sentence spoken. For a persona on
+Claude:
+
+> Mira runs on Claude, a hosted service. What is said from here on is sent to
+> Claude; earlier lines stay on this machine.
+
+With `whole_conversation` the second sentence is "The whole conversation is
+sent to Claude." For a hosted persona whose provider receives the shared
+transcript (Codex, Muse Spark, Obey) it is "This conversation is sent to
+Muse Spark." The notice is given once per conversation and provider, is
+forgotten when the conversation is cleared, and is saved with the session so a
+resumed conversation does not repeat it (a session saved before this existed
+repeats it once). It is shown by the host: no model receives it and it is not
+recorded as any persona's reply. A bare `Mira here.` address sends nothing and
+does not trigger it.
+
+A conversation that started on the hosted provider itself, such as a Claude-only
+install, gets the info line but no spoken notice, so it does not announce itself
+at every launch. The marker is still on every reply.
+
+`hosted_persona_sharing` chooses what a persona on Claude receives of a
+conversation shared with other personas:
+
+| Value | Meaning |
+|-------|---------|
+| `from_invite` (default) | Only what is said from the point the persona is first addressed while on Claude. |
+| `whole_conversation` | The spoken lines of the whole conversation, from its start. |
+
+Under both, other personas' tool calls, tool ids, tool output and attached file
+names are never sent, and the persona receives only the results of jobs it
+started. Whole-conversation catch-up is bounded like any other: the line and
+request limits above still apply. The setting is read when a persona is first
+addressed on Claude. Changing it mid-conversation does not send earlier lines to
+a persona whose session has already started; it applies to personas first
+addressed after the change. It bounds personas on Claude only. A persona on
+Codex, Muse Spark or Obey is given the whole shared transcript as quoted
+records, whatever this setting says, and those records still include other
+personas' tool calls, tool ids and attached file names. A persona on Grok or
+Cursor can only hold a conversation that started on it.
+
+Known gap: a reply from a background worker started through the older worker
+path is recorded as a spoken line of the persona that started it. If it arrives
+while a persona on Claude is live, or when `whole_conversation` is set, it is
+sent to Claude with the other spoken lines.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental

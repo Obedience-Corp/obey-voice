@@ -31,7 +31,7 @@ func frozenConfig(cfg *config.Config) map[string]string {
 	if cfg == nil {
 		return nil
 	}
-	return map[string]string{"provider": providerName(cfg), "model": modelName(cfg), "tools": fmt.Sprint(cfg.VoiceToolsEnabled), "persona": cfg.ActivePersona, "work_dir": cfg.WorkDir}
+	return map[string]string{"provider": providerName(cfg), "model": modelName(cfg), "tools": fmt.Sprint(cfg.VoiceToolsEnabled), "persona": cfg.ActivePersona, "brain": cfg.BrainProvider, "work_dir": cfg.WorkDir}
 }
 func cloneConfig(cfg *config.Config) *config.Config {
 	return cfg.Clone()

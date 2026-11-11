@@ -58,7 +58,9 @@ func TestHostedNoticeComesOnceBeforeTheFirstRequestToTheHostedProvider(t *testin
 		t.Fatalf("a second notice for the same provider: %+v", got)
 	}
 
-	c.p.ClearConversation()
+	if err := c.p.ClearConversation(); err != nil {
+		t.Fatal(err)
+	}
 	c.say("Fresh start.")
 	got = c.hostedNotices()
 	if len(got) != 2 || got[1].message != miraNotice {
@@ -83,7 +85,9 @@ func TestHostedNoticeIsSavedWithTheSessionAndNotRepeatedOnResume(t *testing.T) {
 func TestClearingDropsTheSavedNotices(t *testing.T) {
 	c := newMixedConversation(t, 20, "ember")
 	c.say("Hello.", "switch to Mira", "What do you think?", "switch to Ember")
-	c.p.ClearConversation()
+	if err := c.p.ClearConversation(); err != nil {
+		t.Fatal(err)
+	}
 	c.say("Fresh start.")
 	if saved := c.saved(); len(saved.HostedNotified) != 0 {
 		t.Fatalf("a cleared conversation kept its notices: %q", saved.HostedNotified)

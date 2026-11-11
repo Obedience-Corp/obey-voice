@@ -683,6 +683,19 @@ conversation/runtime. It requires local Ollama inference.
 Conversation controls save mode and member changes with that session, without
 changing global defaults. See [Group participation](personas.md#group-participation-experimental).
 
+### Hosted persona sharing
+
+`hosted_persona_sharing` (environment `HOSTED_PERSONA_SHARING`) chooses what a
+persona on a hosted backend receives when it joins a conversation shared with
+other personas: `from_invite` (default) sends only what is said from the point
+the persona is first addressed on that backend; `whole_conversation` sends the
+spoken lines from the start. Tool calls, tool output and attachment names of
+other personas are never sent in either mode. Changing it applies to personas
+first addressed after the change and does not widen a session that has already
+started. It governs personas on Claude, the backend that keeps its own session;
+see [Hosted backends](personas.md#hosted-backends) for what the others receive
+and for how hosted personas are marked.
+
 ### Ollama thinking in the terminal
 
 In Settings → Brain → Thinking, select `false` to disable model thinking or
