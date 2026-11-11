@@ -68,10 +68,13 @@ func answeredBy(personaID string) func(brain.Turn) bool {
 // matches turns, otherwise a new one that has seen nothing from its share
 // start. A cursor whose persona has neither received nor answered anything
 // belongs to a persona selected but never addressed, so it starts again where
-// it is; so does one from another backend.
-func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn, handoff bool) brain.PersonaContext {
+// it is; so does one from another backend. A provider keeping the shared
+// history on a hosted backend (hostedShare) holds its share from the moment
+// it is selected, so for it only an answer shows it was addressed.
+func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn, handoff, hostedShare bool) brain.PersonaContext {
 	if cursor, ok := s.transcript.session(personaID, turns); ok && cursorProvider(cursor) == provider {
-		if from := cursor.Session.From; cursor.Through > from || slices.ContainsFunc(turns[from:], answeredBy(personaID)) {
+		from := cursor.Session.From
+		if (!hostedShare && cursor.Through > from) || slices.ContainsFunc(turns[from:], answeredBy(personaID)) {
 			return cursor
 		}
 	}

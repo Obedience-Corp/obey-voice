@@ -362,6 +362,68 @@ func TestJobStatusGivesAHostedPersonaOnlyACountOfJobsItDidNotStart(t *testing.T)
 	}
 }
 
+func TestHostedPersonaSelectedButNeverAddressedIsSharedByTheSettingInForceWhenAddressed(t *testing.T) {
+	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+		t.Run(provider, func(t *testing.T) {
+			c := newConversation(t, 20, "ember", provider, "whole_conversation")
+			c.setEmberReply(preInviteEmber)
+			c.say(preInviteUser)
+			for _, id := range []string{"mira", "ember"} {
+				if _, err := c.selector.Select(t.Context(), id, "ui"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if strings.Contains(c.hostedLog(), "PRIVATE-4711") {
+				t.Fatal("Mira was sent the conversation before being addressed")
+			}
+			narrowed := c.base.Clone()
+			narrowed.HostedPersonaSharing = ""
+			if err := c.selector.Reload(t.Context(), narrowed); err != nil {
+				t.Fatal(err)
+			}
+			c.base = narrowed
+			c.say("switch to Mira", "First words to you.")
+			requireOmits(t, c.hostedLog(), "PRIVATE-4711", "PRE-INVITE")
+			label := providerLabel(provider)
+			want := "Mira runs on " + label + ", a hosted service. Only what is said from when it was invited is sent to " + label + "; earlier lines stay on this machine."
+			if notices := c.hostedNotices(); len(notices) != 1 || notices[0].message != want {
+				t.Fatalf("notices = %+v, want %q", notices, want)
+			}
+		})
+	}
+}
+
+func TestHostedShareThatHasBeenSentSomethingKeepsItsStartWhenTheSettingChanges(t *testing.T) {
+	for _, provider := range hostedShareProviders {
+		for _, tc := range []struct{ name, from, to string }{
+			{"narrowed", "whole_conversation", ""},
+			{"widened", "", "whole_conversation"},
+		} {
+			t.Run(provider+"/"+tc.name, func(t *testing.T) {
+				c := newConversation(t, 20, "ember", provider, tc.from)
+				c.setEmberReply(preInviteEmber)
+				c.say(preInviteUser)
+				c.setEmberReply(awayEmber)
+				c.say("switch to Mira", "What do you think?", "switch to Ember", "Over to you.")
+				changed := c.base.Clone()
+				changed.HostedPersonaSharing = tc.to
+				if err := c.selector.Reload(t.Context(), changed); err != nil {
+					t.Fatal(err)
+				}
+				c.base = changed
+				c.say("switch to Mira", "Back to you.")
+				last := c.lastHostedPrompt()
+				requireContains(t, last, "What do you think?", "Over to you.", "Back to you.")
+				if tc.from == "whole_conversation" {
+					requireContains(t, last, preInviteUser, preInviteEmber)
+				} else {
+					requireOmits(t, c.hostedLog(), "PRIVATE-4711", "PRE-INVITE")
+				}
+			})
+		}
+	}
+}
+
 func TestCompactingAHostedShareAddsNothingFromOutsideIt(t *testing.T) {
 	for _, provider := range hostedShareProviders {
 		for _, sharing := range []string{"", "whole_conversation"} {

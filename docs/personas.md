@@ -447,14 +447,15 @@ names are never sent, and the persona receives only the results of jobs it
 started. Asked what is happening, such a persona names only the jobs whose
 results it would receive, with their progress; any other running or queued job
 is only counted ("One other job is running."), without its task or tool
-activity, so that line is not sent either. On Claude, whole-conversation catch-up is bounded like any other: the
-line and request limits above still apply. On Codex, Muse Spark and Obey the
-share is replayed within `max_history`, as their history always was. The
-setting is read when a persona is first addressed on its backend. Changing it
-mid-conversation does not send earlier lines to a persona whose share has
-already started; it applies to personas first addressed after the change. A
-persona on Grok or Cursor can only hold a conversation that started on it, and
-is sent all of it.
+activity, so that line is not sent either. On Claude, whole-conversation
+catch-up is bounded like any other: the line and request limits above still
+apply. On Codex, Muse Spark and Obey the share is replayed within
+`max_history`, as their history always was. The setting is read when a persona
+is first addressed on its backend; selecting it from a list without speaking
+to it does not count. Changing it mid-conversation does not send earlier lines
+to a persona whose share has already started; it applies to personas first
+addressed after the change. A persona on Grok or Cursor can only hold a
+conversation that started on it, and is sent all of it.
 
 The brief a new background job is given carries up to eight recent spoken
 lines to the worker provider: with a persona on Claude, Codex, Muse Spark or
