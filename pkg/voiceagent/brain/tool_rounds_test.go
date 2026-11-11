@@ -425,3 +425,14 @@ func TestFinalRoundFailureNamesItsCause(t *testing.T) {
 		}
 	})
 }
+
+func TestRecurringRoundBetweenNewWorkIsProgress(t *testing.T) {
+	r := newToolRounds(&config.Config{IsWorker: true}, WorkerStreamOptions(true))
+	for i := range 40 {
+		r.observe(readFileCall(fmt.Sprintf("edit-%d.txt", i)), []string{"ok"})
+		r.observe(readFileCall("test.log"), []string{"FAIL: same failure"})
+		if final, _ := r.final(t.Context(), 2*i+2); final {
+			t.Fatalf("stopped after %d attempts while new work was happening", i+1)
+		}
+	}
+}

@@ -45,6 +45,7 @@ type toolRounds struct {
 	instruction string
 	stop        string
 	recent      []string
+	stale       int
 }
 
 func newToolRounds(cfg *config.Config, opts StreamOptions) *toolRounds {
@@ -95,18 +96,26 @@ func (r *toolRounds) stopErr(detail string) error {
 }
 
 // observe records a completed round for the no-progress guard. results holds
-// what each call returned, in call order. A worker that keeps making the same
-// calls and getting the same results within the recent window must answer.
+// what each call returned, in call order. A worker must answer once a round
+// has recurred with the same results and nothing new has happened in between.
+// A recurring round separated by new work, such as a test rerun after each
+// edit, is progress.
 func (r *toolRounds) observe(calls []api.ToolCall, results []string) {
 	if !r.worker {
 		return
 	}
 	sig := roundSignature(calls, results)
+	if slices.Contains(r.recent, sig) {
+		r.stale++
+	} else {
+		r.stale = 0
+	}
 	r.recent = append(r.recent, sig)
 	if len(r.recent) > repeatWindowRounds {
 		r.recent = r.recent[1:]
 	}
-	if r.instruction == "" && count(r.recent, sig) >= maxRepeatedToolRounds {
+	stuck := r.stale >= maxRepeatedToolRounds-1 && count(r.recent, sig) >= maxRepeatedToolRounds
+	if r.instruction == "" && stuck {
 		r.instruction, r.stop = toolRepeatAnswerInstruction, stopRepeat
 	}
 }
