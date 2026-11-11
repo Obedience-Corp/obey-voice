@@ -214,7 +214,8 @@ func TestClaudeNeverReceivesAnotherPersonasToolTraffic(t *testing.T) {
 		{Role: "tool", ToolName: "bash", ToolCallID: "c1", Content: "TOOL OUTPUT SECRET"},
 		{Role: "assistant", Content: "Your notes say hi.", PersonaID: "ember", PersonaDisplayName: "Ember", ResponseID: "e1"},
 	}
-	c.start("mira", turns, brain.PersonaContexts{"mira": brain.SessionContext(turns, brain.SessionCursor{Provider: "claude"}, 2)})
+	// A cursor saved before cursors named their backend.
+	c.start("mira", turns, brain.PersonaContexts{"mira": brain.SessionContext(turns, brain.SessionCursor{}, 2)})
 	for _, turn := range c.p.Brain.History() {
 		if len(turn.ToolCalls) > 0 || turn.ToolName != "" || turn.Role == "tool" {
 			t.Fatalf("the provider holds another persona's tool traffic: %+v", turn)

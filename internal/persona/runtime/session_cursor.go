@@ -26,6 +26,15 @@ func sessionShareStart(turns []brain.Turn, handoff, inherited, whole bool) int {
 	return len(turns)
 }
 
+// cursorProvider is the backend a cursor belongs to. A cursor saved before
+// cursors named one is Claude's, the only backend that kept them then.
+func cursorProvider(cursor brain.PersonaContext) string {
+	if cursor.Session.Provider == "" {
+		return "claude"
+	}
+	return cursor.Session.Provider
+}
+
 // restoredConversation is a saved conversation from before replies carried a
 // persona, and the backend its session was created on.
 type restoredConversation struct{ personaID, provider string }
@@ -61,7 +70,7 @@ func answeredBy(personaID string) func(brain.Turn) bool {
 // belongs to a persona selected but never addressed, so it starts again where
 // it is; so does one from another backend.
 func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn, handoff bool) brain.PersonaContext {
-	if cursor, ok := s.transcript.session(personaID, turns); ok && cursor.Session.Provider == provider {
+	if cursor, ok := s.transcript.session(personaID, turns); ok && cursorProvider(cursor) == provider {
 		if from := cursor.Session.From; cursor.Through > from || slices.ContainsFunc(turns[from:], answeredBy(personaID)) {
 			return cursor
 		}
