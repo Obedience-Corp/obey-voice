@@ -44,3 +44,29 @@ func TestStreamResponseCancellationAfterDrain(t *testing.T) {
 		})
 	}
 }
+
+// A provider that reports its own error as the turn stops it does not turn
+// the stop into a provider failure.
+func TestStreamResponseStopWinsOverTheProvidersOwnError(t *testing.T) {
+	for _, allowBargeIn := range []bool{false, true} {
+		t.Run(map[bool]string{false: "text", true: "voice"}[allowBargeIn], func(t *testing.T) {
+			for range 50 {
+				ctx, cancel := context.WithCancel(t.Context())
+				bus := events.NewBus()
+				var reported []events.Error
+				events.Subscribe(bus, func(e events.Error) { reported = append(reported, e) })
+				p := &Pipeline{Events: bus}
+				metrics := newTurnMetrics()
+				turn := p.newTurnConductor(metrics)
+				chunks := make(chan string)
+				done := make(chan brain.StreamResult, 1)
+				done <- brain.StreamResult{Err: errors.New("claude: signal: killed")}
+				cancel()
+				_, _, err := p.streamResponse(ctx, nil, &brain.Stream{Chunks: chunks, Done: done}, allowBargeIn, metrics, turn, nil)
+				if !errors.Is(err, context.Canceled) || len(reported) != 0 {
+					t.Fatalf("err = %v, reported %+v", err, reported)
+				}
+			}
+		})
+	}
+}

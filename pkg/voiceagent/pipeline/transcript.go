@@ -110,8 +110,12 @@ type transcriptRecording struct {
 	recorded chan struct{}
 	write    func(delivered string, err error) *brain.Turn
 
-	mu        sync.Mutex
-	finished  bool
+	mu       sync.Mutex
+	finished bool
+	// sending is set while a chunk is offered to the turn; handed signals
+	// when it clears, so the record waits to learn whether the turn read it.
+	sending   bool
+	handed    sync.Cond
 	delivered strings.Builder
 	reply     *brain.Turn
 	// A routed request is recorded by the routed reply, or by release when
@@ -122,19 +126,43 @@ type transcriptRecording struct {
 	// abandoned is set once a later request stops waiting for this one;
 	// waited once a later request has said it is waiting for it.
 	abandoned, waited bool
+	// afterSend, set only by tests, runs between a chunk reaching the turn
+	// and its record.
+	afterSend func(string)
 }
 
-func (r *transcriptRecording) deliver(text string) {
+// offer hands text to the turn through send and records it if the turn read
+// it. The record cannot finish while text is in hand, so text the turn read is
+// never missing from it. Every caller of finish other than the forwarder
+// cancels first, which ends an offer the turn is not reading.
+func (r *transcriptRecording) offer(text string, send func(string) bool) bool {
+	r.mu.Lock()
+	if r.finished {
+		r.mu.Unlock()
+		return false
+	}
+	r.sending = true
+	r.mu.Unlock()
+	sent := send(text)
+	if sent && r.afterSend != nil {
+		r.afterSend(text)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if !r.finished {
+	if sent {
 		r.delivered.WriteString(text)
 	}
+	r.sending = false
+	r.handed.Broadcast()
+	return sent
 }
 
 func (r *transcriptRecording) finish(route string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for r.sending {
+		r.handed.Wait()
+	}
 	if r.finished {
 		return
 	}
@@ -380,6 +408,7 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 			}
 			return nil
 		}}
+	rec.handed.L = &rec.mu
 	p.trackRequest(rec)
 	// Unbuffered, so text counts as delivered only once the turn has read it.
 	out := make(chan string)
@@ -425,9 +454,7 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 					chunks = nil
 					continue
 				}
-				if forward(out, v) {
-					rec.deliver(v)
-				}
+				rec.offer(v, func(v string) bool { return forward(out, v) })
 			case v, ok := <-terminal:
 				received, terminal = true, nil
 				if ok {

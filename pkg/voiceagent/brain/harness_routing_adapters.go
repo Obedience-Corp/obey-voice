@@ -13,7 +13,9 @@ import (
 
 func (b *Brain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (StreamResult, error) {
 	return classifyHarnessRoute(ctx, b.cfg, req, func(ctx context.Context, req BatchRequest) (string, error) {
+		b.mu.Lock()
 		opts := b.runOptions(claude.JSONOutput, false)
+		b.mu.Unlock()
 		opts.SystemPrompt, opts.ResumeID, opts.NoSessionPersistence = req.SystemPrompt, "", true
 		r, err := b.client.RunPromptCtx(ctx, req.Text, opts)
 		if err != nil {
@@ -43,7 +45,9 @@ func (b *CodexBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest
 
 func (b *CursorBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (StreamResult, error) {
 	return classifyHarnessRoute(ctx, b.cfg, req, func(ctx context.Context, req BatchRequest) (string, error) {
+		b.mu.Lock()
 		opts := b.askOptions(false)
+		b.mu.Unlock()
 		opts.Resume = ""
 		r, err := b.client.AskCtx(ctx, AssembleBatchPrompt(req), opts)
 		if err != nil {
@@ -58,7 +62,9 @@ func (b *CursorBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteReques
 
 func (b *GrokBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (StreamResult, error) {
 	return classifyHarnessRoute(ctx, b.cfg, req, func(ctx context.Context, req BatchRequest) (string, error) {
+		b.mu.Lock()
 		opts := b.runOptions(grok.JSONOutput, false)
+		b.mu.Unlock()
 		opts.SystemPromptOverride, opts.ResumeID = req.SystemPrompt, ""
 		r, err := b.client.RunPromptCtx(ctx, req.Text, opts)
 		if err != nil {
