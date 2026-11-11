@@ -111,6 +111,7 @@ func (a *Agency) EnableConversationWork(sessionID string, saved *work.Snapshot, 
 		}
 		a.ReplaceWorker(worker, cfg, workerErr)
 	}
+	a.restartPersonas()
 	a.discardPendingSpeech()
 	a.workMu.Lock()
 	a.coordinator, a.workScope, a.workObserver = c, scope, observer
