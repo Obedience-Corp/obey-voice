@@ -341,13 +341,13 @@ A line longer than half of one request's limit (64 KiB, or half of
 says how much was left out. When the unseen lines still do not fit, Obey Voice
 starts a fresh Claude session and sends the newest lines that fit, with a note
 of how many earlier lines were left out. A persona on Claude receives the
-pending results of background jobs it started while it was on a hosted
-backend; results of jobs other personas started wait for those personas, and so
-do results of jobs the persona started while it was on a local backend, if it
-has since been moved onto Claude, until a persona on a local backend answers.
-A job saved before jobs recorded their persona goes to the persona answering
-when no other persona is in the conversation, and an unset `active_persona`
-counts as the default persona.
+pending results of background jobs it started, whichever backend it was on when
+it started them: a job it started on a local backend before it was moved onto
+Claude has its task and result sent to Claude when they are delivered. Results
+of jobs other personas started wait for those personas. A job saved before jobs
+recorded their persona goes to the persona answering when no other persona is
+in the conversation, and an unset `active_persona` counts as the default
+persona.
 
 A fresh Claude session therefore starts with a replay of up to 64 KiB of the
 persona's share, where it used to receive only the last six lines. This

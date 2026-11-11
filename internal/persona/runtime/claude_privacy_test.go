@@ -109,15 +109,15 @@ func TestLoadHistoryGivesAPersonaOnClaudeOnlyItsShare(t *testing.T) {
 	}
 }
 
-func TestJobStartedOnALocalBackendIsNotDeliveredAfterThePersonaMovesToClaude(t *testing.T) {
+func TestJobStartedOnOllamaIsDeliveredToItsPersonaMovedToClaude(t *testing.T) {
 	c := newMixedConversation(t, 20, "ember")
 	c.work = true
 	c.start("ember", nil, nil)
 	coordinator := c.p.WorkCoordinator()
 	scope := coordinator.Scope()
-	register := func(id, backend, text string) {
+	publish := func(id, persona, text string) work.JobKey {
 		t.Helper()
-		key, err := coordinator.Register(scope, work.Admission{JobID: id, Task: "task " + id, Origin: "agency", Config: map[string]string{"persona": "ember", "brain": backend}})
+		key, err := coordinator.Register(scope, work.Admission{JobID: id, Task: "task " + id, Origin: "agency", Config: map[string]string{"persona": persona}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,29 +127,48 @@ func TestJobStartedOnALocalBackendIsNotDeliveredAfterThePersonaMovesToClaude(t *
 		if _, err := coordinator.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeSucceeded, Text: text}); err != nil {
 			t.Fatal(err)
 		}
+		return key
 	}
-	register("local-job", "ollama", "The private tax refund is 1234.")
+	if cfg := c.p.Agency.WorkerMigrationConfig(); cfg.ActivePersona != "ember" || cfg.BrainProvider == "claude" {
+		t.Fatalf("the job would start for %q on %q", cfg.ActivePersona, cfg.BrainProvider)
+	}
+	emberJob := publish("ember-job", "ember", "The tax refund is 1234.")
+	miraJob := publish("mira-job", "mira", "Mira's diary says 5678.")
 
 	ember := testProfile("ember", "Ember", "ember")
 	ember.Brain.Provider, ember.Brain.Model = "claude", ""
 	writeTestProfile(t, c.catalog.Dir, ember)
 	c.say("Hello.")
 	if got := c.p.Agency.WorkerMigrationConfig().BrainProvider; got != "claude" {
-		t.Fatalf("jobs would record backend %q while Ember is on Claude", got)
+		t.Fatalf("Ember is on %q", got)
 	}
-	if c.p.BackgroundPending() {
-		t.Fatal("a result of a job started on Ollama is offered to Ember on Claude")
+	requests := readClaudeRequests(t, c.log)
+	if len(requests) != 1 {
+		t.Fatalf("claude requests = %d", len(requests))
 	}
-	c.say("Any news?")
-	for _, req := range readClaudeRequests(t, c.log) {
-		requireOmits(t, req.Prompt, "1234")
+	requireContains(t, requests[0].Prompt, "The tax refund is 1234.")
+	if notices := c.hostedNotices(); len(notices) != 1 || notices[0].claudeRequests != 0 {
+		t.Fatalf("notices = %+v, want one before the request that carried the result", notices)
+	}
+	var spoken bool
+	for _, turn := range c.selector.Transcript() {
+		spoken = spoken || turn.Role == "assistant" && turn.PersonaID == "ember" && strings.Contains(turn.Content, "The tax refund is 1234.")
+	}
+	if !spoken {
+		t.Fatalf("Ember on Claude did not say the result: %+v", c.selector.Transcript())
 	}
 
-	register("claude-job", "claude", "The build is green.")
-	if !c.p.BackgroundPending() {
-		t.Fatal("a result of a job Ember started while on Claude is not offered to it")
+	c.say("Anything else?")
+	for _, req := range readClaudeRequests(t, c.log) {
+		requireOmits(t, req.Prompt, "5678", "task mira-job")
 	}
-	c.say("And the build?")
-	requireContains(t, lastClaudeRequest(t, c.log).Prompt, "The build is green.")
-	requireOmits(t, lastClaudeRequest(t, c.log).Prompt, "1234")
+	for _, r := range coordinator.Pending(scope) {
+		waiting := r.State == work.Pending || r.State == work.Ready
+		if r.Outcome.JobID == emberJob.JobID && waiting {
+			t.Fatalf("Ember's result is still waiting: %+v", r)
+		}
+		if r.Outcome.JobID == miraJob.JobID && !waiting {
+			t.Fatalf("Mira's result left without her: %+v", r)
+		}
+	}
 }
