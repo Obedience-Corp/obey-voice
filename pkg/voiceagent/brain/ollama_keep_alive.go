@@ -1,7 +1,11 @@
 package brain
 
 import (
+	"fmt"
+	"io"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ollama/ollama/api"
@@ -22,4 +26,22 @@ func parseOllamaKeepAlive(raw string) (*api.Duration, error) {
 		return nil, err
 	}
 	return &api.Duration{Duration: d}, nil
+}
+
+var (
+	keepAliveWarnOut io.Writer = os.Stderr
+	keepAliveWarned  sync.Map
+)
+
+// keepAliveOrDefault parses ollama_keep_alive for every Ollama path. An invalid
+// value yields nil (the server default) and is reported once per distinct value.
+func keepAliveOrDefault(raw string) *api.Duration {
+	d, err := parseOllamaKeepAlive(raw)
+	if err == nil {
+		return d
+	}
+	if _, seen := keepAliveWarned.LoadOrStore(raw, struct{}{}); !seen {
+		fmt.Fprintf(keepAliveWarnOut, "obey-voice: invalid ollama_keep_alive %q (%v); using the server default\n", raw, err)
+	}
+	return nil
 }

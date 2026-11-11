@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,5 +86,32 @@ func TestSkillRouterEmbedsSendForeverKeepAlive(t *testing.T) {
 		if got := body["keep_alive"]; got != float64(-1) {
 			t.Fatalf("request %d keep_alive = %v, want -1", i, got)
 		}
+	}
+}
+
+func TestKeepAliveOrDefaultWarnsOncePerInvalidValue(t *testing.T) {
+	var buf strings.Builder
+	prev := keepAliveWarnOut
+	keepAliveWarnOut = &buf
+	keepAliveWarned.Clear()
+	t.Cleanup(func() { keepAliveWarnOut = prev; keepAliveWarned.Clear() })
+
+	for range 3 {
+		if got := keepAliveOrDefault("soon"); got != nil {
+			t.Fatalf("invalid value = %v, want nil", got)
+		}
+	}
+	if n := strings.Count(buf.String(), "invalid ollama_keep_alive"); n != 1 || !strings.Contains(buf.String(), `"soon"`) {
+		t.Fatalf("warnings = %q, want one naming the value", buf.String())
+	}
+	keepAliveOrDefault("later")
+	if n := strings.Count(buf.String(), "invalid ollama_keep_alive"); n != 2 {
+		t.Fatalf("a different invalid value should warn: %q", buf.String())
+	}
+	if got := keepAliveOrDefault("10m"); got == nil || got.Duration != 10*time.Minute {
+		t.Fatalf("valid value = %v", got)
+	}
+	if n := strings.Count(buf.String(), "invalid ollama_keep_alive"); n != 2 {
+		t.Fatalf("valid value warned: %q", buf.String())
 	}
 }
