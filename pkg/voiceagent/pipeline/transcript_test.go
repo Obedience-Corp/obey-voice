@@ -160,3 +160,32 @@ func TestHostTranscriptRecordsVoiceTurns(t *testing.T) {
 		t.Fatalf("interrupted voice transcript = %+v", turns)
 	}
 }
+
+func TestHostTranscriptRecordsRoutedReplies(t *testing.T) {
+	envelope := events.ResponseEnvelope{ResponseID: "routed", PersonaID: "mira", DisplayName: "Mira"}
+	t.Run("deterministic route records the request", func(t *testing.T) {
+		transcript := &recordedTranscript{turns: []brain.Turn{{Role: "user", Content: "earlier"}}}
+		p := &Pipeline{Brain: &fakeBrain{}, Transcript: transcript}
+		m := newTurnMetrics()
+		m.originalInput, m.historyAtAdmission, m.response = "Mira, start a worker on the report.", 1, envelope
+		if err := p.appendRoutedHistory(m, "start a worker on the report.", "Started."); err != nil {
+			t.Fatal(err)
+		}
+		turns := transcript.Turns()
+		if len(turns) != 3 || turns[1].Content != m.originalInput || turns[1].RoutedInput != "start a worker on the report." || turns[2].Content != "Started." || turns[2].ResponseID != "routed" {
+			t.Fatalf("transcript = %+v", turns)
+		}
+	})
+	t.Run("route after a model reply adds only the reply", func(t *testing.T) {
+		transcript := &recordedTranscript{turns: []brain.Turn{{Role: "user", Content: "Do the report."}, {Role: "assistant", Content: "I'll start that.", ResponseID: "routed"}}}
+		p := &Pipeline{Brain: &fakeBrain{}, Transcript: transcript}
+		m := newTurnMetrics()
+		m.originalInput, m.historyAtAdmission, m.response = "Do the report.", 0, envelope
+		if err := p.appendRoutedHistory(m, "Do the report.", "Started."); err != nil {
+			t.Fatal(err)
+		}
+		if turns := transcript.Turns(); len(turns) != 3 || turns[2].Content != "Started." || turns[2].PersonaID != "mira" {
+			t.Fatalf("transcript = %+v", turns)
+		}
+	})
+}
