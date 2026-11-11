@@ -186,13 +186,9 @@ func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probe
 	if err != nil {
 		return nil, err
 	}
-	var keepAlive *api.Duration
-	if s := strings.TrimSpace(cfg.OllamaKeepAlive); s != "" {
-		if d, err := time.ParseDuration(s); err == nil {
-			keepAlive = &api.Duration{Duration: d}
-		} else {
-			fmt.Fprintf(os.Stderr, "obey-voice: invalid ollama_keep_alive %q (%v); using the server default\n", s, err)
-		}
+	keepAlive, err := parseOllamaKeepAlive(cfg.OllamaKeepAlive)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "obey-voice: invalid ollama_keep_alive %q (%v); using the server default\n", cfg.OllamaKeepAlive, err)
 	}
 
 	embedCtx, embedCancel := context.WithTimeout(parent, 10*time.Second)
