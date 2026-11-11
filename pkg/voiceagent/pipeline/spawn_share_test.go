@@ -55,6 +55,7 @@ func TestJobStatusNamesOnlyTheJobsAHostedPersonaMayReceive(t *testing.T) {
 	ember := spawn{"ember", "ollama", "read my private tax notes"}
 	mira := spawn{"mira", "muse-spark", "audit the config"}
 	miraLocal := spawn{"mira", "ollama", "tidy the diary"}
+	miraOnClaude := spawn{"mira", "claude", "draft the memo"}
 	for _, tc := range []struct {
 		name   string
 		hosted bool
@@ -64,6 +65,7 @@ func TestJobStatusNamesOnlyTheJobsAHostedPersonaMayReceive(t *testing.T) {
 		{"its own job is named and the others counted", true, []spawn{ember, mira, miraLocal},
 			"Still working on audit the config. So far: listed 1 folder (1 unknown). 2 other jobs are running or queued."},
 		{"only other jobs", true, []spawn{ember}, "One other job is running."},
+		{"its job from another hosted backend", true, []spawn{miraOnClaude, mira}, "Still working on audit the config. So far: listed 1 folder (1 unknown). One other job is running."},
 		{"its own job queued behind others", true, []spawn{ember, ember, mira}, "Queued: audit the config. 2 other jobs are running."},
 		{"on ollama every job is named", false, []spawn{ember, mira, miraLocal},
 			"Still working on read my private tax notes. So far: listed 1 folder (1 unknown). Also 1 more running and 1 queued."},

@@ -282,7 +282,7 @@ func TestSinglePersonaConversationOnAHostedSharedHistoryKeepsItsWholeConversatio
 	}
 }
 
-func TestHostedSharedHistoryReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
+func TestHostedSharedHistoryReceivesOnlyResultsOfJobsItStartedOnItsBackend(t *testing.T) {
 	for _, provider := range hostedShareProviders {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "ember", provider, "")
@@ -315,8 +315,9 @@ func TestHostedSharedHistoryReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 			}
 			finish(emberJob, "The tax refund is 1234.")
 			publish("mira-local-job", "mira", "ollama", "The local diary says 5678.")
+			publish("mira-claude-job", "mira", "claude", "The Claude memo says 9012.")
 			if c.p.BackgroundPending() {
-				t.Fatal("a result Mira did not start on a hosted backend is offered to her")
+				t.Fatal("a result Mira did not start on her current backend is offered to her")
 			}
 			publish("mira-job", "mira", provider, "The build is green.")
 			if !c.p.BackgroundPending() {
@@ -324,7 +325,7 @@ func TestHostedSharedHistoryReceivesOnlyResultsOfJobsItStarted(t *testing.T) {
 			}
 			c.say("And the build?")
 			requireContains(t, c.lastHostedPrompt(), "The build is green.")
-			requireOmits(t, c.hostedLog(), "1234", "5678", "tax refund", "tax notes", "diary")
+			requireOmits(t, c.hostedLog(), "1234", "5678", "9012", "tax refund", "tax notes", "diary", "Claude memo")
 		})
 	}
 }

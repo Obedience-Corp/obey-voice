@@ -336,10 +336,10 @@ A line longer than half of one request's limit (64 KiB, or half of
 says how much was left out. When the unseen lines still do not fit, Obey Voice
 starts a fresh Claude session and sends the newest lines that fit, with a note
 of how many earlier lines were left out. A persona on Claude receives the
-pending results of background jobs it started while it was on a hosted
-backend; results of jobs other personas started wait for those personas, and so
-do results of jobs the persona started while it was on a local backend, if it
-has since been moved onto Claude.
+pending results of background jobs it started while it was on Claude; results
+of jobs other personas started wait for those personas, and results of jobs the
+persona started on another backend, local or hosted, wait until it is back on
+that backend or on a local one.
 
 At most four sessions stay parked; the least recently used one is closed first.
 A parked session is also closed when its persona's prompt, model, provider or
@@ -371,7 +371,7 @@ applies after a resume. It starts again when the persona is moved to another
 backend, so a persona moved from a local backend sends nothing from its local
 turns. Compaction summarizes only the share, and the exchange kept after the
 summary is the last one in the share. Like a persona on Claude, it receives only
-the pending results of background jobs it started while on a hosted backend.
+the pending results of background jobs it started while on its current backend.
 
 A conversation saved by an earlier version of Obey Voice has no share start for
 these personas, and their replies name their persona, so the exception for
@@ -444,10 +444,10 @@ Obey receives of a conversation shared with other personas:
 
 Under both, other personas' tool calls, tool ids, tool output and attached file
 names are never sent, and the persona receives only the results of jobs it
-started. Asked what is happening, such a persona names only the jobs whose
-results it would receive, with their progress; any other running or queued job
-is only counted ("One other job is running."), without its task or tool
-activity, so that line is not sent either. On Claude, whole-conversation
+started on that backend. Asked what is happening, such a persona names only the
+jobs whose results it would receive, with their progress; any other running or
+queued job is only counted ("One other job is running."), without its task or
+tool activity, so that line is not sent either. On Claude, whole-conversation
 catch-up is bounded like any other: the line and request limits above still
 apply. On Codex, Muse Spark and Obey the share is replayed within
 `max_history`, as their history always was. The setting is read when a persona

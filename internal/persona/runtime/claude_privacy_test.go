@@ -109,7 +109,7 @@ func TestLoadHistoryGivesAPersonaOnClaudeOnlyItsShare(t *testing.T) {
 	}
 }
 
-func TestJobStartedOnALocalBackendIsNotDeliveredAfterThePersonaMovesToClaude(t *testing.T) {
+func TestJobStartedOnAnotherBackendIsNotDeliveredAfterThePersonaMovesToClaude(t *testing.T) {
 	c := newMixedConversation(t, 20, "ember")
 	c.work = true
 	c.start("ember", nil, nil)
@@ -129,6 +129,7 @@ func TestJobStartedOnALocalBackendIsNotDeliveredAfterThePersonaMovesToClaude(t *
 		}
 	}
 	register("local-job", "ollama", "The private tax refund is 1234.")
+	register("codex-job", "codex", "The Codex draft says 5678.")
 
 	ember := testProfile("ember", "Ember", "ember")
 	ember.Brain.Provider, ember.Brain.Model = "claude", ""
@@ -138,11 +139,11 @@ func TestJobStartedOnALocalBackendIsNotDeliveredAfterThePersonaMovesToClaude(t *
 		t.Fatalf("jobs would record backend %q while Ember is on Claude", got)
 	}
 	if c.p.BackgroundPending() {
-		t.Fatal("a result of a job started on Ollama is offered to Ember on Claude")
+		t.Fatal("a result of a job started on Ollama or Codex is offered to Ember on Claude")
 	}
 	c.say("Any news?")
 	for _, req := range readClaudeRequests(t, c.log) {
-		requireOmits(t, req.Prompt, "1234")
+		requireOmits(t, req.Prompt, "1234", "5678")
 	}
 
 	register("claude-job", "claude", "The build is green.")
@@ -151,5 +152,5 @@ func TestJobStartedOnALocalBackendIsNotDeliveredAfterThePersonaMovesToClaude(t *
 	}
 	c.say("And the build?")
 	requireContains(t, lastClaudeRequest(t, c.log).Prompt, "The build is green.")
-	requireOmits(t, lastClaudeRequest(t, c.log).Prompt, "1234")
+	requireOmits(t, lastClaudeRequest(t, c.log).Prompt, "1234", "5678")
 }

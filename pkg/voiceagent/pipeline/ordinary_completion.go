@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
@@ -112,22 +113,24 @@ func (p *Pipeline) deliverableResult(r work.ResultView) bool {
 // receivesJob reports whether the live persona may be told what a job admitted
 // with admission is doing or produced. A persona on a hosted backend that
 // keeps its own session or is sent only its share of the conversation
-// receives only jobs it started, and not those it started while on a local
-// backend; the others wait for their own persona. It takes the Agency's lock.
+// receives only jobs it started on that backend, as its share starts again
+// on another; the others wait for their own persona and backend. It takes the
+// Agency's lock.
 func (p *Pipeline) receivesJob(admission map[string]string) bool {
 	if !brain.KeepsPersonaSession(p.Brain) && !brain.HostedSharedHistory(p.Brain) {
 		return true
 	}
-	live := ""
+	var live *config.Config
 	if p.Agency != nil {
-		if cfg := p.Agency.currentConfig(); cfg != nil {
-			live = cfg.ActivePersona
-		}
+		live = p.Agency.currentConfig()
 	}
-	if started := admission["brain"]; started != "" && !brain.IsHosted(started) {
+	if live == nil || live.ActivePersona == "" {
 		return false
 	}
-	return live != "" && admission["persona"] == live
+	if started := admission["brain"]; started != "" && started != live.BrainProvider {
+		return false
+	}
+	return admission["persona"] == live.ActivePersona
 }
 
 func (o *ordinaryCompletion) close() {
