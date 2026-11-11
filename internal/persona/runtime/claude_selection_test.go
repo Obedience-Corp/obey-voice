@@ -19,6 +19,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
@@ -136,6 +137,7 @@ type claudeConversation struct {
 	p        *pipeline.Pipeline
 	selector *Selector
 	initial  brain.Provider
+	work     bool
 	mu       sync.Mutex
 	ollama   [][]ollamaMessage
 	ready    []events.ResponseReady
@@ -198,7 +200,14 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 		initial.LoadHistory(turns)
 	}
 	p := &pipeline.Pipeline{Brain: initial, Events: events.NewBus()}
-	if err := p.BeginConversationIdentity(c.sess.ID); err != nil {
+	if c.work {
+		jobs := job.NewTable(t.Context())
+		t.Cleanup(jobs.Close)
+		pipeline.NewAgency(p, jobs, nil, binding.Config(), nil).Wire()
+		if err := p.EnableConversationWork(c.sess.ID, nil, binding.Config()); err != nil {
+			t.Fatal(err)
+		}
+	} else if err := p.BeginConversationIdentity(c.sess.ID); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -534,5 +543,47 @@ func TestClaudeConversationKeepsOrdinaryTurnsWithGroupParticipationEnabled(t *te
 	c.say("Note that the vault code is cobalt.", "switch to Ember")
 	if got := replies(c.selector.Transcript()); len(got) != 2 || got[0].PersonaID != "mira" || got[1].PersonaID != "ember" {
 		t.Fatalf("replies = %+v", got)
+	}
+}
+
+func TestClaudeRestoreDoesNotLookLikeAnOverdueCompaction(t *testing.T) {
+	c := newClaudeConversation(t, 2)
+	var long []brain.Turn
+	for i := range 6 {
+		long = append(long, brain.Turn{Role: "user", Content: fmt.Sprintf("Fact %d.", i)}, brain.Turn{Role: "assistant", Content: fmt.Sprintf("Noted %d.", i), PersonaID: "mira", PersonaDisplayName: "Mira"})
+	}
+	c.start("mira", long, nil)
+	c.p.CompactPrompt, c.p.AutoCompactAfter = "Summarize the conversation.", 2*c.base.MaxHistory
+	c.say("What was fact 5?")
+	reloaded := c.base.Clone()
+	reloaded.MaxHistory = 3
+	if err := c.selector.Reload(t.Context(), reloaded); err != nil {
+		t.Fatal(err)
+	}
+	c.say("And fact 4?")
+	for _, req := range readClaudeRequests(t, c.log) {
+		if req.Format == "json" {
+			t.Fatalf("restoring the transcript triggered a summarize request: %+v", req)
+		}
+	}
+	if turns := c.selector.Transcript(); len(turns) != len(long)+4 {
+		t.Fatalf("transcript = %d turns, want %d", len(turns), len(long)+4)
+	}
+}
+
+func TestClaudeTranscriptSurvivesClosingConversationWork(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	c.work = true
+	c.start("mira", nil, nil)
+	c.say("Note that the vault code is cobalt.")
+	if err := c.p.CloseWork(); err != nil {
+		t.Fatal(err)
+	}
+	if turns := c.selector.Transcript(); len(turns) != 2 || turns[1].PersonaID != "mira" {
+		t.Fatalf("transcript after closing work = %+v", turns)
+	}
+	c.p.OnTurn()
+	if turns := c.saved().Turns; len(turns) != 2 {
+		t.Fatalf("final save = %+v", turns)
 	}
 }

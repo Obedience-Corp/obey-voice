@@ -400,10 +400,13 @@ func (c *CursorBrain) SessionInfo() SessionState {
 // LoadHistory restores conversation history from a saved samantha session. No
 // live CLI session exists for persisted history, so the id is cleared: the
 // first turn after load runs the flatten path, then captures a new session id
-// and resumes from there.
+// and resumes from there. The loaded view keeps the window a live turn keeps.
 func (c *CursorBrain) LoadHistory(turns []Turn) {
 	c.hostContext = ""
 	c.history = normalizePromptHistory(turns)
+	if c.cfg != nil && c.cfg.MaxHistory > 0 {
+		c.trimHistory()
+	}
 	c.dropSession()
 }
 
