@@ -226,17 +226,15 @@ func TestClaudeNeverReceivesAnotherPersonasToolTraffic(t *testing.T) {
 	requireOmits(t, last.Prompt, "diary.md", "TOOL OUTPUT SECRET", "tool_call", `"bash"`)
 }
 
-func TestSessionShareStartIsTheTurnThatFirstAddressedThePersona(t *testing.T) {
-	asked := []brain.Turn{
+func TestSessionShareStartIsWhereThePersonaIsAddressedOnItsProvider(t *testing.T) {
+	answered := []brain.Turn{
 		{Role: "user", Content: "Note the door is teal."},
-		{Role: "assistant", Content: "Noted.", PersonaID: "ember"},
+		{Role: "assistant", Content: "Noted.", PersonaID: "mira"},
 		{Role: "user", Content: "Mira, what do you think?"},
-		{Role: "assistant", Content: "Teal is fine.", PersonaID: "mira"},
 	}
 	handedOff := []brain.Turn{
 		{Role: "user", Content: "Note the door is teal."},
 		{Role: "assistant", Content: "@Mira what do you think?", PersonaID: "ember"},
-		{Role: "assistant", Content: "Teal is fine.", PersonaID: "mira"},
 	}
 	for _, tc := range []struct {
 		name    string
@@ -244,14 +242,41 @@ func TestSessionShareStartIsTheTurnThatFirstAddressedThePersona(t *testing.T) {
 		handoff bool
 		want    int
 	}{
-		{"asked by the user", asked, false, 2},
-		{"handed the floor", handedOff, false, 1},
-		{"not addressed yet", asked[:2], false, 2},
-		{"being handed the floor", handedOff[:2], true, 1},
+		{"addressed now, after answering on another provider", answered, false, 3},
+		{"handed the floor", handedOff, true, 1},
+		{"addressed after a user line", handedOff[:1], true, 1},
 	} {
-		if got := sessionShareStart(tc.turns, "mira", tc.handoff); got != tc.want {
+		if got := sessionShareStart(tc.turns, tc.handoff); got != tc.want {
 			t.Errorf("%s: share start = %d, want %d", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestPersonaMovedOntoClaudeSendsNothingFromItsLocalTurns(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+	c := newMixedConversation(t, 20, "ember")
+	c.say("My private note: the safe code is 4711.", "Thanks.")
+	ember := testProfile("ember", "Ember", "ember")
+	ember.Brain.Provider, ember.Brain.Model = "claude", ""
+	writeTestProfile(t, c.catalog.Dir, ember)
+	c.say("What do you think now?")
+	if cursor := c.saved().PersonaContexts["ember"]; cursor.Session == nil || cursor.Session.From != 4 {
+		t.Fatalf("saved cursor = %+v", cursor)
+	}
+
+	saved := c.saved()
+	c.start("ember", saved.Turns, saved.PersonaContexts)
+	for _, turn := range c.p.Brain.History() {
+		requireOmits(t, turn.Content, "4711")
+	}
+	c.say("And after a restart?")
+	requests := readClaudeRequests(t, c.log)
+	if len(requests) != 2 || requests[1].Resume != "" {
+		t.Fatalf("requests = %+v", requests)
+	}
+	requireContains(t, requests[1].Prompt, `"content":"What do you think now?"`)
+	for _, req := range requests {
+		requireOmits(t, req.Prompt, "4711", "Thanks.")
 	}
 }
 

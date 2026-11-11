@@ -9,15 +9,12 @@ import (
 )
 
 // sessionShareStart is where a provider keeping its own session begins to
-// receive this conversation: the request or handoff that first addressed its
-// persona, just before its first reply. A persona addressed only now starts at
-// the end of the transcript, or at the reply that handed it the floor. Earlier
-// turns are never sent to that provider. Returning 0 here would share the
-// whole conversation instead.
-func sessionShareStart(turns []brain.Turn, personaID string, handoff bool) int {
-	if i := slices.IndexFunc(turns, answeredBy(personaID)); i >= 0 {
-		return max(i-1, 0)
-	}
+// receive this conversation: where its persona is addressed while bound to it,
+// at the end of the transcript or at the reply that handed it the floor. The
+// persona's cursor keeps that point for as long as it stays on the provider;
+// lines from before it, including the persona's own on another backend, are
+// never sent. Returning 0 here would share the whole conversation instead.
+func sessionShareStart(turns []brain.Turn, handoff bool) int {
 	if handoff && len(turns) > 0 && turns[len(turns)-1].Role == "assistant" {
 		return len(turns) - 1
 	}
@@ -38,7 +35,7 @@ func (s *Selector) sessionCursor(personaID string, turns []brain.Turn, handoff b
 			return cursor
 		}
 	}
-	from := sessionShareStart(turns, personaID, handoff)
+	from := sessionShareStart(turns, handoff)
 	return brain.SessionContext(turns, from, from)
 }
 
