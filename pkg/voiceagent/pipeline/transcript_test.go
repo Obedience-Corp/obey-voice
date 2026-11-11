@@ -426,7 +426,7 @@ func (b *sharedStoppedBrain) ThinkStream(ctx context.Context, input string, _ br
 // The rule that stores a stopped request as interrupted belongs to the host
 // record, which a provider keeping shared history never gets: its stopped
 // reply stays as it recorded it, and the host records nothing.
-func TestStoppedRequestOnASharedHistoryProviderIsNotRecordedByTheHost(t *testing.T) {
+func TestStoppedTurnOnASharedHistoryProviderLeavesTheHostRecordEmpty(t *testing.T) {
 	transcript := &recordedTranscript{}
 	b := &sharedStoppedBrain{routedProjectionBrain{fakeBrain: &fakeBrain{}}}
 	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
