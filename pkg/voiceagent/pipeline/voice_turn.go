@@ -259,13 +259,13 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("brain: %w", err))
 		return original, nil
 	}
-	defer recording.wait()
+	defer recording.settle()
 
 	if ordinary != nil {
 		brainStream = ordinary.wrap(brainStream)
 	}
 	fullResponse, interrupted, err := p.streamResponse(requestCtx, turnCancel, brainStream, true, metrics, turn, repair)
-	recording.wait()
+	recording.settle()
 	if kind, source, ok := repair.routedKind(); ok {
 		if p.Player != nil {
 			p.Player.Stop()

@@ -4,17 +4,23 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
 
 type recordedTranscript struct {
-	mu    sync.Mutex
-	turns []brain.Turn
+	mu        sync.Mutex
+	turns     []brain.Turn
+	appendErr error
 }
 
 func (r *recordedTranscript) Turns() []brain.Turn {
@@ -26,8 +32,17 @@ func (r *recordedTranscript) Turns() []brain.Turn {
 func (r *recordedTranscript) Append(_ string, turns ...brain.Turn) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.appendErr != nil {
+		return r.appendErr
+	}
 	r.turns = append(r.turns, turns...)
 	return nil
+}
+
+func (r *recordedTranscript) Clear() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.turns = nil
 }
 
 func (r *recordedTranscript) SetReplyMedia(string, []chatmedia.Ref) error { return nil }
@@ -188,4 +203,183 @@ func TestHostTranscriptRecordsRoutedReplies(t *testing.T) {
 			t.Fatalf("transcript = %+v", turns)
 		}
 	})
+}
+
+// slowStopBrain delivers part of a reply and then, once canceled, takes a
+// while to report it, like a CLI whose child process is slow to exit. Later
+// requests answer at once. It records any request that overlaps another.
+type slowStopBrain struct {
+	fakeBrain
+	stop     time.Duration
+	calls    atomic.Int32
+	active   atomic.Int32
+	overlaps atomic.Int32
+}
+
+func (b *slowStopBrain) ThinkStream(ctx context.Context, _ string, _ brain.StreamOptions) (*brain.Stream, error) {
+	if b.active.Add(1) > 1 {
+		b.overlaps.Add(1)
+	}
+	first := b.calls.Add(1) == 1
+	out, done := make(chan string, 1), make(chan brain.StreamResult, 1)
+	go func() {
+		defer close(out)
+		defer close(done)
+		if !first {
+			out <- "Second answer."
+			b.active.Add(-1)
+			done <- brain.StreamResult{}
+			return
+		}
+		out <- "The vault code is"
+		<-ctx.Done()
+		time.Sleep(b.stop)
+		b.active.Add(-1)
+		done <- brain.StreamResult{Err: ctx.Err()}
+	}()
+	return &brain.Stream{Chunks: out, Done: done}, nil
+}
+
+func TestHostTranscriptInterruptDoesNotWaitForProviderToStop(t *testing.T) {
+	transcript := &recordedTranscript{}
+	b := &slowStopBrain{stop: 1500 * time.Millisecond}
+	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
+	p.AdmitInput = admitAs("first", func(input string) string { return input })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var once sync.Once
+	var interrupted time.Time
+	events.Subscribe(p.Events, func(events.ResponseDelta) {
+		once.Do(func() { interrupted = time.Now(); cancel() })
+	})
+	_ = p.RunTurnTextMode(ctx, "What is the vault code?")
+	if waited := time.Since(interrupted); waited > 750*time.Millisecond {
+		t.Fatalf("interrupted turn waited %v for the provider to stop", waited)
+	}
+	turns := transcript.Turns()
+	if len(turns) != 2 || turns[1].Content != "The vault code is" || turns[1].Disposition != "interrupted" || turns[1].ResponseID != "first" {
+		t.Fatalf("interrupted reply was not recorded when the turn returned: %+v", turns)
+	}
+
+	p.AdmitInput = admitAs("second", func(input string) string { return input })
+	if err := p.RunTurnTextMode(t.Context(), "Try again."); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.overlaps.Load(); n != 0 {
+		t.Fatalf("next request ran while the stopped one was still ending (%d overlaps)", n)
+	}
+	turns = transcript.Turns()
+	if len(turns) != 4 || turns[3].Content != "Second answer." || turns[3].ResponseID != "second" {
+		t.Fatalf("stopped reply was recorded again or out of order: %+v", turns)
+	}
+}
+
+func TestHostTranscriptKeepsReplyCompleteWhenInterruptedAfterProviderFinished(t *testing.T) {
+	transcript := &recordedTranscript{}
+	p := &Pipeline{Brain: &fakeBrain{chunks: []string{"All done."}}, Events: events.NewBus(), Transcript: transcript}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stream, recording, err := p.startRecordedStream(ctx, "Finish it.", brain.StreamOptions{Identity: &brain.TurnIdentity{ResponseID: "done"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range stream.Chunks {
+	}
+	<-stream.Done
+	cancel()
+	recording.settle()
+	turns := transcript.Turns()
+	if len(turns) != 2 || turns[1].Content != "All done." || turns[1].Disposition != "" {
+		t.Fatalf("finished reply = %+v", turns)
+	}
+}
+
+func TestHostTranscriptAppendFailureIsReported(t *testing.T) {
+	transcript := &recordedTranscript{appendErr: errors.New("transcript closed")}
+	p := &Pipeline{Brain: &fakeBrain{chunks: []string{"Reply."}}, Events: events.NewBus(), Transcript: transcript}
+	p.AdmitInput = admitAs("lost", func(input string) string { return input })
+	var reported []events.Error
+	events.Subscribe(p.Events, func(e events.Error) { reported = append(reported, e) })
+	if err := p.RunTurnTextMode(t.Context(), "Hello."); err != nil {
+		t.Fatal(err)
+	}
+	if len(reported) != 1 || reported[0].Stage != "history" || !strings.Contains(reported[0].Message, "transcript closed") {
+		t.Fatalf("lost record was not reported: %+v", reported)
+	}
+}
+
+// appendingBrain is a provider without shared history that accepts
+// host-authored replies, as the Claude, Grok and Cursor sessions do.
+type appendingBrain struct {
+	fakeBrain
+	mu       sync.Mutex
+	appended []string
+}
+
+func (b *appendingBrain) AppendAssistantResponse(text string) error {
+	return b.AppendAssistantResponseWithIdentity(text, brain.TurnIdentity{})
+}
+
+func (b *appendingBrain) AppendAssistantResponseWithIdentity(text string, _ brain.TurnIdentity) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.appended = append(b.appended, text)
+	return nil
+}
+
+func TestHostTranscriptRecordsWorkerReplyOnce(t *testing.T) {
+	transcript := &recordedTranscript{}
+	b := &appendingBrain{}
+	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
+	if err := p.BeginConversationIdentity("worker"); err != nil {
+		t.Fatal(err)
+	}
+	jobs := job.NewTable(t.Context())
+	t.Cleanup(jobs.Close)
+	a := NewAgency(p, jobs, nil, &config.Config{}, nil)
+	a.Wire()
+	a.mu.Lock()
+	a.workerReplies = append(a.workerReplies, workerReply{workerOrigin: workerOrigin{Envelope: events.ResponseEnvelope{PersonaID: "mira", DisplayName: "Mira", ResponseID: "worker-1"}}, Text: "The report is ready."})
+	a.mu.Unlock()
+	if err := p.commitWorkerReplies(); err != nil {
+		t.Fatal(err)
+	}
+	turns := transcript.Turns()
+	if len(turns) != 1 || turns[0].Content != "The report is ready." || turns[0].PersonaID != "mira" || turns[0].ResponseID != "worker-1" || len(b.appended) != 1 {
+		t.Fatalf("worker reply transcript = %+v, provider = %v", turns, b.appended)
+	}
+}
+
+func TestHostTranscriptRecordsOrdinaryCompletionBriefOnce(t *testing.T) {
+	p, c, scope := newCompletionLeasePipeline(t, false)
+	transcript := &recordedTranscript{}
+	b := &appendingBrain{fakeBrain: fakeBrain{chunks: []string{"Bring a jacket."}}}
+	p.Brain, p.Transcript = b, transcript
+	if err := p.RunTurnTextMode(t.Context(), "Should I bring a jacket?"); err != nil {
+		t.Fatal(err)
+	}
+	turns := transcript.Turns()
+	if len(turns) != 3 || turns[1].Content != "Bring a jacket." || !strings.Contains(turns[2].Content, "pending result") || len(b.appended) != 1 {
+		t.Fatalf("ordinary completion transcript = %+v, provider = %v", turns, b.appended)
+	}
+	if s := c.Snapshot(scope); len(s.Communicated) != 1 {
+		t.Fatalf("result not communicated: %+v", s)
+	}
+}
+
+func TestHostTranscriptRecordsBackgroundCompletionOnce(t *testing.T) {
+	p, c, scope := newCompletionLeasePipeline(t, false)
+	transcript := &recordedTranscript{}
+	b := &appendingBrain{}
+	p.Brain, p.Transcript = b, transcript
+	if err := p.RunBackgroundTurn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	turns := transcript.Turns()
+	if len(turns) != 1 || !strings.Contains(turns[0].Content, "pending result") || len(b.appended) != 1 {
+		t.Fatalf("background completion transcript = %+v, provider = %v", turns, b.appended)
+	}
+	if s := c.Snapshot(scope); len(s.Communicated) != 1 {
+		t.Fatalf("result not communicated: %+v", s)
+	}
 }

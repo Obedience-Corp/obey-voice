@@ -9,8 +9,10 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // sessionOnlyTestBrain keeps its own unattributed history, as the Claude,
@@ -75,5 +77,69 @@ func TestServeResumeRestoresTranscriptForProviderWithoutSharedHistory(t *testing
 	}
 	if len(disk.Turns) != 2 || disk.Turns[1].PersonaID != "mira" || disk.Turns[1].ResponseID != "saved-response" {
 		t.Fatalf("saved transcript lost attribution: %+v", disk.Turns)
+	}
+}
+
+func TestServeFailedResumeKeepsThePreviousConversation(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	writeAckTestPersona(t, "mira", "You are Mira.")
+	cfg := &config.Config{ActivePersona: "mira", BrainProvider: "claude", TTSProvider: "kokoro", VoiceWorkEnabled: true}
+	manager := &voiceagent.LiveTTSManager{}
+	t.Cleanup(manager.Close)
+	s := &servePersonaSwitcher{cfg: cfg, pipeline: &pipeline.Pipeline{Brain: &sessionOnlyTestBrain{}}, tts: manager,
+		sessions: &sessionRef{sess: session.New("claude", "")},
+		newBrain: func(*config.Config) (brain.Provider, error) { return &sessionOnlyTestBrain{}, nil },
+		newTTS: func(*config.Config) (*voiceagent.TTSSet, error) {
+			return &voiceagent.TTSSet{Primary: &fakeTTS{sampleRate: 24000, samples: 64}}, nil
+		},
+	}
+	jobs := job.NewTable(t.Context())
+	t.Cleanup(jobs.Close)
+	pipeline.NewAgency(s.pipeline, jobs, nil, cfg, nil).Wire()
+	if err := s.sessions.bindWork(s.pipeline, cfg, s.sessions.sess); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.sessions.closeWork(s.pipeline) })
+	defer func() { _ = s.pipeline.CloseBrains() }()
+	if err := s.initialize(); err != nil {
+		t.Fatal(err)
+	}
+
+	previous := session.New("claude", "")
+	turns := []brain.Turn{
+		{Role: "user", Content: "The shared code is cobalt."},
+		{Role: "assistant", Content: "Remembered.", PersonaID: "mira", PersonaDisplayName: "mira", ResponseID: "one"},
+		{Role: "user", Content: "And the door is teal."},
+		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "mira", ResponseID: "two"},
+	}
+	if err := session.DefaultStore().SaveSelection(previous, turns, "mira", "mira", "saved-hash"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.resume(t.Context(), previous.ID); err != nil {
+		t.Fatal(err)
+	}
+	broken := session.New("claude", "")
+	broken.Work = &work.Snapshot{Scope: work.WorkScope{SessionID: "another-session", RuntimeEpoch: "runtime", ConversationEpoch: "conversation"}}
+	if err := session.DefaultStore().SaveSelection(broken, nil, "mira", "mira", "saved-hash"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.resume(t.Context(), broken.ID); err == nil {
+		t.Fatal("resuming a session with unusable work state succeeded")
+	}
+	if s.sessions.id() != previous.ID {
+		t.Fatalf("live session = %s, want the previous one back", s.sessions.id())
+	}
+	if _, err := s.selector.Route(t.Context(), "Where were we?", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.sessions.save(s.sessions.history(s.pipeline)); err != nil {
+		t.Fatal(err)
+	}
+	disk, err := session.Load(previous.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(disk.Turns) != len(turns) || disk.Turns[3].ResponseID != "two" {
+		t.Fatalf("previous conversation on disk = %+v", disk.Turns)
 	}
 }

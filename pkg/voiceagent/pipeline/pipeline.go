@@ -181,7 +181,9 @@ type Pipeline struct {
 	OnTurn func() // called after each completed turn for session auto-save
 	// Transcript owns the canonical conversation when the live provider keeps
 	// no shared history of its own. Nil leaves those providers' history alone.
-	Transcript Transcript
+	Transcript  Transcript
+	requestMu   sync.Mutex
+	lastRequest *transcriptRecording
 
 	// CompactPrompt is the resolved kind=compact instruction for /compact's
 	// summarize turn. Empty disables compaction with a clear error.
