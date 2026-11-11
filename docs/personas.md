@@ -274,10 +274,12 @@ shorter parent deadline or cancellation still stops the request immediately.
 Shared-history projection
 is verified for Ollama, Codex, Muse Spark, and Obey personas: Codex is tested
 on its own, and Muse Spark and Obey each share a conversation with an Ollama
-persona. Switching to a persona on another provider (Claude, Grok, Cursor) is
-refused rather than silently replaced. The local acceptance uses Qwen3:8b and
-Kokoro voices `af_heart` and `am_michael`; it does not establish parity for every
-provider.
+persona. A persona backed by Claude Code can also be switched to and back,
+including by an `@` handoff from another agent; this is tested with fake
+Ollama and Claude backends, not with live models. Switching to a persona on Grok
+or Cursor is refused rather than silently replaced. The local acceptance uses
+Qwen3:8b and Kokoro voices `af_heart` and `am_michael`; it does not establish
+parity for every provider.
 
 A conversation can still start on a Claude, Grok, or Cursor persona, with the
 same persona controls. Those providers keep their own session history without
@@ -287,6 +289,24 @@ Selecting an Ollama, Codex, Muse Spark, or Obey persona from there hands it that
 attributed transcript. Clearing the conversation or changing its settings
 restarts the same persona's provider session from the transcript. Group
 participation is not offered while one of these personas is responding.
+
+A persona backed by Claude Code keeps its Claude session while other personas
+speak: Obey Voice parks it and resumes the same session when that persona is
+addressed again. Each request carries, as quoted conversation records, only the
+lines that session has not seen: your lines, other personas' replies, and
+replies Obey Voice recorded under that persona's name. Lines count as seen only
+after a reply completes, so an interrupted reply is sent again next time, marked
+as unfinished. Claude receives nothing said before its persona was first
+addressed in the conversation; when another agent hands it the floor, that
+agent's message is the first line it receives. When the unseen lines do not fit
+one request (64 KiB, or half of `claude_max_session_tokens` when that fuse is
+set), Obey Voice starts a fresh Claude session and sends the newest lines that
+fit, with a note of how many earlier lines were left out. At most four sessions
+stay parked; the least recently used one is closed first. A parked session is
+also closed when its persona's prompt, model, provider or other settings change,
+when the conversation is cleared, and when Obey Voice exits. After resuming a
+saved conversation, a persona on Claude starts a new session that receives the
+lines since it was first addressed, within the same limit.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental
@@ -308,8 +328,10 @@ Older sessions remain readable; missing identity stays unknown, including old
 assistant-role names. A future unsupported format is refused. Compaction keeps
 the canonical transcript and a `<id>.pre-compact.json` backup while producing
 a bounded model context with complete tool groups and attributed source facts.
-In a conversation that started on Claude, Grok, or Cursor, the summary reseeds
-only that provider's session; the saved transcript stays complete.
+In a conversation that started on Grok or Cursor, the summary reseeds only that
+provider's session; the saved transcript stays complete. For a persona on
+Claude, compaction ends its Claude session, and the next request starts a fresh
+session from the transcript lines described above rather than from the summary.
 A stored transcript alone does not prove a model received all of it: its
 configured history/context limits still govern the projection.
 

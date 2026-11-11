@@ -177,7 +177,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	captureContext(s.contexts, opts.Initial.PersonaID, opts.Pipeline.Brain)
 	if live := opts.Pipeline.Brain; brain.KeepsPersonaSession(live) {
 		turns := s.transcript.Turns()
-		cursor := s.sessionCursor(opts.Initial.PersonaID, turns)
+		cursor := s.sessionCursor(opts.Initial.PersonaID, turns, false)
 		delete(s.contexts, opts.Initial.PersonaID)
 		s.transcript.setSession(opts.Initial.PersonaID, &cursor)
 		// The host loaded the whole conversation into a provider that has no

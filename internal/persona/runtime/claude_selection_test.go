@@ -3,6 +3,7 @@ package personaruntime
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -50,7 +52,14 @@ func installClaudeFixture(t *testing.T) string {
 	return log
 }
 
-type claudeRequest struct{ Prompt, Format, Resume string }
+// claudeRequest is one fixture invocation: its prompt, flags, the session it
+// answered in, and its process id.
+type claudeRequest struct {
+	Prompt, Format, Resume, Session string
+	PID                             int
+}
+
+var fixturePersonaName = regexp.MustCompile(`You are (\w+)\.`)
 
 func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	log := os.Getenv("OBEY_CLAUDE_FIXTURE_LOG")
@@ -65,6 +74,7 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 		}
 	}
 	var req claudeRequest
+	name := "Mira"
 	for i := 0; i+1 < len(args); i++ {
 		switch args[i] {
 		case "-p":
@@ -73,6 +83,20 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 			req.Format = args[i+1]
 		case "--resume":
 			req.Resume = args[i+1]
+		case "--system-prompt":
+			if m := fixturePersonaName.FindStringSubmatch(args[i+1]); m != nil {
+				name = m[1]
+			}
+		}
+	}
+	data, _ := os.ReadFile(log)
+	n := bytes.Count(data, []byte("\n")) + 1
+	// Distinct sessions let a test tell a resumed session from a new one.
+	req.Session, req.PID = "claude-fixture", os.Getpid()
+	if os.Getenv("OBEY_CLAUDE_FIXTURE_SESSIONS") == "distinct" {
+		req.Session = req.Resume
+		if req.Session == "" {
+			req.Session = fmt.Sprintf("claude-session-%d", n)
 		}
 	}
 	f, err := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o600)
@@ -82,14 +106,12 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	line, _ := json.Marshal(req)
 	_, _ = f.Write(append(line, '\n'))
 	_ = f.Close()
-	data, _ := os.ReadFile(log)
-	n := bytes.Count(data, []byte("\n"))
 	out := json.NewEncoder(os.Stdout)
 	if req.Format == "json" {
-		_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": claudeSummary, "session_id": "claude-fixture"})
+		_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": claudeSummary, "session_id": req.Session})
 		os.Exit(0)
 	}
-	text := fmt.Sprintf("Mira: Mira reply %d.", n)
+	text := fmt.Sprintf("%s: %s reply %d.", name, name, n)
 	// Only the current request stalls; a conversation record line may quote
 	// an earlier stalled request.
 	stall := false
@@ -99,15 +121,15 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 		}
 	}
 	if stall {
-		text = "Mira: " + claudePartial
+		text = name + ": " + claudePartial
 	}
-	_ = out.Encode(map[string]any{"type": "system", "subtype": "init", "session_id": "claude-fixture"})
-	_ = out.Encode(map[string]any{"type": "assistant", "session_id": "claude-fixture", "message": map[string]any{"content": []map[string]string{{"type": "text", "text": text}}}})
+	_ = out.Encode(map[string]any{"type": "system", "subtype": "init", "session_id": req.Session})
+	_ = out.Encode(map[string]any{"type": "assistant", "session_id": req.Session, "message": map[string]any{"content": []map[string]string{{"type": "text", "text": text}}}})
 	if stall {
 		time.Sleep(time.Minute)
 		os.Exit(0)
 	}
-	_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": text, "session_id": "claude-fixture"})
+	_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": text, "session_id": req.Session})
 	os.Exit(0)
 }
 
@@ -133,8 +155,8 @@ func readClaudeRequests(t *testing.T, log string) []claudeRequest {
 
 type ollamaMessage struct{ Role, Content string }
 
-// claudeConversation is a conversation that starts on Mira, a Claude persona,
-// with Ember on a fake Ollama server as the other participant.
+// claudeConversation is a conversation between Mira, a persona on Claude, and
+// Ember, a persona on a fake Ollama server.
 type claudeConversation struct {
 	t        *testing.T
 	log      string
@@ -149,9 +171,17 @@ type claudeConversation struct {
 	mu       sync.Mutex
 	ollama   [][]ollamaMessage
 	ready    []events.ResponseReady
+	// emberSays replaces Ember's reply when set.
+	emberSays string
 }
 
 func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
+	t.Helper()
+	return newMixedConversation(t, maxHistory, "mira")
+}
+
+// newMixedConversation starts the conversation on the persona start.
+func newMixedConversation(t *testing.T, maxHistory int, start string) *claudeConversation {
 	t.Helper()
 	c := &claudeConversation{t: t, log: installClaudeFixture(t)}
 	root, _ := filepath.EvalSymlinks(t.TempDir())
@@ -168,8 +198,9 @@ func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
 		}
 		c.mu.Lock()
 		c.ollama = append(c.ollama, req.Messages)
+		reply := cmp.Or(c.emberSays, emberReply)
 		c.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": emberReply}, "done": true, "done_reason": "stop"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": reply}, "done": true, "done_reason": "stop"})
 	}))
 	t.Cleanup(server.Close)
 	c.catalog = persona.Catalog{Dir: filepath.Join(root, "personas")}
@@ -187,7 +218,7 @@ func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
 		PromptsDir: promptDir, WorkDir: root, MaxHistory: maxHistory, OllamaNumCtx: 8192}
 	c.store = session.NewStore(filepath.Join(root, "sessions"))
 	c.sess = session.New("claude", "")
-	c.start("mira", nil, nil)
+	c.start(start, nil, nil)
 	return c
 }
 
@@ -232,6 +263,8 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Runs before CloseBrains, so the brains it parks are joined there.
+	t.Cleanup(selector.Close)
 	p.AdmitInput = selector.Route
 	p.OnTurn = func() {
 		if err := c.store.Save(c.sess, selector.Transcript(), selector.ContextSnapshots()); err != nil {
@@ -367,18 +400,32 @@ func TestConversationStartedOnClaudeOwnsAttributedTranscript(t *testing.T) {
 	}
 }
 
-func TestClaudeStartedConversationStillRefusesSwitchToAnotherClaudePersona(t *testing.T) {
+func TestClaudeStartedConversationSwitchesBetweenClaudePersonas(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
 	c := newClaudeConversation(t, 20)
 	nova := testProfile("nova", "Nova", "nova")
 	nova.Brain.Provider, nova.Brain.Model = "claude", ""
 	writeTestProfile(t, c.catalog.Dir, nova)
 	writeTestPrompt(t, c.base.PromptsDir, "nova", "You are {agent_name}.")
-	_, err := c.selector.Select(t.Context(), "nova", "explicit")
-	if err == nil || !strings.Contains(err.Error(), `provider "claude" has no verified shared history projection`) {
-		t.Fatalf("err = %v", err)
+	c.say("Note that the vault code is cobalt.", "switch to Nova", "What do you think?", "switch to Mira", "And you?")
+
+	requests := readClaudeRequests(t, c.log)
+	if len(requests) != 3 {
+		t.Fatalf("requests = %+v", requests)
 	}
-	if got := c.selector.Snapshot().PersonaID; got != "mira" {
-		t.Fatalf("selection moved to %q", got)
+	mira, novaFirst, miraAgain := requests[0], requests[1], requests[2]
+	if novaFirst.Resume != "" || novaFirst.Session == mira.Session {
+		t.Fatalf("Nova did not start its own session: %+v", novaFirst)
+	}
+	requireOmits(t, novaFirst.Prompt, "cobalt", "Mira reply 1.")
+	if miraAgain.Resume != mira.Session {
+		t.Fatalf("Mira's session did not survive Nova speaking: %+v", miraAgain)
+	}
+	requireContains(t, miraAgain.Prompt, `"content":"Nova here.","persona":"Nova"`, `"content":"Nova reply 2.","persona":"Nova"`, `"content":"Mira here.","persona":"Mira"`)
+	requireOmits(t, miraAgain.Prompt, "cobalt", "Mira reply 1.")
+	got := replies(c.selector.Transcript())
+	if len(got) != 5 || got[0].PersonaID != "mira" || got[2].PersonaID != "nova" || got[2].Content != "Nova reply 2." || got[4].PersonaID != "mira" || got[4].Content != "Mira reply 3." {
+		t.Fatalf("replies = %+v", got)
 	}
 }
 

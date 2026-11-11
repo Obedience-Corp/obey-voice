@@ -247,7 +247,7 @@ func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
 }
 
 func TestSelectorRefusesUnverifiedProvider(t *testing.T) {
-	for _, provider := range []string{"claude", "grok", "cursor"} {
+	for _, provider := range []string{"grok", "cursor"} {
 		t.Run(provider, func(t *testing.T) {
 			scout := testProfile("scout", "Scout", "scout")
 			scout.Brain.Provider = provider

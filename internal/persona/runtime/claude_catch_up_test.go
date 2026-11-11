@@ -108,6 +108,22 @@ func TestResumedClaudeConversationReplaysItsShareIntoFreshSession(t *testing.T) 
 	requireOmits(t, last.Prompt, "omitted]")
 }
 
+func TestClaudeTurnAfterCompactionReplaysTheTranscript(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	c.say("Note that the vault code is cobalt.", "The door is teal.")
+	c.p.CompactPrompt = "Summarize the conversation."
+	if err := c.p.CompactConversation(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	c.say("What do you remember?")
+	last := lastClaudeRequest(t, c.log)
+	if last.Resume != "" {
+		t.Fatalf("the turn after compaction resumed %q", last.Resume)
+	}
+	requireContains(t, last.Prompt, `"content":"Note that the vault code is cobalt."`, `"content":"Mira reply 2.","persona":"Mira"`)
+	requireOmits(t, last.Prompt, claudeSummary)
+}
+
 func TestClaudeShareStartsWhereItsPersonaWasFirstAddressed(t *testing.T) {
 	c := newClaudeConversation(t, 20)
 	earlier := []brain.Turn{

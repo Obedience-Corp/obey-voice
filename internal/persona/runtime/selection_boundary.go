@@ -20,6 +20,10 @@ import (
 // projection and reply attribution are covered by selection tests.
 var sharedHistoryProviders = []string{"ollama", "codex", "muse-spark", "obey"}
 
+// sessionCatchUpProviders lists the brain providers whose parked sessions and
+// transcript catch-up are covered by selection tests.
+var sessionCatchUpProviders = []string{"claude"}
+
 func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reason string, preCommit func(context.Context) error) (events.PersonaSelection, error) {
 	if s.closed {
 		return events.PersonaSelection{}, errors.New("persona selection is closed")
@@ -139,10 +143,10 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				unchanged = true
 				return nil
 			}
-			// A provider without shared history projection may only be rebound
-			// to the persona it already serves; it cannot be switched to.
+			// A provider with neither shared history projection nor session
+			// catch-up may only be rebound to the persona it already serves.
 			rebind = !brain.KeepsSharedHistory(oldBrain) && s.binding != nil && binding.PersonaID == s.binding.PersonaID && binding.BrainProvider == s.binding.BrainProvider
-			if !rebind && !slices.Contains(sharedHistoryProviders, cfg.BrainProvider) {
+			if !rebind && !slices.Contains(sharedHistoryProviders, cfg.BrainProvider) && !slices.Contains(sessionCatchUpProviders, cfg.BrainProvider) {
 				return fmt.Errorf("persona %q: provider %q has no verified shared history projection", id, cfg.BrainProvider)
 			}
 
@@ -217,11 +221,14 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if err != nil {
 				return fmt.Errorf("prepare persona brain: %w", err)
 			}
+			// A provider keeping its own session is caught up from the host
+			// transcript, which records each reply under its admitted identity.
+			keepsSession := brain.KeepsPersonaSession(nextBrain)
 			projection, projects := nextBrain.(brain.HistoryProjectionProvider)
-			if !projects && !rebind {
+			if !projects && !rebind && !keepsSession {
 				return errors.New("persona brain does not support shared history projection")
 			}
-			if _, freezes := nextBrain.(brain.PersonaPromptFreezer); !freezes && !rebind {
+			if _, freezes := nextBrain.(brain.PersonaPromptFreezer); !freezes && !rebind && !keepsSession {
 				return errors.New("persona brain cannot pin response identity")
 			}
 			pinned, pinErr := pinPersonaPrompt(nextBrain, cfg)
@@ -239,9 +246,8 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if !s.requiresSelection {
 				captureContext(stagedContexts, previous.PersonaID, oldBrain)
 			}
-			keepsSession := brain.KeepsPersonaSession(nextBrain)
 			if keepsSession {
-				cursor := s.sessionCursor(binding.PersonaID, turns)
+				cursor := s.sessionCursor(binding.PersonaID, turns, reason == "agent-handoff")
 				targetCursor = &cursor
 				delete(stagedContexts, binding.PersonaID)
 			}
