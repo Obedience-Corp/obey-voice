@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -19,7 +20,8 @@ func (o *OllamaBrain) confirmSkillMatches(ctx context.Context, input string, can
 	if len(candidates) == 0 {
 		return nil, nil
 	}
-	if budget := workerBudgetFromContext(ctx); budget != nil {
+	budget := workerBudgetFromContext(ctx)
+	if budget != nil {
 		snapshot := budget.Snapshot()
 		if snapshot.Limits.MaxRequests > 0 && snapshot.Limits.MaxRequests-snapshot.Requests < 2 {
 			return nil, nil
@@ -61,8 +63,21 @@ func (o *OllamaBrain) confirmSkillMatches(ctx context.Context, input string, can
 	if o.cfg != nil && o.cfg.OllamaNumCtx > 0 {
 		ctxSize = min(ctxSize, o.cfg.OllamaNumCtx)
 	}
+	messages := []api.Message{{Role: "system", Content: systemPrompt(o.cfg, "skill-selection", nil)}, {Role: "user", Content: string(payload)}}
+	req := &api.ChatRequest{Model: o.model, KeepAlive: o.keepAlive, Messages: messages, Options: map[string]any{"num_ctx": ctxSize}}
+	if budget == nil && (o.cfg == nil || !o.cfg.IsWorker) {
+		// Share the conversation's runner options: any difference makes Ollama
+		// reload the model for this call and again for the turn that follows.
+		req = o.newChatRequest(messages, nil)
+		if req.Options == nil {
+			req.Options = map[string]any{}
+		}
+	}
 	stream := false
-	req := &api.ChatRequest{Model: o.model, KeepAlive: o.keepAlive, Messages: []api.Message{{Role: "system", Content: systemPrompt(o.cfg, "skill-selection", nil)}, {Role: "user", Content: string(payload)}}, Stream: &stream, Format: schema, Think: &api.ThinkValue{Value: false}, Options: map[string]any{"temperature": 0, "seed": 42, "num_predict": 128, "num_ctx": ctxSize}}
+	req.Stream = &stream
+	req.Format = schema
+	req.Think = &api.ThinkValue{Value: false}
+	maps.Copy(req.Options, map[string]any{"temperature": 0, "seed": 42, "num_predict": 128})
 	estimatedTokens := (len(req.Messages[0].Content)+len(payload)+len(schema)+3)/4 + 128
 	if estimatedTokens > ctxSize*9/10 {
 		return nil, errors.New("skill selection exceeds safe context budget")
