@@ -54,8 +54,11 @@ renamed to the current persona. Compaction changes that working view without
 replacing the durable transcript. In a conversation shared with other personas,
 the working view is only the persona's share, which carries no other persona's
 tool calls, tool output or attachments: see [Hosted
-backends](personas.md#hosted-backends). Native tool details not represented in
-Obey's transcript are not reconstructed after a reset.
+backends](personas.md#hosted-backends). An image you attached while the persona
+was answering on Codex stays in its share and is sent again when Codex starts a
+new thread; a line with an image that was said while it was away reaches it as
+text only, without the image or its file name. Native tool details not
+represented in Obey's transcript are not reconstructed after a reset.
 
 Background workers start fresh with the existing task brief: up to eight recent
 spoken turns of the working view within the shared brief byte budget, the triggering utterance,

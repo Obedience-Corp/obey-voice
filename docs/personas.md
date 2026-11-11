@@ -370,9 +370,13 @@ within the share, including those whose lines compaction or `max_history` has
 since dropped from what is replayed. The share start is saved with the
 conversation and still applies after a resume. It starts again when the persona
 is moved to another backend, so a persona moved from a local backend sends
-nothing from its local turns. Compaction summarizes only the share, and the exchange kept after the
-summary is the last one in the share. Like a persona on Claude, it receives only
-the pending results of background jobs it started while on its current backend.
+nothing from its local turns. Compaction summarizes only the share, and the
+exchange kept after the summary is the last one in the share. Like a persona on
+Claude, it receives only the pending results of background jobs it started
+while on its current backend.
+Its hosted notice follows its share as for Claude: in a conversation it has to
+itself it reads "What is said to it is sent to Codex." (or Muse Spark, or Obey),
+not "This conversation is sent to Codex."
 
 A conversation saved by an earlier version of Obey Voice has no share start for
 these personas, and their replies name their persona, so the exception for
