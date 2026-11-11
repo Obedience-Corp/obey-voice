@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
@@ -36,10 +37,13 @@ type CursorBrain struct {
 	turnInstruction string
 	personaReloader *promptReloader
 	turnReloader    *promptReloader
-	history         []Turn
-	hostContext     string
 	// speakerNames resolves stable speaker ids for flatten prompts (optional).
 	speakerNames SpeakerNames
+
+	// mu guards the conversation state below, as Brain.mu does.
+	mu          sync.Mutex
+	history     []Turn
+	hostContext string
 	// sessionID is the cursor-agent session captured on the first turn and
 	// reused via --resume thereafter, so subsequent turns send only the new
 	// input. Empty until the first turn captures it; scoped to this
@@ -121,8 +125,12 @@ func (c *CursorBrain) refreshPrompts(onWarn func(string)) {
 			// Print mode has no --system-prompt, so a resume cannot pick up a
 			// persona edit. Drop the CLI session and re-flatten with the new
 			// prompt. Unchanged text keeps the session.
-			if next != c.systemPrompt && c.sessionID != "" {
-				c.dropSession()
+			if next != c.systemPrompt {
+				c.mu.Lock()
+				if c.sessionID != "" {
+					c.dropSession()
+				}
+				c.mu.Unlock()
 			}
 			c.systemPrompt = next
 		} else if onWarn != nil {
@@ -143,7 +151,10 @@ func (c *CursorBrain) ThinkStream(ctx context.Context, input string, streamOpts 
 		return nil, err
 	}
 	c.refreshPrompts(streamOpts.OnPromptWarn)
+	c.mu.Lock()
 	c.history = append(c.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
+	first, fresh := c.attempts(streamOpts)
+	c.mu.Unlock()
 
 	out := make(chan string, 8)
 	done := make(chan StreamResult, 1)
@@ -151,16 +162,19 @@ func (c *CursorBrain) ThinkStream(ctx context.Context, input string, streamOpts 
 		defer close(out)
 		defer close(done)
 
-		resuming := c.sessionID != ""
-		raw, err := c.askAttempt(ctx, streamOpts)
+		raw, err := c.askAttempt(ctx, streamOpts, first)
 		// A stale/rejected --resume session errors before any text streams. Drop
 		// the id and retry once via the flatten path so one bad CLI session file
-		// cannot wedge the conversation. Guard on ctx.Err()==nil so a user
+		// cannot wedge the conversation. Guard on a live context so a user
 		// barge-in cancel is not mistaken for a resume failure.
-		if err != nil && resuming && ctx.Err() == nil {
+		if err != nil && fresh != nil && c.dropForRetry(ctx) {
 			fmt.Fprintf(os.Stderr, "obey-voice: cursor resume failed, retrying without session: %v\n", err)
-			c.dropSession()
-			raw, err = c.askAttempt(ctx, streamOpts)
+			raw, err = c.askAttempt(ctx, streamOpts, *fresh)
+		}
+		if err == nil {
+			// A stopped request leaves this provider alone: the next request
+			// may already be running.
+			err = ctx.Err()
 		}
 		if err != nil {
 			done <- StreamResult{Err: err}
@@ -183,9 +197,16 @@ func (c *CursorBrain) ThinkStream(ctx context.Context, input string, streamOpts 
 			done <- StreamResult{Err: finErr}
 			return
 		}
+		c.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			c.mu.Unlock()
+			done <- StreamResult{Err: err}
+			return
+		}
 		c.history = append(c.history, Turn{Role: "samantha", Content: response, At: time.Now().UTC()})
 		c.hostContext = ""
 		c.trimHistory()
+		c.mu.Unlock()
 		done <- StreamResult{}
 	}()
 
@@ -200,17 +221,24 @@ func (c *CursorBrain) ThinkFull(ctx context.Context, input string, streamOpts St
 	c.refreshPrompts(streamOpts.OnPromptWarn)
 	// Same append-then-roll-back contract as Claude: the prompt comes from
 	// history, and a turn that never answered must not leave its input behind.
+	c.mu.Lock()
 	restore := len(c.history)
 	c.history = append(c.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
+	first, fresh := c.attempts(streamOpts)
+	c.mu.Unlock()
 
-	resuming := c.sessionID != ""
-	response, err := c.thinkFullAttempt(ctx, streamOpts)
-	if err != nil && resuming && ctx.Err() == nil {
+	response, err := c.thinkFullAttempt(ctx, streamOpts, first)
+	if err != nil && fresh != nil && c.dropForRetry(ctx) {
 		fmt.Fprintf(os.Stderr, "obey-voice: cursor resume failed, retrying without session: %v\n", err)
-		c.dropSession()
-		response, err = c.thinkFullAttempt(ctx, streamOpts)
+		response, err = c.thinkFullAttempt(ctx, streamOpts, *fresh)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err == nil {
+		err = ctx.Err()
 	}
 	if err != nil {
+		// The caller waits for this call, so no later request has started.
 		c.history = c.history[:restore]
 		return "", err
 	}
@@ -222,21 +250,56 @@ func (c *CursorBrain) ThinkFull(ctx context.Context, input string, streamOpts St
 	return response, nil
 }
 
-func (c *CursorBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions) (string, error) {
-	raw, err := c.askAttempt(ctx, streamOpts)
+func (c *CursorBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, attempt cursorAttempt) (string, error) {
+	raw, err := c.askAttempt(ctx, streamOpts, attempt)
 	if err != nil {
 		return "", err
 	}
 	return spokenOrFallback(cleanForVoice(stripReplyConventions(c.agentName(), raw))), nil
 }
 
+// cursorAttempt is one CLI request as the provider's state stood when its
+// request started.
+type cursorAttempt struct {
+	prompt string
+	opts   *cursor.AskOptions
+}
+
+// attempts is Brain.attempts for Cursor. The caller holds c.mu.
+func (c *CursorBrain) attempts(streamOpts StreamOptions) (cursorAttempt, *cursorAttempt) {
+	build := func() cursorAttempt {
+		return cursorAttempt{
+			prompt: c.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(c.cfg, streamOpts) + currentRequestContext(c.cfg, streamOpts),
+			opts:   c.askOptions(liveCLITools(streamOpts)),
+		}
+	}
+	first := build()
+	if c.sessionID == "" {
+		return first, nil
+	}
+	session := c.sessionID
+	c.sessionID = ""
+	fresh := build()
+	c.sessionID = session
+	return first, &fresh
+}
+
+// dropForRetry is Brain.dropForRetry for Cursor.
+func (c *CursorBrain) dropForRetry(ctx context.Context) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
+	c.dropSession()
+	return true
+}
+
 // askAttempt runs a single print-mode Cursor turn and captures the session id
 // for resume. The SDK's Classify already turns result.IsError into a Go error,
 // so a rejected --resume falls through to the flatten retry.
-func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions) (string, error) {
-	prompt := c.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(c.cfg, streamOpts) + currentRequestContext(c.cfg, streamOpts)
-
-	result, err := c.client.AskCtx(ctx, prompt, c.askOptions(liveCLITools(streamOpts)))
+func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions, attempt cursorAttempt) (string, error) {
+	result, err := c.client.AskCtx(ctx, attempt.prompt, attempt.opts)
 	if err != nil {
 		return "", wrapCursorAskError(err)
 	}
@@ -249,12 +312,18 @@ func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions) 
 	// Stamp session and usage only on a successful turn, matching Grok.
 	// AskCtx can return a parsed JSON result together with a Classify error;
 	// capturing that id would start a resume after a failed first turn.
-	if result.SessionID != "" {
-		c.sessionID = result.SessionID
+	// A request stopped meanwhile leaves the provider alone.
+	promptTokens := result.Usage.InputTokens + result.Usage.CacheReadTokens + result.Usage.CacheWriteTokens
+	c.mu.Lock()
+	if ctx.Err() == nil {
+		if result.SessionID != "" {
+			c.sessionID = result.SessionID
+		}
+		c.promptTokens = promptTokens
 	}
-	c.promptTokens = result.Usage.InputTokens + result.Usage.CacheReadTokens + result.Usage.CacheWriteTokens
+	c.mu.Unlock()
 	if streamOpts.OnUsage != nil {
-		streamOpts.OnUsage(c.promptTokens, result.Usage.OutputTokens)
+		streamOpts.OnUsage(promptTokens, result.Usage.OutputTokens)
 	}
 	return result.Result, nil
 }
@@ -380,6 +449,8 @@ func (c *CursorBrain) trimHistory() {
 
 // History returns the conversation history.
 func (c *CursorBrain) History() []Turn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.history
 }
 
@@ -387,6 +458,8 @@ func (c *CursorBrain) History() []Turn {
 // so a fresh conversation starts a fresh CLI session instead of resuming the
 // old one.
 func (c *CursorBrain) ClearHistory() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.hostContext = ""
 	c.history = nil
 	c.dropSession()
@@ -394,6 +467,8 @@ func (c *CursorBrain) ClearHistory() {
 
 // SessionInfo reports the live CLI session for /session display.
 func (c *CursorBrain) SessionInfo() SessionState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return SessionState{Kind: SessionKindHarness, ID: c.sessionID, PromptTokens: c.promptTokens, Turns: len(c.history)}
 }
 
@@ -402,6 +477,8 @@ func (c *CursorBrain) SessionInfo() SessionState {
 // first turn after load runs the flatten path, then captures a new session id
 // and resumes from there.
 func (c *CursorBrain) LoadHistory(turns []Turn) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.hostContext = ""
 	c.history = normalizePromptHistory(turns)
 	c.dropSession()

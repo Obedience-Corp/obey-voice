@@ -248,7 +248,8 @@ func TestCursorAskAttemptFailureDoesNotStampSession(t *testing.T) {
 	b.promptTokens = 7
 	b.history = []Turn{{Role: "user", Content: "hi"}}
 
-	if _, err := b.askAttempt(t.Context(), StreamOptions{}); err == nil {
+	first, _ := b.attempts(StreamOptions{})
+	if _, err := b.askAttempt(t.Context(), StreamOptions{}, first); err == nil {
 		t.Fatal("askAttempt() error = nil, want the CLI failure")
 	}
 	if b.sessionID != "csess-1" {

@@ -84,12 +84,18 @@ func (b *MuseSparkBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error 
 	return setMediaViews(b.canonical, b.working, text, refs)
 }
 func (b *Brain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return setReplyMedia(b.history, text, refs)
 }
 func (g *GrokBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	return setReplyMedia(g.history, text, refs)
 }
 func (c *CursorBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return setReplyMedia(c.history, text, refs)
 }
 
