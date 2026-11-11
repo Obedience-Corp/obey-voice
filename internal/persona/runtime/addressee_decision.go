@@ -2,7 +2,6 @@ package personaruntime
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -22,6 +21,28 @@ const (
 	resolvedByCurrent    = "current_persona"
 	resolutionFailed     = "failed"
 )
+
+// minClassifierWindow is the least time worth handing to the classifier after
+// the decision model has failed.
+const minClassifierWindow = 50 * time.Millisecond
+
+func contextWindowBelow(ctx context.Context, floor time.Duration) bool {
+	deadline, ok := ctx.Deadline()
+	return ctx.Err() != nil || (ok && time.Until(deadline) < floor)
+}
+
+func addresseeFailureReason(outcome decision.AddresseeOutcome) string {
+	switch outcome {
+	case decision.AddresseeBusy:
+		return "it was still busy with an earlier question"
+	case decision.AddresseeTimeout:
+		return "it timed out"
+	case decision.AddresseeInvalidOutput:
+		return "it gave an answer that could not be used"
+	default:
+		return "its provider returned an error"
+	}
+}
 
 type addresseeTrace struct {
 	resolver, disposition, model string
@@ -52,11 +73,19 @@ func (s *Selector) classifyAddressee(ctx context.Context, resolver brain.Address
 			return &brain.Addressee{Kind: answer.Kind, Name: answer.Name, Bare: answer.Bare}, nil
 		case err != nil && ctx.Err() != nil:
 			return nil, err
-		case err != nil && resolver == nil:
-			// A persona's reply has no user waiting on it; the diagnostic
-			// records that failure, so a turn gets at most one notice.
-			if s.opts.Pipeline.Events != nil && request.Account == "user" {
-				s.opts.Pipeline.Events.Emit(events.Info{Message: fmt.Sprintf("The decision model did not answer who was addressed (%s); routing by name only.", result.Outcome)})
+		case err != nil:
+			// A dead or nearly dead context would fail the classifier as a
+			// local timeout, so the turn falls back as if there were none.
+			exhausted := resolver != nil && contextWindowBelow(bounded, minClassifierWindow)
+			if resolver == nil || exhausted {
+				// A persona's reply has no user waiting on it; the diagnostic
+				// records that failure, so a turn gets at most one notice.
+				if s.opts.Pipeline.Events != nil && request.Account == "user" {
+					s.opts.Pipeline.Events.Emit(events.Info{Message: "The decision model did not answer who was addressed because " + addresseeFailureReason(result.Outcome) + "; routing by name only."})
+				}
+			}
+			if exhausted {
+				return nil, nil
 			}
 		}
 	}

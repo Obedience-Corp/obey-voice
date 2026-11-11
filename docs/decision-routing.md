@@ -67,7 +67,9 @@ Resolution runs in this order and stops at the first step that answers:
    and the runtime is ready. It chooses one persona, nobody, or "ambiguous". A
    mention (`what did Mira say?`) is not an address.
 3. The Ollama classifier, only when the live brain is Ollama. It also answers
-   when the decision model fails, abstains or is not ready.
+   when the decision model fails, abstains or is not ready. If the decision model
+used up the whole `persona_routing_timeout`, the classifier is not called with
+the expired time; step 4 applies and the notice is given.
 4. Otherwise the name grammar used before either model existed (for example
    `Santa tell me a story`), and failing that the current persona.
 

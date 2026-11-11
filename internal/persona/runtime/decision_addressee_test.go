@@ -230,6 +230,39 @@ func TestAddresseeResolutionStaysWithinPersonaRoutingTimeout(t *testing.T) {
 	}
 }
 
+// A decision model that spends the whole persona_routing_timeout leaves the
+// classifier a dead context; the turn must fall back without calling it.
+func TestDecisionModelUsingWholeTimeoutSkipsClassifier(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+	defer f.close(t)
+	f.selector.opts.Base.PersonaRoutingTimeout = 1
+	watch := watchRouting(f.pipeline)
+	slow := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-r.Context().Done()
+	}))
+	defer slow.Close()
+	provider, err := decision.NewSystemOne(decision.SystemOneConfig{Provider: "local", Endpoint: slow.URL + "/v1/systemone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.pipeline.Decisions.Configure(decision.Options{Policy: decision.WorkPolicy{Evaluator: provider}, Budget: time.Second, Addressee: true})
+	defer f.pipeline.Decisions.Close()
+	var classifier atomic.Int32
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		classifier.Add(1)
+		return brain.Addressee{}, admission.WrapClassifierFailure(admission.ClassifierLocalTimeout, context.DeadlineExceeded)
+	})
+	got, err := f.selector.Route(t.Context(), "Santa tell me a story", false)
+	if err != nil || got.Envelope.PersonaID != "santa" || classifier.Load() != 0 {
+		t.Fatalf("admission=%+v err=%v classifier calls=%d", got, err, classifier.Load())
+	}
+	infos, diagnostics := watch.snapshot()
+	if len(infos) != 1 || !strings.Contains(infos[0], "timed out") || len(diagnostics) != 1 || diagnostics[0].Resolver != "grammar" || diagnostics[0].Disposition != "timeout" {
+		t.Fatalf("infos=%q diagnostics=%+v", infos, diagnostics)
+	}
+}
+
 func TestAddresseeDiagnosticNamesTheResolver(t *testing.T) {
 	abstain := `{"answers":{"target":{"choice":"person_1","confidence":0.4,"probabilities":{"none":0.2,"ambiguous":0.1,"unavailable":0.1,"person_0":0.2,"person_1":0.4}}}}`
 	for _, tc := range []struct {
@@ -333,20 +366,20 @@ func (w *routingEvents) snapshot() ([]string, []events.DecisionEvaluated) {
 
 func TestDecisionModelFailureWithoutOllamaKeepsNameGrammar(t *testing.T) {
 	for _, tc := range []struct {
-		name, outcome string
-		setup         func(t *testing.T, p *pipeline.Pipeline)
+		name, outcome, reason string
+		setup                 func(t *testing.T, p *pipeline.Pipeline)
 	}{
-		{name: "unavailable", outcome: "provider_error", setup: func(t *testing.T, p *pipeline.Pipeline) {
+		{name: "unavailable", outcome: "provider_error", reason: "its provider returned an error", setup: func(t *testing.T, p *pipeline.Pipeline) {
 			server := newDecisionServer(t, nil)
 			server.status = http.StatusServiceUnavailable
 			server.enable(t, p)
 		}},
-		{name: "invalid output", outcome: "invalid_output", setup: func(t *testing.T, p *pipeline.Pipeline) {
+		{name: "invalid output", outcome: "invalid_output", reason: "it gave an answer that could not be used", setup: func(t *testing.T, p *pipeline.Pipeline) {
 			server := newDecisionServer(t, nil)
 			server.body = "not json"
 			server.enable(t, p)
 		}},
-		{name: "timeout", outcome: "timeout", setup: func(t *testing.T, p *pipeline.Pipeline) {
+		{name: "timeout", outcome: "timeout", reason: "it timed out", setup: func(t *testing.T, p *pipeline.Pipeline) {
 			release := make(chan struct{})
 			slow := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
 			t.Cleanup(slow.Close)
@@ -358,7 +391,7 @@ func TestDecisionModelFailureWithoutOllamaKeepsNameGrammar(t *testing.T) {
 			p.Decisions.Configure(decision.Options{Policy: decision.WorkPolicy{Evaluator: provider}, Budget: 40 * time.Millisecond, Addressee: true})
 			t.Cleanup(p.Decisions.Close)
 		}},
-		{name: "busy", outcome: "busy", setup: func(t *testing.T, p *pipeline.Pipeline) {
+		{name: "busy", outcome: "busy", reason: "it was still busy with an earlier question", setup: func(t *testing.T, p *pipeline.Pipeline) {
 			stuck := &stuckEvaluator{release: make(chan struct{})}
 			t.Cleanup(func() { close(stuck.release) })
 			p.Decisions.Configure(decision.Options{Policy: decision.WorkPolicy{Evaluator: stuck}, Budget: 40 * time.Millisecond, Addressee: true})
@@ -396,7 +429,7 @@ func TestDecisionModelFailureWithoutOllamaKeepsNameGrammar(t *testing.T) {
 				t.Fatalf("want one notice per turn, got %q", infos)
 			}
 			for _, info := range infos {
-				if !strings.Contains(info, "did not answer") || !strings.Contains(info, tc.outcome) || strings.Contains(info, "story") || strings.Contains(info, "hear from") {
+				if !strings.Contains(info, "did not answer") || !strings.Contains(info, tc.reason) || strings.Contains(info, "_") || strings.Contains(info, "(") || strings.Contains(info, "story") || strings.Contains(info, "hear from") {
 					t.Fatalf("notice = %q", info)
 				}
 			}
