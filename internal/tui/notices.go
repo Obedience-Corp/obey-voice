@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -338,8 +337,9 @@ func (m launcherModel) updateNotices(msg tea.KeyMsg) (launcherModel, tea.Cmd) {
 		if text == "" {
 			return m, nil
 		}
+		backend := orSystemClipboard(m.clipboard)
 		return m, func() tea.Msg {
-			return noticeCopiedMsg{err: clipboard.WriteAll(text)}
+			return noticeCopiedMsg{err: backend.WriteAll(text)}
 		}
 	}
 	return m, nil

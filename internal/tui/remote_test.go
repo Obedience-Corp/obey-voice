@@ -326,3 +326,35 @@ func TestRemoteHelperProcess(t *testing.T) {
 	// The subprocess must terminate without running the parent test suite.
 	os.Exit(0)
 }
+
+func TestRemoteCopyKeysUseInjectedClipboard(t *testing.T) {
+	cases := []struct {
+		key   rune
+		label string
+	}{
+		{'c', "Link"},
+		{'p', "Pairing code"},
+	}
+	for _, tc := range cases {
+		m := newRemote(context.Background(), nil)
+		clip := &testClipboard{}
+		m.clipboard = clip
+		m.url = "https://example.test/join"
+		m.pairing = "ABCD-1234"
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{tc.key}})
+		if cmd == nil {
+			t.Fatalf("%c: no copy cmd", tc.key)
+		}
+		msg, ok := cmd().(remoteCopiedMsg)
+		if !ok || msg.err != nil || msg.label != tc.label {
+			t.Fatalf("%c: msg = %#v", tc.key, msg)
+		}
+		want := m.url
+		if tc.key == 'p' {
+			want = m.pairing
+		}
+		if clip.value != want {
+			t.Fatalf("%c: copied %q, want %q", tc.key, clip.value, want)
+		}
+	}
+}

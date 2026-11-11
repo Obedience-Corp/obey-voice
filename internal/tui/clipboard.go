@@ -12,14 +12,28 @@ type clipboardBackend interface {
 	WriteAll(string) error
 }
 
+// The system calls are package variables so the test binary can replace them
+// with a guard that refuses to touch the developer's real clipboard.
+var (
+	systemClipboardRead  = clipboard.ReadAll
+	systemClipboardWrite = clipboard.WriteAll
+)
+
 type systemClipboard struct{}
 
 func (systemClipboard) ReadAll() (string, error) {
-	return clipboard.ReadAll()
+	return systemClipboardRead()
 }
 
 func (systemClipboard) WriteAll(text string) error {
-	return clipboard.WriteAll(text)
+	return systemClipboardWrite(text)
+}
+
+func orSystemClipboard(b clipboardBackend) clipboardBackend {
+	if b != nil {
+		return b
+	}
+	return systemClipboard{}
 }
 
 type clipboardPasteMsg struct {
@@ -42,8 +56,5 @@ func readClipboard(backend clipboardBackend) tea.Cmd {
 }
 
 func (m conversationModel) clipboard() clipboardBackend {
-	if m.deps.clipboard != nil {
-		return m.deps.clipboard
-	}
-	return systemClipboard{}
+	return orSystemClipboard(m.deps.clipboard)
 }
