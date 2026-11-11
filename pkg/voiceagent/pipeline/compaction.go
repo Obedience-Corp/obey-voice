@@ -106,6 +106,9 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 	if p.Brain == nil || p.CompactPrompt == "" {
 		return errors.New("compact prompt not configured")
 	}
+	if err := p.awaitProvider(ctx); err != nil {
+		return err
+	}
 	history := p.Brain.History()
 	turnsBefore := len(history)
 	if turnsBefore < 2 {

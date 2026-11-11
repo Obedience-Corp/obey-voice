@@ -182,6 +182,10 @@ type Pipeline struct {
 	// Transcript owns the canonical conversation when the live provider keeps
 	// no shared history of its own. Nil leaves those providers' history alone.
 	Transcript Transcript
+	requestMu  sync.Mutex
+	// requests are recorded provider requests that may still be ending, on
+	// the live provider or on one parked by persona selection.
+	requests []*transcriptRecording
 
 	// CompactPrompt is the resolved kind=compact instruction for /compact's
 	// summarize turn. Empty disables compaction with a clear error.

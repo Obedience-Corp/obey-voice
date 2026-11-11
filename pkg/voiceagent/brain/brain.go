@@ -723,13 +723,10 @@ func (b *Brain) ClearHistory() {
 // LoadHistory restores conversation history from a saved samantha session. No
 // live CLI session exists for persisted history, so the id is cleared: the
 // first turn after load runs the flatten path, then captures a new session id
-// and resumes from there. The loaded view keeps the window a live turn keeps.
+// and resumes from there.
 func (b *Brain) LoadHistory(turns []Turn) {
 	b.hostContext = ""
 	b.history = normalizePromptHistory(turns)
-	if b.cfg != nil && b.cfg.MaxHistory > 0 {
-		b.trimHistory()
-	}
 	b.dropSession()
 }
 

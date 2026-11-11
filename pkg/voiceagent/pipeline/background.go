@@ -55,6 +55,9 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 	if !p.BackgroundPending() || p.HasCapturedInput() || ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if err := p.awaitProvider(ctx); err != nil {
+		return err
+	}
 	if p.hasWorkerReplies() {
 		return p.commitWorkerReplies()
 	}
@@ -107,11 +110,15 @@ func (p *Pipeline) finishBackgroundStream(ctx context.Context, brainCtx context.
 
 // RetireBrain releases a replaced provider without blocking the UI dispatcher.
 // Final pipeline teardown joins every retired lifetime, including admission
-// reconciliation that must finish before it can cancel a newly created child.
+// reconciliation that must finish before it can cancel a newly created child,
+// and a stopped request still ending on the provider.
 func (p *Pipeline) RetireBrain(provider brain.Provider) {
 	p.retiredBrains.Add(1)
 	go func() {
 		defer p.retiredBrains.Done()
+		settle, cancel := context.WithTimeout(context.Background(), providerSettleTimeout)
+		_ = p.awaitRequests(settle, provider)
+		cancel()
 		if err := brain.CloseProvider(provider); err != nil {
 			fmt.Fprintf(os.Stderr, "obey-voice: retired brain cleanup: %v\n", err)
 		}

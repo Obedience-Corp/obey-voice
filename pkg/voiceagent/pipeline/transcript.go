@@ -3,20 +3,25 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // Transcript is the host-owned canonical record of a conversation. Appends
-// carry the conversation epoch they belong to; an implementation drops turns
-// from a conversation that has since been cleared or replaced.
+// carry the conversation epoch their turn began in; an implementation refuses
+// turns from a conversation that is no longer current. Clear empties it when
+// the user clears the conversation.
 type Transcript interface {
 	Turns() []brain.Turn
 	Append(epoch string, turns ...brain.Turn) error
+	Clear()
 	brain.ReplyMediaWriter
 }
 
@@ -68,32 +73,125 @@ func (p *Pipeline) appendReply(provider brain.Provider, response string, identit
 	return p.appendTranscript(t, reply)
 }
 
+const (
+	// recordingGrace bounds how long a turn that stopped reading waits for the
+	// provider's own result before it records what was delivered.
+	recordingGrace = 100 * time.Millisecond
+	// providerSettleTimeout bounds how long a clear waits for a stopped
+	// provider request to end before it resets the provider.
+	providerSettleTimeout = 5 * time.Second
+)
+
 // transcriptRecording records one live provider request in the host
-// transcript. wait must be called before the turn that started it returns.
+// transcript exactly once: when the provider finishes, or when the turn
+// settles it, whichever comes first.
 type transcriptRecording struct {
-	cancel context.CancelFunc
-	done   chan struct{}
+	provider brain.Provider
+	ctx      context.Context
+	cancel   context.CancelFunc
+	// drained closes when the provider request has ended. The next request
+	// to the same provider waits for it, so they never share session state.
+	drained  chan struct{}
+	recorded chan struct{}
+	write    func(delivered string, err error)
+
+	mu        sync.Mutex
+	finished  bool
+	delivered strings.Builder
 }
 
-// wait stops a request the turn no longer reads and joins its recording.
-func (r *transcriptRecording) wait() {
+func (r *transcriptRecording) deliver(text string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.finished {
+		r.delivered.WriteString(text)
+	}
+}
+
+func (r *transcriptRecording) finish(route string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.finished {
+		return
+	}
+	r.finished = true
+	defer close(r.recorded)
+	if route == "" {
+		r.write(r.delivered.String(), err)
+	}
+}
+
+// settle stops a request the turn no longer reads and makes sure it is
+// recorded before the turn returns. A provider that is slow to stop finishes
+// in the background; its late result is not recorded again.
+func (r *transcriptRecording) settle() {
 	if r == nil {
 		return
 	}
 	r.cancel()
-	<-r.done
+	grace := time.NewTimer(recordingGrace)
+	defer grace.Stop()
+	select {
+	case <-r.recorded:
+	case <-grace.C:
+		r.finish("", r.ctx.Err())
+	}
+}
+
+// awaitProvider waits until every request that an earlier turn stopped has
+// ended on the live provider.
+func (p *Pipeline) awaitProvider(ctx context.Context) error {
+	return p.awaitRequests(ctx, p.Brain)
+}
+
+// awaitRequests waits until provider has no recorded request still ending.
+// A provider can be parked and taken up again while one is.
+func (p *Pipeline) awaitRequests(ctx context.Context, provider brain.Provider) error {
+	p.requestMu.Lock()
+	var pending []*transcriptRecording
+	for _, r := range p.requests {
+		if r.provider == provider {
+			pending = append(pending, r)
+		}
+	}
+	p.requestMu.Unlock()
+	for _, r := range pending {
+		select {
+		case <-r.drained:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+func (p *Pipeline) trackRequest(r *transcriptRecording) {
+	p.requestMu.Lock()
+	defer p.requestMu.Unlock()
+	p.requests = slices.DeleteFunc(p.requests, func(r *transcriptRecording) bool {
+		select {
+		case <-r.drained:
+			return true
+		default:
+			return false
+		}
+	})
+	p.requests = append(p.requests, r)
 }
 
 // startRecordedStream starts the live provider. When the host owns the
 // transcript, the request and the text delivered from it are recorded under
-// the response identity once the provider finishes. A provider keeping its
-// own session receives the turns it has not seen, and they count as seen only
-// once the provider finishes without error.
+// the response identity. A provider keeping its own session receives the
+// turns it has not seen; they count as seen only when the provider itself
+// finishes without error, never when an interrupted turn records them.
 func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, *transcriptRecording, error) {
 	t := p.transcriptFor(p.Brain)
 	if t == nil {
 		stream, err := p.startBrainStream(ctx, input, opts)
 		return stream, nil, err
+	}
+	if err := p.awaitProvider(ctx); err != nil {
+		return nil, nil, err
 	}
 	epoch := p.ConversationScope().ConversationEpoch
 	started := time.Now().UTC()
@@ -105,12 +203,29 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
+	provider := p.Brain
 	stream, err := p.startBrainStream(ctx, input, opts)
 	if err != nil {
 		cancel()
 		return nil, nil, err
 	}
-	rec := &transcriptRecording{cancel: cancel, done: make(chan struct{})}
+	rec := &transcriptRecording{provider: provider, ctx: ctx, cancel: cancel, drained: make(chan struct{}), recorded: make(chan struct{}),
+		write: func(delivered string, err error) {
+			turns := requestTurns(input, opts, delivered, err, started)
+			if len(turns) == 0 {
+				return
+			}
+			var appendErr error
+			if sessions != nil && err == nil {
+				appendErr = sessions.AppendSeen(epoch, opts.Identity.PersonaID, covered, turns...)
+			} else {
+				appendErr = t.Append(epoch, turns...)
+			}
+			if appendErr != nil {
+				p.emit(events.Error{Stage: "history", Message: fmt.Sprintf("record reply in conversation transcript: %v", appendErr)})
+			}
+		}}
+	p.trackRequest(rec)
 	out := make(chan string, 8)
 	var thinking chan string
 	if stream.Thinking != nil {
@@ -118,13 +233,12 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 	}
 	done := make(chan brain.StreamResult, 1)
 	go func() {
-		defer close(rec.done)
+		defer close(rec.drained)
 		defer close(done)
 		if thinking != nil {
 			defer close(thinking)
 		}
 		defer close(out)
-		var delivered strings.Builder
 		forwarding := true
 		forward := func(ch chan<- string, v string) bool {
 			if !forwarding {
@@ -155,7 +269,7 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 					continue
 				}
 				if forward(out, v) {
-					delivered.WriteString(v)
+					rec.deliver(v)
 				}
 			case v, ok := <-terminal:
 				received, terminal = true, nil
@@ -164,23 +278,15 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 				}
 			}
 		}
-		if result.Route == "" {
-			err := result.Err
-			switch {
-			case !hasResult:
-				err = errors.New("provider ended without a result")
-			case err != nil && ctx.Err() != nil:
-				// Providers report a stopped request in their own terms.
-				err = ctx.Err()
-			}
-			if turns := requestTurns(input, opts, delivered.String(), err, started); len(turns) > 0 {
-				if sessions != nil && err == nil {
-					_ = sessions.AppendSeen(epoch, opts.Identity.PersonaID, covered, turns...)
-				} else {
-					_ = t.Append(epoch, turns...)
-				}
-			}
+		err := result.Err
+		switch {
+		case !hasResult:
+			err = errors.New("provider ended without a result")
+		case err != nil && ctx.Err() != nil:
+			// Providers report a stopped request in their own terms.
+			err = ctx.Err()
 		}
+		rec.finish(result.Route, err)
 		if hasResult {
 			done <- result
 		}

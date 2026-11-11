@@ -50,8 +50,11 @@ type SelectionOptions struct {
 	NewBrain        func(context.Context, *config.Config) (brain.Provider, error)
 	NewWorker       func(context.Context, *config.Config) (brain.Provider, error)
 	NewVoice        func(context.Context, *config.Config) (*voiceagent.TTSSet, error)
-	Native          *NativeSelectionHooks
-	InitialNative   *voiceagent.NativeCandidate
+	// VoiceAssets installs what a voice needs before it is built in place of
+	// a live provider that keeps its session.
+	VoiceAssets   func(context.Context, *config.Config) error
+	Native        *NativeSelectionHooks
+	InitialNative *voiceagent.NativeCandidate
 }
 
 // Selector replaces response resources at the host's serialized boundary. It
@@ -114,6 +117,11 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	if opts.NewVoice == nil {
 		opts.NewVoice = func(_ context.Context, cfg *config.Config) (*voiceagent.TTSSet, error) {
 			return voiceagent.NewTTSSet(cfg)
+		}
+	}
+	if opts.VoiceAssets == nil {
+		opts.VoiceAssets = func(ctx context.Context, cfg *config.Config) error {
+			return config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedTTS: true}, nil)
 		}
 	}
 	settings := discussion.DefaultSettings()
@@ -179,15 +187,20 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		turns := s.transcript.Turns()
 		cursor := s.sessionCursor(opts.Initial.PersonaID, turns, false)
 		delete(s.contexts, opts.Initial.PersonaID)
-		s.transcript.setSession(opts.Initial.PersonaID, &cursor)
+		s.transcript.setLive(opts.Initial.PersonaID, &cursor)
 		// The host loaded the whole conversation into a provider that has no
 		// session yet; keep only what it may receive.
-		live.LoadHistory(turns[cursor.Session.From:])
+		live.LoadHistory(sessionView(turns[cursor.Session.From:], opts.Initial.Config()))
 	} else {
-		s.transcript.setSession(opts.Initial.PersonaID, nil)
+		if !brain.KeepsSharedHistory(live) && len(opts.Transcript) > 0 {
+			live.LoadHistory(sessionView(opts.Transcript, opts.Initial.Config()))
+		}
+		s.transcript.setLive(opts.Initial.PersonaID, nil)
 	}
 	if err := s.persistContexts(s.Transcript(), s.selected, s.withSessions(s.contexts, "", nil)); err != nil {
-		if !session.WriteCommitted(err) {
+		// A provider without shared history ran without persona selection
+		// before, where a failed save only reported an error.
+		if !session.WriteCommitted(err) && brain.KeepsSharedHistory(opts.Pipeline.Brain) {
 			return nil, fmt.Errorf("persist initial persona: %w", err)
 		}
 		s.warnPersistence(err)
@@ -357,6 +370,9 @@ func (s *Selector) Admit(ctx context.Context) (events.ResponseEnvelope, error) {
 	selected, err := s.selectAtBoundary(ctx, s.Snapshot().PersonaID, "response_boundary")
 	if err != nil {
 		return events.ResponseEnvelope{}, err
+	}
+	if s.fixedResponder() {
+		return responseEnvelope(selected), nil
 	}
 	if _, participants, err := s.conversationRoster(); err == nil {
 		s.setGroupParticipants(participants)

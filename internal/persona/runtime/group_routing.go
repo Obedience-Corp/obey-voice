@@ -275,6 +275,11 @@ func (s *Selector) groupParticipation() bool {
 
 // RouteHandoff gives explicit handoffs priority over optional open participation.
 func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visited []string) (pipeline.HandoffProposal, bool, error) {
+	if live := s.opts.Pipeline.Brain; !brain.KeepsSharedHistory(live) && (!brain.KeepsPersonaSession(live) || s.fixedResponder()) {
+		// An agent never moves the conversation off a provider that could not
+		// take it back, nor out of a conversation that stays with its persona.
+		return pipeline.HandoffProposal{}, false, nil
+	}
 	s.groupMu.Lock()
 	active := s.group != nil
 	s.groupMu.Unlock()

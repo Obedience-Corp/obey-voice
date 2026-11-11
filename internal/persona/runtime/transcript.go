@@ -8,56 +8,50 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // transcript is the canonical conversation while the live provider keeps no
-// shared history of its own. It is fenced by conversation epoch: turns
-// recorded for a cleared or replaced conversation never reach the next one.
-// It also holds, for personas whose provider keeps its own session, how much
-// of the conversation that session holds.
+// shared history of its own. Only an explicit clear or restore replaces its
+// turns; a turn recorded for a conversation that is no longer current is
+// refused rather than added to the next one. It also holds, for personas whose
+// provider keeps its own session, how much of the conversation that session
+// holds; a clear drops those cursors with the turns.
 type transcript struct {
 	mu       sync.Mutex
 	current  func() string
-	epoch    string
 	turns    []brain.Turn
 	sessions brain.PersonaContexts
 }
 
 func newTranscript(current func() string, turns []brain.Turn) *transcript {
-	t := &transcript{current: current}
-	t.reset(turns)
-	return t
+	return &transcript{current: current, turns: canonicalTurns(turns)}
 }
 
-// reset replaces the turns. Session cursors survive within a conversation;
-// each is checked against the turns before use.
+// reset replaces the turns. Session cursors survive; each is checked against
+// the turns before use.
 func (t *transcript) reset(turns []brain.Turn) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if epoch := t.current(); epoch != t.epoch {
-		t.epoch, t.sessions = epoch, nil
-	}
 	t.turns = canonicalTurns(turns)
 }
 
-func (t *transcript) fence() {
-	if epoch := t.current(); epoch != t.epoch {
-		t.epoch, t.turns, t.sessions = epoch, nil, nil
-	}
+func (t *transcript) Clear() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.turns, t.sessions = nil, nil
 }
 
 func (t *transcript) Turns() []brain.Turn {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.fence()
 	return brain.CloneTurns(t.turns)
 }
 
 func (t *transcript) Append(epoch string, turns ...brain.Turn) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.fence()
-	if epoch != t.epoch {
+	if epoch != t.current() {
 		return errors.New("transcript: turn belongs to a replaced conversation")
 	}
 	t.turns = append(t.turns, canonicalTurns(turns)...)
@@ -71,7 +65,6 @@ func (t *transcript) Append(epoch string, turns ...brain.Turn) error {
 func (t *transcript) CatchUp(personaID string) (brain.SessionCatchUp, int, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.fence()
 	cursor, ok := t.sessions[personaID]
 	if !ok || cursor.Session == nil || !cursor.Matches(t.turns) {
 		return brain.SessionCatchUp{}, 0, false
@@ -97,8 +90,7 @@ func (t *transcript) CatchUp(personaID string) (brain.SessionCatchUp, int, bool)
 func (t *transcript) AppendSeen(epoch, personaID string, covered int, turns ...brain.Turn) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.fence()
-	if epoch != t.epoch {
+	if epoch != t.current() {
 		return errors.New("transcript: turn belongs to a replaced conversation")
 	}
 	recorded := len(t.turns)
@@ -119,16 +111,15 @@ func (t *transcript) AppendSeen(epoch, personaID string, covered int, turns ...b
 func (t *transcript) session(personaID string, turns []brain.Turn) (brain.PersonaContext, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.fence()
 	cursor, ok := t.sessions[personaID]
 	return cursor, ok && cursor.Session != nil && cursor.Matches(turns)
 }
 
-// setSession installs personaID's cursor, or removes it when cursor is nil.
-func (t *transcript) setSession(personaID string, cursor *brain.PersonaContext) {
+// setLive records the selected persona with its cursor when its provider
+// keeps a session, or removes any cursor it had when cursor is nil.
+func (t *transcript) setLive(personaID string, cursor *brain.PersonaContext) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.fence()
 	if cursor == nil {
 		delete(t.sessions, personaID)
 		return
@@ -143,7 +134,6 @@ func (t *transcript) setSession(personaID string, cursor *brain.PersonaContext) 
 func (t *transcript) restoreSessions(contexts brain.PersonaContexts) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.fence()
 	t.sessions = make(brain.PersonaContexts)
 	for id, state := range contexts.Clone() {
 		if state.Session != nil {
@@ -156,7 +146,6 @@ func (t *transcript) restoreSessions(contexts brain.PersonaContexts) {
 func (t *transcript) addSessions(contexts brain.PersonaContexts, except string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.fence()
 	for id, state := range t.sessions.Clone() {
 		if id != except {
 			contexts[id] = state
@@ -169,7 +158,6 @@ func (t *transcript) addSessions(contexts brain.PersonaContexts, except string) 
 func (t *transcript) SetReplyMedia(text string, refs []chatmedia.Ref) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.fence()
 	for i := len(t.turns) - 1; i >= 0; i-- {
 		if t.turns[i].Role == "assistant" && len(t.turns[i].ToolCalls) == 0 {
 			t.turns[i].Content = text
@@ -178,6 +166,16 @@ func (t *transcript) SetReplyMedia(text string, refs []chatmedia.Ref) error {
 		}
 	}
 	return errors.New("transcript: no assistant reply to attach images to")
+}
+
+// sessionView is the part of the transcript loaded into a provider without
+// shared history: the window it keeps after a live turn, so a long restored
+// conversation does not look like an overdue compaction.
+func sessionView(turns []brain.Turn, cfg *config.Config) []brain.Turn {
+	if cfg == nil || cfg.MaxHistory <= 0 || len(turns) <= cfg.MaxHistory {
+		return turns
+	}
+	return brain.HistoryWindow(turns, cfg.MaxHistory)
 }
 
 // canonicalTurns copies turns into the shared role scheme. Prompt-based

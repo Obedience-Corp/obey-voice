@@ -56,6 +56,9 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 	if err := p.validateCapturedBinding(metrics); err != nil {
 		return ctx, ResponseAdmission{}, err
 	}
+	if err := p.awaitProvider(ctx); err != nil {
+		return ctx, ResponseAdmission{}, err
+	}
 	if err := p.commitWorkerReplies(); err != nil {
 		return ctx, ResponseAdmission{}, err
 	}

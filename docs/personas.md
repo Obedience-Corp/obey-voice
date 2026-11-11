@@ -274,42 +274,60 @@ shorter parent deadline or cancellation still stops the request immediately.
 Shared-history projection
 is verified for Ollama, Codex, Muse Spark, and Obey personas: Codex is tested
 on its own, and Muse Spark and Obey each share a conversation with an Ollama
-persona. A persona backed by Claude Code can also be switched to and back,
-including by an `@` handoff from another agent; this is tested with fake
-Ollama and Claude backends, not with live models. Switching to a persona on Grok
-or Cursor is refused rather than silently replaced. The local acceptance uses
-Qwen3:8b and Kokoro voices `af_heart` and `am_michael`; it does not establish
-parity for every provider.
+persona. A persona on Claude can also be switched to and back; this is tested
+with fake Ollama and Claude backends, not with live models. Switching to a
+persona on Grok or Cursor is refused rather than silently replaced. The local
+acceptance uses Qwen3:8b and Kokoro voices `af_heart` and `am_michael`; it does
+not establish parity for every provider.
 
-A conversation can still start on a Claude, Grok, or Cursor persona, with the
-same persona controls. Those providers keep their own session history without
-speaker identity, so Obey Voice keeps the shared transcript itself and records
-each reply, including an interrupted one, under the persona that gave it.
-Selecting an Ollama, Codex, Muse Spark, or Obey persona from there hands it that
-attributed transcript. Clearing the conversation or changing its settings
-restarts the same persona's provider session from the transcript. Group
-participation is not offered while one of these personas is responding.
+A conversation can still start on a persona on Claude, Grok, or Cursor. Those
+providers keep their own session history without speaker identity, so Obey
+Voice keeps the shared transcript itself and records each reply, including an
+interrupted one, under the persona that gave it.
 
-A persona backed by Claude Code keeps its Claude session while other personas
-speak: Obey Voice parks it and resumes the same session when that persona is
-addressed again. Each request carries, as quoted conversation records, only the
-lines that session has not seen: your lines, other personas' replies, and
-replies Obey Voice recorded under that persona's name. Other personas' tool
-calls and tool output are not sent. Lines count as seen only
-after a reply completes, so an interrupted reply is sent again next time, marked
-as unfinished. Claude receives nothing said before its persona was first
-addressed in the conversation; when another agent hands it the floor, that
-agent's message is the first line it receives. When the unseen lines do not fit
-one request (64 KiB, or half of `claude_max_session_tokens` when that fuse is
-set), Obey Voice starts a fresh Claude session and sends the newest lines that
-fit, with a note of how many earlier lines were left out. At most four sessions
-stay parked; the least recently used one is closed first. A parked session is
-also closed when its persona's prompt, model, provider or other settings change,
-when the conversation is cleared, and when Obey Voice exits. After resuming a
-saved conversation, a persona on Claude starts a new session that receives the
-lines since it was first addressed, within the same limit. With group
-participation on, a persona on Claude can be addressed directly, but a
-discussion among several personas still requires every member to be on Ollama.
+If no Ollama, Codex, Muse Spark, or Obey persona is enabled, such a
+conversation stays with its persona: every input, including the persona's name
+alone or another persona's name, goes to the model, and its prompts carry no
+persona roster. On Claude, `switch to Name`, `@id` and `/personas` still hand it
+to another persona on Claude, where it stays the same way; replies never hand
+it off.
+
+Otherwise a persona on Claude takes part like any other: you address personas
+by name from it and to it, and its replies hand the floor to another persona
+with an `@` mention. A conversation on Grok or Cursor cannot come back once
+another persona takes it over, so it moves only when you ask explicitly with
+`switch to Name`, `@id`, or `/personas`; addressing another persona by name is
+refused with that hint, and its replies never hand the conversation off.
+Selecting an Ollama, Codex, Muse Spark, or Obey persona hands it the attributed
+transcript.
+
+Voice and audio settings changes keep the provider session. Clearing the
+conversation, or changing the persona's provider, model, prompt, name or
+directory, restarts the session from the transcript. Group participation is
+not offered while one of these personas is responding.
+
+A persona on Claude keeps its Claude session while other personas speak: Obey
+Voice parks it and resumes the same session when that persona is addressed
+again. Each request carries, as quoted conversation records, only the lines
+that session has not seen: your lines, other personas' replies, and replies
+Obey Voice recorded under that persona's name. Other personas' tool calls and
+tool output are not sent. Lines count as seen only after a reply completes, so
+an interrupted reply is sent again next time, marked as unfinished. A stopped
+reply finishes in the background; its session is not used again, and a parked
+session is not closed, until it has. Claude receives nothing said before its
+persona was first addressed in the conversation; when another agent hands it
+the floor, that agent's message is the first line it receives. When the unseen
+lines do not fit one request (64 KiB, or half of `claude_max_session_tokens`
+when that fuse is set), Obey Voice starts a fresh Claude session and sends the
+newest lines that fit, with a note of how many earlier lines were left out. At
+most four sessions stay parked; the least recently used one is closed first. A
+parked session is also closed when its persona's prompt, model, provider or
+other settings change, when the conversation is cleared, and when Obey Voice
+exits. After resuming a saved conversation, a persona on Claude starts a new
+session that receives the lines since it was first addressed, within the same
+limit. With group participation on, a persona on Claude can be addressed
+directly, but a discussion among several personas still requires every member
+to be on Ollama.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental

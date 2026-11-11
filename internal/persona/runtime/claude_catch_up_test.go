@@ -162,7 +162,7 @@ func TestCatchUpSharesSpokenLinesOnly(t *testing.T) {
 	}
 	tr := newTranscript(func() string { return "epoch" }, turns)
 	cursor := brain.SessionContext(turns, 0, 2)
-	tr.setSession("mira", &cursor)
+	tr.setLive("mira", &cursor)
 	catchUp, covered, ok := tr.CatchUp("mira")
 	if !ok || covered != len(turns) || catchUp.Seen != 2 || len(catchUp.Turns) != 4 {
 		t.Fatalf("catch-up = %+v, covered %d, ok %v", catchUp, covered, ok)
