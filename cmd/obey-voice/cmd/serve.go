@@ -302,13 +302,13 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 		}
 	}()
 	p.OnTurn = func() {
-		if err := ref.save(p.Brain.History()); err != nil {
+		if err := ref.save(ref.history(p)); err != nil {
 			bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
 		}
 	}
 	wireCompact(p, cfg, ref.sess, bus)
 	defer func() {
-		if err := ref.save(p.Brain.History()); err != nil {
+		if err := ref.save(ref.history(p)); err != nil {
 			state.saveErr = err
 			fmt.Fprintf(serveHumanOut, "  warning: failed to save session: %v\n", err)
 		}
@@ -322,12 +322,10 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 	base.WorkDirSource = serveCfg.WorkDirSource
 	base.VoiceToolsEnabled = serveCfg.VoiceToolsEnabled
 	switcher := &servePersonaSwitcher{base: base, cfg: &serveCfg, pipeline: p, tts: liveTTS, sessions: ref}
-	if _, supported := p.Brain.(brain.HistoryProjectionProvider); supported {
-		if err := switcher.initialize(); err != nil {
-			return err
-		}
-		defer switcher.selector.Close()
+	if err := switcher.initialize(); err != nil {
+		return err
 	}
+	defer switcher.selector.Close()
 	if state.sessionID != "" {
 		if err := switcher.resume(ctx, state.sessionID); err != nil {
 			return fmt.Errorf("restore conversation after restart: %w", err)
@@ -611,6 +609,7 @@ func (s *servePersonaSwitcher) initialize() error {
 		SessionID: s.sessions.id(), Initial: binding,
 		Participation:   s.sessions.sess.Participation,
 		InitialContexts: s.sessions.sess.PersonaContexts,
+		Transcript:      s.sessions.sess.Turns,
 		PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
 			s.sessions.mu.Lock()
 			defer s.sessions.mu.Unlock()
@@ -638,6 +637,7 @@ func (s *servePersonaSwitcher) initialize() error {
 		return err
 	}
 	s.sessions.contexts = s.selector.ContextSnapshots
+	s.sessions.transcript = s.selector.Transcript
 	s.pipeline.AdmitInput = s.selector.Route
 	s.pipeline.RouteHandoff = s.selector.RouteHandoff
 	s.pipeline.EndDiscussion = s.selector.EndDiscussion
@@ -769,6 +769,7 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	}
 	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, cfg.ConversationDirectories)
 	s.selector.RestoreContexts(restored.PersonaContexts)
+	s.selector.RestoreTranscript(restored.Turns)
 	_, err = s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
 	if err != nil && s.pipeline.Events != nil {
 		s.pipeline.Events.Emit(events.Error{Stage: "persona", Message: fmt.Sprintf("Conversation restored; select a valid persona before continuing: %v", err)})
@@ -1007,6 +1008,16 @@ type sessionRef struct {
 	sess       *session.Session
 	checkpoint *workCheckpoint
 	contexts   func() brain.PersonaContexts
+	transcript func() []brain.Turn
+}
+
+// history is the conversation to save: the selector's canonical transcript
+// once selection is bound, the live provider's history before that.
+func (r *sessionRef) history(p *pipeline.Pipeline) []brain.Turn {
+	if r.transcript != nil {
+		return r.transcript()
+	}
+	return p.Brain.History()
 }
 
 func (r *sessionRef) save(turns []brain.Turn) error {
@@ -1046,7 +1057,7 @@ func (r *sessionRef) resume(p *pipeline.Pipeline, cfg *config.Config, id string)
 		return fmt.Errorf("load session: %w", err)
 	}
 	previousID := r.id()
-	history := p.Brain.History()
+	history := r.history(p)
 	if err := r.save(history); err != nil {
 		return fmt.Errorf("save previous session: %w", err)
 	}

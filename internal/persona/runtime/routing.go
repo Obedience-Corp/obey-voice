@@ -39,7 +39,7 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 			}
 			return admitted, wrapIdentityRefusalFailure(ctx, "route", errors.New("invalid exact identity control"))
 		}
-		if s.opts.Base.GroupParticipationEnabled {
+		if s.groupParticipation() {
 			groupAdmission, err := s.routeAudience(ctx, input)
 			groupAdmission.AgentMentionControl = admitted.AgentMentionControl
 			return groupAdmission, err

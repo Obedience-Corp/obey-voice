@@ -49,7 +49,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	var turns []brain.Turn
 	var stagedContexts brain.PersonaContexts
 	var err, workerErr, durabilityErr error
-	unchanged, installed := false, false
+	unchanged, installed, rebind := false, false, false
 	defer func() {
 		if prepared != nil {
 			_ = prepared.Discard()
@@ -134,7 +134,10 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				unchanged = true
 				return nil
 			}
-			if !slices.Contains(sharedHistoryProviders, cfg.BrainProvider) {
+			// A provider without shared history projection may only be rebound
+			// to the persona it already serves; it cannot be switched to.
+			rebind = !brain.KeepsSharedHistory(oldBrain) && s.binding != nil && binding.PersonaID == s.binding.PersonaID && binding.BrainProvider == s.binding.BrainProvider
+			if !rebind && !slices.Contains(sharedHistoryProviders, cfg.BrainProvider) {
 				return fmt.Errorf("persona %q: provider %q has no verified shared history projection", id, cfg.BrainProvider)
 			}
 
@@ -199,21 +202,21 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if err != nil {
 				return fmt.Errorf("prepare persona brain: %w", err)
 			}
-			projection, ok := nextBrain.(brain.HistoryProjectionProvider)
-			if !ok {
+			projection, projects := nextBrain.(brain.HistoryProjectionProvider)
+			if !projects && !rebind {
 				return errors.New("persona brain does not support shared history projection")
 			}
-			freezer, ok := nextBrain.(brain.PersonaPromptFreezer)
-			if !ok {
+			if _, freezes := nextBrain.(brain.PersonaPromptFreezer); !freezes && !rebind {
 				return errors.New("persona brain cannot pin response identity")
 			}
-			if freezer.FreezePersonaPrompt() != hash {
+			pinned, pinErr := pinPersonaPrompt(nextBrain, cfg)
+			if pinErr != nil {
+				return fmt.Errorf("pin persona prompt: %w", pinErr)
+			}
+			if pinned != hash {
 				return errors.New("persona prompt changed while preparing; retry selection")
 			}
-			turns = oldBrain.History()
-			if canonical, ok := oldBrain.(brain.CanonicalHistoryProvider); ok {
-				turns = canonical.CanonicalHistory()
-			}
+			turns = s.sharedTurns()
 			stagedContexts = s.contexts.Clone()
 			if previous.ConversationEpoch != scope.ConversationEpoch {
 				stagedContexts = make(brain.PersonaContexts)
@@ -235,8 +238,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if err := target.ImportContinuity(targetView); err != nil {
 					return fmt.Errorf("restore persona continuity: %w", err)
 				}
-			} else if err := projection.ImportHistory(turns); err != nil {
-				return fmt.Errorf("project conversation: %w", err)
+			} else if projects {
+				if err := projection.ImportHistory(turns); err != nil {
+					return fmt.Errorf("project conversation: %w", err)
+				}
+			} else {
+				nextBrain.LoadHistory(turns)
 			}
 			captureContext(stagedContexts, binding.PersonaID, nextBrain)
 
@@ -360,6 +367,10 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			s.mu.Unlock()
 			s.requiresSelection = false
 			s.contexts = stagedContexts
+			if brain.KeepsSharedHistory(nextBrain) {
+				// The projected provider now records the conversation itself.
+				s.transcript.reset(nil)
+			}
 			s.publicationMu.Unlock()
 			publicationLocked = false
 			if oldNative != nil {

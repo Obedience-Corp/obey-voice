@@ -43,6 +43,9 @@ type SelectionOptions struct {
 	Initial         *persona.SessionBinding
 	Persist         func([]brain.Turn, events.PersonaSelection) error
 	InitialContexts brain.PersonaContexts
+	// Transcript is the restored canonical conversation. It is authoritative
+	// while the live provider keeps no shared history of its own.
+	Transcript      []brain.Turn
 	PersistContexts func([]brain.Turn, events.PersonaSelection, brain.PersonaContexts) error
 	NewBrain        func(context.Context, *config.Config) (brain.Provider, error)
 	NewWorker       func(context.Context, *config.Config) (brain.Provider, error)
@@ -74,6 +77,7 @@ type Selector struct {
 	binding             *persona.SessionBinding
 	generation          uint64
 	contexts            brain.PersonaContexts
+	transcript          *transcript
 	requiresSelection   bool // explicit restore may have no usable saved persona
 }
 
@@ -81,11 +85,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	if opts.Base == nil || opts.Pipeline == nil || opts.Pipeline.Brain == nil || opts.Initial == nil || opts.SessionID == "" || (opts.Persist == nil && opts.PersistContexts == nil) {
 		return nil, errors.New("persona selection requires base settings, pipeline, binding, session, and persistence")
 	}
-	if _, ok := opts.Pipeline.Brain.(brain.HistoryProjectionProvider); !ok {
-		return nil, errors.New("persona selection: current provider does not support shared history projection")
-	}
-	freezer, ok := opts.Pipeline.Brain.(brain.PersonaPromptFreezer)
-	if !ok {
+	if _, ok := opts.Pipeline.Brain.(brain.PersonaPromptFreezer); !ok && brain.KeepsSharedHistory(opts.Pipeline.Brain) {
 		return nil, errors.New("persona selection: current provider cannot pin response identity")
 	}
 	if _, _, err := SelectionFlowInfo(); err != nil {
@@ -148,8 +148,12 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		return nil, errors.New("prepared native startup does not match Standard selection")
 	}
 	opts.Pipeline.GroupParticipationEnabled = opts.Base.GroupParticipationEnabled
+	hash, err := pinPersonaPrompt(opts.Pipeline.Brain, opts.Initial.Config())
+	if err != nil {
+		return nil, fmt.Errorf("persona selection: pin response identity: %w", err)
+	}
 	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: opts.InitialContexts.Clone()}
-	hash := freezer.FreezePersonaPrompt()
+	s.transcript = newTranscript(func() string { return opts.Pipeline.ConversationScope().ConversationEpoch }, opts.Transcript)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok {
 		if state, exists := s.contexts[opts.Initial.PersonaID]; exists {
@@ -169,7 +173,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		}
 	}
 	captureContext(s.contexts, opts.Initial.PersonaID, opts.Pipeline.Brain)
-	if err := s.persistContexts(opts.Pipeline.Brain.History(), s.selected, s.contexts); err != nil {
+	if err := s.persistContexts(s.Transcript(), s.selected, s.contexts); err != nil {
 		if !session.WriteCommitted(err) {
 			return nil, fmt.Errorf("persist initial persona: %w", err)
 		}
@@ -180,7 +184,45 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		opts.InitialNative.Policy.PublishCaption = s.captionPublisher(s.bindingToken, s.selected)
 		s.nativeCandidate = opts.InitialNative
 	}
+	opts.Pipeline.Transcript = s.transcript
 	return s, nil
+}
+
+// pinPersonaPrompt freezes the provider's resolved persona prompt. A provider
+// that cannot freeze it is identified by the prompt its binding resolves.
+func pinPersonaPrompt(provider brain.Provider, cfg *config.Config) (string, error) {
+	if freezer, ok := provider.(brain.PersonaPromptFreezer); ok {
+		return freezer.FreezePersonaPrompt(), nil
+	}
+	return brain.PersonaPromptHash(cfg)
+}
+
+// Transcript returns the conversation for persistence: the live provider's
+// history when it keeps the shared history itself, otherwise the transcript
+// the host recorded.
+func (s *Selector) Transcript() []brain.Turn {
+	if live := s.opts.Pipeline.Brain; brain.KeepsSharedHistory(live) {
+		return live.History()
+	}
+	return s.transcript.Turns()
+}
+
+// sharedTurns is the complete attributed conversation projected into the
+// next responder.
+func (s *Selector) sharedTurns() []brain.Turn {
+	live := s.opts.Pipeline.Brain
+	if !brain.KeepsSharedHistory(live) {
+		return s.transcript.Turns()
+	}
+	if canonical, ok := live.(brain.CanonicalHistoryProvider); ok {
+		return canonical.CanonicalHistory()
+	}
+	return live.History()
+}
+
+// RestoreTranscript follows RestoreSession at the same serialized boundary.
+func (s *Selector) RestoreTranscript(turns []brain.Turn) {
+	s.transcript.reset(turns)
 }
 
 func sameProviderIdentity(a, b brain.Provider) bool {
@@ -350,6 +392,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.generation++
 	s.opts.SessionID = sessionID
 	s.opts.UseDefaults = false
+	s.transcript.reset(nil)
 	s.mu.Lock()
 	s.requiresSelection = true
 	s.contexts = make(brain.PersonaContexts)
