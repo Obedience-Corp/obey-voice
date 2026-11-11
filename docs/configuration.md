@@ -694,9 +694,11 @@ other personas are never sent in either mode. Changing it applies to personas
 first addressed after the change and does not widen a session that has already
 started. A running conversation picks the change up only when its settings
 reload; it has no Settings row, so set it with
-`obey-voice config set hosted_persona_sharing whole_conversation`. It governs personas on Claude, the backend that keeps its own session;
-see [Hosted backends](personas.md#hosted-backends) for what the others receive
-and for how hosted personas are marked.
+`obey-voice config set hosted_persona_sharing whole_conversation`. It governs
+personas on Claude, Codex, Muse Spark and Obey; a persona on Grok or Cursor only
+holds a conversation that started on it. See
+[Hosted backends](personas.md#hosted-backends) for what each receives and for
+how hosted personas are marked.
 
 ### Ollama thinking in the terminal
 
