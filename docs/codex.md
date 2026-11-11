@@ -52,12 +52,13 @@ any leading compaction summary. Replay preserves historical speaker/persona
 labels and tool call/result provenance. Unnamed historical assistants are not
 renamed to the current persona. Compaction changes that working view without
 replacing the durable transcript. In a conversation shared with other personas,
-the working view is only the persona's share: see [Hosted
+the working view is only the persona's share, which carries no other persona's
+tool calls, tool output or attachments: see [Hosted
 backends](personas.md#hosted-backends). Native tool details not represented in
 Obey's transcript are not reconstructed after a reset.
 
 Background workers start fresh with the existing task brief: up to eight recent
-conversation turns within the shared brief byte budget, the triggering utterance,
+spoken turns of the working view within the shared brief byte budget, the triggering utterance,
 and the configured persona, working directory and worker boundary. They do not
 inherit the entire native Codex thread. Worker completion data is supplied through
 the existing work-result context on the consuming turn.

@@ -453,17 +453,18 @@ already started; it applies to personas first addressed after the change. A
 persona on Grok or Cursor can only hold a conversation that started on it, and
 is sent all of it.
 
+The brief a new background job is given carries up to eight recent spoken
+lines to the worker provider: with a persona on Claude, Codex, Muse Spark or
+Obey answering, only lines from that persona's share.
+
 Known gaps: a reply from a background worker started through the older worker
 path is recorded as a spoken line of the persona that started it. Like any
 spoken line, it is sent to a persona on Claude, Codex, Muse Spark or Obey whose
-share includes it, including the one that is live when it arrives. The brief a
-new background job is given carries up to eight recent spoken lines to the
-worker provider: with a persona on Claude live, only lines from its share; with
-a persona on Codex, Muse Spark or Obey live, lines from the whole conversation.
-The optional work-decision service, when one is configured, is sent the live
-provider's conversation while it is at most eight turns long; with a persona on
-Codex, Muse Spark or Obey live, that is the whole conversation, including other
-personas' tool output.
+share includes it, including the one that is live when it arrives. The optional
+work-decision service, when one is configured, is sent the live provider's
+conversation while it is at most eight turns long; with a persona on Codex, Muse
+Spark or Obey live, that is the whole conversation, including other personas'
+tool output.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental
