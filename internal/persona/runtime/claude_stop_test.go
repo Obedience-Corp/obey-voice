@@ -2,6 +2,8 @@ package personaruntime
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -108,5 +110,71 @@ func TestParkedClaudeSessionStillStoppingIsWaitedForBeforeReuse(t *testing.T) {
 	}
 	if got := replies(c.selector.Transcript()); got[len(got)-1].PersonaID != "mira" || got[len(got)-1].Disposition != "" {
 		t.Fatalf("replies = %+v", got)
+	}
+}
+
+// stuckClaude is the Claude provider whose first stopped request does not
+// end until release closes; it then sends more text and reports success.
+type stuckClaude struct {
+	*brain.Brain
+	release, ended chan struct{}
+	stuck          atomic.Bool
+}
+
+func (b *stuckClaude) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	stream, err := b.Brain.ThinkStream(ctx, input, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, done := make(chan string, 1), make(chan brain.StreamResult, 1)
+	go func() {
+		for chunk := range stream.Chunks {
+			out <- chunk
+		}
+		result := <-stream.Done
+		late := ctx.Err() != nil && b.stuck.CompareAndSwap(false, true)
+		if late {
+			<-b.release
+			out <- " It is cobalt."
+			result = brain.StreamResult{}
+		}
+		close(out)
+		done <- result
+		close(done)
+		if late {
+			close(b.ended)
+		}
+	}()
+	return &brain.Stream{Chunks: out, Done: done}, nil
+}
+
+func TestAbandonedClaudeRequestIsNeitherRecordedNorSeenLate(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	b := &stuckClaude{Brain: c.p.Brain.(*brain.Brain), release: make(chan struct{}), ended: make(chan struct{})}
+	c.p.Brain = b
+	c.say("Note that the vault code is cobalt.")
+	interruptStall(t, c)
+	// The stopped request does not end, so the next turn goes ahead without it.
+	c.say("Go on.")
+	transcript := c.selector.Transcript()
+	if len(transcript) != 6 || transcript[3].Content != claudePartial || transcript[3].Disposition != "interrupted" ||
+		transcript[4].Content != "Go on." || transcript[5].PersonaID != "mira" || transcript[5].Disposition != "" {
+		t.Fatalf("transcript = %+v", transcript)
+	}
+	cursor := c.selector.ContextSnapshots()["mira"]
+
+	close(b.release)
+	<-b.ended
+	time.Sleep(300 * time.Millisecond)
+	if after := c.selector.Transcript(); !reflect.DeepEqual(after, transcript) {
+		t.Fatalf("the abandoned request changed the transcript: %+v", after)
+	}
+	for _, turn := range transcript {
+		if strings.Contains(turn.Content, "It is cobalt") {
+			t.Fatalf("late text recorded: %+v", turn)
+		}
+	}
+	if after := c.selector.ContextSnapshots()["mira"]; !reflect.DeepEqual(after, cursor) {
+		t.Fatalf("the abandoned request moved Mira's cursor from %+v to %+v", cursor, after)
 	}
 }
