@@ -78,7 +78,8 @@ type Selector struct {
 	generation          uint64
 	contexts            brain.PersonaContexts
 	transcript          *transcript
-	requiresSelection   bool // explicit restore may have no usable saved persona
+	parked              []parkedBrain // least recently used first; guarded by transitionMu
+	requiresSelection   bool          // explicit restore may have no usable saved persona
 }
 
 func NewSelector(opts SelectionOptions) (*Selector, error) {
@@ -392,6 +393,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.generation++
 	s.opts.SessionID = sessionID
 	s.opts.UseDefaults = false
+	s.retireParked(retireAll)
 	s.transcript.reset(nil)
 	s.mu.Lock()
 	s.requiresSelection = true
@@ -412,12 +414,14 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 // Close joins any in-flight selection publication before the host closes its
 // work, brain, and voice resources. The host cancels its run context first;
 // this final join also covers a filesystem commit outliving the turn timeout.
-// It does not close conversation resources or schedule turns itself.
+// It retires parked providers through the pipeline, so the host's final
+// CloseBrains joins them; it does not close the live provider or schedule turns.
 func (s *Selector) Close() {
 	s.EndDiscussion("superseded")
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	s.closed = true
+	s.retireParked(retireAll)
 	s.publicationMu.Lock()
 	s.publicationClosed = true
 	s.bindingToken = ""

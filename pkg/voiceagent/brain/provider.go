@@ -237,6 +237,14 @@ func KeepsSharedHistory(p Provider) bool {
 	return false
 }
 
+// KeepsPersonaSession reports whether a provider keeps a session of its own
+// for its persona across persona switches. The host parks such a provider
+// while another persona speaks instead of retiring it.
+func KeepsPersonaSession(p Provider) bool {
+	_, ok := p.(*Brain)
+	return ok
+}
+
 // ContextHistoryProvider exposes the bounded model view for compaction only.
 // Its projected text is never an authority for persisted speaker identity.
 type ContextHistoryProvider interface{ ContextHistory() []Turn }

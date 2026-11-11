@@ -35,6 +35,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	if p.ConversationRetired() {
 		return events.PersonaSelection{}, errors.New("persona selection belongs to a closed conversation")
 	}
+	s.retireParked(func(parked parkedBrain) bool { return parked.epoch != scope.ConversationEpoch })
 	var binding *persona.SessionBinding
 	var cfg *config.Config
 	var hash string
@@ -50,6 +51,9 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	var stagedContexts brain.PersonaContexts
 	var err, workerErr, durabilityErr error
 	unchanged, installed, rebind := false, false, false
+	// reused marks a parked provider, which stays parked if selection fails;
+	// park keeps the outgoing provider for its persona's return.
+	reused, park := false, false
 	defer func() {
 		if prepared != nil {
 			_ = prepared.Discard()
@@ -60,7 +64,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 		if !installed {
 			if native != nil {
 				_ = native.Close()
-			} else {
+			} else if !reused {
 				closeBrain(nextBrain)
 			}
 			if inputCleanup != nil {
@@ -196,6 +200,8 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if !s.opts.Native.Silent {
 					voice = native.Voice
 				}
+			} else if parked := s.parkedFor(binding.PersonaID, next.BindingHash, scope.ConversationEpoch); parked != nil {
+				nextBrain, reused = parked, true
 			} else {
 				nextBrain, err = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewBrain(ctx, cfg) }, closeBrain)
 			}
@@ -242,7 +248,8 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if err := projection.ImportHistory(turns); err != nil {
 					return fmt.Errorf("project conversation: %w", err)
 				}
-			} else {
+			} else if !reused {
+				// Loading history would end a parked provider's session.
 				nextBrain.LoadHistory(turns)
 			}
 			captureContext(stagedContexts, binding.PersonaID, nextBrain)
@@ -286,6 +293,11 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			prepared, err = p.PrepareConversationBrain(nextBrain, worker, cfg, workerErr)
 			if err != nil {
 				return err
+			}
+			park = outgoingNative == nil && brain.KeepsPersonaSession(oldBrain) && !s.requiresSelection &&
+				previous.PersonaID != "" && previous.PersonaID != binding.PersonaID && previous.ConversationEpoch == scope.ConversationEpoch
+			if park {
+				prepared.RetainPrevious()
 			}
 
 			return nil
@@ -358,6 +370,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			}
 			s.bindingToken = token
 			installed = true
+			if reused {
+				s.unpark(nextBrain)
+			}
+			if park {
+				s.park(parkedBrain{personaID: previous.PersonaID, bindingHash: previous.BindingHash, epoch: scope.ConversationEpoch, provider: oldBrain})
+			}
 			s.opts.Base.ConversationDirectories = cfg.ConversationDirectories.Clone()
 			if reason != "response_boundary" {
 				s.opts.UseDefaults = false
