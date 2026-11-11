@@ -259,7 +259,8 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("brain: %w", err))
 		return original, nil
 	}
-	defer recording.settle()
+	defer recording.release()
+	metrics.recording = recording
 
 	if ordinary != nil {
 		brainStream = ordinary.wrap(brainStream)

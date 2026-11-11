@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -184,19 +183,12 @@ func (t *transcript) addSessions(contexts brain.PersonaContexts, except string) 
 	}
 }
 
-// SetReplyMedia moves a reply's images into attachments, as the providers do
-// for their own replies.
-func (t *transcript) SetReplyMedia(text string, refs []chatmedia.Ref) error {
+// SetRecordedReplyMedia moves a reply's images into attachments, as the
+// providers do for their own replies.
+func (t *transcript) SetRecordedReplyMedia(reply brain.Turn, text string, refs []chatmedia.Ref) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	for i := len(t.turns) - 1; i >= 0; i-- {
-		if t.turns[i].Role == "assistant" && len(t.turns[i].ToolCalls) == 0 {
-			t.turns[i].Content = text
-			t.turns[i].Attachments = slices.Clone(refs)
-			return nil
-		}
-	}
-	return errors.New("transcript: no assistant reply to attach images to")
+	return brain.SetRecordedReplyMedia(t.turns, reply, text, refs)
 }
 
 // sessionView is the part of the transcript loaded into a provider without
