@@ -38,7 +38,9 @@ func (p ProviderInfo) ForWorkers() ProviderInfo {
 
 // probeTimeout caps each network/subprocess probe so a wedged provider cannot
 // stall discovery.
-const probeTimeout = 3 * time.Second
+var probeTimeout = defaultProbeTimeout
+
+const defaultProbeTimeout = 3 * time.Second
 
 // DiscoverProviders probes the system for available brain providers.
 func DiscoverProviders(cfg *config.Config) []ProviderInfo {
