@@ -62,3 +62,19 @@ func TestAddresseeSchemaAndParserRestrictTargetsToRoster(t *testing.T) {
 		})
 	}
 }
+
+func TestNoAddressDecisionWithAStrayNameIsStillNoAddress(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: `{"kind":"none","name":"Santa","bare":true}`}, Done: true})
+	}))
+	defer server.Close()
+	host, _ := url.Parse(server.URL)
+	o := &OllamaBrain{client: api.NewClient(host, server.Client()), model: "fixture", cfg: &config.Config{OllamaNumCtx: 8192}}
+	got, err := o.ResolveAddressee(t.Context(), AddressRequest{Participants: []GroupParticipant{{Name: "Obey"}, {Name: "Santa"}}, Current: "Obey", Speaker: "Lance", Account: "user", Text: "I think Santa is having a bad day or something."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != "none" || got.Name != "" || got.Bare {
+		t.Fatalf("decision=%+v", got)
+	}
+}

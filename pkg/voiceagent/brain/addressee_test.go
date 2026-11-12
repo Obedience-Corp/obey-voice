@@ -29,7 +29,7 @@ func TestResolveAddresseePrivateAndValidated(t *testing.T) {
 		{"ambiguous", `{"kind":"ambiguous","name":"Santa","bare":false}`, false, ""},
 		{"malformed", `not json`, true, admission.ClassifierInvalidOutput},
 		{"unknown kind", `{"kind":"switch","name":"Santa","bare":false}`, true, admission.ClassifierInvalidOutput},
-		{"contradictory", `{"kind":"none","name":"Santa","bare":true}`, true, admission.ClassifierInvalidOutput},
+		{"none with a mentioned name", `{"kind":"none","name":"Santa","bare":true}`, false, ""},
 		{"empty", `{"kind":"address","name":"","bare":false}`, true, admission.ClassifierInvalidOutput},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
