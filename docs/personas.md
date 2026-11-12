@@ -451,7 +451,11 @@ resume, after a stopped or failed request, when its tools or prompt change,
 when a line was recorded while its request ran, when the view it comes back to
 no longer begins with the lines its thread holds, and when lines it missed fell
 out of `max_history` before it was addressed again. When a line recorded
-during a request or a changed view drops the thread, the log says which.
+during a request or a changed view drops the thread, the log says which. A new
+thread is sent only the conversation, not the work the old thread did, such as
+the files it read or the commands it ran: so a job result that lands while a
+Codex persona is answering costs it that context, even though its answer is
+kept.
 Unlike Claude, Grok and Cursor, Codex is sent its lines whole: none is
 shortened, and its replay is bounded by `max_history` rather than 64 KiB, as it
 always was. A request whose text passes 64 KiB is logged with its size.
