@@ -89,7 +89,7 @@ func (p *Pipeline) commitWorkerReplies() error {
 		if len(reply.Attachments) > 0 && !supportsMedia {
 			writeErr = fmt.Errorf("provider cannot persist worker image replies")
 		} else {
-			writeErr = appendResponse(p.Brain, reply.Text, identity)
+			writeErr = p.appendReply(p.Brain, reply.Text, identity, reply.Attachments)
 		}
 		if err := writeErr; err != nil {
 			a.mu.Lock()

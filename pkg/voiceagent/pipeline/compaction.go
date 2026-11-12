@@ -106,6 +106,9 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 	if p.Brain == nil || p.CompactPrompt == "" {
 		return errors.New("compact prompt not configured")
 	}
+	if err := p.awaitProvider(ctx); err != nil {
+		return err
+	}
 	history := p.Brain.History()
 	turnsBefore := len(history)
 	if turnsBefore < 2 {
@@ -208,11 +211,13 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 // customizes the compact document. Keep these instructions out of ordinary
 // legacy compaction where no historical identities are known.
 func (p *Pipeline) compactionInstruction() string {
-	canonical, ok := p.Brain.(brain.CanonicalHistoryProvider)
-	if !ok {
-		return p.CompactPrompt
+	var turns []brain.Turn
+	if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
+		turns = canonical.CanonicalHistory()
+	} else if t := p.transcriptFor(p.Brain); t != nil {
+		turns = t.Turns()
 	}
-	for _, turn := range canonical.CanonicalHistory() {
+	for _, turn := range turns {
 		if turn.PersonaID != "" || turn.PersonaDisplayName != "" {
 			return p.CompactPrompt + "\n\nHistorical attribution requirements: This is a continuity summary of a shared conversation, not a new reply by the current persona. Preserve the historical persona name for each retained fact or decision from an assistant. Keep user-provided facts attributed to the user. Preserve different personas separately, including their disagreements. Do not imitate historical assistant labels in the summary or present internal metadata as user-facing text."
 		}

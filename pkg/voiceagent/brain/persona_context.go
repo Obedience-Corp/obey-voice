@@ -32,6 +32,9 @@ func (contexts PersonaContexts) Clone() PersonaContexts {
 	return out
 }
 
+// CloneTurns returns a copy that shares no mutable state with in.
+func CloneTurns(in []Turn) []Turn { return deepCopyTurns(in) }
+
 // Stable turn identity survives later native captions and response disposition
 // updates. Legacy turns without IDs fall back to their original content.
 func contextTurnKey(t Turn) string {

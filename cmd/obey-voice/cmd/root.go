@@ -411,63 +411,62 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		}
 
 		var selector *personaruntime.Selector
-		if _, supported := p.Brain.(brain.HistoryProjectionProvider); supported {
-			voices := liveTTS
-			if recordings.initial != nil {
-				if err := recordings.initial.BindScope(p.ConversationScope()); err != nil {
-					cleanup()
-					liveTTS.Close()
-					closeTap()
-					return nil, err
-				}
-			}
-			selector, err = personaruntime.NewSelector(personaruntime.SelectionOptions{
-				Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
-				Native: recordings.hooks(p, textMode, noVoice), InitialNative: recordings.initial,
-				UseDefaults:     sessionBindID == appTUI.StartDefaultsID,
-				Participation:   sess.Participation,
-				InitialContexts: sess.PersonaContexts,
-				PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
-					return session.DefaultStore().SaveSelectionState(sess, turns, selected, contexts)
-				},
-				PersistParticipation: func(settings discussion.Settings) error {
-					return session.DefaultStore().SaveParticipation(sess, settings)
-				},
-				Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
-					return session.DefaultStore().SaveSelectionState(sess, turns, selected)
-				},
-				NewBrain: func(_ context.Context, next *config.Config) (brain.Provider, error) {
-					provider, err := brain.NewProvider(next)
-					if err == nil {
-						brain.AttachSpeakerNames(provider, speakerNames)
-					}
-					return provider, err
-				},
-			})
-			if err != nil {
-				_ = closeWorkSession(p, checkpoint)
-				if stopLive != nil {
-					stopLive()
-				}
-				liveTTS.Close()
+		voices := liveTTS
+		if recordings.initial != nil {
+			if err := recordings.initial.BindScope(p.ConversationScope()); err != nil {
 				cleanup()
+				liveTTS.Close()
 				closeTap()
 				return nil, err
 			}
-			p.BeforeCapture = func(ctx context.Context) error { _, err := selector.Admit(ctx); return err }
-			p.AdmitAudio = func(ctx context.Context, _ *utterance.Finalized) (pipeline.ResponseAdmission, error) {
-				envelope, err := selector.Admit(ctx)
-				return pipeline.ResponseAdmission{Envelope: envelope}, err
-			}
-			p.AdmitInput = selector.Route
-			p.RouteHandoff = selector.RouteHandoff
-			p.EndDiscussion = selector.EndDiscussion
-			p.CompleteDiscussion = selector.RecordDiscussionResponse
 		}
+		selector, err = personaruntime.NewSelector(personaruntime.SelectionOptions{
+			Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
+			Native: recordings.hooks(p, textMode, noVoice), InitialNative: recordings.initial,
+			UseDefaults:     sessionBindID == appTUI.StartDefaultsID,
+			Participation:   sess.Participation,
+			InitialContexts: sess.PersonaContexts,
+			Transcript:      sess.Turns,
+			PersistContexts: func(turns []brain.Turn, selected events.PersonaSelection, contexts brain.PersonaContexts) error {
+				return session.DefaultStore().SaveSelectionState(sess, turns, selected, contexts)
+			},
+			PersistParticipation: func(settings discussion.Settings) error {
+				return session.DefaultStore().SaveParticipation(sess, settings)
+			},
+			Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
+				return session.DefaultStore().SaveSelectionState(sess, turns, selected)
+			},
+			NewBrain: func(_ context.Context, next *config.Config) (brain.Provider, error) {
+				provider, err := brain.NewProvider(next)
+				if err == nil {
+					brain.AttachSpeakerNames(provider, speakerNames)
+				}
+				return provider, err
+			},
+		})
+		if err != nil {
+			_ = closeWorkSession(p, checkpoint)
+			if stopLive != nil {
+				stopLive()
+			}
+			liveTTS.Close()
+			cleanup()
+			closeTap()
+			return nil, err
+		}
+		p.BeforeCapture = func(ctx context.Context) error { _, err := selector.Admit(ctx); return err }
+		p.AdmitAudio = func(ctx context.Context, _ *utterance.Finalized) (pipeline.ResponseAdmission, error) {
+			envelope, err := selector.Admit(ctx)
+			return pipeline.ResponseAdmission{Envelope: envelope}, err
+		}
+		p.AdmitInput = selector.Route
+		p.RouteHandoff = selector.RouteHandoff
+		p.EndDiscussion = selector.EndDiscussion
+		p.CompleteDiscussion = selector.RecordDiscussionResponse
 
 		saveConversation := func() error {
 			if selector != nil {
-				return sess.Save(p.Brain.History(), selector.ContextSnapshots())
+				return sess.Save(selector.Transcript(), selector.ContextSnapshots())
 			}
 			return sess.Save(p.Brain.History())
 		}

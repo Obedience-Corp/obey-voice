@@ -97,7 +97,7 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 	if account == "user" {
 		request.AcousticName = acousticName
 	}
-	turns := s.opts.Pipeline.Brain.History()
+	turns := s.Transcript()
 	// Latest assistant is already canonical on a handoff; keep it only in Text.
 	if account == "agent" && len(turns) > 0 && turns[len(turns)-1].Role == "assistant" {
 		turns = turns[:len(turns)-1]
@@ -292,8 +292,19 @@ func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, v
 	return proposal, true, nil
 }
 
+// groupParticipation reports whether group routing applies. Group turns are
+// projected into each member, so the live provider must keep shared history.
+func (s *Selector) groupParticipation() bool {
+	return s.opts.Base.GroupParticipationEnabled && brain.KeepsSharedHistory(s.opts.Pipeline.Brain)
+}
+
 // RouteHandoff gives explicit handoffs priority over optional open participation.
 func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visited []string) (pipeline.HandoffProposal, bool, error) {
+	if !brain.KeepsSharedHistory(s.opts.Pipeline.Brain) {
+		// An agent never moves the conversation off a provider that could not
+		// take it back.
+		return pipeline.HandoffProposal{}, false, nil
+	}
 	s.groupMu.Lock()
 	active := s.group != nil
 	s.groupMu.Unlock()
@@ -304,7 +315,7 @@ func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visite
 	if err != nil || ok {
 		return proposal, ok, err
 	}
-	if s.opts.Base.GroupParticipationEnabled && s.Participation().Mode == "open" && len(visited) == 1 {
+	if s.groupParticipation() && s.Participation().Mode == "open" && len(visited) == 1 {
 		return s.proposeOpen(ctx, response)
 	}
 	return proposal, false, nil

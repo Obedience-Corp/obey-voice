@@ -427,7 +427,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// Preserve only genuine text already sent to the user. Report
 				// failure separately, never as a synthetic assistant utterance.
 				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, emitted.String())); partial != "" {
-					o.appendMessage(api.Message{Role: "assistant", Content: partial}, opts.Identity, incompleteDisposition(err))
+					o.appendMessage(api.Message{Role: "assistant", Content: partial}, opts.Identity, IncompleteDisposition(err))
 					o.trimHistory()
 				}
 				o.retainFailedInput(ctx, input, opts, baseSkillCtx, err, emitted.Len() > 0 || hadThinking || hadTools || len(toolCalls) > 0)

@@ -177,6 +177,7 @@ func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, 
 	if metrics != nil {
 		decision.Tier, decision.ReasonCode = metrics.route.Tier, metrics.route.ReasonCode
 	}
+	metrics.recording.takeRoute()
 	var replyParts []string
 	metrics.routedSpeech = &replyParts
 	if p.Agency != nil {

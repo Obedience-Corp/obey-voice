@@ -13,13 +13,19 @@ import (
 func (p *Pipeline) appendRoutedHistory(metrics *turnMetrics, request, reply string) error {
 	projection, hasProjection := p.Brain.(brain.HistoryProjectionProvider)
 	continuity, hasContinuity := p.Brain.(brain.ContinuityTransferProvider)
-	if !hasProjection && !hasContinuity {
+	transcript := p.transcriptFor(p.Brain)
+	if !hasProjection && !hasContinuity && transcript == nil {
 		if metrics.responseIdentity() != nil {
 			return fmt.Errorf("routed reply requires canonical history projection")
 		}
 		return nil // Legacy providers retain their existing history ownership.
 	}
-	turns := p.Brain.History()
+	var turns []brain.Turn
+	if transcript != nil {
+		turns = transcript.Turns()
+	} else {
+		turns = p.Brain.History()
+	}
 	var additions []brain.Turn
 	now := time.Now().UTC()
 	// A route chosen after a model turn already owns its input. A deterministic
@@ -46,10 +52,13 @@ func (p *Pipeline) appendRoutedHistory(metrics *turnMetrics, request, reply stri
 		additions = append(additions, response)
 	}
 	var err error
-	if hasContinuity {
+	switch {
+	case hasContinuity:
 		err = appendContinuityHistory(continuity, additions)
-	} else {
+	case hasProjection:
 		err = projection.ImportHistory(append(turns, additions...))
+	default:
+		err = p.appendTranscript(transcript, additions...)
 	}
 	if err != nil {
 		return fmt.Errorf("record routed reply: %w", err)

@@ -175,12 +175,12 @@ func (o *ordinaryCompletion) wrap(s *brain.Stream) *brain.Stream {
 	return &brain.Stream{Chunks: out, Thinking: thinking, Done: done}
 }
 
-func (o *ordinaryCompletion) commitFallback(response string) error {
+func (p *Pipeline) commitOrdinaryFallback(o *ordinaryCompletion, response string) error {
 	if !o.fallbackSent.Load() || strings.TrimSpace(response) == "" {
 		return fmt.Errorf("ordinary completion: no update was rendered")
 	}
 	metrics := &turnMetrics{response: events.ResponseFromContext(o.ctx)}
-	return appendResponse(o.provider, o.fallback, metrics.responseIdentity())
+	return p.appendReply(o.provider, o.fallback, metrics.responseIdentity(), nil)
 }
 
 func (p *Pipeline) finishOrdinaryCompletion(metrics *turnMetrics, response string, interrupted bool) {
@@ -197,7 +197,7 @@ func (p *Pipeline) finishOrdinaryCompletion(metrics *turnMetrics, response strin
 	}
 	p.emitCompletion(o.lease, "announcement.addressed", ids, "", "", 0)
 	reason := ""
-	committed := o.commitFallback(response) == nil
+	committed := p.commitOrdinaryFallback(o, response) == nil
 	if !committed {
 		reason = "history_unavailable"
 	}

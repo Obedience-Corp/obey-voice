@@ -277,9 +277,31 @@ shorter parent deadline or cancellation still stops the request immediately.
 Shared-history projection
 is verified for Ollama, Codex, Muse Spark, and Obey personas: Codex is tested
 on its own, and Muse Spark and Obey each share a conversation with an Ollama
-persona. A persona on another provider (Claude, Grok, Cursor) is refused rather
-than silently replaced. The local acceptance uses Qwen3:8b and Kokoro voices
-`af_heart` and `am_michael`; it does not establish parity for every provider.
+persona. Switching to a persona on another provider (Claude, Grok, Cursor) is
+refused rather than silently replaced. The local acceptance uses Qwen3:8b and
+Kokoro voices `af_heart` and `am_michael`; it does not establish parity for every
+provider.
+
+A conversation can still start on a Claude, Grok, or Cursor persona. Those
+providers keep their own session history without speaker identity, so Obey
+Voice keeps the shared transcript itself and records each reply, including an
+interrupted one, under the persona that gave it.
+
+If no Ollama, Codex, Muse Spark, or Obey persona is enabled, such a
+conversation stays with its persona: every input, including the persona's name
+alone or another persona's name, goes to the model. Otherwise, because the
+conversation cannot come back once another persona takes it over, it moves only
+when you ask explicitly with `switch to Name`, `@id`, or `/personas`; addressing
+another persona by name is refused with that hint. Selecting an Ollama, Codex,
+Muse Spark, or Obey persona hands it the attributed transcript. Its replies
+never hand the conversation off by mentioning another persona.
+
+Voice and audio settings changes keep the provider session. Clearing the
+conversation, or changing the persona's provider, model, prompt, name or
+directory, restarts the session from the transcript: the provider's own
+session is dropped and a new one starts with the transcript's last
+`max_history` turns. Group participation is not offered while one of these
+personas is responding.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental
@@ -301,6 +323,10 @@ Older sessions remain readable; missing identity stays unknown, including old
 assistant-role names. A future unsupported format is refused. Compaction keeps
 the canonical transcript and a `<id>.pre-compact.json` backup while producing
 a bounded model context with complete tool groups and attributed source facts.
+In a conversation that started on Claude, Grok, or Cursor, the summary reseeds
+only that provider's session; the saved transcript stays complete. As with the
+other providers' saved history, it keeps every turn, in memory and on disk,
+until the conversation is cleared.
 A stored transcript alone does not prove a model received all of it: its
 configured history/context limits still govern the projection.
 

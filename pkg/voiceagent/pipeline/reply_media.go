@@ -57,7 +57,15 @@ func (p *Pipeline) finalizeMedia(metrics *turnMetrics, response string) events.R
 	}
 	e := events.ResponseReady{Response: response}
 	if !metrics.degraded {
-		e.Response, e.Attachments = finalizeProviderReply(p.Brain, response, brain.ReplyWorkDir(p.Brain), func(message string) { p.emit(events.Info{Message: message}) })
+		warn := func(message string) { p.emit(events.Info{Message: message}) }
+		e.Response, e.Attachments = finalizeProviderReply(p.Brain, response, brain.ReplyWorkDir(p.Brain), warn)
+		if t := p.transcriptFor(p.Brain); t != nil && len(e.Attachments) > 0 {
+			if reply := metrics.recording.recordedReply(); reply == nil {
+				warn("This reply's images were not saved: the reply was not recorded")
+			} else if err := t.SetRecordedReplyMedia(*reply, e.Response, e.Attachments); err != nil {
+				warn(err.Error())
+			}
+		}
 	}
 	metrics.mediaReply = &e
 	return e
