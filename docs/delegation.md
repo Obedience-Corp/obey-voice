@@ -162,10 +162,11 @@ all apply to own jobs.
 An own job on a hosted backend (Claude, Codex, Cursor, Grok, Muse Spark,
 Obey) is stopped after 15 minutes while `voice_worker_job_budget` is `0`, its
 default, in legacy and tiered mode alike. A budget you set wins, longer or
-shorter. `voice_worker_job_budget: -1` removes every limit on purpose,
-including this one; `obey-voice doctor` warns about each persona that then
-does its own hosted work with no limit. An own job on Ollama keeps the
-worker's limit, which `0` leaves unset.
+shorter. `voice_worker_job_budget: -1` removes this limit and the worker's
+on purpose; in tiered mode the routed tier's `runtime_seconds` still applies.
+In legacy mode `obey-voice doctor` warns about each persona that then does
+its own hosted work with no limit. An own job on Ollama keeps the worker's
+limit, which `0` leaves unset.
 
 Decision: the paid-worker switch (`paid_enabled`) is not applied to own jobs.
 Choosing a persona on a hosted backend is the consent to that backend's use,

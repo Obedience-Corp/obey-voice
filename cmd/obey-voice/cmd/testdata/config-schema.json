@@ -1412,7 +1412,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Job time budget",
-      "help": "Optional limit on how long a spawned job may run before it is stopped and you are told. Zero, the default, means no limit for the worker and 15 minutes for a job a persona on a hosted backend does itself. -1 means no limit for either.",
+      "help": "Optional limit on how long a spawned job may run before it is stopped and you are told. Zero, the default, means no limit for the worker and 15 minutes for a job a persona on a hosted backend does itself. -1 means no limit for either, apart from a tier's runtime in tiered mode.",
       "unit": "seconds",
       "min": -1,
       "max": 86400,

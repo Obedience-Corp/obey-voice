@@ -223,11 +223,11 @@ func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics, tier
 func (n *Narrator) storyWriterRun(own *config.Config, tier *config.OwnTier) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		opts := brain.WorkerStreamOptions(n.cfg == nil || n.cfg.VoiceToolsEnabled)
-		if end, ok := job.BudgetEnd(ctx); ok {
-			ctx = brain.WithWorkerDeadline(ctx, end)
-		}
 		var worker brain.Provider
 		if own != nil {
+			if end, ok := job.BudgetEnd(ctx); ok {
+				ctx = brain.WithWorkerDeadline(ctx, end)
+			}
 			opts.ToolsEnabled = own.VoiceToolsEnabled
 			if opts.WorkerBudget = ownTierBudget(own, tier); opts.WorkerBudget != nil {
 				ctx = opts.WorkerBudget.Context(ctx)

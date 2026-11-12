@@ -34,10 +34,16 @@ func NewNotices(path string) *Notices {
 	return n
 }
 
-// Shown reports whether the notice was already shown.
+// Shown reports whether the notice was already shown, here or by another
+// process sharing the file.
 func (n *Notices) Shown(key string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if !n.shown[key] && n.path != "" {
+		if _, ok := readNotices(n.path)[key]; ok {
+			n.shown[key] = true
+		}
+	}
 	return n.shown[key]
 }
 

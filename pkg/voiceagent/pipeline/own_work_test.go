@@ -767,6 +767,8 @@ func TestATurnSpawnsOnTheWorkDecisionItWasAdmittedWith(t *testing.T) {
 	}
 }
 
+var errMissingWorker = errors.New("ollama worker model is missing")
+
 // storyHarness asks Mira for a long story on an install with no configured
 // worker, with Mira's own backend standing in, and records what reached it.
 type storyHarness struct {
@@ -781,7 +783,7 @@ type storyHarness struct {
 	infoLine []string
 }
 
-func newStoryHarness(t *testing.T, cfg *config.Config) *storyHarness {
+func newStoryHarness(t *testing.T, cfg *config.Config, workerErr error) *storyHarness {
 	cfg.WorkDir = t.TempDir()
 	h := &storyHarness{speech: &progressiveFakeTTS{}, own: &recordingWorker{reply: "Chapter One. Once upon a time on Mira's own model.\n\nChapter Two. The end."}}
 	player := newFakePlayer(time.Millisecond)
@@ -799,7 +801,7 @@ func newStoryHarness(t *testing.T, cfg *config.Config) *storyHarness {
 	}
 	events.Subscribe(p.Events, func(e events.Error) { h.mu.Lock(); h.errs = append(h.errs, e); h.mu.Unlock() })
 	events.Subscribe(p.Events, func(e events.Info) { h.mu.Lock(); h.infoLine = append(h.infoLine, e.Message); h.mu.Unlock() })
-	h.a = NewAgency(p, h.jobs, nil, cfg, errors.New("ollama worker model is missing"))
+	h.a = NewAgency(p, h.jobs, nil, cfg, workerErr)
 	h.a.ownFactory = func(context.Context, *config.Config) (brain.Provider, error) {
 		h.mu.Lock()
 		h.atBuild = append(h.atBuild, h.notices)
@@ -862,7 +864,7 @@ func (h *storyHarness) storyJob(t *testing.T) (job.Info, map[string]string) {
 
 func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
 	t.Run("own: the persona's backend writes it, after the hosted notice", func(t *testing.T) {
-		h := newStoryHarness(t, claudePersona())
+		h := newStoryHarness(t, claudePersona(), errMissingWorker)
 		start := time.Now()
 		h.ask(t, "")
 		h.awaitSpeech(t)
@@ -889,7 +891,7 @@ func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
 	t.Run("worker: the missing worker is reported", func(t *testing.T) {
 		cfg := claudePersona()
 		cfg.PersonaWork = config.WorkWorker
-		h := newStoryHarness(t, cfg)
+		h := newStoryHarness(t, cfg, errMissingWorker)
 		h.ask(t, "")
 		if e := h.awaitError(t); e.Stage != "narrate" || !strings.Contains(e.Message, "ollama worker model is missing") || h.own.calls() != 0 || h.notices != 0 {
 			t.Fatalf("error = %+v, own calls %d, notices %d", e, h.own.calls(), h.notices)
@@ -923,14 +925,14 @@ func TestOllamaPersonaDoesItsOwnWorkWithNoConfiguredWorker(t *testing.T) {
 // written under it.
 func TestStoryNarrationInTieredModeIsHeldToTheRoutedTier(t *testing.T) {
 	t.Run("no tier", func(t *testing.T) {
-		h := newStoryHarness(t, tieredPersona("claude", "", true))
+		h := newStoryHarness(t, tieredPersona("claude", "", true), nil)
 		h.ask(t, "")
 		if e := h.awaitError(t); e.Stage != "job" || !strings.Contains(e.Message, "routed to no known tier") || h.own.calls() != 0 || h.notices != 0 || len(h.jobs.Status()) != 0 {
 			t.Fatalf("error = %+v, own calls %d, notices %d, jobs %d", e, h.own.calls(), h.notices, len(h.jobs.Status()))
 		}
 	})
 	t.Run("routed to a tier", func(t *testing.T) {
-		h := newStoryHarness(t, tieredPersona("claude", "", true))
+		h := newStoryHarness(t, tieredPersona("claude", "", true), nil)
 		start := time.Now()
 		h.ask(t, config.WorkerTierSimple)
 		h.awaitSpeech(t)
@@ -944,8 +946,15 @@ func TestStoryNarrationInTieredModeIsHeldToTheRoutedTier(t *testing.T) {
 			t.Fatalf("admission = %v", admission)
 		}
 	})
+	t.Run("a persona set to worker: tiered mode builds no worker to write it", func(t *testing.T) {
+		h := newStoryHarness(t, tieredPersona("claude", config.WorkWorker, true), nil)
+		h.ask(t, "")
+		if e := h.awaitError(t); e.Stage != "narrate" || !strings.Contains(e.Message, "worker provider is not configured") || h.own.calls() != 0 {
+			t.Fatalf("error = %+v, own calls %d", e, h.own.calls())
+		}
+	})
 	t.Run("strict policy", func(t *testing.T) {
-		h := newStoryHarness(t, strictPolicy(tieredPersona("claude", "", true)))
+		h := newStoryHarness(t, strictPolicy(tieredPersona("claude", "", true)), nil)
 		h.ask(t, config.WorkerTierSimple)
 		if e := h.awaitError(t); !strings.Contains(e.Message, "strict worker policy") || h.own.calls() != 0 {
 			t.Fatalf("error = %+v, own calls %d", e, h.own.calls())

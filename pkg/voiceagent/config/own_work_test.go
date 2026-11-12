@@ -152,6 +152,10 @@ func TestNoticesAreRecordedOnceAndSurviveARestart(t *testing.T) {
 	if err := NewNotices(path).Mark("b"); err != nil || !NewNotices(path).Shown("b") {
 		t.Fatalf("a null record could not be written over: %v", err)
 	}
+	first, second := NewNotices(path), NewNotices(path)
+	if err := first.Mark("c"); err != nil || !second.Shown("c") {
+		t.Fatalf("a notice marked by one process is not seen by another already running: %v", err)
+	}
 	memory := NewNotices("")
 	if err := memory.Mark("a"); err != nil || !memory.Shown("a") {
 		t.Fatalf("in-memory notices: %v", err)

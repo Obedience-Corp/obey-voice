@@ -274,7 +274,7 @@ func brainKeys() []KeySpec {
 		{
 			Key: "voice_worker_job_budget", Type: TypeInt, Default: DefaultVoiceWorkerJobBudget, Unit: "seconds", Min: num(UnlimitedJobBudget), Max: num(86400),
 			Group: GroupBrain, Title: "Job time budget",
-			Help: "Optional limit on how long a spawned job may run before it is stopped and you are told. Zero, the default, means no limit for the worker and 15 minutes for a job a persona on a hosted backend does itself. -1 means no limit for either.",
+			Help: "Optional limit on how long a spawned job may run before it is stopped and you are told. Zero, the default, means no limit for the worker and 15 minutes for a job a persona on a hosted backend does itself. -1 means no limit for either, apart from a tier's runtime in tiered mode.",
 		},
 		{
 			Key: "voice_worker_boundary", Type: TypeBool, Default: true,

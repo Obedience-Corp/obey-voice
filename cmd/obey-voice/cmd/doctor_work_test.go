@@ -54,19 +54,35 @@ func TestDoctorSaysWhoDoesEachPersonasWork(t *testing.T) {
 	}
 
 	daily := int64(1_000_000)
+	host := "http://127.0.0.1:11434"
 	tiered := config.DefaultVoiceWorkers()
 	tiered.Mode, tiered.Policy.ChargePolicy, tiered.Policy.DailyChargeMicroUSD = config.WorkerModeTiered, "strict", &daily
+	tiered.Tiers.Simple.Enabled = true
+	tiered.Tiers.Simple.Assignment = &config.WorkerAssignment{Provider: "ollama", Model: "first:7b", EndpointRef: &host, Billing: config.WorkerBillingLocal}
 	cfg.VoiceWorkers = tiered
 	out, _ = runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
-	if got := doctorLine(t, out, "work persona mira"); !strings.HasPrefix(got, "[WARN] work persona mira: its own claude (haiku) does it for up to 15 minutes; default on claude; refused under the strict worker policy") ||
+	if got := doctorLine(t, out, "work persona mira"); !strings.HasPrefix(got, "[WARN] work persona mira: its own claude (haiku) does it for up to 15 minutes or its tier's runtime if shorter; default on claude; refused under the strict worker policy") ||
 		!strings.Contains(out, "persona edit mira --work worker") {
 		t.Errorf("strict mira = %q", got)
 	}
-	if got := doctorLine(t, out, "work persona kai"); got != "[OK  ] work persona kai: its own ollama (persona:14b) does it; brain.work is own" {
+	if got := doctorLine(t, out, "work persona kai"); got != "[OK  ] work persona kai: its own ollama (persona:14b) does it within its tier's runtime; brain.work is own" {
 		t.Errorf("strict kai = %q", got)
 	}
 	if got := doctorLine(t, out, "work persona ember"); got != "[OK  ] work persona ember: the worker tiers do it; default on ollama" {
 		t.Errorf("tiered ember = %q", got)
+	}
+
+	tiered.Policy.ChargePolicy, tiered.Policy.DailyChargeMicroUSD = "advisory", nil
+	tiered.Tiers.Simple.Enabled = false
+	out, _ = runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
+	if got := doctorLine(t, out, "work persona kai"); got != "[WARN] work persona kai: its own ollama (persona:14b) does it within its tier's runtime; brain.work is own; refused: worker tiers are on and none is enabled" {
+		t.Errorf("closed tiers kai = %q", got)
+	}
+	cfg.VoiceWorkerJobBudget = config.UnlimitedJobBudget
+	tiered.Tiers.Simple.Enabled = true
+	out, _ = runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
+	if got := doctorLine(t, out, "work persona mira"); got != "[OK  ] work persona mira: its own claude (haiku) does it within its tier's runtime; default on claude" {
+		t.Errorf("tiered unlimited mira = %q", got)
 	}
 
 	cfg.VoiceWorkers, cfg.VoiceWorkerJobBudget = nil, config.UnlimitedJobBudget

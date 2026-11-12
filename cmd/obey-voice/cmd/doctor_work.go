@@ -44,12 +44,17 @@ func workDiag(id string, cfg *config.Config) config.Diagnostic {
 	case config.WorkOf(cfg) == config.WorkOwn:
 		hosted := brain.IsHosted(provider)
 		d.Detail = fmt.Sprintf("its own %s (%s) does it%s; %s", provider, modelLabel(config.BrainModelFor(cfg, provider)), ownCapLabel(cfg, hosted), reason)
+		closed := config.OwnWorkTiersClosed(cfg)
 		switch {
 		case config.OwnWorkStrict(cfg) && !brain.WorkerCapabilitiesFor(provider).ToolCallMediation.Supported:
 			d.Severity = config.SeverityWarn
 			d.Detail += "; refused under the strict worker policy"
 			d.Remediation = fmt.Sprintf("obey-voice persona edit %s --work worker, or use the advisory worker policy", id)
-		case hosted && cfg.VoiceWorkerJobBudget == config.UnlimitedJobBudget:
+		case closed != nil:
+			d.Severity = config.SeverityWarn
+			d.Detail += "; refused: " + closed.Error()
+			d.Remediation = "enable a worker tier, or switch Workers Settings to legacy mode"
+		case hosted && cfg.VoiceWorkerJobBudget == config.UnlimitedJobBudget && !tieredWork(cfg):
 			d.Severity = config.SeverityWarn
 			d.Remediation = "set voice_worker_job_budget to a number of seconds, or to 0 for the 15-minute default"
 		}
@@ -71,17 +76,28 @@ func workerDetail(cfg *config.Config) string {
 	return fmt.Sprintf("the worker %s (%s) does it", provider, modelLabel(model))
 }
 
-// ownCapLabel is how long the persona's own jobs may run outside a tier.
+func tieredWork(cfg *config.Config) bool {
+	return cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered
+}
+
+// ownCapLabel is how long the persona's own jobs may run.
 func ownCapLabel(cfg *config.Config, hosted bool) string {
+	label := ""
 	switch {
 	case cfg.VoiceWorkerJobBudget > 0:
-		return fmt.Sprintf(" for up to %ds", cfg.VoiceWorkerJobBudget)
-	case !hosted:
-		return ""
-	case cfg.VoiceWorkerJobBudget == config.UnlimitedJobBudget:
+		label = fmt.Sprintf(" for up to %ds", cfg.VoiceWorkerJobBudget)
+	case hosted && cfg.VoiceWorkerJobBudget == config.UnlimitedJobBudget && !tieredWork(cfg):
 		return " with no time limit (voice_worker_job_budget is -1)"
+	case hosted && cfg.VoiceWorkerJobBudget != config.UnlimitedJobBudget:
+		label = fmt.Sprintf(" for up to %d minutes", config.DefaultHostedOwnJobBudget/60)
 	}
-	return fmt.Sprintf(" for up to %d minutes", config.DefaultHostedOwnJobBudget/60)
+	if tieredWork(cfg) {
+		if label == "" {
+			return " within its tier's runtime"
+		}
+		return label + " or its tier's runtime if shorter"
+	}
+	return label
 }
 
 func modelLabel(model string) string {
