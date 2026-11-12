@@ -198,8 +198,9 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 		workers = demoWorkers(msg.rt.Pipeline).Workers
 	}
 	cmd := a.conversation.startConversation(conversationDeps{
-		runner: msg.rt.Pipeline,
-		bus:    msg.rt.Bus,
+		runner:    msg.rt.Pipeline,
+		bus:       msg.rt.Bus,
+		clipboard: a.clipboard,
 		clearHistory: func() {
 			if err := msg.rt.Pipeline.ClearConversation(); err != nil {
 				msg.rt.Bus.Emit(events.Error{Stage: "work", Message: err.Error()})

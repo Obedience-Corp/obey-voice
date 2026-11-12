@@ -12,12 +12,15 @@ type Point string
 const (
 	VoiceWork Point = "voice_work"
 	TextWork  Point = "text_work"
+	// AddresseeResolution is the blocking "who is being addressed" question.
+	AddresseeResolution Point = "addressee"
 )
 
 type Options struct {
 	Policy              WorkPolicy
 	Budget              time.Duration
 	VoiceWork, TextWork bool
+	Addressee           bool
 }
 
 type generation struct {
@@ -28,11 +31,13 @@ type generation struct {
 
 // Controller owns optional inference. Its zero value is off. Reconfiguration
 // cancels outstanding decisions without cancelling a conversation or a worker.
-// At most one evaluator call is in flight, including across reconfiguration.
+// At most one work evaluation and one addressee evaluation are in flight,
+// including across reconfiguration.
 type Controller struct {
-	mu      sync.Mutex
-	current *generation
-	busy    bool
+	mu            sync.Mutex
+	current       *generation
+	busy          bool
+	addresseeBusy bool
 }
 
 func (c *Controller) Configure(options Options) {
@@ -42,7 +47,7 @@ func (c *Controller) Configure(options Options) {
 		c.current.cancel()
 	}
 	c.current = nil
-	if options.Policy.Evaluator == nil || options.Budget <= 0 || (!options.VoiceWork && !options.TextWork) {
+	if options.Policy.Evaluator == nil || options.Budget <= 0 || (!options.VoiceWork && !options.TextWork && !options.Addressee) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -58,7 +63,7 @@ func (c *Controller) Enabled(point Point) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	g := c.current
-	return g != nil && ((point == VoiceWork && g.options.VoiceWork) || (point == TextWork && g.options.TextWork))
+	return g != nil && ((point == VoiceWork && g.options.VoiceWork) || (point == TextWork && g.options.TextWork) || (point == AddresseeResolution && g.options.Addressee))
 }
 
 // InFlight is a diagnostic snapshot; callers must not wait for it on a turn.

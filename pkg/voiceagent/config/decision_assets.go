@@ -10,7 +10,7 @@ import (
 )
 
 func ManagedDecisions(cfg *Config) bool {
-	return cfg != nil && cfg.DecisionEnabled && (cfg.DecisionVoiceWork || cfg.DecisionTextWork) && (cfg.DecisionProvider == "" || cfg.DecisionProvider == "local") && (cfg.DecisionRuntime == "" || cfg.DecisionRuntime == "managed")
+	return cfg != nil && cfg.DecisionEnabled && (cfg.DecisionVoiceWork || cfg.DecisionTextWork || cfg.DecisionAddressee) && (cfg.DecisionProvider == "" || cfg.DecisionProvider == "local") && (cfg.DecisionRuntime == "" || cfg.DecisionRuntime == "managed")
 }
 func decisionAssets(cfg *Config) ([]Asset, error) {
 	model, err := decider.ModelFor(cfg.DecisionLocalModel)

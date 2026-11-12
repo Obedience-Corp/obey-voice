@@ -116,6 +116,7 @@ fn priority(key: &str) -> usize {
         "decision_enabled",
         "decision_voice_work",
         "decision_text_work",
+        "decision_addressee",
         "decision_provider",
         "decision_runtime",
         "decision_local_model",
