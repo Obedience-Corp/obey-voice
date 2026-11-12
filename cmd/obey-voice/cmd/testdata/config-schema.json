@@ -2218,7 +2218,7 @@
       "allows_empty": true,
       "group": "models",
       "title": "Models folder",
-      "help": "Where downloaded voice and speech models are cached. Moving it re-downloads everything.",
+      "help": "Where every speech, voice and decision model is stored. Setting a folder here uses the models already in it and moves nothing; `obey-voice models move \u003cfolder\u003e` takes the files along.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,

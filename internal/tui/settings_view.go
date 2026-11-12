@@ -22,6 +22,7 @@ var sectionNames = [settingsSectionCount]string{
 	sectionSpeakers: "Speakers",
 	sectionAudio:    "Audio",
 	sectionMeeting:  "Meeting",
+	sectionStorage:  "Storage",
 }
 
 // groupStyle heads a list inside a section.
@@ -95,9 +96,12 @@ func (m settingsModel) sidebarWidth() int {
 	for _, name := range sectionNames {
 		longest = max(longest, lipgloss.Width(name))
 	}
-	digits := len(fmt.Sprint(int(settingsSectionCount)))
-	return 2 + digits + 1 + longest + 2
+	return 2 + 1 + 1 + longest + 2
 }
+
+// sectionDigit is the key that jumps to s: 1–9 for the first nine sections and
+// 0 for the tenth, as on a keyboard's number row.
+func sectionDigit(s settingsSection) int { return (int(s) + 1) % 10 }
 
 // contentWidth is the room a section line has.
 func (m settingsModel) contentWidth() int {
@@ -122,7 +126,7 @@ func (m settingsModel) sidebarLines(rows int) []string {
 		if s >= n {
 			continue
 		}
-		label := fmt.Sprintf("%d %s", s+1, sectionNames[s])
+		label := fmt.Sprintf("%d %s", sectionDigit(settingsSection(s)), sectionNames[s])
 		if settingsSection(s) == m.section {
 			out[i] = "  " + selectedStyle.Render(label)
 		} else {

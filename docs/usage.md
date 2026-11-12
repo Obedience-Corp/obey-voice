@@ -97,6 +97,8 @@ obey-voice doctor                         # Diagnose config, assets, and binarie
 obey-voice models status                  # Which model assets are installed vs missing
 obey-voice models clean --unused --dry-run # Review what would be deleted, and what is kept
 obey-voice models clean --unused --yes    # Delete the reviewed list (--plan when scripted)
+obey-voice models usage                   # Where models are stored and how much space they use
+obey-voice models move /Volumes/Big/models # Move every model to another folder and use it from now on
 obey-voice transcribe --request job.json --jsonl   # Transcribe a finished WAV to timed JSONL
 obey-voice transcribe capabilities --json # What this install can transcribe (read-only)
 obey-voice prompts list                   # List embedded and user prompt documents
@@ -118,6 +120,23 @@ saved default persona cannot be disabled, and ambiguity among enabled names or
 aliases remains an error. In `/personas`, select a row and press **x** to toggle
 its state. Inactive rows remain editable and show an `[inactive]` badge. Choose
 another saved default or conversation responder before disabling that persona.
+
+### Moving models to another drive
+
+Models are stored in one folder (`models_dir`, by default
+`~/.cache/obey-voice/models`). To put them on a larger drive, run
+`obey-voice models move <folder>`, or use **Settings → Storage → Move models**
+in the terminal app or **Settings → Models → Model storage** in the desktop
+app. The destination must be empty or not exist yet.
+
+The move copies the files, saves the new folder, updates any other setting
+that named a file in the old folder, and only then removes the old folder. If
+it fails or you cancel it, the old folder stays in use and the partial copy is
+removed. Stop any running conversation first.
+
+To start using a folder that already holds models, set `models_dir` instead;
+that changes the setting and moves nothing. A folder set through the
+`MODELS_DIR` environment variable cannot be moved this way.
 
 ### Transcribing a recording
 

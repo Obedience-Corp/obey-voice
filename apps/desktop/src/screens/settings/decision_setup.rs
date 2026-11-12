@@ -20,7 +20,7 @@ impl VoiceApp {
                 ui.heading("Local decision model setup");
                 ui.label("Install before enabling decision shortcuts. Setup does not enable routing or change your provider.");
                 ui.label("Save the model, compute device, and storage choices below before installing. Choose a fast drive or an existing Obey Voice model root to reuse verified files.");
-                ui.label("Storage is shared with speech models. Changing the directory does not move existing files. Runtime dependencies need additional disk space beyond the model download.");
+                ui.label("Storage is shared with speech models. Changing the directory does not move existing files; Models → Model storage does. Runtime dependencies need additional disk space beyond the model download.");
                 ui.add_enabled_ui(!self.active && !self.starting && self.task.is_none(), |ui| {
                     let specs: Vec<_> = self.schema.iter().filter(|s| matches!(s.key.as_str(), "decision_local_model" | "decision_device" | "models_dir")).cloned().collect();
                     for spec in specs {

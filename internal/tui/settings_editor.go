@@ -29,6 +29,7 @@ const (
 	editWorkerPolicy
 	editDecision
 	editDecisionKey
+	editStorageMove
 )
 
 // settingsEditor is a one-line value editor for settings a list cannot express
@@ -93,6 +94,11 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 			key := m.edit.decisionKey
 			m.cancelEdit()
 			cmd := m.commitDecisionEdit(key, value)
+			return m, cmd
+		}
+		if kind == editStorageMove {
+			m.cancelEdit()
+			cmd := m.startStorageMove(value)
 			return m, cmd
 		}
 		if kind == editSpeakerEnrollName {

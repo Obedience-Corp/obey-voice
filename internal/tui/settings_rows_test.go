@@ -101,8 +101,8 @@ func TestSettingsArrowsSwitchSections(t *testing.T) {
 	m := newSettings(&config.Config{BrainProvider: "ollama"}, brainTestProviders())
 	saved := recordSaves(&m)
 	m = pressSettingsKey(m, tea.KeyLeft)
-	if m.section != sectionMeeting {
-		t.Fatalf("← from Brain = %v, want Meeting (wrapping)", m.section)
+	if m.section != sectionStorage {
+		t.Fatalf("← from Brain = %v, want Storage (wrapping)", m.section)
 	}
 	m = pressSettingsKey(m, tea.KeyRight)
 	if m.section != sectionBrain {
