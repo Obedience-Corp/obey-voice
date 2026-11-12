@@ -146,8 +146,8 @@ func (m *personasModel) applyBrainModels(msg personaModelsMsg) {
 }
 
 // selectableModels drops entries that are not really pickable: the literal
-// "default" both claude and a degraded grok probe report is what "(default)"
-// already means, so listing it twice would be a lie about what claude offers.
+// "default" that claude and a degraded grok probe report is what "(default)"
+// already means, so it is not listed twice.
 func selectableModels(models []string) []string {
 	out := make([]string, 0, len(models))
 	seen := map[string]bool{}
@@ -367,7 +367,7 @@ func (m personasModel) stackModelLabel() string {
 }
 
 // stackModelNote explains the row when there is nothing to pick: scanning,
-// a failed scan, or a provider that reports no model list at all.
+// or a failed or empty scan.
 func (m personasModel) stackModelNote() string {
 	switch {
 	case m.brainModels.loading:
@@ -381,9 +381,6 @@ func (m personasModel) stackModelNote() string {
 	models, scanned := m.brainModelCatalog(provider)
 	if scanned && len(models) > 0 {
 		return ""
-	}
-	if strings.EqualFold(provider, "claude") {
-		return "claude reports no model list · (default) or (custom)"
 	}
 	if provider == "" || !scanned {
 		return "no models discovered · (default) or (custom)"

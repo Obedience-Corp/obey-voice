@@ -84,12 +84,16 @@ func probeProvider(ctx context.Context, cfg *config.Config, name string) Provide
 	}
 }
 
+// claudeModelAliases are the names the claude CLI resolves to its latest model
+// of each tier. The CLI has no command that lists models.
+var claudeModelAliases = []string{"fable", "opus", "sonnet", "haiku"}
+
 func discoverClaude() ProviderInfo {
 	_, err := exec.LookPath("claude")
 	return ProviderInfo{
 		Name:      "claude",
 		Available: err == nil,
-		Models:    []string{"default"},
+		Models:    append([]string{"default"}, claudeModelAliases...),
 	}
 }
 

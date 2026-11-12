@@ -116,12 +116,12 @@ func TestPersonaBrainModelList(t *testing.T) {
 			wantLabel: stackDefaultLabel,
 		},
 		{
-			name:      "claude offers default and custom only",
+			name:      "claude offers its model aliases",
 			cfg:       &config.Config{BrainProvider: "ollama"},
 			provider:  "claude",
-			scan:      map[string][]string{"claude": {"default"}, "ollama": {"llama3"}},
-			wantList:  []string{stackDefaultLabel, stackCustomLabel},
-			wantNote:  "claude reports no model list",
+			scan:      map[string][]string{"claude": {"default", "fable", "opus", "sonnet", "haiku"}, "ollama": {"llama3"}},
+			wantList:  []string{stackDefaultLabel, "fable", "opus", "sonnet", "haiku", stackCustomLabel},
+			wantNote:  "",
 			wantLabel: stackDefaultLabel,
 		},
 		{
