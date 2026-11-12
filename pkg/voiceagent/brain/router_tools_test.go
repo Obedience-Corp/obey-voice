@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/ollama/ollama/api"
 )
 
@@ -250,4 +251,25 @@ func routerToolNames(tools api.Tools) []string {
 		names[i] = tool.Function.Name
 	}
 	return names
+}
+
+func TestRouteToolReportsSucceededOutcome(t *testing.T) {
+	t.Parallel()
+	var got ToolResult
+	sess := &toolSession{routerPolicy: RouterToolsRouteOnly, onEnd: func(r ToolResult) { got = r }}
+	result := sess.execute(context.Background(), ".", api.ToolCall{
+		Function: api.ToolCallFunction{
+			Name:      "route",
+			Arguments: mustArgs(map[string]any{"kind": "chat"}),
+		},
+	})
+	if !strings.Contains(result, `"route":"chat"`) {
+		t.Fatalf("execute route = %q", result)
+	}
+	if got.Outcome == nil || got.Outcome.Status != events.ToolOutcomeSucceeded {
+		t.Fatalf("route outcome = %+v, want succeeded", got.Outcome)
+	}
+	if got.Err != "" {
+		t.Fatalf("route Err = %q, want empty", got.Err)
+	}
 }

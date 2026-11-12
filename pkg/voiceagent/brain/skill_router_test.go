@@ -2,13 +2,17 @@ package brain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ollama/ollama/api"
 
@@ -56,7 +60,7 @@ func TestSemanticSkillRouterMatchesPromptAndPreservesProgressiveDisclosure(t *te
 			"how are you":                         {-1, 0},
 		},
 	}
-	router, err := newSemanticSkillRouter(context.Background(), embedder, "embed", 0.55, routingCatalog())
+	router, err := newSemanticSkillRouter(context.Background(), embedder, "embed", 0.55, routingCatalog(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +95,7 @@ func TestRouteSkillContextReportsAutomaticActivation(t *testing.T) {
 		catalog: [][]float32{{1, 0}, {0, 1}, {0, 1}},
 		queries: map[string][]float32{"navigate": {1, 0}},
 	}
-	router, err := newSemanticSkillRouter(context.Background(), embedder, "embed", 0.55, routingCatalog())
+	router, err := newSemanticSkillRouter(context.Background(), embedder, "embed", 0.55, routingCatalog(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +125,7 @@ func TestRouteSkillContextReportsAutomaticActivation(t *testing.T) {
 
 func TestSemanticSkillRouterFailsOpenWhenUnavailable(t *testing.T) {
 	t.Parallel()
-	_, err := newSemanticSkillRouter(context.Background(), &routingEmbedder{err: fmt.Errorf("model missing")}, "embed", 0.55, routingCatalog())
+	_, err := newSemanticSkillRouter(context.Background(), &routingEmbedder{err: fmt.Errorf("model missing")}, "embed", 0.55, routingCatalog(), nil)
 	if err == nil || !strings.Contains(err.Error(), "model missing") {
 		t.Fatalf("error = %v", err)
 	}
@@ -162,7 +166,7 @@ func TestSemanticSkillRouterWithOllama(t *testing.T) {
 	if model == "" {
 		model = "nomic-embed-text"
 	}
-	router, err := newSemanticSkillRouter(context.Background(), api.NewClient(base, http.DefaultClient), model, 0.55, routingCatalog())
+	router, err := newSemanticSkillRouter(context.Background(), api.NewClient(base, http.DefaultClient), model, 0.55, routingCatalog(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,5 +176,53 @@ func TestSemanticSkillRouterWithOllama(t *testing.T) {
 	}
 	if len(matched) == 0 || matched[0].Name != "campaign-navigation" {
 		t.Fatalf("matches = %#v, want campaign-navigation first", matched)
+	}
+}
+
+func TestSkillRouterEmbedRequestsCarryKeepAlive(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		bodies = append(bodies, body)
+		mu.Unlock()
+		n := 1
+		if inputs, ok := body["input"].([]any); ok {
+			n = len(inputs)
+		}
+		vectors := make([][]float32, n)
+		for i := range vectors {
+			vectors[i] = []float32{1}
+		}
+		_ = json.NewEncoder(w).Encode(api.EmbedResponse{Embeddings: vectors})
+	}))
+	defer srv.Close()
+	base, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := api.NewClient(base, srv.Client())
+
+	router, err := newSemanticSkillRouter(context.Background(), client, "embed", 0.55, routingCatalog(), &api.Duration{Duration: 30 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := router.Match(context.Background(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 2 {
+		t.Fatalf("embed requests = %d, want 2", len(bodies))
+	}
+	for i, body := range bodies {
+		if got := body["keep_alive"]; got != "30m0s" {
+			t.Fatalf("request %d keep_alive = %v, want 30m0s", i, got)
+		}
 	}
 }
