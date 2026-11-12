@@ -7,7 +7,10 @@ TTS provider/voice all belong to the persona rather than to global config. TUI
 **Settings** writes global defaults only; to change one agent, edit it under
 **Personas** (or its `personas/<id>/persona.yaml`). Any field a persona leaves
 empty inherits the app default — an empty `brain:` uses the app-level
-`brain_provider`/model, and an empty `tts:` uses the app-level TTS keys.
+`brain_provider`/model, and an empty `tts:` uses the app-level TTS keys. A
+`persona.yaml` copied from someone else chooses its own provider and model, so
+check its `brain:` first: it can send the conversation to a hosted provider or
+pick a larger, costlier model.
 
 Profiles also accept an optional `audio` section for native audio implementation
 work. Existing profiles omit it and keep Standard behavior. Native activation

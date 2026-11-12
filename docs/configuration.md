@@ -162,7 +162,7 @@ when you select it.
 | `stt_numbers` | `false` | | Writes spoken numbers as digits where a reader would: `thirty five` → 35, `five percent` → 5%, `twenty thousand dollars` → $20,000, `twenty twenty two` → 2022. Small counts stay words |
 | `stt_postprocess_enabled` | `false` | | Runs a language model over each final transcript after the deterministic corrections. See [Post-processing model](#post-processing-model) |
 | `stt_postprocess_provider` | `ollama` | | Provider for that model: any registered brain provider, independent of `brain_provider` |
-| `stt_postprocess_model` | *(empty)* | | Model on that provider. Empty uses the provider's configured model (`ollama_model`, `grok_model`, `claude_model`, `cursor_model`); a small local model such as `qwen3.5:0.8b` answers fastest |
+| `stt_postprocess_model` | *(empty)* | | Model on that provider. Empty uses the provider's configured model (`ollama_model`, `grok_model`, `claude_model`, `cursor_model`); a small local model such as `qwen3.5:0.8b` answers fastest. With `stt_postprocess_provider: claude`, an empty value runs every final transcript on `claude_model`, so set this to pin a cheaper Claude model |
 | `stt_postprocess_mode` | `patch` | | `patch` confirms near-miss names the custom words found, a few tokens per call and no call when there is nothing to ask; `rewrite` cleans the whole line under fidelity guards |
 | `stt_postprocess_timeout_ms` | `1000` | | Deadline per call; on timeout the transcript goes on without the model and the timeout is counted |
 | `stt_postprocess_keep_alive` | *(empty)* | | Ollama residency for this model, e.g. `10m` or `-1`; empty follows `ollama_keep_alive` |
