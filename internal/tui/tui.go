@@ -140,9 +140,13 @@ type App struct {
 	menuDone     chan struct{}
 }
 
+// discoverProviders is the startup provider scan. It starts every installed
+// provider CLI, so this package's tests replace it.
+var discoverProviders = discovery.DiscoverProviders
+
 // NewApp creates the TUI application.
 func NewApp(cfg *config.Config) App {
-	return newApp(cfg, discovery.DiscoverProviders(cfg), session.List())
+	return newApp(cfg, discoverProviders(cfg), session.List())
 }
 
 // newApp initializes the UI from supplied discovery and session snapshots.

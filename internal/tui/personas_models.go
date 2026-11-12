@@ -17,9 +17,10 @@ import (
 // name) is still reachable.
 const stackCustomLabel = "(custom)"
 
-// personaModelsTimeout caps a whole form-open scan. discovery probes each
-// provider with its own 3s budget, so the ceiling covers a slow grok CLI plus a
-// slow ollama socket without leaving the row spinning.
+// personaModelsTimeout caps a whole form-open scan. discovery probes the
+// providers one after another, each within its own 3s budget, so the ceiling
+// covers two slow probes (a CLI slow to list its models, an ollama socket)
+// without leaving the row spinning.
 const personaModelsTimeout = 8 * time.Second
 
 // personaModelPicker holds the Model row's discovered catalog and scan state.

@@ -192,8 +192,11 @@ with `m`.
 
 The fixture does not use the installed user configuration, credentials, audio,
 or inference. Its Ollama endpoint is deliberately unavailable; the model editor
-therefore shows the saved model alongside the discovery status. Colors are
-forced in both VHS and the application process.
+therefore shows the saved model alongside the discovery status. Claude's model
+list comes from the installed `claude` CLI, which the fixture leaves on `PATH`:
+recording asks it for its models at launch and each time the editor opens,
+without a prompt, and what it lists under the fixture's disposable home depends
+on that CLI. Colors are forced in both VHS and the application process.
 
 ![Persona model manager](persona-model-view.gif)
 

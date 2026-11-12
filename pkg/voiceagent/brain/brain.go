@@ -170,14 +170,41 @@ type TurnToolCall struct {
 	Arguments string `json:"arguments,omitempty"`
 }
 
-// New creates a Brain instance.
-func New(cfg *config.Config) (*Brain, error) {
+// newClaudeClient finds the claude CLI the way every Claude brain does.
+func newClaudeClient() (*claude.ClaudeClient, error) {
 	binPath, err := exec.LookPath("claude")
 	if err != nil {
 		return nil, fmt.Errorf("claude CLI not found on PATH: %w", err)
 	}
+	return claude.NewClient(binPath), nil
+}
 
-	client := claude.NewClient(binPath)
+// ClaudeModels returns the model values the installed claude CLI offers, in
+// its order and including its own "default" entry. It asks the same binary
+// from the same working directory a Claude brain runs in, so project settings
+// such as availableModels apply. No prompt is sent and no model is called.
+func ClaudeModels(ctx context.Context, cfg *config.Config) ([]string, error) {
+	client, err := newClaudeClient()
+	if err != nil {
+		return nil, err
+	}
+	models, err := client.SupportedModels(ctx, &claude.RunOptions{WorkingDirectory: config.WorkDirFrom(cfg)})
+	if err != nil {
+		return nil, err
+	}
+	values := make([]string, 0, len(models))
+	for _, m := range models {
+		values = append(values, m.Value)
+	}
+	return values, nil
+}
+
+// New creates a Brain instance.
+func New(cfg *config.Config) (*Brain, error) {
+	client, err := newClaudeClient()
+	if err != nil {
+		return nil, err
+	}
 
 	systemPrompt, err := personaSystemPrompt(cfg)
 	if err != nil {
