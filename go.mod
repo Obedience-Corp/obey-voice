@@ -18,7 +18,7 @@ require (
 	github.com/gen2brain/malgo v0.11.25
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/k2-fsa/sherpa-onnx-go v1.13.8
-	github.com/lancekrogers/claude-code-go v1.4.0
+	github.com/lancekrogers/claude-code-go v1.6.0
 	github.com/lancekrogers/grok-go-sdk v0.2.1
 	github.com/mattn/go-isatty v0.0.24
 	github.com/muesli/termenv v0.16.0
