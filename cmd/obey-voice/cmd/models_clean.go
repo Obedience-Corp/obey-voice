@@ -389,18 +389,7 @@ func printCleanKept(out io.Writer, protected []config.ProtectedPath) {
 }
 
 // formatBytes renders a byte count with a binary unit suffix.
-func formatBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
-}
+func formatBytes(n int64) string { return config.FormatBytes(n) }
 
 func init() {
 	modelsCleanCmd.Flags().BoolVar(&modelsCleanUnused, "unused", false, "Select assets not required by the current configuration")

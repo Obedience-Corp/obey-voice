@@ -108,6 +108,84 @@ fn short_window_scrolls_past_catalog_to_all_route_fields() {
     assert_eq!(app.values, saved, "scrolling must not change saved choices");
 }
 
+#[test]
+fn models_section_shows_storage_folder_and_move_controls() {
+    // Isolate demo mode from other tests and never connect to personal config.
+    if std::env::var_os("VOICE_SETTINGS_STORAGE_TEST").is_none() {
+        assert!(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "screens::settings::tests::models_section_shows_storage_folder_and_move_controls",
+                ])
+                .env("VOICE_SETTINGS_STORAGE_TEST", "1")
+                .env("OBEY_VOICE_AGENT_DEMO", "1")
+                .status()
+                .unwrap()
+                .success()
+        );
+        return;
+    }
+    let cc = eframe::CreationContext::_new_kittest(Default::default());
+    let mut app = VoiceApp::new(&cc);
+    app.screen = Screen::Settings;
+    app.group = "models".into();
+    app.schema = vec![KeySpec {
+        key: "models_dir".into(),
+        title: "Models folder".into(),
+        kind: "string".into(),
+        group: "models".into(),
+        editable: true,
+        ..Default::default()
+    }];
+    app.values = json!({"models_dir":{"value":"/models/here","source":"config"}});
+    let viewport = Rect::from_min_size(Default::default(), Vec2::new(900., 900.));
+    let render = |app: &mut VoiceApp| {
+        let mut seen = HashSet::new();
+        for frame in 0..4 {
+            let mut output = cc.egui_ctx.run_ui(
+                RawInput {
+                    screen_rect: Some(viewport),
+                    time: Some(frame as f64 / 30.),
+                    ..Default::default()
+                },
+                |ui| app.settings(ui),
+            );
+            output.textures_delta.clear();
+            for clipped in output.shapes {
+                visible_text(
+                    &clipped.shape,
+                    clipped.clip_rect.intersect(viewport),
+                    &mut seen,
+                );
+            }
+        }
+        seen
+    };
+    let seen = render(&mut app);
+    for label in [
+        "Model storage",
+        "/models/here",
+        "Measure size",
+        "Move models to",
+        "Move models…",
+        "Models folder",
+    ] {
+        assert!(seen.contains(label), "storage control not shown: {label}");
+    }
+    assert!(
+        !seen.iter().any(|text| text.contains("MODELS_DIR")),
+        "the environment notice must only show for an environment-set folder"
+    );
+    app.values["models_dir"]["source"] = json!("env");
+    assert!(
+        render(&mut app)
+            .iter()
+            .any(|text| text.contains("MODELS_DIR environment variable")),
+        "an environment-set folder must say why it cannot be moved"
+    );
+}
+
 fn visible_text(shape: &Shape, clip: Rect, seen: &mut HashSet<String>) {
     match shape {
         Shape::Vec(shapes) => {
