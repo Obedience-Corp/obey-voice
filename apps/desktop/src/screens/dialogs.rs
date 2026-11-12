@@ -108,6 +108,12 @@ impl VoiceApp {
                                 );
                             } else if args[0] == "@enroll_remove" {
                                 self.action("enroll_remove", &args[1], false);
+                            } else if args[0] == super::settings::storage::MOVE_ACTION {
+                                self.models_move_to.clear();
+                                self.start_task(
+                                    "Move models",
+                                    super::settings::storage::move_arguments(&args[1]),
+                                );
                             } else if args[0] == "@workers_stop" {
                                 self.action("workers_stop", "", false);
                             } else {

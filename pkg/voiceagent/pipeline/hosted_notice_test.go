@@ -35,64 +35,73 @@ func (b *streamClock) ThinkStream(_ context.Context, input string, _ brain.Strea
 	return &brain.Stream{Chunks: out, Done: done}, nil
 }
 
-func TestHostedNoticeIsShownAndSpokenBeforeTheRequestAndNeverSent(t *testing.T) {
+// Every notice, the first and one that widens the share, is an info line
+// before the request in both modes, and is never synthesized or sent.
+func TestHostedNoticeIsShownBeforeTheRequestButNeverSpokenOrSent(t *testing.T) {
 	const notice = "Mira runs on Claude, a hosted service."
-	b := &streamClock{}
-	tts := &fakeTTS{}
-	player := newFakePlayer(time.Millisecond)
-	defer player.Close()
-	bus := events.NewBus()
-	var infos, replies []string
-	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
-	events.Subscribe(bus, func(e events.ResponseReady) { replies = append(replies, e.Response) })
-	p := &Pipeline{Brain: b, TTS: tts, Player: player, Events: bus}
-	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
-		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", Hosted: true}}, nil
-	}
-	asked := 0
-	p.HostedNotice = func(events.ResponseEnvelope) (HostedNotice, bool) {
-		asked++
-		return HostedNotice{Text: notice, Spoken: asked == 1}, asked <= 2
-	}
+	for _, voice := range []bool{true, false} {
+		t.Run(map[bool]string{true: "voice", false: "text"}[voice], func(t *testing.T) {
+			b := &streamClock{}
+			tts := &fakeTTS{}
+			player := newFakePlayer(time.Millisecond)
+			defer player.Close()
+			bus := events.NewBus()
+			var infos, replies []string
+			var requestsAtNotice []int
+			events.Subscribe(bus, func(e events.Info) {
+				infos = append(infos, e.Message)
+				b.mu.Lock()
+				requestsAtNotice = append(requestsAtNotice, len(b.at))
+				b.mu.Unlock()
+			})
+			events.Subscribe(bus, func(e events.ResponseReady) { replies = append(replies, e.Response) })
+			p := &Pipeline{Brain: b, TTS: tts, Player: player, Events: bus}
+			p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+				return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", Hosted: true}}, nil
+			}
+			p.HostedNotice = func(events.ResponseEnvelope) (HostedNotice, bool) {
+				return HostedNotice{Text: notice}, true
+			}
+			say := func(input string) error {
+				if !voice {
+					return p.RunTurnTextMode(t.Context(), input)
+				}
+				p.STT = &fakeSTT{text: input}
+				_, err := p.RunTurn(t.Context())
+				return err
+			}
 
-	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
-		t.Fatal(err)
-	}
-	if len(infos) != 1 || infos[0] != notice {
-		t.Fatalf("info lines = %q", infos)
-	}
-	spoken := tts.Texts()
-	if len(spoken) < 1 || spoken[0] != notice {
-		t.Fatalf("spoken = %q, want the notice first", spoken)
-	}
-	tts.mu.Lock()
-	first := tts.callTimes[0]
-	tts.mu.Unlock()
-	if len(b.at) != 1 || !first.Before(b.at[0]) {
-		t.Fatalf("the notice was not spoken before the request (stream calls %d)", len(b.at))
-	}
-	for _, input := range b.inputs {
-		if strings.Contains(input, "hosted service") {
-			t.Fatalf("the notice reached the model: %q", input)
-		}
-	}
-	if len(replies) != 1 || replies[0] != "ok" {
-		t.Fatalf("the notice was recorded as part of the reply: %q", replies)
-	}
-	for _, turn := range b.history {
-		if strings.Contains(turn.Content, "hosted service") {
-			t.Fatalf("the notice entered history: %+v", turn)
-		}
-	}
-
-	if err := p.RunTurnTextMode(t.Context(), "again"); err != nil {
-		t.Fatal(err)
-	}
-	if len(infos) != 2 {
-		t.Fatalf("a second notice was shown with its own info line only: %q", infos)
-	}
-	if got := tts.Texts(); strings.Count(strings.Join(got, "|"), notice) != 1 {
-		t.Fatalf("a notice marked as unspoken was spoken: %q", got)
+			for _, input := range []string{"hello", "and now"} {
+				if err := say(input); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !slices.Equal(infos, []string{notice, notice}) || !slices.Equal(requestsAtNotice, []int{0, 1}) || len(b.at) != 2 {
+				t.Fatalf("info lines %q at requests %v of %d; each notice must be shown before its request", infos, requestsAtNotice, len(b.at))
+			}
+			spoken := tts.Texts()
+			if !slices.Contains(spoken, "ok") {
+				t.Fatalf("spoken = %q, want the reply spoken", spoken)
+			}
+			for _, text := range spoken {
+				if strings.Contains(text, "hosted service") {
+					t.Fatalf("the notice was spoken: %q", spoken)
+				}
+			}
+			for _, input := range b.inputs {
+				if strings.Contains(input, "hosted service") {
+					t.Fatalf("the notice reached the model: %q", input)
+				}
+			}
+			if !slices.Equal(replies, []string{"ok", "ok"}) {
+				t.Fatalf("the notice was recorded as part of the reply: %q", replies)
+			}
+			for _, turn := range b.history {
+				if strings.Contains(turn.Content, "hosted service") {
+					t.Fatalf("the notice entered history: %+v", turn)
+				}
+			}
+		})
 	}
 }
 
@@ -159,7 +168,10 @@ func TestCompactionAnnouncesAHostedLivePersonaFirst(t *testing.T) {
 			requestsAtNotice = len(b.thinkInputs)
 		}
 	})
-	p := &Pipeline{Brain: b, Events: bus, CompactPrompt: "Summarize."}
+	tts := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{Brain: b, TTS: tts, Player: player, Events: bus, CompactPrompt: "Summarize."}
 	ctx, cancel := context.WithCancel(t.Context())
 	delivered := 0
 	p.LiveHostedNotice = func() (HostedNotice, bool) {
@@ -180,6 +192,9 @@ func TestCompactionAnnouncesAHostedLivePersonaFirst(t *testing.T) {
 	}
 	if len(infos) != 2 || requestsAtNotice != 0 || len(b.thinkInputs) != 1 || delivered != 1 {
 		t.Fatalf("infos %q, requests at notice %d, requests %d, delivered %d", infos, requestsAtNotice, len(b.thinkInputs), delivered)
+	}
+	if spoken := tts.Texts(); slices.Contains(spoken, notice) {
+		t.Fatalf("the notice was spoken before compaction: %q", spoken)
 	}
 }
 

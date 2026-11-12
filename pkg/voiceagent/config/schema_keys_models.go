@@ -187,7 +187,7 @@ func modelKeys() []KeySpec {
 		{
 			Key: "models_dir", Type: TypeString, Default: DefaultModelsDir(),
 			Group: GroupModels, Title: "Models folder",
-			Help: "Where downloaded voice and speech models are cached. Moving it re-downloads everything.",
+			Help: "Where every speech, voice and decision model is stored. Setting a folder here uses the models already in it and moves nothing; `obey-voice models move <folder>` takes the files along.",
 		},
 		{
 			Key: "qwen_tts_binary", Type: TypeString, Default: "",

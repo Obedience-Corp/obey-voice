@@ -36,6 +36,7 @@ const (
 	sectionSpeakers
 	sectionAudio
 	sectionMeeting
+	sectionStorage
 	settingsSectionCount
 )
 
@@ -80,6 +81,10 @@ type settingsModel struct {
 	voiceLocale   string
 	speechSetup   speechSetup
 	decisionSetup decisionSetup
+	storage       storageState
+	// modelsInUse is set by the App when Settings is opened over a live
+	// conversation or meeting, which has model files open.
+	modelsInUse bool
 
 	// Meeting route discovery (camp list + config).
 	routeDests        []meeting.Destination
@@ -547,8 +552,8 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 			cmd = m.switchSettingsSection(1)
 		case "left", "h", "shift+tab", "[":
 			cmd = m.switchSettingsSection(-1)
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			cmd = m.gotoSection(settingsSection(key[0] - '1'))
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
+			cmd = m.gotoSection(settingsSection((key[0] - '1' + 10) % 10))
 		case "up", "k":
 			// Moving on is reading the message; the next line's detail
 			// must not stay hidden behind it.
@@ -600,6 +605,8 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		m.applyVoiceCatalog(msg)
 	case decisionSetupProgressMsg, decisionSetupDoneMsg:
 		return m, m.applyDecisionSetup(msg)
+	case storageUsageMsg, storageMoveProgressMsg, storageMoveDoneMsg:
+		return m, m.applyStorage(msg)
 	case speechSetupProgressMsg, speechSetupDoneMsg:
 		cmd := m.applySpeechSetup(msg)
 		return m, cmd

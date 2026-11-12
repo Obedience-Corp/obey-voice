@@ -363,6 +363,8 @@ impl VoiceApp {
             }
             Purpose::Task => {
                 self.status = "Completed".into();
+                // A task such as a model move can change saved settings.
+                self.command(&["config", "get", "--json"], Purpose::SettingsValues);
                 push_log(
                     &mut self.logs,
                     serde_json::to_string_pretty(&v).unwrap_or_default(),

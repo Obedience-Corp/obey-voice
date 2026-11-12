@@ -130,6 +130,8 @@ func (m settingsModel) sectionRows() []settingRow {
 		return append(m.inputRows(), m.outputRows()...)
 	case sectionMeeting:
 		return m.meetingRows()
+	case sectionStorage:
+		return m.storageRows()
 	}
 	return nil
 }

@@ -113,7 +113,7 @@ func (m *settingsModel) applyDecisionSetup(msg tea.Msg) tea.Cmd {
 
 func (m settingsModel) decisionSetupRows() []settingRow {
 	busy := m.decisionSetup.running
-	rows := []settingRow{{key: "decision_directory", name: "Model storage / existing models", kind: rowText, value: config.ModelsDirFrom(m.cfg), help: "Shared model root. Choose a fast drive or an existing Obey Voice model root. Existing files are verified and reused; changing this path does not move files.", disabled: busy, run: func(m *settingsModel) tea.Cmd {
+	rows := []settingRow{{key: "decision_directory", name: "Model storage / existing models", kind: rowText, value: config.ModelsDirFrom(m.cfg), help: "Shared model root. Choose a fast drive or an existing Obey Voice model root. Existing files are verified and reused; changing this path does not move files (Storage → Move models does).", disabled: busy, run: func(m *settingsModel) tea.Cmd {
 		cmd := m.beginEdit(editDecision, "Model storage directory", config.ModelsDirFrom(m.cfg))
 		m.edit.decisionKey = "models_dir"
 		return cmd

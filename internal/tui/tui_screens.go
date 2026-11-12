@@ -164,6 +164,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		a.settings.liveSeeder = a.settingsLiveSeeder()
 		a.settings.onPlaybackVolume = a.applyPlaybackVolume
 		a.settings.onWorkersEnabled = a.applyWorkersEnabled
+		a.settings.modelsInUse = (a.runtime != nil && a.runtime.Pipeline != nil) || a.meetingRT != nil
 		if a.runtime != nil && a.runtime.Pipeline != nil {
 			a.settings.onDecisionSettings = a.runtime.Pipeline.ConfigureDecisions
 			a.settings.decisionStatus = a.runtime.Pipeline.DecisionStatus
