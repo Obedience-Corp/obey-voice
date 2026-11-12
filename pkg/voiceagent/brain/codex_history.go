@@ -16,10 +16,23 @@ func (c *CodexBrain) FreezePersonaPrompt() string {
 	return shortPromptHash(c.personaPrompt)
 }
 func (c *CodexBrain) SetSpeakerNames(names SpeakerNames) { c.speakerNames = names }
-func (c *CodexBrain) History() []Turn                    { return deepCopyTurns(c.canonical) }
-func (c *CodexBrain) CanonicalHistory() []Turn           { return c.History() }
-func (c *CodexBrain) ContextHistory() []Turn             { return deepCopyTurns(c.working) }
+func (c *CodexBrain) History() []Turn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return deepCopyTurns(c.canonical)
+}
+func (c *CodexBrain) CanonicalHistory() []Turn { return c.History() }
+func (c *CodexBrain) ContextHistory() []Turn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return deepCopyTurns(c.working)
+}
 func (c *CodexBrain) ClearHistory() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.clearHistory()
+}
+func (c *CodexBrain) clearHistory() {
 	c.canonical = nil
 	c.working = nil
 	c.dropThread()
@@ -27,14 +40,27 @@ func (c *CodexBrain) ClearHistory() {
 }
 
 // dropThread gives up the native thread; the next request starts a new one.
+// The caller holds c.mu.
 func (c *CodexBrain) dropThread() {
 	c.sessionID, c.unsent = "", 0
+}
+
+// abandonThread is dropThread for a caller not holding c.mu.
+func (c *CodexBrain) abandonThread() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dropThread()
 }
 
 func (*CodexBrain) parksSession() {}
 
 func (c *CodexBrain) LoadHistory(turns []Turn) {
-	c.ClearHistory()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loadHistory(turns)
+}
+func (c *CodexBrain) loadHistory(turns []Turn) {
+	c.clearHistory()
 	c.canonical = deepCopyTurns(turns)
 	c.working = deepCopyTurns(turns)
 	c.trimWorking()
@@ -44,6 +70,8 @@ func (c *CodexBrain) LoadHistory(turns []Turn) {
 // continuity metadata. An imported projection always invalidates the native
 // thread, whose cached history can no longer be assumed to match.
 func (c *CodexBrain) ImportHistory(turns []Turn) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.canonical = deepCopyTurns(turns)
 	c.working = deepCopyTurns(turns)
 	c.dropThread()
@@ -51,10 +79,12 @@ func (c *CodexBrain) ImportHistory(turns []Turn) error {
 	return nil
 }
 func (c *CodexBrain) ContinuitySnapshot() ContinuitySnapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	s := c.snapshot
 	s.Archive = slices.Clone(s.Archive)
-	s.Canonical = c.History()
-	s.Working = c.ContextHistory()
+	s.Canonical = deepCopyTurns(c.canonical)
+	s.Working = deepCopyTurns(c.working)
 	return s
 }
 
@@ -63,8 +93,10 @@ func (c *CodexBrain) ContinuitySnapshot() ContinuitySnapshot {
 // reply or brings a parked persona back; its next request sends those lines.
 // Any other view starts a new thread.
 func (c *CodexBrain) ImportContinuity(s ContinuitySnapshot) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	thread, tools, unsent, held := c.sessionID, c.sessionTools, c.unsent, c.working
-	c.LoadHistory(s.Canonical)
+	c.loadHistory(s.Canonical)
 	c.snapshot = s
 	c.snapshot.Archive = slices.Clone(s.Archive)
 	if s.Working != nil {
@@ -98,6 +130,8 @@ func (c *CodexBrain) appendTurn(t Turn) {
 // ReseedContinuity changes only the model view. Compaction must not replace
 // the transcript that is persisted or transferred to another persona.
 func (c *CodexBrain) ReseedContinuity(turns []Turn) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.working = deepCopyTurns(turns)
 	c.dropThread()
 	c.trimWorking()
@@ -138,6 +172,8 @@ func (c *CodexBrain) AppendAssistantResponseWithIdentity(text string, i TurnIden
 	if strings.TrimSpace(text) == "" {
 		return fmt.Errorf("codex: empty assistant response")
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	// The live thread is sent this line with its next request.
 	if c.sessionID != "" {
 		c.unsent++
@@ -146,6 +182,8 @@ func (c *CodexBrain) AppendAssistantResponseWithIdentity(text string, i TurnIden
 	return nil
 }
 func (c *CodexBrain) SessionInfo() SessionState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return SessionState{Kind: SessionKindHarness, ID: c.sessionID, Turns: len(c.canonical) / 2}
 }
 
