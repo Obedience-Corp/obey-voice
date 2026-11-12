@@ -83,6 +83,7 @@ when you select it.
 | `ollama_model` | empty | `OLLAMA_MODEL` | Ollama model name. Live worker routing requires a model with tool support; a model that rejects routing tools reports a compatibility error instead of silently answering without them. |
 | `cursor_model` | empty | `CURSOR_MODEL` | Model `cursor-agent` is asked for. Empty uses the CLI's own default. |
 | `grok_model` | empty | `GROK_MODEL` | Model the Grok CLI is asked for. Empty uses the CLI's own default. |
+| `claude_model` | empty | `CLAUDE_MODEL` | Model the Claude CLI is asked for (`--model`), such as `sonnet`, `opus` or `haiku`. Empty uses the CLI's own default. A persona's brain model on Claude lands here. |
 | `ollama_embedding_model` | `nomic-embed-text` | `OLLAMA_EMBEDDING_MODEL` | Ollama embedding model used to match each user prompt to relevant Agent Skills. Set empty to disable semantic routing and retain model-driven `read_skill` fallback. |
 | `skills_similarity_threshold` | `0.55` | `SKILLS_SIMILARITY_THRESHOLD` | Minimum cosine similarity for skill candidates; applicability is confirmed before activation. Tune when using an embedding model with a different score distribution. |
 | `ollama_host` | `http://localhost:11434` | `OLLAMA_HOST` | Ollama server URL |
@@ -161,7 +162,7 @@ when you select it.
 | `stt_numbers` | `false` | | Writes spoken numbers as digits where a reader would: `thirty five` → 35, `five percent` → 5%, `twenty thousand dollars` → $20,000, `twenty twenty two` → 2022. Small counts stay words |
 | `stt_postprocess_enabled` | `false` | | Runs a language model over each final transcript after the deterministic corrections. See [Post-processing model](#post-processing-model) |
 | `stt_postprocess_provider` | `ollama` | | Provider for that model: any registered brain provider, independent of `brain_provider` |
-| `stt_postprocess_model` | *(empty)* | | Model on that provider. Empty uses the provider's configured model (`ollama_model`, `grok_model`, `cursor_model`); a small local model such as `qwen3.5:0.8b` answers fastest |
+| `stt_postprocess_model` | *(empty)* | | Model on that provider. Empty uses the provider's configured model (`ollama_model`, `grok_model`, `claude_model`, `cursor_model`); a small local model such as `qwen3.5:0.8b` answers fastest |
 | `stt_postprocess_mode` | `patch` | | `patch` confirms near-miss names the custom words found, a few tokens per call and no call when there is nothing to ask; `rewrite` cleans the whole line under fidelity guards |
 | `stt_postprocess_timeout_ms` | `1000` | | Deadline per call; on timeout the transcript goes on without the model and the timeout is counted |
 | `stt_postprocess_keep_alive` | *(empty)* | | Ollama residency for this model, e.g. `10m` or `-1`; empty follows `ollama_keep_alive` |

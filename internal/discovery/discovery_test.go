@@ -26,3 +26,11 @@ func TestDiscoverProvidersIncludesAllBackends(t *testing.T) {
 		}
 	}
 }
+
+func TestClaudeDiscoveryListsTheConfiguredModel(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	info := probeProvider(t.Context(), &config.Config{ClaudeModel: "haiku"}, "claude")
+	if len(info.Models) != 2 || info.Models[0] != "default" || info.Models[1] != "haiku" {
+		t.Fatalf("models = %v", info.Models)
+	}
+}

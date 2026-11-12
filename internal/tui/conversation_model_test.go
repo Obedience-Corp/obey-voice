@@ -21,6 +21,7 @@ func TestConversationHeaderNamesConfiguredBrain(t *testing.T) {
 		{&config.Config{BrainProvider: "cursor", CursorModel: "composer-2.5"}, "brain cursor · composer-2.5"},
 		{&config.Config{BrainProvider: "codex", CodexModel: "gpt-5.4"}, "brain codex · gpt-5.4"},
 		{&config.Config{BrainProvider: "claude", OllamaModel: "unused"}, "brain claude · default"},
+		{&config.Config{BrainProvider: "claude", ClaudeModel: "haiku"}, "brain claude · haiku"},
 	} {
 		t.Run(tt.cfg.BrainProvider, func(t *testing.T) {
 			m := sizedConversation(t, 120, 24)

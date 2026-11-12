@@ -149,3 +149,37 @@ func TestClaudeLiveRunOptionsDoNotUseWorkerModel(t *testing.T) {
 		t.Fatalf("live model=%q", got)
 	}
 }
+
+func TestClaudeRunOptionsAskForTheConfiguredModel(t *testing.T) {
+	for _, tc := range []struct{ model, want string }{
+		{"haiku", "haiku"},
+		{" opus ", "opus"},
+		{"", ""},
+		{"default", ""},
+	} {
+		b := &Brain{cfg: &config.Config{BrainProvider: "claude", ClaudeModel: tc.model}}
+		opts := b.runOptions(claude.StreamJSONOutput, false)
+		if opts.Model != tc.want {
+			t.Fatalf("claude_model %q: Model = %q, want %q", tc.model, opts.Model, tc.want)
+		}
+		args := claude.BuildArgs("hello", opts)
+		i := slices.Index(args, "--model")
+		if tc.want == "" && i >= 0 {
+			t.Fatalf("claude_model %q: args = %#v, want no --model", tc.model, args)
+		}
+		if tc.want != "" && (i < 0 || i+1 >= len(args) || args[i+1] != tc.want) {
+			t.Fatalf("claude_model %q: args = %#v, want --model %s", tc.model, args, tc.want)
+		}
+	}
+}
+
+func TestClaudeWorkerModelFallsBackToTheLiveClaudeModel(t *testing.T) {
+	live := &config.Config{BrainProvider: "claude", ClaudeModel: "haiku", VoiceWorkerProvider: "claude"}
+	if got := (&Brain{cfg: config.WorkerBrainConfig(live)}).runOptions(claude.JSONOutput, true).Model; got != "haiku" {
+		t.Fatalf("unpinned worker model = %q, want the live haiku", got)
+	}
+	live.VoiceWorkerModel = "opus"
+	if got := (&Brain{cfg: config.WorkerBrainConfig(live)}).runOptions(claude.JSONOutput, true).Model; got != "opus" {
+		t.Fatalf("pinned worker model = %q, want opus", got)
+	}
+}

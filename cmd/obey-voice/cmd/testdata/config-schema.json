@@ -713,6 +713,20 @@
       "editable": true
     },
     {
+      "key": "claude_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Claude model",
+      "help": "The model the Claude CLI is asked for, such as sonnet, opus or haiku. Empty uses the CLI's own default.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "CLAUDE_MODEL",
+      "editable": true
+    },
+    {
       "key": "claude_session_warn_tokens",
       "type": "int",
       "default": 60000,

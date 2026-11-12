@@ -29,6 +29,8 @@ var personaRoutes = []struct {
 		func(c *config.Config, v string) { c.OllamaModel = v }},
 	{"grok_model", func(c *config.Config) string { return c.GrokModel },
 		func(c *config.Config, v string) { c.GrokModel = v }},
+	{"claude_model", func(c *config.Config) string { return c.ClaudeModel },
+		func(c *config.Config, v string) { c.ClaudeModel = v }},
 	{"obey_model", func(c *config.Config) string { return c.ObeyModel }, func(c *config.Config, v string) { c.ObeyModel = v }},
 	{"codex_model", func(c *config.Config) string { return c.CodexModel },
 		func(c *config.Config, v string) { c.CodexModel = v }},

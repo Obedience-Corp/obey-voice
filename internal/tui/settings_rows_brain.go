@@ -39,6 +39,8 @@ func (m settingsModel) modelRows() []settingRow {
 		key = "ollama_model"
 	case "grok":
 		key = "grok_model"
+	case "claude":
+		key = "claude_model"
 	case "cursor":
 		key = "cursor_model"
 	case "muse-spark":

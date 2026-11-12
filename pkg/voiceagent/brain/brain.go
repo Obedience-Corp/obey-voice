@@ -224,14 +224,11 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 		// a nil/empty slice would omit the flag and leave all tools available.
 		tools = []string{""}
 	}
-	// Worker assignments pin the CLI model; live conversations use CLI defaults.
-	var model string
-	if b.cfg != nil && b.cfg.IsWorker {
-		model = strings.TrimSpace(b.cfg.VoiceWorkerModel)
-	}
 	return &claude.RunOptions{
-		Format:         format,
-		Model:          model,
+		Format: format,
+		// A worker's pin reaches claude_model through WorkerBrainConfig, so
+		// live turns, workers, routing and catch-up all read one field.
+		Model:          claudeModel(b.cfg),
 		SystemPrompt:   b.systemPrompt,
 		PermissionMode: mode,
 		Tools:          tools,
@@ -252,6 +249,16 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 		// user's own sessions for that directory.
 		NoSessionPersistence: b.cfg != nil && b.cfg.IsWorker,
 	}
+}
+
+// claudeModel is the --model value for cfg; empty and "default" leave the
+// choice to the CLI.
+func claudeModel(cfg *config.Config) string {
+	model := config.BrainModelFor(cfg, providerClaude)
+	if strings.EqualFold(model, "default") {
+		return ""
+	}
+	return model
 }
 
 // ThinkStream sends input to Claude and returns a channel of streaming message chunks.

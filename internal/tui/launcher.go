@@ -691,6 +691,10 @@ func (m launcherModel) activeModel() string {
 		if m.cfg.GrokModel != "" {
 			return m.cfg.GrokModel
 		}
+	case "claude":
+		if m.cfg.ClaudeModel != "" {
+			return m.cfg.ClaudeModel
+		}
 	case "cursor":
 		if m.cfg.CursorModel != "" {
 			return m.cfg.CursorModel

@@ -68,7 +68,7 @@ func probeProvider(ctx context.Context, cfg *config.Config, name string) Provide
 		}
 		return ProviderInfo{Name: name, Available: err == nil, Models: models}
 	case "claude":
-		return discoverClaude()
+		return discoverClaude(cfg)
 	case "cursor":
 		return discoverCursor(ctx)
 	case "obey":
@@ -84,13 +84,13 @@ func probeProvider(ctx context.Context, cfg *config.Config, name string) Provide
 	}
 }
 
-func discoverClaude() ProviderInfo {
+func discoverClaude(cfg *config.Config) ProviderInfo {
 	_, err := exec.LookPath("claude")
-	return ProviderInfo{
-		Name:      "claude",
-		Available: err == nil,
-		Models:    []string{"default"},
+	models := []string{"default"}
+	if cfg != nil && strings.TrimSpace(cfg.ClaudeModel) != "" {
+		models = append(models, cfg.ClaudeModel)
 	}
+	return ProviderInfo{Name: "claude", Available: err == nil, Models: models}
 }
 
 func discoverCursor(parent context.Context) ProviderInfo {

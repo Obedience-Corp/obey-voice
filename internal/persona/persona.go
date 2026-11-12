@@ -445,23 +445,8 @@ func applyBrain(cfg *config.Config, b Brain) {
 	}
 	cfg.PersonaWorkerTiers = b.WorkerTiers.Clone()
 	applyWorker(cfg, b.Worker)
-	model := strings.TrimSpace(b.Model)
-	if model == "" {
-		return
-	}
-	switch strings.ToLower(strings.TrimSpace(cfg.BrainProvider)) {
-	case "ollama":
-		cfg.OllamaModel = model
-	case "grok":
-		cfg.GrokModel = model
-	case "cursor":
-		cfg.CursorModel = model
-	case "muse-spark":
-		cfg.MuseSparkModel = model
-	case "obey":
-		cfg.ObeyModel = model
-	case "codex":
-		cfg.CodexModel = model
+	if model := strings.TrimSpace(b.Model); model != "" {
+		config.SetBrainModel(cfg, cfg.BrainProvider, model)
 	}
 }
 
@@ -486,32 +471,14 @@ func applyWorker(cfg *config.Config, w Worker) {
 // ModelForProvider reads the app-level model key a brain provider routes to.
 // Exported because every surface that reports a persona's effective stack
 // (persona use --json, GET /v1/personas) needs the same provider→key mapping
-// Apply uses, and claude deliberately has no key at all.
+// Apply uses.
 func ModelForProvider(cfg *config.Config, provider string) string {
 	return modelForProvider(cfg, provider)
 }
 
 // modelForProvider reads the app-level model key for a brain provider.
 func modelForProvider(cfg *config.Config, provider string) string {
-	if cfg == nil {
-		return ""
-	}
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "ollama":
-		return strings.TrimSpace(cfg.OllamaModel)
-	case "grok":
-		return strings.TrimSpace(cfg.GrokModel)
-	case "cursor":
-		return strings.TrimSpace(cfg.CursorModel)
-	case "muse-spark":
-		return strings.TrimSpace(cfg.MuseSparkModel)
-	case "obey":
-		return strings.TrimSpace(cfg.ObeyModel)
-	case "codex":
-		return strings.TrimSpace(cfg.CodexModel)
-	default:
-		return ""
-	}
+	return config.BrainModelFor(cfg, provider)
 }
 
 // applyTTS writes provider/voice/tier from the profile onto cfg.

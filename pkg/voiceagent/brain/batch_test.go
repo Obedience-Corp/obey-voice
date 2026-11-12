@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -421,6 +423,28 @@ func TestCursorBatchReportsDefaultModelWhenUnconfigured(t *testing.T) {
 	}
 	if res.Provider != "cursor" || res.Model != "default" {
 		t.Errorf("identity = %s/%s, want cursor/default", res.Provider, res.Model)
+	}
+}
+
+func TestClaudeBatchAsksForTheConfiguredModel(t *testing.T) {
+	dir := t.TempDir()
+	// The constructor only looks the CLI up; the fake runner answers.
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nexit 99\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	c, err := newClaudeBatch(&config.Config{BrainProvider: "claude", ClaudeModel: "haiku", PromptsDir: t.TempDir(), WorkDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeClaudeRunner{result: &claude.ClaudeResult{Result: "out"}}
+	c.runner = runner
+	res, err := c.Transform(t.Context(), BatchRequest{Text: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.gotOpts.Model != "haiku" || res.Model != "haiku" {
+		t.Fatalf("Model = %q, reported %q; want haiku", runner.gotOpts.Model, res.Model)
 	}
 }
 
