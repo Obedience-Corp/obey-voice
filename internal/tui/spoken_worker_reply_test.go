@@ -1,12 +1,16 @@
 package tui
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func plainTexts(m conversationModel) []string {
@@ -90,3 +94,50 @@ func TestBridgeKeepsWorkerReplyDeliveryUnderFlood(t *testing.T) {
 		t.Fatal("worker reply delivery dropped under flood")
 	}
 }
+
+// The terminal renderer never draws a queued result before the reply that was
+// spoken ahead of it.
+func TestSpokenWorkerReplyTerminalOrder(t *testing.T) {
+	dylan := &events.ResponseEnvelope{PersonaID: "dylan", DisplayName: "Dylan", ResponseID: "work-1"}
+	h := &spokenReplyTerminal{model: sizedConversation(t, 100, 26), steps: []events.Event{
+		events.ResponseDelta{Text: "Raw is answering"},
+		events.JobFinished{ID: "job", Summary: "The fixture has three files.", Envelope: dylan, SpeechPending: true},
+		events.ResponseReady{Response: "Raw's answer.", Envelope: &events.ResponseEnvelope{PersonaID: "raw", DisplayName: "Raw"}},
+		events.JobResultDelivered{ID: "job", Summary: "The fixture has three files.", Envelope: dylan, Spoken: true},
+	}}
+	h.model.turnState = turnVoiceListening
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	var output bytes.Buffer
+	if _, err := tea.NewProgram(h, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(&output), tea.WithoutSignalHandler()).Run(); err != nil {
+		t.Fatal(err)
+	}
+	plain := stripANSI(output.String())
+	reply, result := strings.Index(plain, "Raw's answer."), strings.Index(plain, "three files")
+	if reply < 0 || result < 0 || result < reply {
+		t.Fatalf("result drawn at %d, reply at %d; want the reply first:\n%s", result, reply, plain)
+	}
+}
+
+type spokenReplyTerminal struct {
+	model conversationModel
+	steps []events.Event
+}
+
+func (h *spokenReplyTerminal) next() tea.Cmd {
+	if len(h.steps) == 0 {
+		return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return tea.QuitMsg{} })
+	}
+	e := h.steps[0]
+	h.steps = h.steps[1:]
+	return tea.Tick(30*time.Millisecond, func(time.Time) tea.Msg { return e })
+}
+func (h *spokenReplyTerminal) Init() tea.Cmd { return h.next() }
+func (h *spokenReplyTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if e, ok := msg.(events.Event); ok {
+		h.model.handleEvent(e)
+		return h, h.next()
+	}
+	return h, nil
+}
+func (h *spokenReplyTerminal) View() string { return h.model.View() }

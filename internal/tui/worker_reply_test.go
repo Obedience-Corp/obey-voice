@@ -63,8 +63,9 @@ func TestCtrlWRetainsCompletedWorkerThread(t *testing.T) {
 	}
 }
 
-// The actual terminal renderer must show the asynchronous reply while the
-// conversation remains in listening mode, without waiting for speech events.
+// The actual terminal renderer must show an asynchronous reply that is not
+// queued for speech while the conversation remains in listening mode, without
+// waiting for speech events.
 func TestWorkerReplyTerminalWhileListening(t *testing.T) {
 	h := &workerReplyTerminal{model: sizedConversation(t, 100, 26)}
 	h.model.turnState = turnVoiceListening
