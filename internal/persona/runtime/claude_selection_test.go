@@ -48,12 +48,9 @@ func installClaudeFixture(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
 	script := "#!/bin/sh\nexec '" + binary + "' -test.run='^TestClaudeSelectorFixtureProcess$' -- \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	log := filepath.Join(dir, "claude.jsonl")
+	dir := fixtureScriptDir(t, "claude", map[string]string{"claude": script})
+	log := filepath.Join(t.TempDir(), "claude.jsonl")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("OBEY_CLAUDE_FIXTURE_LOG", log)
 	return log

@@ -73,13 +73,6 @@ type serialStopBrain struct{ lateStopBrain }
 
 func (*serialStopBrain) SerialRequests() {}
 
-func shortenProviderStop(t *testing.T, d time.Duration) {
-	t.Helper()
-	saved := providerStopTimeout
-	providerStopTimeout = d
-	t.Cleanup(func() { providerStopTimeout = saved })
-}
-
 // stopFirstReply runs a turn, stops it as its reply starts, and returns the
 // request it stopped.
 func stopFirstReply(t *testing.T, p *Pipeline) *transcriptRecording {
@@ -170,7 +163,7 @@ var newExchange = []brain.Turn{
 }
 
 func TestHostTranscriptNewTurnGoesAheadOfARequestThatNeverStops(t *testing.T) {
-	shortenProviderStop(t, 100*time.Millisecond)
+	SetProviderStopTimeoutForTest(t, 100*time.Millisecond)
 	transcript := &recordedTranscript{}
 	b := &lateStopBrain{release: make(chan struct{})}
 	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
@@ -205,7 +198,7 @@ func TestHostTranscriptNewTurnAfterARequestThatTakesASecondToStop(t *testing.T) 
 		}
 	})
 	t.Run("past the wait, stopping while the new turn answers", func(t *testing.T) {
-		shortenProviderStop(t, 100*time.Millisecond)
+		SetProviderStopTimeoutForTest(t, 100*time.Millisecond)
 		transcript := &recordedTranscript{}
 		b := &lateStopBrain{stop: time.Second, answerAfter: 1500 * time.Millisecond}
 		p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
@@ -221,7 +214,7 @@ func TestHostTranscriptNewTurnAfterARequestThatTakesASecondToStop(t *testing.T) 
 }
 
 func TestHostTranscriptNewTurnWaitsQuietlyForAProviderThatCannotOverlap(t *testing.T) {
-	shortenProviderStop(t, 100*time.Millisecond)
+	SetProviderStopTimeoutForTest(t, 100*time.Millisecond)
 	transcript := &recordedTranscript{}
 	b := &serialStopBrain{lateStopBrain{stop: 600 * time.Millisecond}}
 	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript}
@@ -238,7 +231,7 @@ func TestHostTranscriptNewTurnWaitsQuietlyForAProviderThatCannotOverlap(t *testi
 }
 
 func TestBackgroundTurnAndCompactionGoAheadOfARequestThatNeverStops(t *testing.T) {
-	shortenProviderStop(t, 100*time.Millisecond)
+	SetProviderStopTimeoutForTest(t, 100*time.Millisecond)
 	t.Run("background turn", func(t *testing.T) {
 		transcript := &recordedTranscript{}
 		b := &lateStopBrain{release: make(chan struct{})}

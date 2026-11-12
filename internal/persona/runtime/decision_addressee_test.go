@@ -182,6 +182,7 @@ func TestDecisionModelDownFallsBackToOllamaClassifier(t *testing.T) {
 // shared bound a slow decider plus a slow classifier would wait for
 // decision_budget_ms + persona_routing_timeout.
 func TestAddresseeResolutionStaysWithinPersonaRoutingTimeout(t *testing.T) {
+	t.Parallel()
 	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 	defer f.close(t)
 	f.selector.opts.Base.PersonaRoutingTimeout = 1
@@ -233,6 +234,7 @@ func TestAddresseeResolutionStaysWithinPersonaRoutingTimeout(t *testing.T) {
 // A decision model that spends the whole persona_routing_timeout leaves the
 // classifier a dead context; the turn must fall back without calling it.
 func TestDecisionModelUsingWholeTimeoutSkipsClassifier(t *testing.T) {
+	t.Parallel()
 	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 	defer f.close(t)
 	f.selector.opts.Base.PersonaRoutingTimeout = 1
@@ -289,6 +291,7 @@ func (e lateAbstainer) Evaluate(ctx context.Context, _ decision.Request) (decisi
 // An abstention can use up persona_routing_timeout as surely as a failure; the
 // classifier must not then be called with the time that is left.
 func TestDecisionModelAbstainingAtTheDeadlineSkipsClassifier(t *testing.T) {
+	t.Parallel()
 	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 	defer f.close(t)
 	f.selector.opts.Base.PersonaRoutingTimeout = 1

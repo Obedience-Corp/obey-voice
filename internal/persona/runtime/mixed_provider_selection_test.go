@@ -35,14 +35,12 @@ func installMixedProviderBinaries(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
+	scripts := map[string]string{}
 	for _, name := range []string{"muse", "obey"} {
-		script := "#!/bin/sh\nOBEY_MIXED_FIXTURE=" + name + " exec '" + binary + "' -test.run='^TestMixedProviderFixtureProcess$' -- \"$@\"\n"
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
-			t.Fatal(err)
-		}
+		scripts[name] = "#!/bin/sh\nOBEY_MIXED_FIXTURE=" + name + " exec '" + binary + "' -test.run='^TestMixedProviderFixtureProcess$' -- \"$@\"\n"
 	}
-	log := filepath.Join(dir, "prompts.jsonl")
+	dir := fixtureScriptDir(t, "mixed", scripts)
+	log := filepath.Join(t.TempDir(), "prompts.jsonl")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("OBEY_MIXED_FIXTURE_LOG", log)
 	return log
