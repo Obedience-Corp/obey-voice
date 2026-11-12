@@ -10,6 +10,8 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
+const pathNotice = "Saved to /Users/someone/.obey/agents/voice/obey-voice/recordings/2026-11-11T09-30-00Z\nOpen it from Finder."
+
 func TestLongNoticesWrapUnderTheirIndent(t *testing.T) {
 	const long = "Hosted notice: Mira's replies come from Claude, and the conversation she sees leaves this machine whenever she answers."
 	for _, tc := range []struct {
@@ -19,6 +21,7 @@ func TestLongNoticesWrapUnderTheirIndent(t *testing.T) {
 	}{
 		{"info", events.Info{Message: long}, long},
 		{"error", events.Error{Message: long}, "Error: " + long},
+		{"unbroken path", events.Info{Message: pathNotice}, pathNotice},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := sizedConversation(t, 40, 40)
@@ -34,8 +37,9 @@ func TestLongNoticesWrapUnderTheirIndent(t *testing.T) {
 						t.Fatalf("width %d: line %q is not indented by two columns within the width:\n%s", width, line, strings.Join(lines, "\n"))
 					}
 				}
-				if got := strings.Join(strings.Fields(strings.Join(lines, " ")), " "); got != tc.text {
-					t.Fatalf("width %d: notice reads %q, want %q", width, got, tc.text)
+				// A token longer than the line is split, so compare without whitespace.
+				if got, want := strings.Join(strings.Fields(strings.Join(lines, "")), ""), strings.Join(strings.Fields(tc.text), ""); got != want {
+					t.Fatalf("width %d: notice reads %q, want %q", width, got, want)
 				}
 			}
 		})
