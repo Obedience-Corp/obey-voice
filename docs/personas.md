@@ -346,7 +346,10 @@ itself keep their images: the provider drops the images of every line loaded
 into it, so after a resume or a compaction, or once Obey Voice closes the
 persona's parked session or starts its provider again, its earlier lines reach
 it as text and their images are not sent again. The saved conversation keeps
-every attachment.
+every attachment. A background job on a Claude worker is sent the images of the
+line that started it, whichever persona or backend answered that line, as a
+Codex worker is: the worker provider is one you configured, and it gives no
+hosted notice.
 
 Claude receives nothing said before its persona was first addressed while on
 Claude in the conversation, unless `hosted_persona_sharing` is set to
