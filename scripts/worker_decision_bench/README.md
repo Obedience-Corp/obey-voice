@@ -92,8 +92,10 @@ text and the reply's `prompt_eval_ms` over the samples that spoke a reply.
 The two modes run back to back on one case with the same system prompt,
 history and user message, and nothing clears Ollama's cache between them. The
 second mode's first request can therefore reuse the prefix the first mode just
-read, so `second` samples start warmer than `first` samples. The first mode
-starts after a different case or the warmup, sharing at most the system prompt.
+read, so `second` samples start warmer than `first` samples. With three or
+more cases the first mode starts after a different case or the warmup, sharing
+at most the system prompt. With one or two, the rotation starts a pass on the
+case the previous pass ended with, so a `first` sample can follow the same case.
 Alternating the order cancels this in the overall means only with an even
 `-reps`, and only on average. Compare modes at the same position, `first`
 against `first`, rather than overall means. Even then neither position matches

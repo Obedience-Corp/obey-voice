@@ -694,10 +694,12 @@ thinking on; the tests use a fake Ollama server.
   the thinking capability and a thinking parser first generates with no
   grammar. At the first answer token Ollama stops and runs a second, constrained
   generation over the prompt plus the reasoning. This is a reading of that
-  source, not of the server you run. A model whose thinking Ollama does not
-  parse may be constrained from the first token. A model that emits no thinking
-  never triggers the second generation. Ollama's native chat path passes
-  `format` and `think` to the runner together; that path was not read.
+  source, not of the server you run. If that first generation writes no
+  reasoning, the second never starts and the answer is not constrained by the
+  schema at all; only the route validation checks it. A model whose thinking
+  Ollama does not parse may be constrained from the first token. Ollama's
+  native chat path passes `format` and `think` to the runner together; that
+  path was not read.
 - Ollama counts reasoning against `num_predict`, and in that source each of the
   two generations gets the full limit. With thinking on, the route request is
   capped at 1024 tokens instead of the 256 used with thinking off, so a short
