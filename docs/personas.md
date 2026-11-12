@@ -522,11 +522,12 @@ repeats it once, and one saved before the whole-conversation case was recorded
 gives that notice again when it applies). It counts as given only once it was
 shown and the request went ahead: a turn stopped during the notice gives it
 again next time. A turn that sends the persona nothing (one refused
-by its image check, or routed to the configured worker or to a story) does not
-give it, nor does a job result spoken while you are idle: that reaches the
-persona's provider with its next request, which gives the notice first. A job
-the persona does itself on its hosted backend sends that backend its share, so
-it gives the notice before the job starts.
+by its image check, or routed to the configured worker, or to a story the
+configured worker writes) does not give it, nor does a job result spoken while
+you are idle: that reaches the persona's provider with its next request, which
+gives the notice first. A job the persona does itself on its hosted backend
+sends that backend its share, and a story it writes itself sends that backend
+a request, so both give the notice before they start.
 It is shown by the host: no model receives it and it is not recorded as any
 persona's reply. A bare `Mira here.` address sends
 nothing and does not trigger it.

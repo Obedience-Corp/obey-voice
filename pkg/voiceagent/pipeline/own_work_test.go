@@ -746,7 +746,9 @@ func TestATurnSpawnsOnTheWorkDecisionItWasAdmittedWith(t *testing.T) {
 }
 
 func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
+	notices := 0
 	setup := func(t *testing.T, work string) (*Agency, *recordingWorker, *progressiveFakeTTS, *[]events.Error, *sync.Mutex) {
+		notices = 0
 		cfg := claudePersona()
 		cfg.PersonaWork, cfg.WorkDir = work, t.TempDir()
 		provider := &progressiveFakeTTS{}
@@ -755,6 +757,12 @@ func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
 		jobs := job.NewTable(t.Context())
 		t.Cleanup(jobs.Close)
 		p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
+		p.HostedNotice = func(e events.ResponseEnvelope) (HostedNotice, bool) {
+			if e.PersonaID != "mira" || notices > 0 {
+				return HostedNotice{}, false
+			}
+			return HostedNotice{Text: "Mira runs on Claude, a hosted service.", Delivered: func() { notices++ }}, true
+		}
 		var mu sync.Mutex
 		var errs []events.Error
 		events.Subscribe(p.Events, func(e events.Error) { mu.Lock(); errs = append(errs, e); mu.Unlock() })
@@ -763,6 +771,7 @@ func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
 		a.ownFactory = func(context.Context, *config.Config) (brain.Provider, error) { return own, nil }
 		a.Wire()
 		metrics := newTurnMetrics()
+		metrics.response = events.ResponseEnvelope{ResponseID: "response-1", PersonaID: "mira", DisplayName: "Mira", BrainProvider: "claude", Hosted: true}
 		a.HandleRoute(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "tell me a long story", Source: "test"})
 		return a, own, provider, &errs, &mu
 	}
@@ -788,6 +797,9 @@ func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
 		if len(own.opts) != 1 || !own.opts[0].ToolsEnabled || !own.opts[0].OmitTurnInstruction || own.briefs[0] != storyWriterPrompt {
 			t.Fatalf("story job on the own backend = %d call(s), %+v", len(own.opts), own.opts)
 		}
+		if notices != 1 {
+			t.Fatalf("hosted notice given %d times before the story went to Claude", notices)
+		}
 	})
 	t.Run("worker: the missing worker is reported", func(t *testing.T) {
 		_, own, _, errs, mu := setup(t, config.WorkWorker)
@@ -807,8 +819,8 @@ func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		if e := (*errs)[0]; e.Stage != "narrate" || !strings.Contains(e.Message, "ollama worker model is missing") || own.calls() != 0 {
-			t.Fatalf("error = %+v, own calls %d", e, own.calls())
+		if e := (*errs)[0]; e.Stage != "narrate" || !strings.Contains(e.Message, "ollama worker model is missing") || own.calls() != 0 || notices != 0 {
+			t.Fatalf("error = %+v, own calls %d, notices %d", e, own.calls(), notices)
 		}
 	})
 }
@@ -834,6 +846,9 @@ func TestOllamaPersonaDoesItsOwnWorkWithNoConfiguredWorker(t *testing.T) {
 	}
 }
 
+// Tiered mode builds no legacy worker, and a story phrase names no tier, so
+// the story stays where it was: with the configured worker, which is not
+// there, and the persona's own backend is not used.
 func TestStoryNarrationInTieredModeStaysOnTheConfiguredWorker(t *testing.T) {
 	cfg := tieredPersona("claude", "", true)
 	cfg.WorkDir = t.TempDir()
@@ -841,20 +856,22 @@ func TestStoryNarrationInTieredModeStaysOnTheConfiguredWorker(t *testing.T) {
 	t.Cleanup(jobs.Close)
 	p := &Pipeline{Events: events.NewBus()}
 	p.SetOutputMuted(true)
-	configured := &recordingWorker{reply: "Chapter One. The configured worker's story."}
-	a := NewAgency(p, jobs, configured, cfg, nil)
+	errs := make(chan events.Error, 4)
+	events.Subscribe(p.Events, func(e events.Error) { errs <- e })
+	a := NewAgency(p, jobs, nil, cfg, nil)
 	a.ownFactory = func(context.Context, *config.Config) (brain.Provider, error) {
 		t.Error("a tiered story ran on the persona's own backend")
 		return nil, errors.New("refused")
 	}
 	a.Wire()
 	metrics := newTurnMetrics()
-	a.HandleRoute(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "tell me a long story", Source: "test"})
-	deadline := time.Now().Add(3 * time.Second)
-	for configured.calls() == 0 || jobs.Active() {
-		if time.Now().After(deadline) {
-			t.Fatalf("story job: configured calls %d, active %v", configured.calls(), jobs.Active())
+	a.HandleRoute(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "tell me a long story", Source: "phrase"})
+	select {
+	case e := <-errs:
+		if e.Stage != "narrate" || !strings.Contains(e.Message, "worker provider is not configured") {
+			t.Fatalf("error = %+v", e)
 		}
-		time.Sleep(5 * time.Millisecond)
+	case <-time.After(3 * time.Second):
+		t.Fatal("no error for a tiered story with no worker to write it")
 	}
 }

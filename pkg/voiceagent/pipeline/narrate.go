@@ -154,7 +154,7 @@ func (n *Narrator) retryFlushPending() {
 
 func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
 	if isLongStoryPhrase(d.Transcript) {
-		n.startStoryJob(ctx)
+		n.startStoryJob(ctx, metrics)
 		return
 	}
 
@@ -172,15 +172,20 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 }
 
 // startStoryJob writes the story on the persona's own backend when it does
-// its own work, and on the configured worker otherwise. In tiered mode the
-// configured worker writes it, as before: a story is often asked for without
-// a tier. The story prompt carries none of the conversation, so a hosted
-// backend gives no notice for it.
-func (n *Narrator) startStoryJob(ctx context.Context) {
+// its own work, and on the configured worker otherwise. In tiered mode it
+// stays with the configured worker, as before: a story is asked for by a
+// phrase that names no tier. A hosted backend gives its notice first, as for
+// any own job.
+func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics) {
 	work := n.agency.turnWork(ctx)
 	own := work.own
 	if own != nil && tieredWorkers(work.bound) {
 		own = nil
+	}
+	if own != nil && brain.IsHosted(providerName(own)) {
+		if err := n.pipeline.announceHosted(ctx, metrics); err != nil {
+			return
+		}
 	}
 	id, err := n.agency.jobs.Start(ctx, job.Spec{
 		Task: "write a long story",

@@ -171,9 +171,13 @@ backend and model differ:
 - A spawn routed to no tier is refused, as it is for a worker.
 
 The tier's assignment, billing, `enabled` flag and `allow_uncapped` describe
-the worker it names and do not apply to an own job. Neither do the paid-worker
-switch (`paid_enabled`) and the `worker-usage.sqlite` ledger, which cover paid
-tier workers only. An own job reports its usage as any worker does, in
+the worker it names and are not checked when an own job is admitted. Neither
+are the paid-worker switch (`paid_enabled`) and the `worker-usage.sqlite`
+ledger, which cover paid tier workers only. What the router is told about
+which tiers are available still comes from the worker's tiers, so a tier
+whose worker is disabled, unassigned or held back by the paid-worker switch is
+described to the router as unavailable even for a persona doing its own
+work. An own job reports its usage as any worker does, in
 `worker.usage` events, with request and tool counts on Ollama in tiered mode
 and whatever token or cost figures the backend returns.
 
@@ -183,9 +187,11 @@ only a persona on Ollama can do its own.
 
 A long story ("tell me a long story") is written by the persona's own backend
 when it does its own work, with tools as `voice_tools_enabled` says, so it
-needs no configured worker. In tiered mode, and for a persona that hands its
-work to the worker, the configured worker writes it, as before. The story
-prompt carries none of the conversation, so it gives no hosted notice.
+needs no configured worker. On a hosted backend the hosted notice comes first,
+as for any own job. In tiered mode, and for a persona that hands its work to
+the worker, the story goes to the configured worker, as before; tiered mode
+builds no such worker, so there story writing still fails with "worker
+provider is not configured", as it did before own work existed.
 
 The job's brief is the one every job gets (see
 [Hosted backends](personas.md#hosted-backends)): a persona on Claude, Codex,

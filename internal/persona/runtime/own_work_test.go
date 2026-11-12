@@ -41,9 +41,9 @@ func fixtureRoute(payload string) string {
 	return `{"kind":"chat"}`
 }
 
-// holdFixtureJob keeps a background job running until the file named by
-// OBEY_CLAUDE_FIXTURE_HOLD exists, which fixtureHold writes when the test
-// ends at the latest.
+// holdFixtureJob keeps a background job running while the file named by
+// OBEY_CLAUDE_FIXTURE_HOLD exists. fixtureHold removes it on release, and
+// the test's temporary directory takes it with it when the test ends.
 func holdFixtureJob() {
 	path := os.Getenv("OBEY_CLAUDE_FIXTURE_HOLD")
 	if path == "" {
@@ -51,7 +51,7 @@ func holdFixtureJob() {
 	}
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
+		if _, err := os.Stat(path); err != nil {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -62,10 +62,13 @@ func holdFixtureJob() {
 // release is called or the test ends, whichever comes first.
 func fixtureHold(t *testing.T) (release func()) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "release")
+	path := filepath.Join(t.TempDir(), "hold")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("OBEY_CLAUDE_FIXTURE_HOLD", path)
 	release = func() {
-		if err := os.WriteFile(path, nil, 0o600); err != nil && !os.IsExist(err) {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			t.Error(err)
 		}
 	}
@@ -118,11 +121,11 @@ func jobRequests(t *testing.T, log string) (jobs, live []claudeRequest) {
 }
 
 func TestPersonaOnClaudeDoesItsOwnWorkWhileTheRoomTalks(t *testing.T) {
-	release := fixtureHold(t)
 	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
 	t.Setenv("OBEY_CLAUDE_FIXTURE_SPAWN", "haiku")
 	miraDir, _ := filepath.EvalSymlinks(t.TempDir())
 	c := newConversation(t, 50, "ember", "claude", "", ownWorkSetup(t, "", miraDir))
+	release := fixtureHold(t)
 	finished := make(chan events.JobFinished, 1)
 	events.Subscribe(c.p.Events, func(e events.JobFinished) { finished <- e })
 
