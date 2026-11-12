@@ -254,11 +254,7 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 // claudeModel is the --model value for cfg; empty and "default" leave the
 // choice to the CLI.
 func claudeModel(cfg *config.Config) string {
-	model := config.BrainModelFor(cfg, providerClaude)
-	if strings.EqualFold(model, "default") {
-		return ""
-	}
-	return model
+	return config.BrainModelFor(cfg, providerClaude)
 }
 
 // ThinkStream sends input to Claude and returns a channel of streaming message chunks.

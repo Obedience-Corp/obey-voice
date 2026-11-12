@@ -1,6 +1,10 @@
 package personaruntime
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
+)
 
 // writeClaudePersona saves a persona on Claude; an empty model leaves the
 // choice to the CLI.
@@ -83,4 +87,47 @@ func TestEditedClaudeModelRestartsTheSpeakingSession(t *testing.T) {
 		t.Fatal("the speaking persona kept its old provider after a model change")
 	}
 	requireContains(t, last.Prompt, `"content":"Note the door is teal."`)
+}
+
+func TestClaudeSessionSurvivesEditsThatDoNotChangeItsModel(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(*persona.Profile)
+	}{
+		{"voice", func(p *persona.Profile) { p.TTS.Voice = "af_sky" }},
+		{"empty model to default", func(p *persona.Profile) { p.Brain.Model = "default" }},
+		{"padded default", func(p *persona.Profile) { p.Brain.Model = " Default " }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+			c := newClaudeConversation(t, 20)
+			c.say("Note the door is teal.")
+			first := lastClaudeRequest(t, c.log)
+			p := testProfile("mira", "Mira", "mira")
+			p.Brain.Provider, p.Brain.Model = "claude", ""
+			tc.edit(&p)
+			writeTestProfile(t, c.catalog.Dir, p)
+			c.say("Still there?")
+			last := lastClaudeRequest(t, c.log)
+			if c.p.Brain != c.initial || last.Resume != first.Session || last.Model != "" {
+				t.Fatalf("the edit replaced the Claude session: first %+v, last %+v", first, last)
+			}
+		})
+	}
+}
+
+func TestParkedClaudeSessionSurvivesAnEquivalentModelSpelling(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+	c := newMixedConversation(t, 20, "ember")
+	writeClaudePersona(t, c, "mira", "Mira", "default")
+	c.say("switch to Mira", "What do you think?", "switch to Ember")
+	if len(c.selector.parked) != 1 {
+		t.Fatalf("parked = %+v", c.selector.parked)
+	}
+	mira, session := c.selector.parked[0].provider, lastClaudeRequest(t, c.log).Session
+	writeClaudePersona(t, c, "mira", "Mira", "")
+	c.say("switch to Mira", "Still there?")
+	if last := lastClaudeRequest(t, c.log); c.p.Brain != mira || last.Resume != session || last.Model != "" {
+		t.Fatalf("an equivalent model spelling retired the parked session: %+v", last)
+	}
 }
