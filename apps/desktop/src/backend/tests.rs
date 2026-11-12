@@ -139,3 +139,51 @@ fn lost_waits_for_child_exit_after_protocol_eof() {
     assert!(child.lock().unwrap().try_wait().unwrap().is_some());
     monitor.join().unwrap();
 }
+
+// A model move cleans up after SIGTERM. Cancel used to SIGKILL it five
+// seconds later, cutting that cleanup short.
+#[cfg(unix)]
+#[test]
+fn a_cancelled_model_move_is_signalled_once_and_never_killed() {
+    let script =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slow-move-engine.sh");
+    let log = std::env::temp_dir().join(format!("obey-move-cancel-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&log);
+    let mut backend = Backend::new(eframe::egui::Context::default(), true);
+    backend.engine = script;
+    let args = ["models", "move", "--"]
+        .map(String::from)
+        .into_iter()
+        .chain([log.display().to_string()])
+        .collect();
+    backend.cli(7, args, true);
+    // Cancel only once the stand-in is ready to count signals.
+    loop {
+        match backend
+            .events
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+        {
+            Event::Log { id: 7, line } if line == "ready" => break,
+            Event::Result { id: 7, result } => panic!("the stand-in ended early: {result:?}"),
+            _ => {}
+        }
+    }
+    backend.cancel(7);
+    thread::sleep(Duration::from_millis(300));
+    backend.cancel(7);
+    assert!(backend.cleaning_up(7));
+    loop {
+        if let Event::Result { id: 7, result } = backend
+            .events
+            .recv_timeout(Duration::from_secs(20))
+            .unwrap()
+        {
+            assert!(result.is_ok(), "the move was killed: {result:?}");
+            break;
+        }
+    }
+    let terms = std::fs::read_to_string(&log).unwrap_or_default();
+    let _ = std::fs::remove_file(&log);
+    assert_eq!(terms.lines().count(), 1, "signals received: {terms:?}");
+}

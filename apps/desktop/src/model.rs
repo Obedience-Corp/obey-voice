@@ -267,6 +267,7 @@ pub enum Purpose {
     MeetingPaused(bool),
     MeetingDocument,
     Task,
+    MovePlan(String),
     Start,
     Stop,
     MeetingStart,

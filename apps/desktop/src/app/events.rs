@@ -173,6 +173,10 @@ impl VoiceApp {
             self.complete_persona_preview(id, result);
             return;
         }
+        if let Purpose::MovePlan(destination) = purpose {
+            self.complete_move_plan(destination, result);
+            return;
+        }
         let v = match result {
             Ok(v) => v,
             Err(err) => {
@@ -202,7 +206,8 @@ impl VoiceApp {
             | Purpose::PersonaDirectories
             | Purpose::PersonaBrowse
             | Purpose::PersonaPreview
-            | Purpose::PersonaAudioCheck => {
+            | Purpose::PersonaAudioCheck
+            | Purpose::MovePlan(_) => {
                 unreachable!()
             }
             Purpose::Sessions => self.sessions = serde_json::from_value(v).unwrap_or_default(),

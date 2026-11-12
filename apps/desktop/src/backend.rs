@@ -6,6 +6,8 @@ mod protocol;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+pub(crate) use self::process::finishes_on_its_own;
 use self::process::{finish_child, signal_child, spawn_command};
 use self::protocol::{read_protocol, send, supervise_bridge};
 use serde_json::{Value, json};
@@ -42,6 +44,9 @@ pub struct Backend {
     stopped: Arc<AtomicBool>,
     cancelled: Arc<Mutex<HashSet<u64>>>,
     jobs: Arc<Mutex<HashMap<u64, Arc<Mutex<Child>>>>>,
+    /// Jobs that are signalled once on Cancel or quit and never killed.
+    gentle: Arc<Mutex<HashSet<u64>>>,
+    signalled: Arc<Mutex<HashSet<u64>>>,
     bridge: Option<Arc<Mutex<Child>>>,
     ctx: eframe::egui::Context,
 }
@@ -68,6 +73,8 @@ impl Backend {
             stopped: Arc::default(),
             cancelled: Arc::default(),
             jobs: Arc::default(),
+            gentle: Arc::default(),
+            signalled: Arc::default(),
             bridge: None,
             ctx,
         };
@@ -183,9 +190,19 @@ impl Backend {
     pub fn cancel(&self, id: u64) {
         self.cancelled.lock().unwrap().insert(id);
         if let Some(child) = self.jobs.lock().unwrap().get(&id).cloned() {
+            if self.gentle.lock().unwrap().contains(&id) {
+                if self.signalled.lock().unwrap().insert(id) {
+                    signal_child(&mut child.lock().unwrap());
+                }
+                return;
+            }
             signal_child(&mut child.lock().unwrap());
             finish_child(child, Duration::from_secs(5));
         }
+    }
+    /// Whether Cancel was sent to a job that finishes its own cleanup.
+    pub fn cleaning_up(&self, id: u64) -> bool {
+        self.signalled.lock().unwrap().contains(&id)
     }
 }
 impl Drop for Backend {
@@ -194,10 +211,22 @@ impl Drop for Backend {
         if let Some(input) = self.input.take() {
             let _ = input.send(json!({"method":"shutdown"}));
         }
-        let mut children: Vec<_> = self.jobs.lock().unwrap().values().cloned().collect();
-        for child in &children {
+        let gentle = self.gentle.lock().unwrap().clone();
+        let mut signalled = self.signalled.lock().unwrap();
+        let mut children = Vec::new();
+        for (id, child) in self.jobs.lock().unwrap().iter() {
+            // A model move is asked to stop once and left to finish its
+            // cleanup after the app has gone; it ignores the closed pipe.
+            if gentle.contains(id) {
+                if signalled.insert(*id) {
+                    signal_child(&mut child.lock().unwrap());
+                }
+                continue;
+            }
             signal_child(&mut child.lock().unwrap());
+            children.push(child.clone());
         }
+        drop(signalled);
         if let Some(child) = self.bridge.take() {
             children.push(child);
         }

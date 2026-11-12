@@ -108,3 +108,13 @@ pub(super) fn finish_child(child: Arc<Mutex<Child>>, grace: Duration) {
         }
     });
 }
+
+/// A model move cleans up after SIGTERM, and a kill mid-cleanup leaves a
+/// partial copy or a half-deleted old folder; such a command is signalled once
+/// and never killed.
+pub(crate) fn finishes_on_its_own(args: &[String]) -> bool {
+    args.len() >= 2
+        && args[0] == "models"
+        && args[1] == "move"
+        && !args.iter().any(|a| a == "--dry-run")
+}
