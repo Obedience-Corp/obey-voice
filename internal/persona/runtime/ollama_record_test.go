@@ -58,6 +58,8 @@ func newLocalConversation(t *testing.T, maxHistory int, personas ...string) *loc
 	t.Helper()
 	c := &localConversation{t: t, stalled: make(chan struct{}, 1)}
 	c.root, _ = filepath.EvalSymlinks(t.TempDir())
+	// Attachments are stored under the install directory.
+	config.SetConfigDirForTest(t, t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(c.serveOllama))
 	t.Cleanup(server.Close)
 	c.catalog = persona.Catalog{Dir: filepath.Join(c.root, "personas")}

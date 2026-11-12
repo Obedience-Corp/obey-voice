@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -151,5 +152,45 @@ func TestStoppedRouteOnASharedHistoryProviderGivesItTheLineBack(t *testing.T) {
 	}
 	if s := b.stopped[0]; s.Line == nil || s.Line.Content != "Start a worker on the report." || s.Reply == nil || s.Reply.Content != "I'll start" || s.Reply.Disposition != "interrupted" {
 		t.Fatalf("stopped request = %+v", s)
+	}
+}
+
+// lateThinkingProjection keeps the shared history and, as Ollama can, sends
+// thinking after its last text and closes its result before its thinking.
+type lateThinkingProjection struct{ routedProjectionBrain }
+
+func (b *lateThinkingProjection) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
+	out, thinking, done := make(chan string, 8), make(chan string, 8), make(chan brain.StreamResult, 1)
+	out <- "Done."
+	for _, t := range []string{"checking ", "the ", "notes"} {
+		thinking <- t
+	}
+	done <- brain.StreamResult{}
+	close(done)
+	close(thinking)
+	close(out)
+	return &brain.Stream{Chunks: out, Thinking: thinking, Done: done}, nil
+}
+
+func TestThinkingAfterTheLastTextOfASharedHistoryProviderReachesTheTurn(t *testing.T) {
+	for range 100 {
+		p := &Pipeline{Brain: &lateThinkingProjection{routedProjectionBrain{fakeBrain: &fakeBrain{}}}, Events: events.NewBus()}
+		p.AdmitInput = admitAs("thinking", func(input string) string { return input })
+		var mu sync.Mutex
+		var thought strings.Builder
+		events.Subscribe(p.Events, func(e events.ThinkingDelta) {
+			mu.Lock()
+			thought.WriteString(e.Text)
+			mu.Unlock()
+		})
+		if err := p.RunTurnTextMode(t.Context(), "What do the notes say?"); err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		got := thought.String()
+		mu.Unlock()
+		if got != "checking the notes" {
+			t.Fatalf("thinking = %q", got)
+		}
 	}
 }

@@ -1,7 +1,10 @@
 package brain
 
 import (
+	"encoding/json"
+	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ollama/ollama/api"
@@ -109,5 +112,43 @@ func TestStoppedHostedRequestReplacesWhatItsProviderRecorded(t *testing.T) {
 				t.Fatalf("working = %+v", working)
 			}
 		})
+	}
+}
+
+func TestFailedOllamaInputStaysRetryableAfterTheHostRecordsTheRequest(t *testing.T) {
+	var failing atomic.Bool
+	failing.Store(true)
+	o := outageTestBrain(t, func(w http.ResponseWriter, _ *http.Request) {
+		if failing.Load() {
+			http.Error(w, workerExitFixture, 500)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(api.ChatResponse{Done: true, Message: api.Message{Role: "assistant", Content: "It is cobalt."}})
+	})
+	stream, err := o.ThinkStream(t.Context(), "What is the vault code?", StreamOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainStream(t, stream)
+	if result := <-stream.Done; result.Err == nil {
+		t.Fatal("the outage was not reported")
+	}
+	o.RecordStoppedRequest(StoppedRequest{Line: &Turn{Role: "user", Content: "What is the vault code?"}})
+	if _, ok := o.FailedInputRetry(); !ok {
+		t.Fatal("recording the failed request made it unretryable")
+	}
+	failing.Store(false)
+	stream, err = o.ThinkStream(t.Context(), "What is the vault code?", StreamOptions{RetryInput: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer, _ := drainStream(t, stream); answer != "It is cobalt." {
+		t.Fatalf("retry answered %q", answer)
+	}
+	if result := <-stream.Done; result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if history := o.History(); len(history) != 2 || history[0].Content != "What is the vault code?" {
+		t.Fatalf("history = %+v", history)
 	}
 }

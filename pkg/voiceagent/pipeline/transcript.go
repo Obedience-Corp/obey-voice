@@ -521,6 +521,14 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 				}
 			}
 		}
+		// Thinking sent after the last text is still the turn's to show.
+		for thinks != nil {
+			v, ok := <-thinks
+			if !ok {
+				break
+			}
+			forward(thinking, v)
+		}
 		err := result.Err
 		switch {
 		case ctx.Err() != nil:

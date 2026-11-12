@@ -113,3 +113,21 @@ func TestStoppedOllamaReplyIsRecordedOnceAsTheTurnReadIt(t *testing.T) {
 		t.Fatalf("Ember was sent the stopped exchange other than once as read:\n%s", sent)
 	}
 }
+
+func TestFailedCodexReplyIsRecordedOnceAsFailedAndReachesTheNextPersona(t *testing.T) {
+	c := newLocalConversation(t, 20, "ember", "mira=codex")
+	c.say("Note that the vault code is cobalt.", "switch to Mira", "Say more. "+codexFail, "switch to Ember", "And now?")
+	for name, turns := range map[string][]brain.Turn{"transcript": c.selector.Transcript(), "saved": c.saved().Turns} {
+		asked := func(t brain.Turn) bool { return t.Role == "user" && strings.Contains(t.Content, codexFail) }
+		if n := countTurns(turns, asked); n != 1 {
+			t.Fatalf("%s holds the failed line %d times: %+v", name, n, turns)
+		}
+		failed := func(t brain.Turn) bool {
+			return t.Role == "assistant" && t.PersonaID == "mira" && t.Disposition == "failed" && t.Content == claudePartial
+		}
+		if n := countTurns(turns, failed); n != 1 {
+			t.Fatalf("%s holds Mira's failed reply %d times: %+v", name, n, turns)
+		}
+	}
+	requireContains(t, c.lastOllamaRequest(), "Say more. "+codexFail, `Mira agent:\n[Incomplete assistant response; not a completed answer.]\n`+claudePartial)
+}
