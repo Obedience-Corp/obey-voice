@@ -66,15 +66,16 @@ func heldImageTurns(refs ...chatmedia.Ref) []Turn {
 }
 
 // freshRequest runs one request of the given kind in a fresh session after
-// held and returns the content call it made.
-func freshRequest(t *testing.T, kind string, held []Turn, refs ...chatmedia.Ref) []claude.ContentBlock {
+// held, lines the provider answered itself, and returns the content calls it
+// made.
+func freshRequest(t *testing.T, kind string, held []Turn, refs ...chatmedia.Ref) [][]claude.ContentBlock {
 	t.Helper()
 	fake := &fakeClaudeClient{
 		streamScripts: []streamScript{{msgs: []claude.Message{assistantMsg("Seen."), resultMsg("sess-1")}}},
 		fullResults:   []*claude.ClaudeResult{{Result: "Seen.", SessionID: "sess-1"}},
 	}
 	b := newTestBrain(fake)
-	b.LoadHistory(held)
+	b.history = slices.Clone(held)
 	var err error
 	switch kind {
 	case "stream":
@@ -92,10 +93,16 @@ func freshRequest(t *testing.T, kind string, held []Turn, refs ...chatmedia.Ref)
 	if err != nil {
 		t.Fatalf("%s request failed: %v", kind, err)
 	}
-	if len(fake.content) != 1 {
-		t.Fatalf("%s request made %d content calls", kind, len(fake.content))
+	return fake.content
+}
+
+// oneContentCall is the content call of a request that made exactly one.
+func oneContentCall(t *testing.T, calls [][]claude.ContentBlock) []claude.ContentBlock {
+	t.Helper()
+	if len(calls) != 1 {
+		t.Fatalf("the request made %d content calls", len(calls))
 	}
-	return fake.content[0]
+	return calls[0]
 }
 
 func TestClaudeFreshSessionReplaysTheNewestEarlierImagesWithin32MiB(t *testing.T) {
@@ -106,13 +113,10 @@ func TestClaudeFreshSessionReplaysTheNewestEarlierImagesWithin32MiB(t *testing.T
 	}
 	held := heldImageTurns(earlier...)
 	fresh := importImage(t, "new.png", testmedia.PNG())
-	for _, kind := range []string{"stream", "blocking", "compaction"} {
+	for _, kind := range []string{"stream", "blocking"} {
 		t.Run(kind, func(t *testing.T) {
-			var refs []chatmedia.Ref
-			if kind != "compaction" {
-				refs = []chatmedia.Ref{fresh}
-			}
-			got := replayEntries(t, freshRequest(t, kind, held, refs...))
+			refs := []chatmedia.Ref{fresh}
+			got := replayEntries(t, oneContentCall(t, freshRequest(t, kind, held, refs...)))
 			want := append(entries("skipped", earlier[:2]...), entries("sent", earlier[2:]...)...)
 			want = append(want, entries("sent", refs...)...)
 			if !slices.Equal(got, want) {
@@ -129,7 +133,7 @@ func TestClaudeFreshSessionReplaysAtMostTwentyImages(t *testing.T) {
 		earlier = append(earlier, storedBlob(t, fmt.Sprintf("note-%d.png", i+1), 64))
 	}
 	fresh := []chatmedia.Ref{storedBlob(t, "new-1.png", 64), storedBlob(t, "new-2.png", 64)}
-	got := replayEntries(t, freshRequest(t, "stream", heldImageTurns(earlier...), fresh...))
+	got := replayEntries(t, oneContentCall(t, freshRequest(t, "stream", heldImageTurns(earlier...), fresh...)))
 	want := append(entries("skipped", earlier[:7]...), entries("sent", earlier[7:]...)...)
 	want = append(want, entries("sent", fresh...)...)
 	if !slices.Equal(got, want) {
@@ -144,9 +148,9 @@ func TestClaudeReplaySkipsAnEarlierImageThatNoLongerLoads(t *testing.T) {
 	if err := os.Remove(chatmedia.DefaultStore().Path(gone)); err != nil {
 		t.Fatal(err)
 	}
-	for _, kind := range []string{"stream", "blocking", "compaction"} {
+	for _, kind := range []string{"stream", "blocking"} {
 		t.Run(kind, func(t *testing.T) {
-			blocks := freshRequest(t, kind, heldImageTurns(kept, gone))
+			blocks := oneContentCall(t, freshRequest(t, kind, heldImageTurns(kept, gone)))
 			if got, want := replayEntries(t, blocks), []string{"sent:" + kept.ID, "skipped:" + gone.ID}; !slices.Equal(got, want) {
 				t.Fatalf("replay = %q, want %q", got, want)
 			}
@@ -154,6 +158,61 @@ func TestClaudeReplaySkipsAnEarlierImageThatNoLongerLoads(t *testing.T) {
 				t.Fatalf("the skipped image's label does not name it: %q", label)
 			}
 		})
+	}
+}
+
+// A summary request on a fresh session is sent the conversation as text: the
+// record names the earlier lines, and their images are not sent.
+func TestClaudeSummaryRequestReplaysNoImages(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	kept := importImage(t, "kept.png", testmedia.PNG())
+	if calls := freshRequest(t, "compaction", heldImageTurns(kept)); len(calls) != 0 {
+		t.Fatalf("a summary request sent images: %d content calls", len(calls))
+	}
+}
+
+// Lines loaded into the provider, whoever recorded them, never send their
+// images: only a line the provider answered itself keeps them.
+func TestClaudeNeverSendsTheImagesOfLoadedLines(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	saved := importImage(t, "saved.png", testmedia.PNG())
+	other := importImage(t, "ember.png", testmedia.PNG())
+	turns := []Turn{
+		{Role: "user", Content: "Look at this.", Attachments: []chatmedia.Ref{saved}},
+		{Role: "assistant", Content: "Seen.", PersonaID: "mira"},
+		{Role: "user", Content: "Ember, and this?", Attachments: []chatmedia.Ref{other}},
+		{Role: "assistant", Content: "Noted.", PersonaID: "ember"},
+	}
+	for _, load := range []string{"load", "reseed"} {
+		for _, kind := range []string{"stream", "blocking"} {
+			t.Run(load+"/"+kind, func(t *testing.T) {
+				fake := &fakeClaudeClient{
+					streamScripts: []streamScript{{msgs: []claude.Message{assistantMsg("Seen."), resultMsg("sess-1")}}},
+					fullResults:   []*claude.ClaudeResult{{Result: "Seen.", SessionID: "sess-1"}},
+				}
+				b := newTestBrain(fake)
+				if load == "load" {
+					b.LoadHistory(turns)
+				} else {
+					b.ReseedContinuity(turns)
+				}
+				if kind == "stream" {
+					s, err := b.ThinkStream(context.Background(), "Remember them?", StreamOptions{})
+					if err != nil {
+						t.Fatal(err)
+					}
+					collectStream(t, s)
+				} else if _, err := b.ThinkFull(context.Background(), "Remember them?", StreamOptions{}); err != nil {
+					t.Fatal(err)
+				}
+				if len(fake.content) != 0 {
+					t.Fatalf("a loaded line's image was sent: %d content calls", len(fake.content))
+				}
+				if turns[0].Attachments == nil {
+					t.Fatal("loading changed the caller's turns")
+				}
+			})
+		}
 	}
 }
 

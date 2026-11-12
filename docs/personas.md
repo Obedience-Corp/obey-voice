@@ -325,21 +325,26 @@ sends after that is recorded or counted as seen. A parked session is closed
 only once its stopped reply has finished, or after five seconds.
 
 An image you attach while a persona on Claude is answering is sent to Claude
-with that line. A resumed session already holds it, so later requests carry
-only new images. A fresh session for the persona, after the session fuse, a
-catch-up that does not fit or a rejected resume, is sent the images of the
-persona's own earlier lines again where they fit: the newest first, within 20
-images and 32 MiB together with the new line's images, which come first. An
-older image past those limits, or one no longer in the attachment store, is
-left out and named as no longer attached, so only the new line's images can
-make a request fail. The images of a line whose reply failed are not replayed.
-An image attached to a line said to another persona never reaches a persona on
-Claude, even with `hosted_persona_sharing` set to `whole_conversation`: the
-line reaches it as text, without the image or its file name. Only the
-persona's running Claude provider keeps its images: after a resume, or once
-Obey Voice closes the persona's parked session or starts its provider again,
-its earlier lines reach it as text and their images are not sent again. The
-saved conversation keeps every attachment.
+with that line. Claude takes at most 7.5 MiB per image as sent (a GIF as the PNG
+of its first frame), below the 8 MiB the attachment store allows, so a larger
+image is refused before the request. A resumed session already holds it, so
+later requests carry only new images. A fresh session for the persona, after
+the session fuse, a catch-up that does not fit or a rejected resume, is sent the
+images of the persona's own earlier lines again where they fit: the newest
+first, within 20 images and 32 MiB together with the new line's images, which
+come first. An older image past those limits, one larger than Claude takes, or
+one no longer in the attachment store, is left out and named as no longer
+attached, so only the new line's images can make a request fail. The images of
+a line whose reply failed or was stopped are not replayed, and a compaction
+summary request is sent none. An image attached to a line said to another
+persona never reaches a persona on Claude, even with `hosted_persona_sharing`
+set to `whole_conversation`: the line reaches it as text, without the image or
+its file name. Only the lines the persona's running Claude provider answered
+itself keep their images: the provider drops the images of every line loaded
+into it, so after a resume or a compaction, or once Obey Voice closes the
+persona's parked session or starts its provider again, its earlier lines reach
+it as text and their images are not sent again. The saved conversation keeps
+every attachment.
 
 Claude receives nothing said before its persona was first addressed while on
 Claude in the conversation, unless `hosted_persona_sharing` is set to

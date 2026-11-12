@@ -288,9 +288,10 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 	b.refreshPrompts(streamOpts.OnPromptWarn)
 	b.mu.Lock()
 	b.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
-	earlier, resuming := userAttachments(b.history), b.sessionID != ""
+	// A summary request is not sent earlier images: the record carries their lines.
+	earlier, replay := userAttachments(b.history), b.sessionID == "" && !streamOpts.TransientHistory
 	b.mu.Unlock()
-	images, err := requestImages(earlier, resuming, streamOpts.Attachments)
+	images, err := requestImages(earlier, replay, streamOpts.Attachments)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +320,7 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 		if err != nil && fresh != nil && !streamedAny && b.dropForRetry(ctx) {
 			fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
 			var retry []claude.ContentBlock
-			if retry, err = requestImages(earlier, false, streamOpts.Attachments); err == nil {
+			if retry, err = requestImages(earlier, !streamOpts.TransientHistory, streamOpts.Attachments); err == nil {
 				raw, _, err = b.streamAttempt(ctx, out, streamOpts, *fresh, retry)
 			}
 		}
@@ -650,9 +651,9 @@ func (b *Brain) ThinkFull(ctx context.Context, input string, streamOpts StreamOp
 	// unanswered prompt stays in the transcript as a user turn.
 	b.mu.Lock()
 	b.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
-	earlier, resuming := userAttachments(b.history), b.sessionID != ""
+	earlier, replay := userAttachments(b.history), b.sessionID == "" && !streamOpts.TransientHistory
 	b.mu.Unlock()
-	images, err := requestImages(earlier, resuming, streamOpts.Attachments)
+	images, err := requestImages(earlier, replay, streamOpts.Attachments)
 	if err != nil {
 		return "", err
 	}
@@ -671,7 +672,7 @@ func (b *Brain) ThinkFull(ctx context.Context, input string, streamOpts StreamOp
 	// failure.
 	if err != nil && fresh != nil && b.dropForRetry(ctx) {
 		fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
-		if images, err = requestImages(earlier, false, streamOpts.Attachments); err == nil {
+		if images, err = requestImages(earlier, !streamOpts.TransientHistory, streamOpts.Attachments); err == nil {
 			response, err = b.thinkFullAttempt(ctx, streamOpts, *fresh, images)
 		}
 	}
@@ -879,9 +880,14 @@ func (b *Brain) LoadHistory(turns []Turn) {
 	b.loadHistory(turns)
 }
 
+// loadHistory keeps no attachments: only a line this provider answered itself
+// keeps its images for a later fresh session, so a loaded line never sends one.
 func (b *Brain) loadHistory(turns []Turn) {
 	b.hostContext, b.seed = "", nil
 	b.history = normalizePromptHistory(turns)
+	for i := range b.history {
+		b.history[i].Attachments = nil
+	}
 	b.dropSession()
 }
 

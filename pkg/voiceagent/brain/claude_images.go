@@ -15,32 +15,35 @@ import (
 // applies a stricter size limit to every image of a request with more than 20.
 const maxRequestImages = 20
 
-// ValidateImages checks input images before a turn starts, with the same
-// limits as Codex. It reads only the local attachment store.
+// claudeImageLimit is the largest image the API accepts: 10 MiB once base64
+// encoded, which is 7.5 MiB as sent.
+var claudeImageLimit = imageLimit{bytes: 10 << 20 / 4 * 3, provider: "Claude"}
+
+// ValidateImages checks input images before a turn starts, with the limits a
+// request applies to them. It reads only the local attachment store.
 func (b *Brain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := loadImageData(refs)
-	return err
+	return checkImages(refs, claudeImageLimit)
 }
 
 // requestImages returns the blocks that follow a request's prompt: a label and
 // an image for each image it carries, or none. Only the new turn's images,
-// attachments, can fail a request. A resumed session already holds earlier
-// images; a fresh one is also sent, as far as they fit, those of earlier, the
-// attachments of the user lines held, the newest first, and a label for each
-// one left out. Only lines this provider recorded itself keep their
+// attachments, can fail a request. With replay, for a fresh session that is
+// not a summary request, it also sends, as far as they fit, those of earlier,
+// the attachments of the user lines held, the newest first, and a label for
+// each one left out. A resumed session already holds them. Only lines this provider recorded itself keep their
 // attachments: the host strips them from every line it loads into a persona
 // on Claude or sends it as catch-up, so another persona's images never reach
 // Claude.
-func requestImages(earlier []chatmedia.Ref, resuming bool, attachments []chatmedia.Ref) ([]claude.ContentBlock, error) {
+func requestImages(earlier []chatmedia.Ref, replay bool, attachments []chatmedia.Ref) ([]claude.ContentBlock, error) {
 	if len(attachments) > chatmedia.MaxAttachments {
 		return nil, errors.New("at most four images may be attached")
 	}
 	var fresh []claude.ContentBlock
 	used, seen := 0, map[string]bool{}
-	err := eachModelImage(attachments, func(label, mediaType string, data []byte) {
+	err := eachModelImage(attachments, claudeImageLimit, func(label, mediaType string, data []byte) {
 		fresh = append(fresh, claude.TextBlock(label), claude.ImageBlock(mediaType, data))
 		used += len(data)
 	})
@@ -50,7 +53,7 @@ func requestImages(earlier []chatmedia.Ref, resuming bool, attachments []chatmed
 	for _, ref := range attachments {
 		seen[ref.ID] = true
 	}
-	if resuming {
+	if !replay {
 		return fresh, nil
 	}
 	return append(replayImages(earlier, seen, maxRequestImageBytes-used, maxRequestImages-len(fresh)/2), fresh...), nil
@@ -68,11 +71,12 @@ func userAttachments(held []Turn) []chatmedia.Ref {
 }
 
 // replayImages is the best-effort replay of earlier images into a fresh
-// session, in their order. Walking from the newest, it keeps
-// images while they fit within budget bytes and room images; from the first
-// that does not, older ones are left out. An image that no longer loads is
-// left out too. Each image left out is named by a label saying it is no longer
-// attached, so its line still makes sense. An image in seen is not repeated.
+// session, in their order. Walking from the newest, it keeps images while they
+// fit within budget bytes and room images; from the first that does not, older
+// ones are left out. An image that no longer loads, or that is larger than
+// Claude accepts, is left out too. Each image left out is named by a label
+// saying it is no longer attached, so its line still makes sense. An image in
+// seen is not repeated.
 func replayImages(refs []chatmedia.Ref, seen map[string]bool, budget, room int) []claude.ContentBlock {
 	data := make([][]byte, len(refs))
 	repeat := make([]bool, len(refs))
@@ -88,7 +92,7 @@ func replayImages(refs []chatmedia.Ref, seen map[string]bool, budget, room int) 
 			full = true
 			continue
 		}
-		img, err := chatmedia.DefaultStore().ModelImage(ref)
+		img, err := claudeImageLimit.load(ref)
 		if err != nil {
 			continue
 		}
@@ -116,7 +120,9 @@ func replayImages(refs []chatmedia.Ref, seen map[string]bool, budget, room int) 
 	return blocks
 }
 
-// contentBlocks is a request's prompt followed by its images.
+// contentBlocks is a request's prompt followed by its images. Replayed images
+// follow the prompt on purpose: their labels name lines of the conversation
+// record the prompt carries.
 func contentBlocks(prompt string, images []claude.ContentBlock) []claude.ContentBlock {
 	return append([]claude.ContentBlock{claude.TextBlock(prompt)}, images...)
 }

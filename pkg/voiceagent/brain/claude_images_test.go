@@ -10,9 +10,11 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -235,7 +237,8 @@ func TestClaudeFreshSessionReplaysThePersonasOwnImages(t *testing.T) {
 	again := importImage(t, "again.gif", testmedia.GIF())
 	fake := &fakeClaudeClient{
 		streamScripts: []streamScript{
-			{msgs: []claude.Message{assistantMsg("Seen."), resultMsg("sess-1")}},
+			// Past the session fuse, so the next request starts a fresh session.
+			{msgs: []claude.Message{assistantMsgUsage("Seen.", 100, 0, 0, 5), resultMsg("sess-1")}},
 			{msgs: []claude.Message{assistantMsg("Still seen."), resultMsg("sess-2")}},
 			// A rejected --resume, then the retry in a fresh session.
 			{err: errors.New("no conversation found with session ID sess-2")},
@@ -243,6 +246,7 @@ func TestClaudeFreshSessionReplaysThePersonasOwnImages(t *testing.T) {
 		},
 	}
 	b := newTestBrain(fake)
+	b.cfg.ClaudeMaxSessionTokens = 50
 	run := func(input string, refs ...chatmedia.Ref) {
 		t.Helper()
 		s, err := b.ThinkStream(context.Background(), input, StreamOptions{Attachments: refs})
@@ -254,8 +258,6 @@ func TestClaudeFreshSessionReplaysThePersonasOwnImages(t *testing.T) {
 		}
 	}
 	run("Look at this.", own)
-	// A restored conversation has no session to resume.
-	b.LoadHistory(b.History())
 	run("Remember it?")
 	if len(fake.content) != 2 || fake.streamOpts[1].ResumeID != "" {
 		t.Fatalf("content calls = %d, resume = %q", len(fake.content), fake.streamOpts[1].ResumeID)
@@ -456,5 +458,92 @@ func TestStoppedClaudeImageRequestLeavesItsLineWithoutImages(t *testing.T) {
 	<-first.Done
 	if h := b.History(); len(h) != 3 || h[0].Attachments != nil {
 		t.Fatalf("history = %+v", h)
+	}
+}
+
+// noisyGIF is random pixels in a random palette: about 5 MiB as a GIF, and
+// over 11 MiB as the PNG of its first frame.
+func noisyGIF(t *testing.T) []byte {
+	t.Helper()
+	rgb := make([]byte, 3*256)
+	if _, err := rand.Read(rgb); err != nil {
+		t.Fatal(err)
+	}
+	pal := make(color.Palette, 256)
+	for i := range pal {
+		pal[i] = color.RGBA{R: rgb[3*i], G: rgb[3*i+1], B: rgb[3*i+2], A: 255}
+	}
+	img := image.NewPaletted(image.Rect(0, 0, 2000, 2000), pal)
+	if _, err := rand.Read(img.Pix); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := gif.Encode(&out, img, nil); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
+}
+
+// The 8 MiB limit applies to an image as it is sent: a GIF goes as the PNG of
+// its first frame, which can be larger than the file. A new line's GIF is
+// refused before any request; an earlier one is left out of a replay.
+func TestImageLimitAppliesToAGIFAsItIsSent(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	data := noisyGIF(t)
+	ref := importImage(t, "noise.gif", data)
+	sent, err := chatmedia.DefaultStore().ModelImage(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > chatmedia.MaxBytes || len(sent) <= chatmedia.MaxBytes {
+		t.Fatalf("fixture: a %d byte GIF sent as %d bytes", len(data), len(sent))
+	}
+	refs := []chatmedia.Ref{ref}
+	for name, validate := range map[string]func(context.Context, []chatmedia.Ref) error{
+		"claude": newTestBrain(&fakeClaudeClient{}).ValidateImages,
+		"codex":  (&CodexBrain{}).ValidateImages,
+	} {
+		if err := validate(t.Context(), refs); err == nil || !strings.Contains(err.Error(), "noise.gif") || !strings.Contains(err.Error(), "first frame") {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	fake := &fakeClaudeClient{}
+	if _, err := newTestBrain(fake).ThinkStream(t.Context(), "Look.", StreamOptions{Attachments: refs}); err == nil || fake.streamCalls != 0 {
+		t.Fatalf("the request went ahead: %v, %d calls", err, fake.streamCalls)
+	}
+	small := importImage(t, "small.png", testmedia.PNG())
+	got := replayEntries(t, oneContentCall(t, freshRequest(t, "stream", heldImageTurns(ref), small)))
+	if want := []string{"skipped:" + ref.ID, "sent:" + small.ID}; !slices.Equal(got, want) {
+		t.Fatalf("replay = %q, want %q", got, want)
+	}
+}
+
+// Claude takes an image of at most 10 MiB once base64 encoded, 7.5 MiB as
+// sent, below the 8 MiB the store allows. A larger one is refused before any
+// request with Claude named, or left out of a replay on its own; Codex still
+// takes it.
+func TestClaudeRefusesAnImageOverItsOwnLimitLocally(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	const ceiling = 10 << 20 / 4 * 3
+	big := storedBlob(t, "scan.png", ceiling+1)
+	edge := storedBlob(t, "edge.png", ceiling)
+	if base64.StdEncoding.EncodedLen(ceiling) > 10<<20 || base64.StdEncoding.EncodedLen(ceiling+1) <= 10<<20 || ceiling+1 > chatmedia.MaxBytes {
+		t.Fatal("fixture: the sizes do not straddle Claude's limit")
+	}
+	claudeBrain := newTestBrain(&fakeClaudeClient{})
+	if err := claudeBrain.ValidateImages(t.Context(), []chatmedia.Ref{big}); err == nil || !strings.Contains(err.Error(), "scan.png") || !strings.Contains(err.Error(), "to Claude") {
+		t.Fatalf("claude: %v", err)
+	}
+	if err := claudeBrain.ValidateImages(t.Context(), []chatmedia.Ref{edge}); err != nil {
+		t.Fatalf("an image at Claude's limit was refused: %v", err)
+	}
+	if err := (&CodexBrain{}).ValidateImages(t.Context(), []chatmedia.Ref{big}); err != nil {
+		t.Fatalf("codex: %v", err)
+	}
+	older := storedBlob(t, "older.png", 64)
+	small := importImage(t, "small.png", testmedia.PNG())
+	got := replayEntries(t, oneContentCall(t, freshRequest(t, "stream", heldImageTurns(older, big), small)))
+	if want := []string{"sent:" + older.ID, "skipped:" + big.ID, "sent:" + small.ID}; !slices.Equal(got, want) {
+		t.Fatalf("replay = %q, want %q", got, want)
 	}
 }

@@ -14,8 +14,7 @@ func (c *CodexBrain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := loadImageData(refs)
-	return err
+	return checkImages(refs, storeImageLimit)
 }
 func (c *CodexBrain) imageInputs(opts StreamOptions) ([]any, error) {
 	if len(opts.Attachments) > chatmedia.MaxAttachments {
@@ -29,7 +28,7 @@ func (c *CodexBrain) imageInputs(opts StreamOptions) ([]any, error) {
 	}
 	refs = append(refs, opts.Attachments...)
 	var inputs []any
-	err := eachModelImage(refs, func(label, mediaType string, data []byte) {
+	err := eachModelImage(refs, storeImageLimit, func(label, mediaType string, data []byte) {
 		inputs = append(inputs, map[string]any{"type": "text", "text": label}, map[string]any{"type": "image", "url": "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data)})
 	})
 	if err != nil {
