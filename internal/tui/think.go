@@ -40,7 +40,8 @@ type chatItem struct {
 	spoken     string
 	sys        string
 	// hang is a notice's plain text, wrapped at render time so every line
-	// keeps the two-column indent; sys holds the unwrapped fallback.
+	// keeps the two-column indent; sys holds the unwrapped fallback. render
+	// prefers hang, so an edit to sys alone never shows on a notice item.
 	hang      string
 	hangStyle lipgloss.Style
 	// notice preserves unstyled local command output for native clients.
@@ -54,7 +55,7 @@ type chatItem struct {
 // render paints the item for a viewport width columns wide.
 func (it chatItem) render(showThink bool, width int) string {
 	if it.kind != chatItemAgent {
-		if it.hang != "" && width > noticeIndent {
+		if it.hang != "" && width >= noticeIndent+2 {
 			return renderHanging(it.hangStyle, it.hang, width)
 		}
 		return it.sys
@@ -70,8 +71,12 @@ func (it chatItem) render(showThink bool, width int) string {
 	return renderAgentBubble(name, it.think, it.spoken, show)
 }
 
-// noticeIndent is the left margin of transcript notices.
+// noticeIndent is the left margin of transcript notices; a hanging notice
+// also needs two columns so a double-width character fits.
 const noticeIndent = 2
+
+// noticeTabWidth is the tab stop notices expand to before wrapping.
+const noticeTabWidth = 8
 
 // renderHanging wraps text to fit width with every line, not just the first,
 // indented by noticeIndent.
@@ -84,8 +89,32 @@ func renderHanging(style lipgloss.Style, text string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
+// noticeText is a notice as plain text with its tabs expanded. Event
+// messages are plain text; terminal sequences inside one (from a CLI's
+// stderr, say) would not survive the wrap, so they are dropped.
+func noticeText(text string) string {
+	text = ansi.Strip(text)
+	if !strings.Contains(text, "\t") {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		var b strings.Builder
+		for _, r := range line {
+			if r == '\t' {
+				b.WriteString(strings.Repeat(" ", noticeTabWidth-ansi.StringWidth(b.String())%noticeTabWidth))
+				continue
+			}
+			b.WriteRune(r)
+		}
+		lines[i] = b.String()
+	}
+	return strings.Join(lines, "\n")
+}
+
 // appendNotice adds a notice line that keeps its indent when it wraps.
 func (m *conversationModel) appendNotice(style lipgloss.Style, text string) {
+	text = noticeText(text)
 	m.items = append(m.items, chatItem{kind: chatItemSys, sys: style.Render(strings.Repeat(" ", noticeIndent) + text), hang: text, hangStyle: style})
 	m.refreshContent()
 	m.applyFollow()
