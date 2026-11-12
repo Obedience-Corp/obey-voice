@@ -186,10 +186,7 @@ func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probe
 	if err != nil {
 		return nil, err
 	}
-	keepAlive, err := parseOllamaKeepAlive(cfg.OllamaKeepAlive)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "obey-voice: invalid ollama_keep_alive %q (%v); using the server default\n", cfg.OllamaKeepAlive, err)
-	}
+	keepAlive := keepAliveOrDefault(cfg.OllamaKeepAlive)
 
 	embedCtx, embedCancel := context.WithTimeout(parent, 10*time.Second)
 	router, routerErr := newSharedSemanticSkillRouter(embedCtx, cfg.OllamaHost, client, cfg.OllamaEmbeddingModel, cfg.SkillsSimilarityThreshold, catalog, keepAlive)

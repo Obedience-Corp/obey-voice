@@ -10,6 +10,8 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
+// maxCatalogVectorEntries caps populated entries; while every slot is still
+// loading nothing is evicted, so the map can briefly exceed the cap.
 const maxCatalogVectorEntries = 16
 
 var sharedCatalogVectors = &catalogVectorCache{entries: map[string]*catalogVectorEntry{}}

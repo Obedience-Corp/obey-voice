@@ -320,3 +320,36 @@ func TestCatalogVectorCacheSkipsLoadForExpiredContext(t *testing.T) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
+
+func TestCatalogVectorCacheExceedsCapWhileEverySlotLoads(t *testing.T) {
+	c := &catalogVectorCache{entries: map[string]*catalogVectorEntry{}}
+	release := make(chan struct{})
+	var started sync.WaitGroup
+	slow := func(context.Context) ([][]float32, error) {
+		started.Done()
+		<-release
+		return [][]float32{{1}}, nil
+	}
+	total := maxCatalogVectorEntries + 1
+	started.Add(total)
+	errs := make(chan error, total)
+	for i := range total {
+		go func() {
+			_, err := c.get(context.Background(), "k"+strconv.Itoa(i), slow)
+			errs <- err
+		}()
+	}
+	started.Wait()
+	c.mu.Lock()
+	size := len(c.entries)
+	c.mu.Unlock()
+	if size != total {
+		t.Fatalf("entries while loading = %d, want %d: loading entries must not be evicted", size, total)
+	}
+	close(release)
+	for range total {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+}

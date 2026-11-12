@@ -141,7 +141,7 @@ func runnerOptions(t *testing.T, req api.ChatRequest) api.Runner {
 func TestLiveSkillSelectionSharesTheTurnRunnerOptions(t *testing.T) {
 	var chats []api.ChatRequest
 	embedder := &routingEmbedder{catalog: [][]float32{{1, 0}}, queries: map[string][]float32{"hello": {1, 0}}}
-	router, err := newSemanticSkillRouter(t.Context(), embedder, "embed", .55, []skills.Skill{{Name: "greeter", Description: "Greet people", Body: "SPECIALIZED_BODY"}})
+	router, err := newSemanticSkillRouter(t.Context(), embedder, "embed", .55, []skills.Skill{{Name: "greeter", Description: "Greet people", Body: "SPECIALIZED_BODY"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func runSelectionTurn(t *testing.T, o *OllamaBrain) {
 func selectionTestRouter(t *testing.T, body string) *semanticSkillRouter {
 	t.Helper()
 	embedder := &routingEmbedder{catalog: [][]float32{{1, 0}}, queries: map[string][]float32{"hello": {1, 0}}}
-	router, err := newSemanticSkillRouter(t.Context(), embedder, "embed", .55, []skills.Skill{{Name: "greeter", Description: "Greet people", Body: body}})
+	router, err := newSemanticSkillRouter(t.Context(), embedder, "embed", .55, []skills.Skill{{Name: "greeter", Description: "Greet people", Body: body}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
