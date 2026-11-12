@@ -688,9 +688,10 @@ keys and the tier assignments in `voice_workers` apply only to work handed to
 the worker. `voice_worker_job_budget`, the concurrency limit
 (`voice_worker_max_concurrent`, or the tiered policy's),
 `voice_workers_disabled`, `voice_tools_enabled` and, in tiered mode, the
-routed tier's limits and the charge policy apply to both. `obey-voice doctor`
-lists who does each persona's work. See
-[Who does the work](delegation.md#who-does-the-work).
+routed tier's runtime limit and the charge policy apply to both; which other
+tier limits a backend enforces is in
+[Who does the work](delegation.md#who-does-the-work). `obey-voice doctor`
+lists who does each persona's work.
 
 ### Experimental group participation
 
