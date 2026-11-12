@@ -284,8 +284,8 @@ func hiddenKeys() []KeySpec {
 	return []KeySpec{
 		{
 			Key: "active_persona", Type: TypeString, Default: "obey",
-			Group: GroupHidden, Title: "Active persona",
-			Help:               "Set by the Personas screen.",
+			Group: GroupHidden, Title: "Default persona",
+			Help:               "The default persona for new conversations: the one a start uses when none is chosen. It does not say which persona is speaking in a running conversation. Set by persona use.",
 			PersonaOverridable: true, ManagedBy: "persona use",
 		},
 		{

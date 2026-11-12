@@ -66,6 +66,10 @@
       "value": 0,
       "source": "default"
     },
+    "claude_model": {
+      "value": "",
+      "source": "default"
+    },
     "claude_session_warn_tokens": {
       "value": 60000,
       "source": "default"

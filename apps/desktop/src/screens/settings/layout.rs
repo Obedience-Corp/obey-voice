@@ -26,9 +26,6 @@ pub(super) fn title(section: &str) -> &str {
 
 pub(super) fn section(spec: &KeySpec) -> &'static str {
     let key = spec.key.as_str();
-    if key.starts_with("claude_") || key.starts_with("continuity_") {
-        return "advanced";
-    }
     if key.starts_with("voice_worker") {
         return "workers";
     }
@@ -40,6 +37,7 @@ pub(super) fn section(spec: &KeySpec) -> &'static str {
         "brain_provider"
             | "ollama_model"
             | "grok_model"
+            | "claude_model"
             | "cursor_model"
             | "obey_provider"
             | "obey_model"
@@ -51,6 +49,10 @@ pub(super) fn section(spec: &KeySpec) -> &'static str {
     ) || key.starts_with("decision_")
     {
         return "brain";
+    }
+    // After the brain list, so claude_model stays with its provider.
+    if key.starts_with("claude_") || key.starts_with("continuity_") {
+        return "advanced";
     }
     if matches!(key, "qwen_tts_voice" | "qwen_tts_language") {
         return "voice";
@@ -102,6 +104,7 @@ fn provider_model(key: &str) -> Option<&'static str> {
     match key {
         "ollama_model" => Some("ollama"),
         "grok_model" => Some("grok"),
+        "claude_model" => Some("claude"),
         "cursor_model" => Some("cursor"),
         "codex_model" | "codex_reasoning_effort" => Some("codex"),
         "obey_provider" | "obey_model" | "obey_camp" | "obey_socket" | "obey_tool_policy" => {
@@ -141,6 +144,7 @@ fn priority(key: &str) -> usize {
         | "user_display_name" => 0,
         "ollama_model"
         | "grok_model"
+        | "claude_model"
         | "cursor_model"
         | "obey_provider"
         | "obey_model"
@@ -216,6 +220,7 @@ mod tests {
             ("stt_provider", "models", "stt"),
             ("speaker.meeting.enabled", "meetings", "meeting"),
             ("talk_hotkey", "voice", "tools"),
+            ("claude_model", "brain", "brain"),
             ("claude_max_session_tokens", "brain", "advanced"),
             ("claude_session_warn_tokens", "brain", "advanced"),
             ("future_setting", "new_group", "advanced"),
@@ -228,6 +233,7 @@ mod tests {
     fn brain_shows_selected_provider_while_search_keeps_other_settings_reachable() {
         let schema = vec![
             spec("claude_max_session_tokens", "brain"),
+            spec("claude_model", "brain"),
             spec("grok_model", "brain"),
             spec("codex_model", "brain"),
             spec("codex_reasoning_effort", "brain"),
@@ -241,8 +247,11 @@ mod tests {
             ["brain_provider", "ollama_model"]
         );
         assert_eq!(
-            visible_keys(&schema, "brain", "claude", "ollama")[0].key,
-            "claude_max_session_tokens"
+            visible_keys(&schema, "brain", "claude", "ollama")
+                .iter()
+                .map(|s| s.key.as_str())
+                .collect::<Vec<_>>(),
+            ["claude_model", "claude_max_session_tokens"]
         );
         assert_eq!(
             visible_keys(&schema, "brain", "grok", "ollama")[0].key,
@@ -255,6 +264,13 @@ mod tests {
                 .map(|s| s.key.as_str())
                 .collect::<Vec<_>>(),
             ["brain_provider", "codex_model", "codex_reasoning_effort"]
+        );
+        assert_eq!(
+            visible_keys(&schema, "brain", "", "claude")
+                .iter()
+                .map(|s| s.key.as_str())
+                .collect::<Vec<_>>(),
+            ["brain_provider", "claude_model"]
         );
     }
 }

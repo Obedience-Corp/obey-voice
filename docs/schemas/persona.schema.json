@@ -45,7 +45,7 @@
         },
         "model": {
           "type": "string",
-          "description": "Provider-specific model id, routed to ollama_model, grok_model, or cursor_model. Claude has no app-level model key, so a persona-level Claude model is recorded but not routed."
+          "description": "Provider-specific model id, routed to the effective provider's model key (ollama_model, grok_model, claude_model, cursor_model, codex_model, muse_spark_model or obey_model)."
         },
         "worker_tiers": {
           "anyOf": [

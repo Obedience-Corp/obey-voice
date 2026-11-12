@@ -44,10 +44,10 @@ func TestHarnessRoutingAdaptersDoNotResumeOrMutateTalkingSession(t *testing.T) {
 	t.Run("claude", func(t *testing.T) {
 		f := &fakeClaudeClient{fullResults: []*claude.ClaudeResult{{Result: harnessSpawn}}}
 		b := newTestBrain(f)
-		b.cfg.PromptsDir, b.sessionID = t.TempDir(), "talking"
+		b.cfg.PromptsDir, b.cfg.ClaudeModel, b.sessionID = t.TempDir(), "haiku", "talking"
 		check(t, b)
 		o := f.runOpts[0]
-		if o.ResumeID != "" || !o.NoSessionPersistence || len(o.Tools) != 1 || o.Tools[0] != "" || o.PermissionMode != claude.PermissionModeDefault || b.sessionID != "talking" || len(b.History()) != 0 {
+		if o.ResumeID != "" || !o.NoSessionPersistence || len(o.Tools) != 1 || o.Tools[0] != "" || o.PermissionMode != claude.PermissionModeDefault || o.Model != "haiku" || b.sessionID != "talking" || len(b.History()) != 0 {
 			t.Fatalf("unsafe routing options %+v", o)
 		}
 	})

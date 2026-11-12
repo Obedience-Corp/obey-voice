@@ -61,7 +61,7 @@ impl VoiceApp {
             }
         });
         if !self.settings_persona.is_null() {
-            ui.collapsing("Active persona overrides", |ui| {
+            ui.collapsing("Default persona overrides", |ui| {
                 ui.label(
                     "Persona model and voice choices can override these application defaults.",
                 );

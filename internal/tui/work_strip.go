@@ -264,7 +264,7 @@ func (m *conversationModel) markVisibleWorkResults() {
 	}
 	start, end, line := m.viewport.YOffset, m.viewport.YOffset+m.viewport.Height, 0
 	for _, item := range m.items {
-		rendered := item.render(m.showThink)
+		rendered := item.render(m.showThink, m.viewport.Width)
 		if rendered == "" {
 			continue
 		}

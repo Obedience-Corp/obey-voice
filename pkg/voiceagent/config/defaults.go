@@ -172,6 +172,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("voice_worker_job_budget", DefaultVoiceWorkerJobBudget)
 	v.SetDefault("voice_worker_boundary", true)
 	v.SetDefault("grok_model", "")
+	v.SetDefault("claude_model", "")
 	v.SetDefault("cursor_model", "")
 	v.SetDefault("muse_spark_model", "")
 	v.SetDefault("obey_provider", "")

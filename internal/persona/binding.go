@@ -111,6 +111,9 @@ func newBinding(id, display string, tts TTS, snap config.Config, effective ...Au
 	if len(effective) > 0 {
 		audio = effective[0]
 	}
+	// Spellings of one Claude model ("", "default", padded) share a binding,
+	// so switching between them keeps the session.
+	snap.ClaudeModel = config.BrainModelFor(&snap, "claude")
 	return &SessionBinding{
 		PersonaID:     id,
 		DisplayName:   display,

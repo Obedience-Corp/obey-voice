@@ -713,6 +713,20 @@
       "editable": true
     },
     {
+      "key": "claude_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Claude model",
+      "help": "The model the Claude CLI is asked for, such as sonnet, opus or haiku. Empty uses the CLI's own default.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "CLAUDE_MODEL",
+      "editable": true
+    },
+    {
       "key": "claude_session_warn_tokens",
       "type": "int",
       "default": 60000,
@@ -2864,8 +2878,8 @@
       "default": "obey",
       "allows_empty": true,
       "group": "hidden",
-      "title": "Active persona",
-      "help": "Set by the Personas screen.",
+      "title": "Default persona",
+      "help": "The default persona for new conversations: the one a start uses when none is chosen. It does not say which persona is speaking in a running conversation. Set by persona use.",
       "restart_required": false,
       "restart_verified": true,
       "persona_overridable": true,

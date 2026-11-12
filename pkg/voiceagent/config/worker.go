@@ -133,8 +133,7 @@ func ollamaModelEqual(a, b string) bool {
 	return norm(a) == norm(b)
 }
 
-// BrainModelFor returns the model configured for a brain provider. Claude has
-// no app-level model key, so it reports "".
+// BrainModelFor returns the model configured for a brain provider.
 func BrainModelFor(cfg *Config, provider string) string {
 	if cfg == nil {
 		return ""
@@ -144,6 +143,8 @@ func BrainModelFor(cfg *Config, provider string) string {
 		return strings.TrimSpace(cfg.OllamaModel)
 	case "grok":
 		return strings.TrimSpace(cfg.GrokModel)
+	case "claude":
+		return claudeModelValue(cfg.ClaudeModel)
 	case "cursor":
 		return strings.TrimSpace(cfg.CursorModel)
 	case "muse-spark":
@@ -154,6 +155,16 @@ func BrainModelFor(cfg *Config, provider string) string {
 		return strings.TrimSpace(cfg.CodexModel)
 	}
 	return ""
+}
+
+// claudeModelValue is claude_model as the CLI receives it: trimmed, and empty
+// for "default", which leaves the choice to the CLI. Model ids keep their case.
+func claudeModelValue(model string) string {
+	model = strings.TrimSpace(model)
+	if strings.EqualFold(model, "default") {
+		return ""
+	}
+	return model
 }
 
 // SetBrainModel writes model into the provider's model field; providers
@@ -167,6 +178,8 @@ func SetBrainModel(cfg *Config, provider, model string) {
 		cfg.OllamaModel = model
 	case "grok":
 		cfg.GrokModel = model
+	case "claude":
+		cfg.ClaudeModel = claudeModelValue(model)
 	case "cursor":
 		cfg.CursorModel = model
 	case "muse-spark":

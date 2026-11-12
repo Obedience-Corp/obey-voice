@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
@@ -421,6 +424,45 @@ func TestCursorBatchReportsDefaultModelWhenUnconfigured(t *testing.T) {
 	}
 	if res.Provider != "cursor" || res.Model != "default" {
 		t.Errorf("identity = %s/%s, want cursor/default", res.Provider, res.Model)
+	}
+}
+
+func TestClaudeBatchAsksForTheConfiguredModel(t *testing.T) {
+	dir := t.TempDir()
+	// The constructor only looks the CLI up; the fake runner answers.
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nexit 99\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	c, err := newClaudeBatch(&config.Config{BrainProvider: "claude", ClaudeModel: "haiku", PromptsDir: t.TempDir(), WorkDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeClaudeRunner{result: &claude.ClaudeResult{Result: "out"}}
+	c.runner = runner
+	res, err := c.Transform(t.Context(), BatchRequest{Text: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.gotOpts.Model != "haiku" || res.Model != "haiku" {
+		t.Fatalf("Model = %q, reported %q; want haiku", runner.gotOpts.Model, res.Model)
+	}
+}
+
+func TestClaudeBatchFailureNamesWhatTheCLIPrinted(t *testing.T) {
+	cliErr := claude.ParseError("Loading config\nError: invalid model: soonet\n", 1)
+	c := &claudeBatch{runner: &fakeClaudeRunner{err: cliErr}, model: "soonet"}
+	_, err := c.Transform(t.Context(), BatchRequest{Text: "hello"})
+	var got *claude.ClaudeError
+	if err == nil || !strings.HasSuffix(err.Error(), ": Error: invalid model: soonet") || !errors.As(err, &got) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestClaudeFailureCutsALongLineOnARune(t *testing.T) {
+	err := claudeFailure("claude batch", claude.ParseError(strings.Repeat("é", 300), 1))
+	if !utf8.ValidString(err.Error()) || !strings.HasSuffix(err.Error(), strings.Repeat("é", 240)+"…") {
+		t.Fatalf("err = %q", err)
 	}
 }
 

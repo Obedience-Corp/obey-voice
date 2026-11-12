@@ -53,7 +53,7 @@ func torpedoHistory() []brain.Turn {
 }
 
 func TestSpawnBriefCarriesTheConversationAndMarksTheTrigger(t *testing.T) {
-	brief := spawnBrief(torpedoHistory(), "Yes, please begin.")
+	brief := spawnBrief(torpedoHistory(), "Yes, please begin.", "")
 
 	for _, want := range []string{
 		"lightweight homing torpedo",
@@ -73,7 +73,7 @@ func TestSpawnBriefCarriesTheConversationAndMarksTheTrigger(t *testing.T) {
 // The instruction that answers the incident: a worker that cannot tell what it
 // was asked must not go find something else to do.
 func TestSpawnBriefForbidsGoingHunting(t *testing.T) {
-	brief := spawnBrief(torpedoHistory(), "Yes.")
+	brief := spawnBrief(torpedoHistory(), "Yes.", "")
 	for _, want := range []string{"Do not search for other work", "not your task"} {
 		if !strings.Contains(brief, want) {
 			t.Errorf("brief missing the no-hunting instruction %q:\n%s", want, brief)
@@ -84,7 +84,7 @@ func TestSpawnBriefForbidsGoingHunting(t *testing.T) {
 // Tool traffic is the talking brain's own bookkeeping; a different provider's
 // worker cannot use it and it only spends the budget.
 func TestSpawnBriefDropsToolTurns(t *testing.T) {
-	brief := spawnBrief(torpedoHistory(), "Do it")
+	brief := spawnBrief(torpedoHistory(), "Do it", "")
 	if strings.Contains(brief, "[tool:route]") {
 		t.Errorf("brief carried tool traffic:\n%s", brief)
 	}
@@ -95,7 +95,7 @@ func TestSpawnBriefIsBounded(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		long = append(long, brain.Turn{Role: "user", Content: strings.Repeat("x", 500)})
 	}
-	brief := spawnBrief(long, "go ahead")
+	brief := spawnBrief(long, "go ahead", "")
 	// The conversation block is clipped; the framing and trigger ride on top.
 	if len(brief) > spawnBriefBytes+1024 {
 		t.Fatalf("brief is %d bytes, want it bounded near %d", len(brief), spawnBriefBytes)
@@ -105,7 +105,7 @@ func TestSpawnBriefIsBounded(t *testing.T) {
 func TestSpawnBriefUsesSpeakerLabels(t *testing.T) {
 	brief := spawnBrief([]brain.Turn{
 		{Role: "user", Speaker: "speaker-2", Content: "Pull the quarterly numbers."},
-	}, "yes")
+	}, "yes", "")
 	if !strings.Contains(brief, "speaker-2: Pull the quarterly numbers.") {
 		t.Errorf("brief lost the speaker label:\n%s", brief)
 	}
@@ -242,5 +242,38 @@ func TestSpawnJobLabelStaysTheUtterance(t *testing.T) {
 	}
 	if status[0].Task != "build this" {
 		t.Fatalf("job label = %q, want the utterance", status[0].Task)
+	}
+}
+
+// The worker learns which persona it works for, so "change your model" names
+// a profile; the admitted response decides, and the bound config backs it up.
+func TestSpawnBriefNamesTheSpeakingPersonaID(t *testing.T) {
+	if brief := spawnBrief(torpedoHistory(), "Do it", ""); strings.Contains(brief, "persona with id") {
+		t.Fatalf("an unnamed persona got an id line:\n%s", brief)
+	}
+	for _, tc := range []struct{ name, response, bound, want string }{
+		{"admitted response", "mira", "ember", "mira"},
+		{"bound config", "", "ember", "ember"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agency, worker, _, cleanup := newSpawnAgency(t, torpedoHistory())
+			defer cleanup()
+			agency.ReplaceWorker(worker, &config.Config{ActivePersona: tc.bound}, nil)
+			metrics := newTurnMetrics()
+			metrics.response.PersonaID = tc.response
+			agency.HandleRoute(context.Background(), agency.pipeline.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteSpawn, Transcript: "Yes, please begin.", Source: "test"})
+			deadline := time.After(2 * time.Second)
+			for worker.seen() == "" {
+				select {
+				case <-deadline:
+					t.Fatal("worker never ran")
+				case <-time.After(5 * time.Millisecond):
+				}
+			}
+			prompt := worker.seen()
+			if want := `persona with id "` + tc.want + `"`; strings.Count(prompt, "persona with id") != 1 || !strings.Contains(prompt, want) {
+				t.Fatalf("worker prompt lacks %s:\n%s", want, prompt)
+			}
+		})
 	}
 }

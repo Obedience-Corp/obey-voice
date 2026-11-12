@@ -234,6 +234,7 @@ type Config struct {
 	// VoiceWorkerBoundary fences a spawned worker to the campaign it was launched in.
 	VoiceWorkerBoundary  bool   `mapstructure:"voice_worker_boundary"`
 	GrokModel            string `mapstructure:"grok_model"`
+	ClaudeModel          string `mapstructure:"claude_model"`
 	CursorModel          string `mapstructure:"cursor_model"`
 	MuseSparkModel       string `mapstructure:"muse_spark_model"`
 	ObeyProvider         string `mapstructure:"obey_provider"`
