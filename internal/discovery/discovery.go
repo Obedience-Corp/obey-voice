@@ -58,6 +58,12 @@ func DiscoverProvidersContext(ctx context.Context, cfg *config.Config) []Provide
 	return out
 }
 
+// DiscoverProvider probes one brain provider, as DiscoverProvidersContext
+// does for each.
+func DiscoverProvider(ctx context.Context, cfg *config.Config, name string) ProviderInfo {
+	return probeProvider(ctx, cfg, name)
+}
+
 func probeProvider(ctx context.Context, cfg *config.Config, name string) ProviderInfo {
 	switch name {
 	case "muse-spark":
@@ -84,11 +90,15 @@ func probeProvider(ctx context.Context, cfg *config.Config, name string) Provide
 	}
 }
 
+// discoverClaude lists only "default" and the saved claude_model: the CLI
+// installed today has no model catalog to read.
 func discoverClaude(cfg *config.Config) ProviderInfo {
 	_, err := exec.LookPath("claude")
 	models := []string{"default"}
-	if cfg != nil && strings.TrimSpace(cfg.ClaudeModel) != "" {
-		models = append(models, cfg.ClaudeModel)
+	if cfg != nil {
+		if model := strings.TrimSpace(cfg.ClaudeModel); model != "" && !strings.EqualFold(model, "default") {
+			models = append(models, model)
+		}
 	}
 	return ProviderInfo{Name: "claude", Available: err == nil, Models: models}
 }
