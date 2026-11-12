@@ -180,11 +180,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		s.retireParked(retireAll)
 	}
 	s.restored = restoredConversation{personaID: opts.Initial.PersonaID, provider: opts.SessionProvider}
-	startedOn := opts.Initial.BrainProvider
-	if len(opts.Transcript) > 0 {
-		startedOn = opts.SessionProvider
-	}
-	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, startedOn, opts.HostedNotified, opts.HostedNotifiedWhole)
+	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, opts.HostedNotified, opts.HostedNotifiedWhole)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	hostedShare := brain.HostedSharedHistory(opts.Pipeline.Brain)
 	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok && !hostedShare {
@@ -469,7 +465,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.opts.UseDefaults = false
 	s.retireParked(retireAll)
 	s.restored = restoredConversation{}
-	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, s.liveProvider(), nil, nil)
+	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, nil, nil)
 	s.transcript.reset(nil)
 	s.transcript.restoreSessions(nil)
 	s.mu.Lock()

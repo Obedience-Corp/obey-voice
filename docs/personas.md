@@ -466,8 +466,8 @@ on, so a resumed conversation marks new replies only; the header badge and the
 Personas list still show the persona's backend as it is now.
 
 The first time in a conversation that a persona on a hosted backend is about to
-be sent anything, Obey Voice says so once, before the request: an info line in
-the conversation and, in voice mode, the same sentence spoken. For a persona on
+be sent anything, Obey Voice says so once, before the request, as an info line
+in the conversation. It is never spoken, in voice mode either. For a persona on
 Claude:
 
 > Mira runs on Claude, a hosted service. Only what is said from when it was
@@ -490,20 +490,14 @@ forgotten when the conversation is cleared, and is saved with the session so a
 resumed conversation does not repeat it (a session saved before this existed
 repeats it once, and one saved before the whole-conversation case was recorded
 gives that notice again when it applies). It counts as given only once it was
-shown and spoken and the request went ahead: a turn stopped during the notice
-gives it again next time. A turn that sends the persona nothing (one refused
+shown and the request went ahead: a turn stopped during the notice gives it
+again next time. A turn that sends the persona nothing (one refused
 by its image check, or routed to a job or a story) does not give it, nor does a
 job result spoken while you are idle: that reaches the persona's provider with
 its next request, which gives the notice first.
 It is shown by the host: no model receives it and it is not recorded as any
 persona's reply. A bare `Mira here.` address sends
 nothing and does not trigger it.
-
-A conversation that started on the hosted provider itself, such as a Claude-only
-install, gets the info line but no spoken notice the first time, so it does not
-announce itself at every launch. A later notice for that provider, saying that a
-persona on it now receives the whole conversation, is spoken as well. The marker
-is still on every reply.
 
 `hosted_persona_sharing` chooses what a persona on Claude, Codex, Muse Spark or
 Obey receives of a conversation shared with other personas:
