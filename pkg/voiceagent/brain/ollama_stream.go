@@ -238,7 +238,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && !imageResultRetry {
 				chat = o.chatRouteRecovery
 			}
-			err := chat(ctx, req, func(resp api.ChatResponse) error {
+			requestCtx, cancelRequest := ctx, context.CancelFunc(func() {})
+			if finalAnswer {
+				requestCtx, cancelRequest = rounds.answerContext(ctx)
+			}
+			err := chat(requestCtx, req, func(resp api.ChatResponse) error {
 				if resp.Done {
 					prefillTokens, genTokens = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
 					doneReason = resp.DoneReason
@@ -291,6 +295,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				return nil
 			})
+			cancelRequest()
 			if err == nil && routing && !responseComplete {
 				err = fmt.Errorf("routing response ended before completion")
 			}
@@ -414,6 +419,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 			}
 			if err != nil {
+				if finalAnswer {
+					if cut := rounds.cutOff(ctx, requestCtx, strings.Join(routeText, "")); cut != nil {
+						err = cut
+					}
+				}
 				// Preserve only genuine text already sent to the user. Report
 				// failure separately, never as a synthetic assistant utterance.
 				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, emitted.String())); partial != "" {

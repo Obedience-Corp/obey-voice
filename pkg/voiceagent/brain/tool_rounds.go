@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -33,6 +34,31 @@ const (
 // out the real reserve.
 var workerTimeReserve = func(total time.Duration) time.Duration {
 	return min(max(total/10, 15*time.Second), time.Minute, total/2)
+}
+
+// workerAnswerMargin is how long before the deadline a worker's final request
+// is cut off, so the worker can report the cut before the job is stopped. It
+// is a variable so tests can use short deadlines.
+var workerAnswerMargin = func(total time.Duration) time.Duration {
+	return min(time.Second, total/20)
+}
+
+// ErrWorkerOutOfTime means a worker's final answer was cut off at its deadline.
+var ErrWorkerOutOfTime = errors.New("worker ran out of time before it could write its answer")
+
+// WorkerOutOfTimeError carries any answer text received before the cut. It
+// also matches context.DeadlineExceeded so hosts still classify it as a limit.
+type WorkerOutOfTimeError struct{ Partial string }
+
+func (e *WorkerOutOfTimeError) Error() string {
+	if e.Partial == "" {
+		return ErrWorkerOutOfTime.Error()
+	}
+	return ErrWorkerOutOfTime.Error() + "; partial answer: " + e.Partial
+}
+
+func (e *WorkerOutOfTimeError) Unwrap() []error {
+	return []error{ErrWorkerOutOfTime, context.DeadlineExceeded}
 }
 
 // toolRounds decides when a turn's tool loop must stop and answer. Live turns
@@ -93,6 +119,24 @@ func (r *toolRounds) limitInstruction(ctx context.Context, i int) string {
 // stopErr describes a final round that produced no usable answer.
 func (r *toolRounds) stopErr(detail string) error {
 	return fmt.Errorf("%s: %s", r.stop, detail)
+}
+
+// answerContext bounds a worker's final request by its deadline.
+func (r *toolRounds) answerContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, timed := WorkerDeadline(ctx)
+	if !r.worker || !timed {
+		return ctx, func() {}
+	}
+	return context.WithDeadline(ctx, deadline.Add(-workerAnswerMargin(deadline.Sub(r.start))))
+}
+
+// cutOff reports a final request that answerContext ended, or nil when the
+// request failed for another reason.
+func (r *toolRounds) cutOff(ctx, request context.Context, partial string) error {
+	if ctx.Err() != nil || !errors.Is(request.Err(), context.DeadlineExceeded) {
+		return nil
+	}
+	return &WorkerOutOfTimeError{Partial: strings.TrimSpace(cleanForVoice(partial))}
 }
 
 // observe records a completed round for the no-progress guard. results holds

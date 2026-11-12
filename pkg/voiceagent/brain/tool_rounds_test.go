@@ -436,3 +436,67 @@ func TestRecurringRoundBetweenNewWorkIsProgress(t *testing.T) {
 		}
 	}
 }
+
+// A worker's final answer that stalls is cut off before the job deadline and
+// reported as running out of time, keeping the text that had arrived. Stream
+// mode streams that text; full mode receives it as a length-truncated segment
+// and stalls on the continuation.
+func TestWorkerFinalAnswerIsCutOffBeforeTheDeadline(t *testing.T) {
+	savedReserve, savedMargin := workerTimeReserve, workerAnswerMargin
+	workerTimeReserve = func(time.Duration) time.Duration { return time.Hour }
+	workerAnswerMargin = func(time.Duration) time.Duration { return 600 * time.Millisecond }
+	t.Cleanup(func() { workerTimeReserve, workerAnswerMargin = savedReserve, savedMargin })
+	const written = "Three files were read before time ran out."
+
+	eachMode(t, func(t *testing.T, streaming bool) {
+		var calls atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req api.ChatRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			n := calls.Add(1)
+			enc := json.NewEncoder(w)
+			if streaming {
+				_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: written}})
+			} else if n == 1 {
+				_ = enc.Encode(api.ChatResponse{Done: true, DoneReason: "length", Message: api.Message{Role: "assistant", Content: written}})
+				return
+			}
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+		}))
+		defer server.Close()
+		host, _ := url.Parse(server.URL)
+		o := &OllamaBrain{client: api.NewClient(host, server.Client()), model: "fixture", workDir: t.TempDir(), cfg: &config.Config{MaxHistory: 100, OllamaNumCtx: 32768, IsWorker: true}}
+
+		deadline := time.Now().Add(800 * time.Millisecond)
+		ctx, cancel := context.WithDeadline(t.Context(), deadline.Add(time.Second))
+		defer cancel()
+		ctx = WithWorkerDeadline(ctx, deadline)
+		var err error
+		if streaming {
+			stream, startErr := o.ThinkStream(ctx, "Do the job.", WorkerStreamOptions(true))
+			if startErr != nil {
+				t.Fatal(startErr)
+			}
+			_, _ = drainStream(t, stream)
+			err = (<-stream.Done).Err
+		} else {
+			_, err = o.ThinkFull(ctx, "Do the job.", WorkerStreamOptions(true))
+		}
+		returned := time.Now()
+
+		var cut *WorkerOutOfTimeError
+		if !errors.As(err, &cut) || !errors.Is(err, ErrWorkerOutOfTime) {
+			t.Fatalf("err = %v, want the worker to run out of time", err)
+		}
+		if !returned.Before(deadline) {
+			t.Fatalf("returned %v after the deadline", returned.Sub(deadline))
+		}
+		if cut.Partial != written {
+			t.Fatalf("partial answer = %q, want %q", cut.Partial, written)
+		}
+		if msg := err.Error(); strings.Contains(msg, "context deadline exceeded") || strings.Contains(msg, stopRoundLimit) {
+			t.Fatalf("error text = %q", msg)
+		}
+	})
+}

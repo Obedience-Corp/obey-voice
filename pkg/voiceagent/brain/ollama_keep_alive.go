@@ -28,6 +28,8 @@ func parseOllamaKeepAlive(raw string) (*api.Duration, error) {
 	return &api.Duration{Duration: d}, nil
 }
 
+// keepAliveWarned is process-global and never expires: a value fixed and then
+// set to the same invalid value again in one process is not reported again.
 var (
 	keepAliveWarnOut io.Writer = os.Stderr
 	keepAliveWarned  sync.Map
