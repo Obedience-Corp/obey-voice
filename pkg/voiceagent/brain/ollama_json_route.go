@@ -18,6 +18,11 @@ import (
 // route. The turn treats it like a missing route call.
 var errRouteRejected = errors.New("route decision rejected")
 
+// jsonRouteThinkingTokens caps the route request when thinking is on. Ollama
+// counts thinking against num_predict, so the 256-token decision cap could end
+// a model's reasoning before it writes the object.
+const jsonRouteThinkingTokens = 1024
+
 // jsonRouteEligible reports whether a round can decide its route privately as
 // JSON: the round offers only the route schema and its request ends with a
 // user message the instruction can follow.
@@ -63,14 +68,17 @@ func (o *OllamaBrain) chatJSONRoute(ctx context.Context, original *api.ChatReque
 		req.Options = map[string]any{}
 	}
 	req.Options["temperature"] = 0
-	if limit, ok := req.Options["num_predict"].(int); !thinkEnabled(req.Think) && (!ok || limit <= 0 || limit > 256) {
-		req.Options["num_predict"] = 256
+	limit := routeDecisionTokens
+	if thinkEnabled(req.Think) {
+		limit = jsonRouteThinkingTokens
 	}
+	capNumPredict(req.Options, limit)
 	req.Messages = slices.Clone(original.Messages)
 	appendToNewestUser(req.Messages, "\n\n"+systemPrompt(o.cfg, "route-recovery", nil)+"\n"+route.Description+"\nJSON schema: "+string(schema))
 	if err := o.messagesBudgetError(req.Messages, nil); err != nil {
 		return err
 	}
+	// A first attempt: unlike the recovery call, it does not draw on the retry budget.
 	ctx, cancel := context.WithTimeout(ctx, config.PersonaRoutingTimeoutOf(o.cfg))
 	defer cancel()
 	var response api.ChatResponse
@@ -81,6 +89,9 @@ func (o *OllamaBrain) chatJSONRoute(ctx context.Context, original *api.ChatReque
 		return fmt.Errorf("json route: %w", err)
 	}
 	args, decodeErr := decodeRouteRecovery(response, route.Parameters)
+	if decodeErr != nil {
+		decodeErr = fmt.Errorf("%w %s", decodeErr, routeDecisionDiagnostics(response))
+	}
 	response.Message = api.Message{Role: "assistant"}
 	if decodeErr == nil {
 		response.Message.ToolCalls = []api.ToolCall{{Function: api.ToolCallFunction{Name: "route", Arguments: args}}}

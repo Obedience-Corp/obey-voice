@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,13 +25,15 @@ import (
 )
 
 // jsonRouteFake answers native route rounds with a route tool call, schema
-// requests with decide's text and everything else with answer.
+// requests with decide's text and everything else with answer. intercept, when
+// set, sees each recorded request first and may answer it instead.
 type jsonRouteFake struct {
-	mu       sync.Mutex
-	requests []api.ChatRequest
-	native   map[string]string
-	decide   func(attempt int) string
-	answer   string
+	mu        sync.Mutex
+	requests  []api.ChatRequest
+	native    map[string]string
+	decide    func(attempt int) string
+	answer    string
+	intercept func(w http.ResponseWriter, r *http.Request, req api.ChatRequest) bool
 }
 
 func (f *jsonRouteFake) server(t *testing.T) *httptest.Server {
@@ -53,6 +57,9 @@ func (f *jsonRouteFake) server(t *testing.T) *httptest.Server {
 			}
 		}
 		f.mu.Unlock()
+		if f.intercept != nil && f.intercept(w, r, req) {
+			return
+		}
 		msg := api.Message{Role: "assistant"}
 		switch {
 		case hasTool(req.Tools, "route"):
@@ -215,6 +222,10 @@ func TestJSONRouteSharesThePromptPrefixWithTheReply(t *testing.T) {
 				if !reflect.DeepEqual(options(route.Options), options(reply.Options)) || len(options(reply.Options)) == 0 {
 					t.Fatalf("runner options differ: route=%v reply=%v", route.Options, reply.Options)
 				}
+				wantCap := map[bool]int{false: routeDecisionTokens, true: jsonRouteThinkingTokens}[think == "true"]
+				if route.Options["num_predict"] != float64(wantCap) {
+					t.Fatalf("route num_predict=%v want %d", route.Options["num_predict"], wantCap)
+				}
 				last := len(reply.Messages) - 1
 				if len(route.Messages) != len(reply.Messages) || reply.Messages[0].Role != "system" {
 					t.Fatalf("message counts differ: route=%d reply=%d", len(route.Messages), len(reply.Messages))
@@ -320,7 +331,7 @@ func TestJSONRouteOutcomesMatchTheRouteTool(t *testing.T) {
 			}
 			if len(native.tools) != 1 || len(private.tools) != 1 || private.tools[0].Name != "route" ||
 				private.tools[0].Summary != tc.decision["kind"] || private.tools[0].Outcome.Status != events.ToolOutcomeSucceeded ||
-				private.tools[0].Elapsed <= 0 || private.tools[0].Outcome.Elapsed != private.tools[0].Elapsed {
+				private.tools[0].Outcome.Elapsed != private.tools[0].Elapsed {
 				t.Fatalf("route events: native=%+v json=%+v", native.tools, private.tools)
 			}
 		})
@@ -333,18 +344,19 @@ func TestJSONRouteOutcomesMatchTheRouteTool(t *testing.T) {
 func TestJSONRouteRejectedDecisionFailsClosed(t *testing.T) {
 	const garbled = "Sure, I'll check that for you."
 	for _, tc := range []struct {
-		name     string
-		decide   func(int) string
-		requests int
-		failed   int
-		answer   string
-		err      string
+		name      string
+		decide    func(int) string
+		requests  int
+		failed    int
+		succeeded int
+		answer    string
+		err       string
 	}{
-		{"rejected twice", fixedDecision(garbled), 2, 2, "", "recover missing route"},
+		{"rejected twice", fixedDecision(garbled), 2, 2, 0, "", "recover missing route"},
 		{"invalid kind then rejected", func(n int) string {
 			return map[int]string{1: `{"kind":"maybe"}`, 2: `{"kind":"chat","answer":"hi"}`}[n]
-		}, 2, 2, "", "recover missing route"},
-		{"recovered", func(n int) string { return map[int]string{1: garbled, 2: `{"kind":"chat"}`}[n] }, 3, 1, "Fair enough.", ""},
+		}, 2, 2, 0, "", "recover missing route"},
+		{"recovered", func(n int) string { return map[int]string{1: garbled, 2: `{"kind":"chat"}`}[n] }, 3, 1, 1, "Fair enough.", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := &jsonRouteFake{decide: tc.decide, answer: "Fair enough."}
@@ -364,22 +376,218 @@ func TestJSONRouteRejectedDecisionFailsClosed(t *testing.T) {
 			if strings.Contains(turn.thinking, garbled) || strings.Contains(turn.answer, garbled) {
 				t.Fatal("rejected decision text reached the user")
 			}
-			failed := 0
-			for _, r := range turn.tools {
+			failed, succeeded := 0, 0
+			for i, r := range turn.tools {
 				if r.Name != "route" {
 					t.Fatalf("unexpected tool event %+v", r)
 				}
-				if r.Outcome.Status == events.ToolOutcomeFailed {
+				switch r.Outcome.Status {
+				case events.ToolOutcomeFailed:
 					failed++
-					if r.Err == "" || r.Elapsed <= 0 || strings.Contains(r.Err, garbled) {
+					if r.Err == "" || strings.Contains(r.Err, garbled) || (i == 0 && !strings.Contains(r.Err, "json_complete=")) {
 						t.Fatalf("failed route event: %+v", r)
+					}
+				case events.ToolOutcomeSucceeded:
+					succeeded++
+					if r.Summary != "chat" || i != len(turn.tools)-1 {
+						t.Fatalf("recovered route event: %+v", r)
 					}
 				}
 			}
-			if failed != tc.failed {
-				t.Fatalf("failed route events=%d want %d: %+v", failed, tc.failed, turn.tools)
+			if failed != tc.failed || succeeded != tc.succeeded || len(turn.tools) != tc.failed+tc.succeeded {
+				t.Fatalf("route events failed=%d succeeded=%d want %d/%d: %+v", failed, succeeded, tc.failed, tc.succeeded, turn.tools)
 			}
 			noRouteExchangeInHistory(t, o)
+		})
+	}
+}
+
+// A short 200 body is a real transport failure for the Ollama client.
+func truncateBody(w http.ResponseWriter) {
+	w.Header().Set("Content-Length", "10000")
+	w.WriteHeader(http.StatusOK)
+	w.(http.Flusher).Flush()
+}
+
+func jsonRouteOptions() StreamOptions {
+	return StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly, RouteJSON: true}
+}
+
+func failedRouteEvent(t *testing.T, turn routedTurn, wantErr string) ToolResult {
+	t.Helper()
+	if len(turn.tools) != 1 || turn.tools[0].Name != "route" || turn.tools[0].Outcome == nil ||
+		turn.tools[0].Outcome.Status != events.ToolOutcomeFailed || !strings.Contains(turn.tools[0].Err, wantErr) {
+		t.Fatalf("want one failed route event mentioning %q, got %+v", wantErr, turn.tools)
+	}
+	return turn.tools[0]
+}
+
+// persona_routing_timeout cuts off a decision that never arrives, and the
+// turn shows it as a failed route instead of waiting on the server.
+func TestJSONRouteTimeoutBoundsTheRequest(t *testing.T) {
+	canceled := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fake := &jsonRouteFake{answer: "Fair enough.", intercept: func(_ http.ResponseWriter, r *http.Request, req api.ChatRequest) bool {
+		if len(req.Format) == 0 {
+			return false
+		}
+		select {
+		case <-r.Context().Done():
+			canceled <- struct{}{}
+		case <-release:
+		case <-time.After(10 * time.Second):
+		}
+		return true
+	}}
+	srv := fake.server(t)
+	t.Cleanup(func() { close(release) })
+	o := jsonRouteTestBrain(t, srv)
+	o.cfg.PersonaRoutingTimeout = 1
+	start := time.Now()
+	turn := runRoutedTurn(t, o, "Can you check the forecast?", jsonRouteOptions())
+	took := time.Since(start)
+	if !errors.Is(turn.result.Err, context.DeadlineExceeded) || !strings.Contains(turn.result.Err.Error(), "json route") || took > 5*time.Second {
+		t.Fatalf("err=%v after %v", turn.result.Err, took)
+	}
+	select {
+	case <-canceled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the route request was never cut off")
+	}
+	if len(fake.sent()) != 1 || turn.answer != "" || turn.result.Route != "" {
+		t.Fatalf("requests=%d answer=%q route=%q", len(fake.sent()), turn.answer, turn.result.Route)
+	}
+	// The request was held for the whole one-second timeout, so its measured
+	// time cannot read as zero on any clock.
+	if event := failedRouteEvent(t, turn, "deadline exceeded"); event.Elapsed < 500*time.Millisecond || event.Outcome.Elapsed != event.Elapsed {
+		t.Fatalf("route event elapsed=%v outcome=%v", event.Elapsed, event.Outcome.Elapsed)
+	}
+	noRouteExchangeInHistory(t, o)
+}
+
+// A connection that drops during the decision fails the route visibly. The
+// client's one outage retry stays inside the same route attempt.
+func TestJSONRouteTransportErrorFailsTheRoute(t *testing.T) {
+	fake := &jsonRouteFake{answer: "Fair enough.", intercept: func(w http.ResponseWriter, _ *http.Request, req api.ChatRequest) bool {
+		if len(req.Format) == 0 {
+			return false
+		}
+		truncateBody(w)
+		return true
+	}}
+	o := jsonRouteTestBrain(t, fake.server(t))
+	turn := runRoutedTurn(t, o, "Can you check the forecast?", jsonRouteOptions())
+	var outage *ProviderOutage
+	if !errors.As(turn.result.Err, &outage) || !strings.Contains(turn.result.Err.Error(), "json route") {
+		t.Fatalf("err=%v", turn.result.Err)
+	}
+	sent := fake.sent()
+	if len(sent) != 2 || len(sent[0].Format) == 0 || len(sent[1].Format) == 0 || turn.answer != "" {
+		t.Fatalf("requests=%d answer=%q", len(sent), turn.answer)
+	}
+	failedRouteEvent(t, turn, "json route")
+	noRouteExchangeInHistory(t, o)
+}
+
+// Retrying a failed json_route turn decides the route the same way, even when
+// the host's retry call does not repeat the routing options.
+func TestJSONRouteRetryKeepsJSONMode(t *testing.T) {
+	var failing atomic.Bool
+	failing.Store(true)
+	fake := &jsonRouteFake{decide: fixedDecision(`{"kind":"chat"}`), answer: "Fair enough.",
+		intercept: func(w http.ResponseWriter, _ *http.Request, _ api.ChatRequest) bool {
+			if !failing.Load() {
+				return false
+			}
+			truncateBody(w)
+			return true
+		}}
+	o := jsonRouteTestBrain(t, fake.server(t))
+	const input = "Can you check the forecast?"
+	if first := runRoutedTurn(t, o, input, jsonRouteOptions()); first.result.Err == nil {
+		t.Fatal("first turn should fail")
+	}
+	if retry, ok := o.FailedInputRetry(); !ok || retry.Input != input {
+		t.Fatalf("retry=%+v ok=%v", retry, ok)
+	}
+	failing.Store(false)
+	before := len(fake.sent())
+	turn := runRoutedTurn(t, o, input, StreamOptions{RetryInput: true})
+	sent := fake.sent()[before:]
+	if turn.result.Err != nil || turn.answer != "Fair enough." || len(sent) != 2 {
+		t.Fatalf("err=%v answer=%q requests=%d", turn.result.Err, turn.answer, len(sent))
+	}
+	first := sent[0]
+	if len(first.Tools) != 0 || len(first.Format) == 0 || !strings.Contains(first.Messages[len(first.Messages)-1].Content, "\nJSON schema: ") {
+		t.Fatalf("retried route request tools=%d format=%s", len(first.Tools), first.Format)
+	}
+	if len(turn.tools) != 1 || turn.tools[0].Outcome.Status != events.ToolOutcomeSucceeded || turn.tools[0].Summary != "chat" {
+		t.Fatalf("route events: %+v", turn.tools)
+	}
+	noRouteExchangeInHistory(t, o)
+}
+
+func TestReportRouteCarriesTheMeasuredTime(t *testing.T) {
+	var ended []ToolResult
+	s := &toolSession{onEnd: func(r ToolResult) { ended = append(ended, r) }}
+	const took = 1234 * time.Millisecond
+	args := api.NewToolCallFunctionArguments()
+	args.Set("kind", "spawn")
+	s.reportRoute([]api.ToolCall{{Function: api.ToolCallFunction{Name: "route", Arguments: args}}}, nil, took)
+	s.reportRoute(nil, errRouteRejected, took)
+	if len(ended) != 2 || ended[0].Summary != "spawn" || ended[0].Outcome.Status != events.ToolOutcomeSucceeded ||
+		ended[1].Outcome.Status != events.ToolOutcomeFailed {
+		t.Fatalf("events: %+v", ended)
+	}
+	for _, r := range ended {
+		if r.Elapsed != took || r.Outcome.Elapsed != took {
+			t.Fatalf("elapsed=%v outcome=%v want %v", r.Elapsed, r.Outcome.Elapsed, took)
+		}
+	}
+}
+
+// The decision cap keeps a smaller limit the request already carries, whatever
+// numeric type holds it. Thinking gets a larger cap because Ollama counts the
+// reasoning against num_predict.
+func TestJSONRouteCapsTheDecisionOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		think bool
+		limit any
+		want  float64
+	}{
+		{"unset", false, nil, routeDecisionTokens},
+		{"int kept", false, 100, 100},
+		{"int64 kept", false, int64(100), 100},
+		{"float64 kept", false, float64(100), 100},
+		{"json.Number kept", false, json.Number("100"), 100},
+		{"larger int capped", false, 4096, routeDecisionTokens},
+		{"larger float64 capped", false, float64(4096), routeDecisionTokens},
+		{"zero capped", false, 0, routeDecisionTokens},
+		{"negative capped", false, int64(-1), routeDecisionTokens},
+		{"non-numeric capped", false, "100", routeDecisionTokens},
+		{"thinking unset", true, nil, jsonRouteThinkingTokens},
+		{"thinking larger capped", true, 2048, jsonRouteThinkingTokens},
+		{"thinking float64 kept", true, float64(512), 512},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &jsonRouteFake{decide: fixedDecision(`{"kind":"chat"}`)}
+			o := jsonRouteTestBrain(t, fake.server(t))
+			req := o.newChatRequest([]api.Message{{Role: "system", Content: "You are Samantha."}, {Role: "user", Content: "Hi"}}, liveRouterTools())
+			req.Think = &api.ThinkValue{Value: tc.think}
+			req.Options = map[string]any{}
+			if tc.limit != nil {
+				req.Options["num_predict"] = tc.limit
+			}
+			if err := o.chatJSONRoute(t.Context(), req, func(api.ChatResponse) error { return nil }); err != nil {
+				t.Fatal(err)
+			}
+			if got := fake.sent()[0].Options["num_predict"]; got != tc.want {
+				t.Fatalf("num_predict=%v want %v", got, tc.want)
+			}
+			if req.Options["num_predict"] != tc.limit && tc.limit != nil {
+				t.Fatal("the caller's options were changed")
+			}
 		})
 	}
 }
