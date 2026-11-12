@@ -254,6 +254,96 @@ func TestBrainRoutedSpawnSpeaksAcknowledgementAfterSpokenSentence(t *testing.T) 
 	}
 }
 
+// continuationRouteBrain answers the first turn and routes the continuation.
+type continuationRouteBrain struct{ fakeBrain }
+
+func (b *continuationRouteBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	if opts.AgentContinuation {
+		return (&fakeBrain{route: "spawn"}).ThinkStream(ctx, input, opts)
+	}
+	return (&fakeBrain{chunks: []string{"Here is my first answer."}}).ThinkStream(ctx, input, opts)
+}
+
+func (*continuationRouteBrain) ImportHistory([]brain.Turn) error { return nil }
+
+// A continuation keeps the binding it inherited, so the stop that ends its
+// routed speech also refuses the acknowledgement. The refusal must stay quiet.
+func TestContinuationRoutedSpawnAcknowledgementIsRefusedSilently(t *testing.T) {
+	engine := &stopGenerationEngine{&generationTestEngine{fakePlayer: newFakePlayer(time.Millisecond)}}
+	defer engine.Close()
+	provider := &progressiveFakeTTS{}
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "what do you two think"},
+		Brain:  &continuationRouteBrain{},
+		TTS:    provider,
+		Player: engine,
+		Events: events.NewBus(),
+	}
+	var handoffs int
+	p.RouteHandoff = func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error) {
+		handoffs++
+		if handoffs > 1 {
+			return HandoffProposal{}, false, nil
+		}
+		return HandoffProposal{PersonaID: "two", Commit: func(context.Context) (ResponseAdmission, error) {
+			a := admission("two")
+			a.Request = "look through the repo and summarize it"
+			return a, nil
+		}}, true, nil
+	}
+	var mu sync.Mutex
+	var failures []events.Error
+	var refused bool
+	events.Subscribe(p.Events, func(e events.Error) {
+		mu.Lock()
+		failures = append(failures, e)
+		mu.Unlock()
+	})
+	events.Subscribe(p.Events, func(e events.Info) {
+		mu.Lock()
+		refused = refused || e.Message == "speech not played: output was stopped"
+		mu.Unlock()
+	})
+	worker := &slowWorker{started: make(chan struct{}), done: make(chan struct{}), reply: "plain result"}
+	defer close(worker.done)
+	jobs := job.NewTable(t.Context())
+	t.Cleanup(jobs.Close)
+	NewAgency(p, jobs, worker, &config.Config{}, nil).Wire()
+
+	if _, err := p.RunTurn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if handoffs == 0 {
+		t.Fatal("no continuation ran")
+	}
+	select {
+	case <-worker.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not start")
+	}
+	acknowledged := false
+	for _, call := range provider.Calls() {
+		acknowledged = acknowledged || strings.Contains(call, routedAck)
+	}
+	if !acknowledged {
+		t.Fatalf("acknowledgement never reached speech: %v", provider.Calls())
+	}
+	engine.mu.Lock()
+	accepted := engine.accepted
+	engine.mu.Unlock()
+	mu.Lock()
+	defer mu.Unlock()
+	if accepted != 1 {
+		t.Fatalf("playback admitted %d times, want only the first answer (synthesized %v)", accepted, provider.Calls())
+	}
+	if !refused {
+		t.Fatal("refused acknowledgement left no trace")
+	}
+	if len(failures) != 0 {
+		t.Fatalf("refused acknowledgement reported failures: %+v", failures)
+	}
+}
+
 func TestTextModeRoutedSpawnSpeaksAcknowledgement(t *testing.T) {
 	r := newRoutedAckRig(t, "")
 	turnErr := make(chan error, 1)

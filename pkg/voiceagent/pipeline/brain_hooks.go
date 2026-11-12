@@ -159,6 +159,8 @@ func (p *Pipeline) routeContext() RouteContext {
 // its own pre-route speech, which invalidated the turn's playback binding. A
 // stop the user asked for stays fenced: it is checked after the fresh bind so
 // a stop racing this call still invalidates whichever binding is returned.
+// The stale ctx returned after a user stop is refused with context.Canceled,
+// which speakStandalone reports as an Info line rather than a playback error.
 func (p *Pipeline) routedSpeechContext(ctx context.Context, metrics *turnMetrics) context.Context {
 	if p.Player == nil || ctx.Err() != nil {
 		return ctx
