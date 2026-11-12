@@ -56,8 +56,8 @@ name and voice keys stay consistent. The same removal from the shell is
 `obey-voice persona delete <id> --yes`.
 
 The create/edit form is one screen, not a wizard: Name, the Model & voice rows
-(Brain, Model, TTS, Voice, Language, Tier), the Starting directory, and the
-System prompt. `↑`/`↓` (or tab) move between rows, `←`/`→` change the provider,
+(Brain, Model, Work, Worker, Worker model, TTS, Voice, Language, Tier), the
+Starting directory, and the System prompt. `↑`/`↓` (or tab) move between rows, `←`/`→` change the provider,
 model, voice, language or directory under the cursor, `p`
 on the Voice row previews the selected voice (press `p` again to stop;
 the same sample Settings uses;
@@ -119,6 +119,17 @@ Cursor is unavailable for strict worker plans because its native tools cannot
 be restricted to the strict allowlist. Direct strict-budget calls are rejected
 before the CLI starts; ordinary legacy and explicitly uncapped advisory workers
 remain available.
+
+The **Work** row (`brain.work`) decides whether the worker is used at all.
+`own` has the persona do its background work itself, on its own backend and
+model, in a session separate from the one it talks in; `worker` hands it to
+the Worker rows above. The row shows all three choices on one line and checks
+the current one: `(default)`, which follows the brain (own on Claude, Codex,
+Cursor, Grok, Muse Spark and Obey, worker on Ollama), `own` and `worker`. From
+the shell, `obey-voice persona edit <id> --work own`, `--work worker`, or
+`--work ""` for the default. While a persona does its own work, its Worker
+rows are not used. See [Who does the work](delegation.md#who-does-the-work)
+for permissions, limits and tiers.
 
 ### Shipped personas
 
@@ -364,10 +375,11 @@ itself keep their images: the provider drops the images of every line loaded
 into it, so after a resume or a compaction, or once Obey Voice closes the
 persona's parked session or starts its provider again, its earlier lines reach
 it as text and their images are not sent again. The saved conversation keeps
-every attachment. A background job on a Claude worker is sent the images of the
+every attachment. A background job handed to a Claude worker is sent the images of the
 line that started it, whichever persona or backend answered that line, as a
 Codex worker is: the worker provider is one you configured, and it gives no
-hosted notice.
+hosted notice. A job a persona on Claude does itself is sent the images of the
+line that started it too, which was said to that persona.
 
 Claude receives nothing said before its persona was first addressed while on
 Claude in the conversation, unless `hosted_persona_sharing` is set to
@@ -507,9 +519,11 @@ repeats it once, and one saved before the whole-conversation case was recorded
 gives that notice again when it applies). It counts as given only once it was
 shown and the request went ahead: a turn stopped during the notice gives it
 again next time. A turn that sends the persona nothing (one refused
-by its image check, or routed to a job or a story) does not give it, nor does a
-job result spoken while you are idle: that reaches the persona's provider with
-its next request, which gives the notice first.
+by its image check, or routed to the configured worker or to a story) does not
+give it, nor does a job result spoken while you are idle: that reaches the
+persona's provider with its next request, which gives the notice first. A job
+the persona does itself on its hosted backend sends that backend its share, so
+it gives the notice before the job starts.
 It is shown by the host: no model receives it and it is not recorded as any
 persona's reply. A bare `Mira here.` address sends
 nothing and does not trigger it.
@@ -538,15 +552,18 @@ send earlier lines to a persona whose share has already started; it applies to
 personas first addressed after the change. A persona on Grok or Cursor can only
 hold a conversation that started on it, and is sent all of it.
 
-The notice covers a persona's conversation backend only. Two other paths can
-send conversation text off this machine without it: a background job on a
-hosted worker provider, and [decision routing](decision-routing.md) when set to
-Jev or OpenAI. Both are services you configure yourself, so neither gives a
+The notice covers a persona's conversation backend, including background work
+the persona does on it itself. Two other paths can send conversation text off
+this machine without it: a background job handed to a hosted worker provider,
+and [decision routing](decision-routing.md) when set to Jev or OpenAI. Both are services you configure yourself, so neither gives a
 notice.
 
 The brief a new background job is given carries up to eight recent spoken
-lines to the worker provider: with a persona on Claude, Codex, Muse Spark or
-Obey answering, only lines from that persona's share.
+lines to the backend that runs it, the persona's own or the worker: with a
+persona on Claude, Codex, Muse Spark or Obey answering, only lines from that
+persona's share. For a persona on Claude those are the lines loaded when its
+session started and its own exchanges since; lines other speakers said after
+that, which its session received as catch-up, are not in the brief.
 
 Known gaps: a reply from a background worker started through the older worker
 path is recorded as a spoken line of the persona that started it. Like any

@@ -96,6 +96,73 @@ three admission attempts are bounded at 45 seconds each, followed by a bounded
 cancel request. Unconfirmed admission retains its ticket and blocks further
 work until the operator checks Obey and restarts the voice session.
 
+## Who does the work
+
+A spawned job runs on one of two backends, chosen per persona by its
+`brain.work` setting (`obey-voice persona edit <id> --work own|worker`, or the
+**Work** row of the persona form):
+
+- `own`: the persona's own backend and model do it. The job gets a new
+  instance of that backend, built from the persona's settings: its provider,
+  its model (`claude_model` for a persona on Claude, for example), its prompt
+  and its starting directory. It runs in a session of its own. The session
+  the persona talks in is not resumed or touched, and none of the job's tool
+  calls or output enter it.
+- `worker`: the configured worker does it: the persona's `brain.worker`,
+  else `voice_worker_provider` and `voice_worker_model`, or a tier.
+
+Left empty, a persona on Claude, Codex, Cursor, Grok, Muse Spark or Obey does
+its own work, and a persona on Ollama hands it to the worker, which is how
+every persona worked before the setting existed. A persona on Claude set to
+`worker` behaves exactly as before. Choosing, per task, between the two is not
+offered.
+
+Only who runs the job changes. Whether a turn is a job at all is decided as
+before, and the persona still acknowledges it with "I'll work on that and
+report back." The result is recorded as that persona's line and spoken in
+its voice when the conversation is idle, like any job it started. While it
+works you can keep talking to it or to another persona. `/workers` shows the
+persona's own provider and model for the job.
+
+An own job runs with the same permissions as a worker on that backend. With
+`voice_tools_enabled` on:
+
+| Backend | As its own worker |
+|---|---|
+| Claude | its own tools, `--permission-mode bypassPermissions`, session persistence off, in the persona's directory, `Bash(camp list)` denied while `voice_worker_boundary` is on |
+| Codex | workspace-write sandbox with no network and approvals `never` |
+| Cursor | full agent mode with `--trust`; force and yolo stay off |
+| Grok | its own tools in bypass-permissions mode |
+| Muse Spark | its native tools inside Muse's sandbox, approvals `never` |
+| Obey | the daemon's supervised mode |
+| Ollama | the persona's model on the persona's Ollama host and context window, with the worker tool set and the fence below |
+
+With `voice_tools_enabled` off, an own job runs with tools off, as a worker
+does. An Ollama persona doing its own work uses its own `ollama_num_ctx`
+rather than `voice_worker_num_ctx`, so the job does not make Ollama reload the
+model the persona is talking on.
+
+The limits are the worker's: `voice_worker_job_budget`, the concurrency limit
+(`voice_worker_max_concurrent`, or the tiered policy's), cancelling by voice,
+**Stop task** and **Stop all** in `/workers`, and **Allow background workers**
+all apply to own jobs. Worker tiers apply only to work handed to the worker: a
+persona set to `own` runs a tiered or decision-model spawn on its own backend,
+with full tools, as a tiered worker would. The tier's runtime limit and
+request allowances, the paid-worker switch and `worker-usage.sqlite`
+accounting do not cover it; the persona's backend is already the one you chose
+for it to talk on. The experimental `voice_work_enabled` inbox runs local
+workers only, so there a persona on a hosted backend hands its work to the
+worker as before, and only a persona on Ollama can do its own.
+
+The job's brief is the one every job gets (see
+[Hosted backends](personas.md#hosted-backends)): a persona on Claude, Codex,
+Muse Spark or Obey sends its own backend only its share of the conversation.
+When the job is the first thing sent to a hosted backend in the conversation,
+the hosted notice is shown before it starts. A change to `brain.work` reaches
+a conversation the next time that persona is selected: a new conversation, or
+when it is addressed again after another persona answered. It does not
+restart the persona's session.
+
 ## What the worker is doing
 
 After a conversational request is admitted as background work, the originating

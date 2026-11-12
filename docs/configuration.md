@@ -674,6 +674,18 @@ Existing saved `queued_workers: 1` remains an explicit one-job queue bound.
 Increase it in Workers Settings if desired; loading an older policy does not
 silently replace that saved value with a newer default.
 
+Who runs a persona's background work is a persona setting, not a config key:
+`brain.work` in its `persona.yaml` (`own` or `worker`), set with
+`obey-voice persona edit <id> --work own` or the **Work** row of the persona
+form. Empty takes the default: a persona on Claude, Codex, Cursor, Grok,
+Muse Spark or Obey does its own work on its own backend and model; a persona
+on Ollama hands it to the `voice_worker_*` worker, as before. The
+`voice_worker_*` keys and the tiers in `voice_workers` apply only to work
+handed to the worker; `voice_worker_job_budget`,
+`voice_worker_max_concurrent` (or the tiered concurrency limits) and
+`voice_workers_disabled` apply to both. See
+[Who does the work](delegation.md#who-does-the-work).
+
 ### Experimental group participation
 
 `group_participation_enabled` defaults to `false` and takes effect in a new
