@@ -679,12 +679,43 @@ Everything else matches `route_only`:
   in any mode. Decision shortcuts and skill selection run before routing and
   are unchanged.
 
+### `json_route` with thinking models: unverified
+
+The route request keeps the turn's `ollama_think` setting, so it renders the
+same prompt as the reply. Nobody has run `json_route` against a real model with
+thinking on; the tests use a fake Ollama server.
+
+- The route request constrains the answer with the route schema (`format`). If
+  Ollama applies that grammar from the first generated token, the model cannot
+  write its reasoning first and may return empty or invalid content. Every turn
+  would then be rejected and pay a second request: the existing recovery call,
+  which turns thinking off.
+- In the Ollama source this repository builds against (v0.32.3), a model with
+  the thinking capability and a thinking parser first generates with no
+  grammar. At the first answer token Ollama stops and runs a second, constrained
+  generation over the prompt plus the reasoning. This is a reading of that
+  source, not of the server you run. A model whose thinking Ollama does not
+  parse may be constrained from the first token. A model that emits no thinking
+  never triggers the second generation. Ollama's native chat path passes
+  `format` and `think` to the runner together; that path was not read.
+- Ollama counts reasoning against `num_predict`, and in that source each of the
+  two generations gets the full limit. With thinking on, the route request is
+  capped at 1024 tokens instead of the 256 used with thinking off, so a short
+  deliberation fits. Longer reasoning is cut off, the decision is rejected and
+  the turn moves on to the recovery call. A smaller limit already on the request
+  is kept. `persona_routing_timeout` (120 seconds by default) bounds the whole
+  request.
+
+Run the comparison below with a thinking model before relying on `json_route`
+with `ollama_think` on.
+
 ### Comparing `route_only` and `json_route`
 
 `just bench worker-decision -compare router -cases cases.json -out new.jsonl -model <model>`
 replays labelled requests under both values against a local Ollama, alternating
-which runs first. See [the bench README](../scripts/worker_decision_bench/README.md)
-for the case format. Compare per mode:
+which runs first. Add `-think true` to run the speaking model with thinking on.
+See [the bench README](../scripts/worker_decision_bench/README.md) for the case
+format, the run order and its remaining bias. Compare per mode:
 
 - **Routing accuracy**: the share of samples with `correct: true`, and any `error`.
 - **The reply's prompt read**: in each sample's `requests`, the `plain` entry is
@@ -694,6 +725,10 @@ for the case format. Compare per mode:
   reports cached plus newly read tokens; the MLX runner is unchecked), so it
   may barely move when the prefix is reused.
 - **Latency**: `first_text_ms` and `elapsed_ms`.
+
+The run ends with a `router_summary` line of these means for each mode and run
+position. The mode that runs second on a case can reuse the prompt the first
+one just read, so compare modes at the same position.
 
 Keep `route_only` unless routing accuracy holds on the models you use.
 
