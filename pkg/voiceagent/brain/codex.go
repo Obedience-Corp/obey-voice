@@ -25,6 +25,8 @@ type CodexBrain struct {
 	speakerNames                                            SpeakerNames
 	snapshot                                                ContinuitySnapshot
 	sessionTools                                            bool
+	// requestStart is where the last streamed request began in canonical.
+	requestStart int
 	// unsent counts the last turns of working that the live thread has not
 	// been sent: lines recorded by the host or by other personas since its
 	// last turn. Its next request carries them.
@@ -84,6 +86,7 @@ func (c *CodexBrain) refreshPrompts(warn func(string)) {
 }
 func (c *CodexBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	c.refreshPrompts(opts.OnPromptWarn)
+	c.requestStart = len(c.canonical)
 	out := make(chan string, 8)
 	done := make(chan StreamResult, 1)
 	target := c

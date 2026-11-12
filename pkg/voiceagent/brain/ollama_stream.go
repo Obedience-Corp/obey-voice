@@ -32,6 +32,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		opts.Identity = &copied
 	}
 	o.refreshSystemPrompt(opts.OnPromptWarn)
+	o.stopped = ollamaStopped{}
 	retrySkills := ""
 	if opts.RetryInput {
 		retry, ok := o.FailedInputRetry()
@@ -428,6 +429,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// failure separately, never as a synthetic assistant utterance.
 				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, emitted.String())); partial != "" {
 					o.appendMessage(api.Message{Role: "assistant", Content: partial}, opts.Identity, IncompleteDisposition(err))
+					o.stopped.reply, o.stopped.sent = true, emitted.String()
 					o.trimHistory()
 				}
 				o.retainFailedInput(ctx, input, opts, baseSkillCtx, err, emitted.Len() > 0 || hadThinking || hadTools || len(toolCalls) > 0)
@@ -465,6 +467,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					// Drop this turn from the talking window. Work belongs on
 					// the worker session, not the live KV cache.
 					if n := len(o.history); n > 0 {
+						if len(o.canonical) > 0 && len(o.working) > 0 {
+							o.stopped.routed = &ollamaRoutedLine{canonical: o.canonical[len(o.canonical)-1], working: o.working[len(o.working)-1], message: o.history[n-1]}
+						}
 						o.history = o.history[:n-1]
 						if len(o.canonical) > 0 {
 							o.canonical = o.canonical[:len(o.canonical)-1]
@@ -595,6 +600,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				continue
 			}
 			o.appendMessage(api.Message{Role: "assistant", Content: recorded}, opts.Identity)
+			o.stopped.reply, o.stopped.sent = true, emitted.String()
 			if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
 				o.ackDelegationResults(req.Messages)
 			} else if opts.Background {

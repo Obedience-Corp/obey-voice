@@ -155,6 +155,7 @@ func (o *OllamaBrain) Fresh() Provider {
 
 func (o *OllamaBrain) ClearHistory() {
 	o.inputRetry = nil
+	o.stopped = ollamaStopped{}
 	o.refreshGroupHistory(nil)
 	o.resetDelegation()
 	o.archive = continuity.Store{}
@@ -260,6 +261,7 @@ func (o *OllamaBrain) ContinuitySnapshot() ContinuitySnapshot {
 // to ollama's native "assistant".
 func (o *OllamaBrain) LoadHistory(turns []Turn) {
 	o.inputRetry = nil
+	o.stopped = ollamaStopped{}
 	o.resetDelegation()
 	// Restore starts a distinct session; never recall another session's archive.
 	o.archive = continuity.Store{}
@@ -271,6 +273,7 @@ func (o *OllamaBrain) LoadHistory(turns []Turn) {
 // explicit restore semantics and resets continuity/delegation state.
 func (o *OllamaBrain) ImportHistory(turns []Turn) error {
 	o.inputRetry = nil
+	o.stopped = ollamaStopped{}
 	o.refreshGroupHistory(turns)
 	o.loadHistoryProjection(turns, false)
 	o.canonical = deepCopyTurns(turns)
@@ -297,6 +300,7 @@ func (o *OllamaBrain) loadHistory(turns []Turn) {
 // compacted conversation back to its canonical transcript.
 func (o *OllamaBrain) ImportContinuity(snapshot ContinuitySnapshot) error {
 	o.inputRetry = nil
+	o.stopped = ollamaStopped{}
 	o.refreshGroupHistory(snapshot.Canonical)
 	working := snapshot.Working
 	if working == nil {

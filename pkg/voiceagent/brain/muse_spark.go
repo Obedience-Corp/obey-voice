@@ -29,6 +29,8 @@ type MuseSparkBrain struct {
 	canonical, working                           []Turn
 	snapshot                                     ContinuitySnapshot
 	speakerNames                                 SpeakerNames
+	// requestStart is where the last streamed request began in canonical.
+	requestStart int
 }
 
 func NewMuseSpark(cfg *config.Config) (*MuseSparkBrain, error) {
@@ -180,6 +182,7 @@ func (b *MuseSparkBrain) ThinkStream(ctx context.Context, input string, o Stream
 		}
 	}
 	b.refreshPrompts(o.OnPromptWarn)
+	b.requestStart = len(b.canonical)
 	prompt := b.buildPrompt(input, o)
 	out := make(chan string, 8)
 	done := make(chan StreamResult, 1)

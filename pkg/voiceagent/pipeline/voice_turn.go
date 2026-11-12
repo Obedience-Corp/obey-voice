@@ -101,6 +101,10 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	}
 
 	turn.to(TurnThinking)
+	if err := p.awaitSharedHistory(ctx); err != nil {
+		turn.finish(TurnInterrupted)
+		return "", err
+	}
 	// The wait a backchannel covers starts here: the user has stopped talking
 	// and nothing will be heard until the brain and TTS finish. No-op unless
 	// enabled and unless recent turns were actually slow.

@@ -432,6 +432,13 @@ and lines Obey Voice recorded under its name, such as an acknowledgement. It
 replays the whole share when it starts a new thread: after a restart or a
 resume, after a stopped or failed request, when its tools or prompt change, and
 when lines it missed fell out of `max_history` before it was addressed again.
+A request you stop, or one that fails, stays in the conversation once the
+backend has ended it: your line, and the part of the reply you were given,
+marked as unfinished, under the persona's name. Its next request and the
+persona that answers next receive both, and the saved conversation keeps
+them. A stopped reply that the backend still completed keeps only what you
+were given. Stopping waits up to five seconds for the backend to end; your
+next line waits for it too.
 Unlike Claude, Grok and Cursor, Codex is sent its lines whole: none is shortened,
 and its replay is bounded by `max_history` rather than 64 KiB, as it always was.
 The records are your lines, other personas' spoken lines, and the persona's own

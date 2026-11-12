@@ -145,6 +145,19 @@ OBEY_VOICE_LIVE_ADDRESS_MODEL='<installed-model>' go test -tags=integration \
   ./pkg/voiceagent/brain -run TestLiveGroupAddressee -count=1 -v
 ```
 
+## Stopped replies
+
+A reply you stop is kept as you were given it, marked unfinished: text the
+model had already sent but the conversation had not yet shown or spoken is
+left out, and a stopped reply of which you were given nothing is dropped. One
+the model had already finished is marked unfinished too. This is the one
+place a model's next request can differ from before: the unfinished reply it
+is sent no longer carries text you were never given. The reply is recorded
+before the stopped turn ends, so a save straight after it keeps it, and the
+next line, a persona switch or an idle job delivery waits until it is. When the
+model chose to hand the request to a worker and the turn stopped before it
+did, your line stays in the conversation.
+
 ## Repeated answers
 
 Live Ollama replies check for a narrow replay pattern: the new answer starts

@@ -62,6 +62,8 @@ type ObeyBrain struct {
 	canonical, working                           []Turn
 	speakerNames                                 SpeakerNames
 	snapshot                                     ContinuitySnapshot
+	// requestStart is where the last streamed request began in canonical.
+	requestStart int
 }
 
 func init() {
@@ -133,6 +135,7 @@ func (b *ObeyBrain) refreshPrompts(warn func(string)) {
 }
 func (b *ObeyBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	b.refreshPrompts(opts.OnPromptWarn)
+	b.requestStart = len(b.canonical)
 	if _, err := b.runOptions(liveCLITools(opts)); err != nil {
 		return nil, err
 	}

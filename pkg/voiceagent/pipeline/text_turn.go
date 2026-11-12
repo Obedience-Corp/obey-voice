@@ -63,6 +63,10 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	ctx = events.WithTrace(ctx, metrics.trace)
 
 	turn.to(TurnThinking)
+	if err := p.awaitSharedHistory(ctx); err != nil {
+		turn.finish(TurnInterrupted)
+		return err
+	}
 	continuation, isContinuation := continuationFromContext(ctx)
 	retry, isRetry := inputRetryFromContext(ctx)
 	speakerID := p.currentSpeakerID()
