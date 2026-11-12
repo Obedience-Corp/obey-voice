@@ -263,3 +263,26 @@ func TestModelsMoveDryRunListsWhatTheAppDoesNotUse(t *testing.T) {
 		t.Fatalf("unused entries listed = %v, want only lmstudio:\n%s", listed, out)
 	}
 }
+
+// What a signal is about to do must be said, above all when a second Ctrl-C
+// leaves the old folder or a partial copy behind.
+func TestModelsMoveSaysWhatASignalDoes(t *testing.T) {
+	for _, tc := range []struct {
+		phase string
+		sig   os.Signal
+		first bool
+		want  string
+	}{
+		{config.MovePhaseCopy, os.Interrupt, true, "removing what it copied"},
+		{config.MovePhaseVerify, syscall.SIGTERM, true, "already saved, so the move is finishing"},
+		{config.MovePhaseCopy, os.Interrupt, false, "partial copy marked .obey-voice-move-incomplete"},
+		{config.MovePhaseRemove, os.Interrupt, false, "/old as <name>.obey-voice-old-<time>"},
+		{config.MovePhaseRemove, syscall.SIGTERM, false, "Still finishing"},
+	} {
+		var out strings.Builder
+		announceMoveSignal(&out, tc.phase, "/old", tc.sig, tc.first)
+		if !strings.Contains(out.String(), tc.want) {
+			t.Errorf("%s %v first=%v said %q, want %q", tc.phase, tc.sig, tc.first, out.String(), tc.want)
+		}
+	}
+}
