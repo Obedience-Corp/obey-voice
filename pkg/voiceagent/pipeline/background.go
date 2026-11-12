@@ -70,9 +70,6 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if err := p.announceHosted(ctx, metrics, nil); err != nil {
-			return err
-		}
 		return p.withCompletionLease(ctx, func(attemptCtx context.Context, lease work.CompletionLease, selected []work.ResultView) error {
 			return p.runCanonicalCompletion(attemptCtx, lease, selected)
 		})

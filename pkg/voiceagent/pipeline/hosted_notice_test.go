@@ -222,3 +222,34 @@ func TestHostedNoticeIsRecordedOnlyWhenARequestGoesOut(t *testing.T) {
 		t.Fatalf("delivered %d times, requests %d: the notice must be recorded once, before the request", len(delivered), len(b.at))
 	}
 }
+
+// An idle delivery that words a job's result without asking the persona's
+// provider sends that provider nothing, so it gives no hosted notice; the
+// persona's next request does.
+func TestIdleDeliveryThatSendsNothingGivesNoHostedNotice(t *testing.T) {
+	const notice = "Mira runs on Claude, a hosted service."
+	p, _, _ := newCompletionLeasePipeline(t, false)
+	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", Hosted: true}}, nil
+	}
+	var infos []string
+	var started int
+	events.Subscribe(p.Events, func(e events.Info) { infos = append(infos, e.Message) })
+	events.Subscribe(p.Events, func(events.ThinkingStarted) { started++ })
+	delivered := 0
+	p.HostedNotice = func(events.ResponseEnvelope) (HostedNotice, bool) {
+		return HostedNotice{Text: notice, Delivered: func() { delivered++ }}, delivered == 0
+	}
+	if err := p.RunBackgroundTurn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if started != 1 || delivered != 0 || slices.Contains(infos, notice) {
+		t.Fatalf("deliveries %d; a delivery that sent nothing gave the notice (%q) or recorded it %d times", started, infos, delivered)
+	}
+	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if delivered != 1 {
+		t.Fatalf("the next request recorded the notice %d times", delivered)
+	}
+}

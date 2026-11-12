@@ -66,6 +66,12 @@ func (p *Pipeline) runCanonicalCompletion(ctx context.Context, lease work.Comple
 	} else if !supported {
 		fallbackReason = "provider_constraints_unavailable"
 	} else {
+		// Only a provider asked to word the results is sent anything, so a
+		// hosted one is announced here, not before a delivery that asks none.
+		if err := p.announceHosted(ctx, metrics, turn); err != nil {
+			turn.finish(TurnInterrupted)
+			return err
+		}
 		generationCtx, cancel := context.WithTimeout(ctx, brain.CompletionDeadline)
 		var err error
 		metrics.modelRequest = time.Now()
