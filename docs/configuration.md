@@ -636,6 +636,65 @@ description: Greet the user warmly.
 Say hello to the user.
 ```
 
+## Live routing (`voice_router_tools`)
+
+With voice tools on, a live Ollama turn first decides whether the request is
+conversation (`chat`), work for a worker (`spawn`) or reading aloud (`narrate`).
+Other brains decide the same question with a private classifier, and this
+setting does not change them.
+
+| Value | What a live Ollama turn does |
+| --- | --- |
+| `route_only` (default) | Offers only the `route` tool. A chat decision is followed by a tools-free reply. |
+| `json_route` (experimental) | Asks for the same route as a JSON object, with no tools, on the reply's own messages. |
+| `legacy` | Offers the full worker tool list, for comparison. |
+
+`json_route` is about prompt-cache reuse. Under `route_only` the route request
+carries the route tool schema and the reply does not. Ollama renders tool schemas
+into the prompt next to the system text, so the reply reads the conversation
+history again. Under `json_route` both requests carry the same system message,
+history and newest user message, no tools, and the same model, thinking setting
+and runner options. The route request puts its instruction after the newest user
+message and constrains the answer with the route schema; the reply adds only a
+one-line "routing is complete, answer now" instruction at that same point. Whether
+Ollama actually reuses the cached prefix depends on the model's chat template
+and runner, and has not been measured on real models yet.
+
+Everything else matches `route_only`:
+
+- `spawn` and `narrate` dispatch exactly as with the route tool, including the
+  worker effort tier when tiered workers are on.
+- The decision is private. Neither the JSON nor the exchange is spoken or kept in
+  history. The turn shows it as a `route` tool event with the outcome and how
+  long the decision took.
+- A reply that is not a valid route object counts as a missing route: one retry
+  through the existing recovery request, then the turn fails with the existing
+  `recover missing route` error and nothing is dispatched. It is never treated as
+  chat. Each rejected attempt shows as a failed `route` event.
+- The route request is bounded by `persona_routing_timeout`.
+- When background tasks (`delegation_enabled`) add tools to the turn, or the
+  request does not end with the user's message, the turn uses the route tool as
+  under `route_only`.
+- With `voice_tools_enabled: false` and no tiered workers there is no route step
+  in any mode. Decision shortcuts and skill selection run before routing and
+  are unchanged.
+
+### Comparing `route_only` and `json_route`
+
+`just bench worker-decision -compare router -cases cases.json -out new.jsonl -model <model>`
+replays labelled requests under both values against a local Ollama, alternating
+which runs first. See [the bench README](../scripts/worker_decision_bench/README.md)
+for the case format. Compare per mode:
+
+- **Routing accuracy**: the share of samples with `correct: true`, and any `error`.
+- **The reply's prompt read**: in each sample's `requests`, the `plain` entry is
+  the reply. Compare its `prompt_eval_ms` between modes. Do not rely on
+  `prompt_eval_count`: on Ollama's llama.cpp server backend it includes tokens
+  served from the cache, so it barely moves when the prefix is reused.
+- **Latency**: `first_text_ms` and `elapsed_ms`.
+
+Keep `route_only` unless routing accuracy holds on the models you use.
+
 ## STT schema migration
 
 The preferred STT schema is `stt_provider` + `stt_mode` (e.g. `stt_provider: sherpa` with `stt_mode: streaming`). The legacy compound aliases (`sherpa-streaming`, `sherpa-offline`) still work with `stt_mode` unset and are never rewritten; combining a compound alias with a conflicting `stt_mode` is a config error.

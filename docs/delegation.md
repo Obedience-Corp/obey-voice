@@ -40,7 +40,9 @@ delegation_timeout: 300
 Restart the voice session after changing these settings. They belong to the
 host, not the persona. Delegation is off by default. Set `delegation_enabled`
 back to false to disable it. The normal per-turn tools gate still applies,
-including the remote session's tools setting.
+including the remote session's tools setting. With `voice_router_tools:
+json_route`, a turn that offers these tools still routes with the `route` tool,
+because the JSON route applies only when `route` is the only tool.
 
 Ask for a self-contained task such as “Check the active campaign workitems in
 the background and tell me which one is ready.” The model can use:
