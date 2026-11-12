@@ -98,7 +98,7 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 		}
 		if kind == editStorageMove {
 			m.cancelEdit()
-			cmd := m.startStorageMove(value)
+			cmd := m.armStorageMove(value)
 			return m, cmd
 		}
 		if kind == editSpeakerEnrollName {

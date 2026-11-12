@@ -68,8 +68,9 @@ func TestStorageMeasuresOffTheUIThreadAndIgnoresStaleResults(t *testing.T) {
 func TestStorageMoveReportsProgressThenUsesTheNewFolder(t *testing.T) {
 	cfg := &config.Config{ModelsDir: "/old"}
 	m := newSettings(cfg, nil)
+	m.storage.personas, m.storage.fileConfig = noPersonas, noFileConfig
 	release := make(chan struct{})
-	m.storage.move = func(_ context.Context, c *config.Config, dest string, opts config.MoveOptions) (config.MoveResult, error) {
+	m.storage.runMove = func(_ context.Context, c *config.Config, dest string, opts config.MoveOptions) (config.MoveResult, error) {
 		if c == cfg {
 			t.Fatal("the move must not mutate the live config off the UI thread")
 		}
@@ -87,23 +88,35 @@ func TestStorageMoveReportsProgressThenUsesTheNewFolder(t *testing.T) {
 	if m.edit.kind != editStorageMove {
 		t.Fatal("Move did not open the folder editor")
 	}
+	m.storage.plan = func(_ context.Context, _ *config.Config, dest string, _ config.MoveOptions) (config.MovePlan, error) {
+		return config.MovePlan{From: "/old", To: dest, Measured: true, Bytes: 4 << 30, Files: 7}, nil
+	}
+	m.storage.personas, m.storage.fileConfig = noPersonas, noFileConfig
 	m.edit.input.SetValue("  /fast/models ")
-	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, check := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.storage.moving() || check == nil {
+		t.Fatal("the move started before it was checked")
+	}
+	m, _ = m.Update(check())
+	if m.storage.moving() || m.storage.confirm == nil || m.storage.confirm.To != "/fast/models" {
+		t.Fatalf("the checked move is not waiting for a yes: %+v", m.storage.confirm)
+	}
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	batch := cmd().(tea.BatchMsg)
-	if !m.storage.moving || !storageRow(t, m, "models_dir").disabled {
+	if !m.storage.moving() || !storageRow(t, m, "models_dir").disabled {
 		t.Fatal("the folder row must be locked during a move")
 	}
 	storageRow(t, m, "storage_cancel")
 	done := make(chan tea.Msg, 1)
-	go func() { done <- batch[1]() }()
+	go func() { done <- batch[2]() }()
 	m, _ = m.Update(batch[0]())
 	if !strings.Contains(m.message, "1.0 GiB of 4.0 GiB (25%)") {
 		t.Fatalf("progress message = %q", m.message)
 	}
 	close(release)
 	m, _ = m.Update(<-done)
-	if m.storage.moving || cfg.ModelsDir != "/fast/models" {
-		t.Fatalf("after the move: moving=%v models_dir=%q", m.storage.moving, cfg.ModelsDir)
+	if m.storage.moving() || cfg.ModelsDir != "/fast/models" {
+		t.Fatalf("after the move: moving=%v models_dir=%q", m.storage.moving(), cfg.ModelsDir)
 	}
 	if !strings.Contains(m.message, "Moved 4.0 GiB to /fast/models") || !strings.Contains(m.message, "whispercpp_model_path") {
 		t.Fatalf("done message = %q", m.message)
@@ -116,36 +129,37 @@ func TestStorageMoveReportsProgressThenUsesTheNewFolder(t *testing.T) {
 func TestStorageMoveFailureAndCancelKeepTheCurrentFolder(t *testing.T) {
 	cfg := &config.Config{ModelsDir: "/old"}
 	m := newSettings(cfg, nil)
-	m.storage.move = func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error) {
+	m.storage.personas, m.storage.fileConfig = noPersonas, noFileConfig
+	m.storage.runMove = func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error) {
 		return config.MoveResult{}, errors.New("/fast already has files in it")
 	}
 	batch := m.startStorageMove("/fast")().(tea.BatchMsg)
-	m, _ = m.Update(batch[1]())
+	m, _ = m.Update(batch[2]())
 	if cfg.ModelsDir != "/old" || !strings.Contains(m.message, "Models were not moved: /fast already has files") {
 		t.Fatalf("models_dir=%q message=%q", cfg.ModelsDir, m.message)
 	}
 
-	m.storage.move = func(ctx context.Context, _ *config.Config, _ string, _ config.MoveOptions) (config.MoveResult, error) {
+	m.storage.runMove = func(ctx context.Context, _ *config.Config, _ string, _ config.MoveOptions) (config.MoveResult, error) {
 		<-ctx.Done()
 		return config.MoveResult{}, ctx.Err()
 	}
 	batch = m.startStorageMove("/fast")().(tea.BatchMsg)
-	seq := m.storage.seq
+	seq := m.storage.job.seq
 	storageRow(t, m, "storage_cancel").run(&m)
-	late := batch[1]().(storageMoveDoneMsg)
+	late := batch[2]().(storageMoveDoneMsg)
 	if late.seq != seq || !errors.Is(late.err, context.Canceled) {
 		t.Fatalf("cancel did not reach the move: %+v", late)
 	}
 	m, _ = m.Update(late)
-	if m.storage.moving || cfg.ModelsDir != "/old" || !strings.Contains(m.message, "still in /old") {
-		t.Fatalf("after cancel: moving=%v models_dir=%q message=%q", m.storage.moving, cfg.ModelsDir, m.message)
+	if m.storage.moving() || cfg.ModelsDir != "/old" || !strings.Contains(m.message, "still in /old") {
+		t.Fatalf("after cancel: moving=%v models_dir=%q message=%q", m.storage.moving(), cfg.ModelsDir, m.message)
 	}
 }
 
 func TestStorageMoveIsRefusedDuringAConversation(t *testing.T) {
 	m := newSettings(&config.Config{ModelsDir: "/old"}, nil)
 	m.modelsInUse = true
-	m.storage.move = func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error) {
+	m.storage.runMove = func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error) {
 		t.Fatal("moved models out from under a running conversation")
 		return config.MoveResult{}, nil
 	}
@@ -153,7 +167,7 @@ func TestStorageMoveIsRefusedDuringAConversation(t *testing.T) {
 	if !row.disabled || !strings.Contains(row.reason, "End the conversation or meeting") {
 		t.Fatalf("row = %+v", row)
 	}
-	if cmd := m.startStorageMove("/fast"); cmd != nil || m.storage.moving {
+	if cmd := m.startStorageMove("/fast"); cmd != nil || m.storage.moving() {
 		t.Fatal("a move started during a conversation")
 	}
 }
@@ -163,16 +177,17 @@ func TestStorageMoveIsRefusedDuringAConversation(t *testing.T) {
 func TestStorageMoveThatFinishesAfterCancelStillApplies(t *testing.T) {
 	cfg := &config.Config{ModelsDir: "/old"}
 	m := newSettings(cfg, nil)
+	m.storage.personas, m.storage.fileConfig = noPersonas, noFileConfig
 	release := make(chan struct{})
-	m.storage.move = func(_ context.Context, _ *config.Config, dest string, _ config.MoveOptions) (config.MoveResult, error) {
+	m.storage.runMove = func(_ context.Context, _ *config.Config, dest string, _ config.MoveOptions) (config.MoveResult, error) {
 		<-release
 		return config.MoveResult{From: "/old", To: dest, Bytes: 1 << 20, Files: 1}, nil
 	}
 	batch := m.startStorageMove("/fast")().(tea.BatchMsg)
 	storageRow(t, m, "storage_cancel").run(&m)
 	close(release)
-	m, _ = m.Update(batch[1]())
-	if cfg.ModelsDir != "/fast" || !strings.Contains(m.message, "Moved 1.0 MiB to /fast") {
+	m, _ = m.Update(batch[2]())
+	if cfg.ModelsDir != "/fast" || !strings.Contains(m.message, "already saved, so the move finished: Moved 1.0 MiB to /fast") {
 		t.Fatalf("models_dir=%q message=%q", cfg.ModelsDir, m.message)
 	}
 }

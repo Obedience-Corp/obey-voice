@@ -119,6 +119,9 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		a.settings.cancelObeyCatalog()
 		a.settings.cancelEnroll()
 		a.settings.voices.reset()
+		if target != screenSettings {
+			a.settings.storage.stop()
+		}
 	}
 	if a.screen == screenPersonas && target != screenPersonas {
 		a.personas.preview.close()
@@ -150,7 +153,13 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		if workerLoadErr == nil && a.cfg != nil {
 			a.cfg.VoiceWorkers = freshWorkers.VoiceWorkers.Clone()
 		}
+		// A move outlives the screen that started it: its worker reports to
+		// this state, and Move stays off until it has.
+		storage := a.settings.storage
 		a.settings = newSettings(a.cfg, a.providers)
+		if storage != nil {
+			a.settings.storage = storage
+		}
 		if workerLoadErr != nil {
 			a.settings.message = "Could not refresh worker settings: " + workerLoadErr.Error()
 		}

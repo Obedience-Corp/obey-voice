@@ -5,7 +5,6 @@ package cmd
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -24,12 +23,9 @@ import (
 
 // The endpoint is local to the user and install. The port distinguishes serve
 // instances without relying on a PID that might be reused by another process.
+// `models move` probes the same lock to refuse while serve is running.
 func serveControlPath(dir string, port int) string {
-	sum := sha256.Sum256([]byte(dir))
-	// A fixed location lets a desktop-launched server and an interactive shell
-	// find each other even when their TMPDIR values differ.
-	root := filepath.Join("/tmp", fmt.Sprintf("obey-voice-%d", os.Getuid()))
-	return filepath.Join(root, fmt.Sprintf("serve-%x-%d.sock", sum[:8], port))
+	return config.ServeControlPath(dir, port)
 }
 
 type serveController struct {

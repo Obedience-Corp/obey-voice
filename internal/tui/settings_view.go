@@ -156,6 +156,8 @@ func (m settingsModel) contentLines() []string {
 		lines = m.enrollOverlayLines()
 	case m.confirmRemoveVoice != "":
 		lines = m.confirmRemoveVoiceLines()
+	case m.storageConfirming():
+		lines = m.confirmStorageMoveLines()
 	default:
 		lines = m.lineViews()
 	}
@@ -368,6 +370,8 @@ func (m settingsModel) footerHelp() string {
 		return "  recording your voice • esc cancel"
 	case m.confirmRemoveVoice != "":
 		return "  y remove • any other key keeps it"
+	case m.storageConfirming():
+		return "  y move • any other key keeps them"
 	case m.edit.kind != editNone:
 		return "  type a value • enter save • esc cancel"
 	}

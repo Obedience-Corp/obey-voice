@@ -20,6 +20,7 @@ func (a App) onWorkerSettingsSaved(msg workerSettingsSavedMsg) (tea.Model, tea.C
 
 func (a App) onSettingsDone(msg settingsDoneMsg) (tea.Model, tea.Cmd) {
 	a.settings.closePreview()
+	a.settings.storage.stop()
 	a.settings.cancelEnroll()
 	a.settings.voices.reset()
 	target := a.settingsReturnScreen
@@ -106,6 +107,10 @@ func (a App) onVoiceReloaded(msg voiceReloadedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) onStartPipeline(msg startPipelineMsg) (tea.Model, tea.Cmd) {
+	if a.settings.storage.moving() {
+		a.launcher = a.launcher.withBanner(modelsMoveBusy, true)
+		return a, nil
+	}
 	a.settings.closePreview()
 	a.settings.cancelEnroll()
 	if a.builder == nil {

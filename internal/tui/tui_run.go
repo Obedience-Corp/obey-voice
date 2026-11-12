@@ -122,6 +122,9 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	if !ok {
 		final = app
 	}
+	// Before anything else, and before the force-quit below is armed: a move
+	// still running is cancelled and its cleanup waited for.
+	finishStorageMove(final.settings.storage, storageWaitSay)
 	// Detach before any persistence/native teardown can block after the UI
 	// exits; draining itself runs later with the shared helper deadline.
 	final.conversation.stopCapture()

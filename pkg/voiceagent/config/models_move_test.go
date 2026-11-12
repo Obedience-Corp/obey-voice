@@ -16,20 +16,37 @@ func moveFixture(t *testing.T) (cfg *Config, source, root string) {
 	t.Helper()
 	t.Setenv("MODELS_DIR", "")
 	root = t.TempDir()
+	isolateMoveHooks(t, root)
 	SetConfigDirForTest(t, filepath.Join(root, "install"))
 	source = filepath.Join(root, "models")
-	writeMoveFile(t, filepath.Join(source, "vad.onnx"), "vad")
+	writeMoveFile(t, filepath.Join(source, "silero_vad.onnx"), "vad")
 	writeMoveFile(t, filepath.Join(source, "whispercpp", "ggml-base.en.bin"), "whisper-weights")
 	outside := filepath.Join(root, "elsewhere")
 	writeMoveFile(t, filepath.Join(outside, "voice.bin"), "linked")
 	if runtime.GOOS != "windows" {
-		if err := os.Symlink(outside, filepath.Join(source, "audio8-tts")); err != nil {
+		if err := os.Symlink(outside, filepath.Join(source, "audio8-voices")); err != nil {
 			t.Fatal(err)
 		}
 	}
 	setMoveKey(t, "models_dir", source)
 	setMoveKey(t, "whispercpp_model_path", filepath.Join(source, "whispercpp", "ggml-base.en.bin"))
+	if !within(ConfigDir(), root) || !within(source, root) {
+		t.Fatalf("fixture escaped its temp root %s", root)
+	}
 	return &Config{ModelsDir: source}, source, root
+}
+
+// isolateMoveHooks restores the real file operations for the test and points
+// the serve probe at a folder inside root.
+func isolateMoveHooks(t *testing.T, root string) {
+	t.Helper()
+	orig, origRoot := moveHooks, serveControlRoot
+	moveHooks = defaultMoveHooks()
+	// Never look up the real user's home.
+	moveHooks.homeFallback = func() string { return "" }
+	serveRoot := filepath.Join(root, "serve-control")
+	serveControlRoot = func() string { return serveRoot }
+	t.Cleanup(func() { moveHooks, serveControlRoot = orig, origRoot })
 }
 
 func writeMoveFile(t *testing.T, path, body string) {
@@ -49,26 +66,49 @@ func setMoveKey(t *testing.T, key, value string) {
 	}
 }
 
-func crossVolume(string, string) error { return errors.New("cross-device link") }
+// crossVolume fails a rename into another folder the way a rename across
+// drives does. A rename within one folder, which is how the old folder is set
+// aside, still works.
+func crossVolume(oldpath, newpath string) error {
+	if filepath.Dir(oldpath) == filepath.Dir(newpath) {
+		return os.Rename(oldpath, newpath)
+	}
+	return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: errCrossDevice}
+}
+
+// copyOpts forces the cross-volume copy path.
+func copyOpts(t *testing.T, progress func(MoveProgress)) MoveOptions {
+	t.Helper()
+	return renameOpts(t, crossVolume, progress)
+}
+
+func renameOpts(t *testing.T, rename func(string, string) error, progress func(MoveProgress)) MoveOptions {
+	t.Helper()
+	moveHooks.rename = rename
+	return MoveOptions{Progress: progress}
+}
 
 func assertMoved(t *testing.T, cfg *Config, source, dest string, result MoveResult) {
 	t.Helper()
 	if _, err := os.Lstat(source); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("old folder still present: %v", err)
 	}
-	for rel, want := range map[string]string{"vad.onnx": "vad", "whispercpp/ggml-base.en.bin": "whisper-weights"} {
+	for rel, want := range map[string]string{"silero_vad.onnx": "vad", "whispercpp/ggml-base.en.bin": "whisper-weights"} {
 		got, err := os.ReadFile(filepath.Join(dest, rel))
 		if err != nil || string(got) != want {
 			t.Fatalf("%s = %q, %v", rel, got, err)
 		}
 	}
+	if _, err := os.Lstat(filepath.Join(dest, moveIncompleteMarker)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the unfinished-copy marker was left in the finished folder: %v", err)
+	}
 	if runtime.GOOS != "windows" {
-		got, err := os.ReadFile(filepath.Join(dest, "audio8-tts", "voice.bin"))
+		got, err := os.ReadFile(filepath.Join(dest, "audio8-voices", "voice.bin"))
 		if err != nil || string(got) != "linked" {
 			t.Fatalf("link was not carried over: %q, %v", got, err)
 		}
-		if info, err := os.Lstat(filepath.Join(dest, "audio8-tts")); err != nil || info.Mode()&os.ModeSymlink == 0 {
-			t.Fatalf("audio8-tts should still be a link, not a copy of its target: %v", err)
+		if info, err := os.Lstat(filepath.Join(dest, "audio8-voices")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("audio8-voices should still be a link, not a copy of its target: %v", err)
 		}
 	}
 	if ModelsDir() != dest || cfg.ModelsDir != dest {
@@ -95,6 +135,14 @@ func assertMoved(t *testing.T, cfg *Config, source, dest string, result MoveResu
 	if result.Files != 2 || result.Bytes != int64(len("vad")+len("whisper-weights")) {
 		t.Fatalf("result counted %d files, %d bytes", result.Files, result.Bytes)
 	}
+	if len(result.Warnings) > 0 {
+		t.Fatalf("unexpected warnings: %v", result.Warnings)
+	}
+	// Nothing was left beside the old folder.
+	siblings, _ := filepath.Glob(source + ".obey-voice-old-*")
+	if len(siblings) > 0 {
+		t.Fatalf("set-aside old folder left behind: %v", siblings)
+	}
 }
 
 func TestMoveModelsRenamesOnTheSameVolume(t *testing.T) {
@@ -117,14 +165,14 @@ func TestMoveModelsCopiesAcrossVolumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var phases []string
-	result, err := MoveModels(context.Background(), cfg, dest, MoveOptions{rename: crossVolume, Progress: func(p MoveProgress) {
+	result, err := MoveModels(context.Background(), cfg, dest, copyOpts(t, func(p MoveProgress) {
 		if len(phases) == 0 || phases[len(phases)-1] != p.Phase {
 			phases = append(phases, p.Phase)
 		}
 		if p.Done > p.Total {
 			t.Errorf("progress ran past the total: %d of %d", p.Done, p.Total)
 		}
-	}})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +180,7 @@ func TestMoveModelsCopiesAcrossVolumes(t *testing.T) {
 		t.Fatal("expected the copy path")
 	}
 	assertMoved(t, cfg, source, dest, result)
-	if got := strings.Join(phases, ","); got != strings.Join([]string{MovePhaseMeasure, MovePhaseCopy, MovePhaseSave, MovePhaseRemove}, ",") {
+	if got := strings.Join(phases, ","); got != strings.Join([]string{MovePhaseMeasure, MovePhaseCopy, MovePhaseSave, MovePhaseVerify, MovePhaseRemove}, ",") {
 		t.Fatalf("phases = %s", got)
 	}
 }
@@ -141,18 +189,18 @@ func TestMoveModelsCancelledMidCopyLeavesTheOldFolderInUse(t *testing.T) {
 	cfg, source, root := moveFixture(t)
 	dest := filepath.Join(root, "fast", "models")
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := MoveModels(ctx, cfg, dest, MoveOptions{rename: crossVolume, Progress: func(p MoveProgress) {
-		if p.Phase == MovePhaseCopy {
+	_, err := MoveModels(ctx, cfg, dest, copyOpts(t, func(p MoveProgress) {
+		if p.Phase == MovePhaseCopy && p.Done > 0 {
 			cancel()
 		}
-	}})
+	}))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want cancellation", err)
 	}
 	if _, err := os.Stat(dest); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("partial copy was left behind: %v", err)
 	}
-	for _, rel := range []string{"vad.onnx", "whispercpp/ggml-base.en.bin"} {
+	for _, rel := range []string{"silero_vad.onnx", "whispercpp/ggml-base.en.bin"} {
 		if _, err := os.Stat(filepath.Join(source, rel)); err != nil {
 			t.Fatalf("old folder lost %s: %v", rel, err)
 		}
@@ -175,7 +223,7 @@ func TestMoveModelsFollowsALinkedModelsFolder(t *testing.T) {
 	setMoveKey(t, "whispercpp_model_path", filepath.Join(link, "whispercpp", "ggml-base.en.bin"))
 	cfg.ModelsDir = link
 	dest := filepath.Join(root, "fast", "models")
-	result, err := MoveModels(context.Background(), cfg, dest, MoveOptions{rename: crossVolume})
+	result, err := MoveModels(context.Background(), cfg, dest, copyOpts(t, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +254,7 @@ func TestMoveModelsRefusesUnsafeTargets(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(occupied, "keep.txt")); err != nil || string(got) != "mine" {
 		t.Fatalf("a refused move touched the target: %q, %v", got, err)
 	}
-	if _, err := os.Stat(filepath.Join(source, "vad.onnx")); err != nil {
+	if _, err := os.Stat(filepath.Join(source, "silero_vad.onnx")); err != nil {
 		t.Fatalf("a refused move touched the source: %v", err)
 	}
 }
@@ -223,6 +271,7 @@ func TestMoveModelsRefusesWhenTheEnvironmentDecidesTheFolder(t *testing.T) {
 func TestMoveModelsWithNothingDownloaded(t *testing.T) {
 	t.Setenv("MODELS_DIR", "")
 	root := t.TempDir()
+	isolateMoveHooks(t, root)
 	SetConfigDirForTest(t, filepath.Join(root, "install"))
 	missing := filepath.Join(root, "never-created")
 	_, err := MoveModels(context.Background(), &Config{ModelsDir: missing}, filepath.Join(root, "fast"), MoveOptions{})
@@ -241,18 +290,18 @@ func TestMoveModelsCancelledBeforeSaveUndoesTheCopy(t *testing.T) {
 	dest := filepath.Join(root, "fast", "models")
 	ctx, cancel := context.WithCancel(context.Background())
 	total := int64(len("vad") + len("whisper-weights"))
-	_, err := MoveModels(ctx, cfg, dest, MoveOptions{rename: crossVolume, Progress: func(p MoveProgress) {
+	_, err := MoveModels(ctx, cfg, dest, copyOpts(t, func(p MoveProgress) {
 		if p.Phase == MovePhaseCopy && p.Done == total {
 			cancel()
 		}
-	}})
+	}))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want cancellation", err)
 	}
 	if _, err := os.Stat(dest); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the finished copy was left behind: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(source, "vad.onnx")); err != nil || ModelsDir() != source {
+	if _, err := os.Stat(filepath.Join(source, "silero_vad.onnx")); err != nil || ModelsDir() != source {
 		t.Fatalf("old folder not in use after cancel: %v, models_dir=%q", err, ModelsDir())
 	}
 }

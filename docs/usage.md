@@ -100,6 +100,7 @@ obey-voice models clean --unused --dry-run # Review what would be deleted, and w
 obey-voice models clean --unused --yes    # Delete the reviewed list (--plan when scripted)
 obey-voice models usage                   # Where models are stored and how much space they use
 obey-voice models move /Volumes/Big/models # Move every model to another folder and use it from now on
+obey-voice models move --dry-run /Volumes/Big/models # Show what a move would do and change nothing
 obey-voice transcribe --request job.json --jsonl   # Transcribe a finished WAV to timed JSONL
 obey-voice transcribe capabilities --json # What this install can transcribe (read-only)
 obey-voice prompts list                   # List embedded and user prompt documents
@@ -128,16 +129,99 @@ Models are stored in one folder (`models_dir`, by default
 `~/.cache/obey-voice/models`). To put them on a larger drive, run
 `obey-voice models move <folder>`, or use **Settings → Storage → Move models**
 in the terminal app or **Settings → Models → Model storage** in the desktop
-app. The destination must be empty or not exist yet.
+app. Both apps check the move first and show what it will do (size, file
+count, and anything it will keep) before you confirm.
+`obey-voice models move --dry-run <folder>` prints the same check and changes
+nothing, not even a lock file.
 
-The move copies the files, saves the new folder, updates any other setting
-that named a file in the old folder, and only then removes the old folder. If
-it fails or you cancel it, the old folder stays in use and the partial copy is
-removed. Stop any running conversation first.
+The destination must be a full path to a folder that is empty or does not
+exist yet. If it is a link, the files land in the folder it points to and the
+link is kept.
+
+**How it moves.** On the same drive the folder is renamed; until the new
+folder is saved, a link at the old path leads to it (on drives that can hold
+links; exFAT and FAT32 cannot). An empty destination you
+made yourself is replaced by the moved folder, so its own permissions are not
+kept. On another drive the files are copied and flushed to disk, then
+`models_dir` is saved together with any other setting that named a file in
+the old folder. Only then is the old folder set aside, as
+`<folder>.obey-voice-old-<time>` next to where it was, and every file in it is
+read again and compared, by content, with what was copied. Anything that
+changed is copied again. This check reads the whole old folder once more, so
+it takes about as long as reading that much from the old drive (hashing runs
+at about 3 GB/s on an Apple silicon Mac, faster than most drives read). The
+set-aside folder is deleted only if a second look
+finds nothing still changing. Copies keep each file's permissions and
+modification time, not extended attributes or ACLs.
+
+**When the old folder is kept.** The set-aside folder is kept, with a
+`README-obey-voice-move.txt` inside, and the move says why, when something in
+it was still changing, when a check failed, or when it holds entries that
+nothing in your settings or personas uses. Such entries are moved too, but
+they may be another program's files, or models you no longer use. The
+confirmation and `--dry-run` list them with their sizes. To free the old
+drive completely, review `obey-voice models clean --unused --dry-run` first,
+or delete the kept folder yourself once you have checked it.
+
+**Cancelling.** Cancel, or Ctrl-C, works until the new folder is saved: the
+old folder stays in use and only what the move created is removed (an empty
+destination you made yourself is kept). After the save the move finishes. A
+cancelled `models move` exits with status 130.
+
+- **Terminal (`models move`):** SIGTERM and a closed terminal also cancel and
+  let the cleanup finish. A second Ctrl-C quits at once.
+- **Terminal app:** leaving Settings or quitting cancels the move. Quitting,
+  however it happens (q, Ctrl-C, `kill`, closing the terminal), waits for the
+  cleanup before the app exits; Ctrl-C during that wait quits at once.
+- **Desktop app:** Cancel sends the move one stop request and waits for its
+  cleanup; it never forces it. Quitting the app sends the same request and
+  leaves the move to finish on its own. On Windows, Cancel and quitting stop
+  the move at once with no cleanup.
+
+**After a hard kill** (power loss, `kill -9`, Ctrl-C twice, Cancel or quit on
+Windows) nothing is lost, but something may be left behind:
+
+- during the copy: a partial copy in the destination, marked by
+  `.obey-voice-move-incomplete`. The old folder is still in use. A later move
+  to that folder names the folder holding the partial copy; delete what is
+  inside it.
+- after a same-drive rename, before the save: a link at the old path leading
+  to the new folder, and everything keeps working through it. Without that
+  link (a kill in the instant between the rename and the link, or a drive
+  that cannot hold links, where the gap lasts until the save), `models_dir`
+  names a folder that is gone: the models are in the destination, and
+  `obey-voice config set models_dir <destination>` points at them. Until
+  then, anything that downloads missing models would fetch them again into
+  the old path.
+- after the save: the old folder, set aside as `<folder>.obey-voice-old-<time>`
+  and perhaps partly deleted, or on the same drive a link at the old path. The
+  new folder is complete and in use.
+
+**The move is refused, and nothing is changed, when:**
+
+- `models_dir` is set by `MODELS_DIR` or is a relative path;
+- `models_dir` is your home folder, a standard folder such as Documents, the
+  top of a drive, or contains the obey-voice settings folder; or the home
+  folder cannot be found;
+- either folder is inside the other;
+- another setting set in the environment (for example `WHISPERCPP_MODEL_PATH`)
+  names a file in the old folder, or `config.yaml` cannot take the new values;
+- the folder holds something other than files, folders and links, links that
+  would point somewhere else after the move, or another drive mounted inside
+  it;
+- the other drive does not have room for the copy;
+- a decision model install, `obey-voice serve`, or another move is running.
+
+**What the move cannot see.** It cannot tell that another program is reading
+or writing the folder: a conversation or meeting in another window, the
+desktop app's engine, a download in progress, or a `serve` started by an
+older build or on Windows. A program that keeps a file open can still write
+to it after the final check. Stop them first. The terminal app refuses a move
+while its own conversation or meeting is running, and starts neither while a
+move is finishing.
 
 To start using a folder that already holds models, set `models_dir` instead;
-that changes the setting and moves nothing. A folder set through the
-`MODELS_DIR` environment variable cannot be moved this way.
+that changes the setting and moves nothing.
 
 ### Transcribing a recording
 

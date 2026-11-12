@@ -32,6 +32,9 @@ impl Backend {
         let tx = self.tx.clone();
         let ctx = self.ctx.clone();
         let jobs = self.jobs.clone();
+        let gentle_jobs = self.gentle.clone();
+        let signalled = self.signalled.clone();
+        let gentle = super::process::finishes_on_its_own(&args);
         let stopped = self.stopped.clone();
         let cancelled = self.cancelled.clone();
         thread::spawn(move || {
@@ -48,9 +51,16 @@ impl Backend {
                 {
                     let mut registry = jobs.lock().unwrap();
                     registry.insert(id, child.clone());
+                    if gentle {
+                        gentle_jobs.lock().unwrap().insert(id);
+                    }
                     if stopped.load(Ordering::Acquire) || cancelled.lock().unwrap().remove(&id) {
                         signal_child(&mut child.lock().unwrap());
-                        finish_child(child.clone(), Duration::from_secs(2));
+                        if gentle {
+                            signalled.lock().unwrap().insert(id);
+                        } else {
+                            finish_child(child.clone(), Duration::from_secs(2));
+                        }
                     }
                 }
                 let err_tx = tx.clone();
@@ -116,6 +126,8 @@ impl Backend {
                     thread::sleep(Duration::from_millis(30));
                 };
                 jobs.lock().unwrap().remove(&id);
+                gentle_jobs.lock().unwrap().remove(&id);
+                signalled.lock().unwrap().remove(&id);
                 let stdout = stdout_thread
                     .join()
                     .map_err(|_| "Output reader stopped")??;

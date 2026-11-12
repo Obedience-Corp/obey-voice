@@ -79,7 +79,9 @@ impl VoiceApp {
             ui.strong(&self.task_title);
             if let Some(id) = self.task {
                 ui.spinner();
-                if ui.button("Cancel").clicked() {
+                if self.backend.cleaning_up(id) {
+                    ui.label("Waiting for the move to finish its cleanup…");
+                } else if ui.button("Cancel").clicked() {
                     self.backend.cancel(id);
                     self.status = "Cancel requested…".into();
                 }
