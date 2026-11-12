@@ -149,14 +149,15 @@ OBEY_VOICE_LIVE_ADDRESS_MODEL='<installed-model>' go test -tags=integration \
 
 A reply you stop is kept as you were given it, marked unfinished: text the
 model had already sent but the conversation had not yet shown or spoken is
-left out, and a stopped reply of which you were given nothing is dropped. One
-the model had already finished is marked unfinished too. This is the one
-place a model's next request can differ from before: the unfinished reply it
-is sent no longer carries text you were never given. The reply is recorded
-before the stopped turn ends, so a save straight after it keeps it, and the
-next line, a persona switch or an idle job delivery waits until it is. When the
-model chose to hand the request to a worker and the turn stopped before it
-did, your line stays in the conversation.
+left out, and a stopped reply of which you were given nothing is dropped. A
+reply still being delivered when you stopped it is marked unfinished even if
+the model had finished generating it. The model's next request, and any
+persona that answers next, receive the reply as it is kept. It is recorded
+before the stopped turn ends, unless the request takes more than five seconds
+to stop, so a save straight after it keeps it; the next line, a persona
+switch or an idle job delivery waits until it is recorded. When
+the model chose to hand the request to a worker and the turn stopped before
+it did, your line stays in the conversation.
 
 ## Repeated answers
 
