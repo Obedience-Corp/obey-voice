@@ -110,13 +110,10 @@ func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) 
 	result.Name = strings.TrimSpace(result.Name)
 	switch result.Kind {
 	case "none":
-		if result.Name != "" {
-			return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, errors.New("invalid no-address decision"))
-		}
-		// Bare only controls acknowledgements for an addressed persona. A model
-		// may label an ordinary greeting bare; without a target it is still a
-		// full turn for the current responder, not an invalid identity decision.
-		result.Bare = false
+		// The kind is the decision. A model may still fill in a name it saw
+		// mentioned, or label an ordinary greeting bare; without an address
+		// it is a full turn for the current responder, not a failed one.
+		result.Name, result.Bare = "", false
 	case "address":
 		if result.Name == "" {
 			return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, errors.New("empty addressee"))

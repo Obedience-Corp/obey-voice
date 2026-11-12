@@ -39,14 +39,7 @@ func NewOllamaBatchLight(cfg *config.Config) (BatchProvider, error) {
 		return nil, fmt.Errorf("model %q not found in ollama — run: ollama pull %s", model, model)
 	}
 
-	var keepAlive *api.Duration
-	if raw := strings.TrimSpace(cfg.OllamaKeepAlive); raw != "" {
-		if d, err := time.ParseDuration(raw); err == nil {
-			keepAlive = &api.Duration{Duration: d}
-		} else if raw == "-1" {
-			keepAlive = &api.Duration{Duration: -1}
-		}
-	}
+	keepAlive := keepAliveOrDefault(cfg.OllamaKeepAlive)
 	// A correction is not a creative task: temperature 0 makes two runs over
 	// the same line agree, and leaves the model less room to invent. It is a
 	// sampling option, so it never makes Ollama reload the runner.

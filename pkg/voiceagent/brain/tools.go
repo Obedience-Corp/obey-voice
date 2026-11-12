@@ -515,7 +515,12 @@ func executeToolWithOutcome(ctx context.Context, workDir string, call api.ToolCa
 		// Without a session, activation is not tracked (tests / legacy).
 		return toolReadSkill(catalog, args), nil
 	case "route":
-		return toolRoute(args), nil
+		result := toolRoute(args)
+		return result, &events.ToolOutcome{
+			Status:        events.ToolOutcomeSucceeded,
+			InputSummary:  toolArgSummary(call),
+			OutputPreview: toolResultPreview(result),
+		}
 	default:
 		return fmt.Sprintf("unknown tool: %s", call.Function.Name), nil
 	}
