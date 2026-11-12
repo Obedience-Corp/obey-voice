@@ -37,8 +37,9 @@ var workerTimeReserve = func(total time.Duration) time.Duration {
 }
 
 // workerAnswerMargin is how long before the deadline a worker's final request
-// is cut off, so the worker can report the cut before the job is stopped.
-func workerAnswerMargin(total time.Duration) time.Duration {
+// is cut off, so the worker can report the cut before the job is stopped. It
+// is a variable so tests can use short deadlines.
+var workerAnswerMargin = func(total time.Duration) time.Duration {
 	return min(time.Second, total/20)
 }
 

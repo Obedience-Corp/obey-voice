@@ -442,9 +442,10 @@ func TestRecurringRoundBetweenNewWorkIsProgress(t *testing.T) {
 // mode streams that text; full mode receives it as a length-truncated segment
 // and stalls on the continuation.
 func TestWorkerFinalAnswerIsCutOffBeforeTheDeadline(t *testing.T) {
-	saved := workerTimeReserve
+	savedReserve, savedMargin := workerTimeReserve, workerAnswerMargin
 	workerTimeReserve = func(time.Duration) time.Duration { return time.Hour }
-	t.Cleanup(func() { workerTimeReserve = saved })
+	workerAnswerMargin = func(time.Duration) time.Duration { return 600 * time.Millisecond }
+	t.Cleanup(func() { workerTimeReserve, workerAnswerMargin = savedReserve, savedMargin })
 	const written = "Three files were read before time ran out."
 
 	eachMode(t, func(t *testing.T, streaming bool) {
@@ -467,8 +468,8 @@ func TestWorkerFinalAnswerIsCutOffBeforeTheDeadline(t *testing.T) {
 		host, _ := url.Parse(server.URL)
 		o := &OllamaBrain{client: api.NewClient(host, server.Client()), model: "fixture", workDir: t.TempDir(), cfg: &config.Config{MaxHistory: 100, OllamaNumCtx: 32768, IsWorker: true}}
 
-		deadline := time.Now().Add(2 * time.Second)
-		ctx, cancel := context.WithDeadline(t.Context(), deadline.Add(3*time.Second))
+		deadline := time.Now().Add(800 * time.Millisecond)
+		ctx, cancel := context.WithDeadline(t.Context(), deadline.Add(time.Second))
 		defer cancel()
 		ctx = WithWorkerDeadline(ctx, deadline)
 		var err error
