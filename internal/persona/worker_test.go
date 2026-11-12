@@ -162,3 +162,38 @@ func TestPersonaTierOverridesSurviveSaveAndUnrelatedStackEdit(t *testing.T) {
 		t.Fatal("previous persona override leaked")
 	}
 }
+
+func TestWorkSettingSurvivesSaveReloadApplyAndUnrelatedStackEdits(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	if err := Write(&Profile{Schema: Schema, ID: "mira", DisplayName: "Mira", Prompts: PromptRefs{Persona: "mira"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{config.WorkWorker, config.WorkOwn, ""} {
+		if _, err := UpdateStack("mira", Brain{Provider: "claude", Work: want, Worker: Worker{Provider: "ollama"}}, TTS{}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := Load("mira")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.Brain.Work != want {
+			t.Fatalf("saved work = %q, want %q", p.Brain.Work, want)
+		}
+		cfg := &config.Config{PersonaWork: "stale"}
+		Apply(cfg, p)
+		if cfg.PersonaWork != want {
+			t.Fatalf("bound work = %q, want %q", cfg.PersonaWork, want)
+		}
+		wantEffective := want
+		if want == "" {
+			wantEffective = config.WorkOwn
+		}
+		if got := config.WorkOf(cfg); got != wantEffective {
+			t.Fatalf("effective work = %q, want %q", got, wantEffective)
+		}
+	}
+	bad := &Profile{Schema: Schema, ID: "mira", DisplayName: "Mira", Prompts: PromptRefs{Persona: "mira"}, Brain: Brain{Work: "decide"}}
+	if err := bad.Validate(); err == nil {
+		t.Fatal("an unknown work value validated")
+	}
+}

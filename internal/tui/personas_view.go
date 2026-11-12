@@ -238,7 +238,7 @@ func (m personasModel) stackLines() []string {
 	workerProvider := stackWorkerProviders()[m.workerProviderIdx]
 	workerRow := row(formRowWorkerProvider, "Worker", "‹ "+workerProvider+" ›")
 	if m.effectiveWork() == config.WorkOwn {
-		workerRow += dimStyle.Render("  (unused while this persona does its own work)")
+		workerRow += dimStyle.Render("  (unused: it does its own work)")
 	}
 	if workerProvider == stackDefaultLabel && m.cfg != nil && !config.WorkerSelected(m.cfg) && (m.cfg.VoiceWorkers == nil || m.cfg.VoiceWorkers.Mode != config.WorkerModeTiered) {
 		// "(default)" is only honest when Settings actually holds a choice.
