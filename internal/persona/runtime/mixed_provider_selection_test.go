@@ -117,8 +117,11 @@ func readFixturePrompts(t *testing.T, log string) []fixturePrompt {
 }
 
 func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
-	for _, provider := range []string{"muse-spark", "obey"} {
-		t.Run(provider, func(t *testing.T) {
+	for _, tc := range []struct{ provider, sharing string }{
+		{"muse-spark", ""}, {"obey", ""}, {"muse-spark", "whole_conversation"}, {"obey", "whole_conversation"},
+	} {
+		provider, whole := tc.provider, tc.sharing == "whole_conversation"
+		t.Run(provider+"/"+tc.sharing, func(t *testing.T) {
 			log := installMixedProviderBinaries(t)
 			root, _ := filepath.EvalSymlinks(t.TempDir())
 			var mu sync.Mutex
@@ -155,7 +158,7 @@ func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
 				writeTestPrompt(t, promptDir, id, "You are {agent_name}.")
 			}
 			base := &config.Config{ActivePersona: "ember", BrainProvider: "ollama", OllamaModel: "fixture:latest", OllamaHost: server.URL,
-				ObeyProvider: "fixture", ObeyModel: "fixture", ObeyToolPolicy: "daemon", PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, OllamaNumCtx: 8192}
+				ObeyProvider: "fixture", ObeyModel: "fixture", ObeyToolPolicy: "daemon", PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, OllamaNumCtx: 8192, HostedPersonaSharing: tc.sharing}
 			binding, err := catalog.ResolveBinding(base, "ember")
 			if err != nil {
 				t.Fatal(err)
@@ -181,6 +184,9 @@ func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
 				t.Fatal(err)
 			}
 			p.AdmitInput = selector.Route
+			p.HostedNotice = selector.HostedNotice
+			var notices []string
+			events.Subscribe(p.Events, func(e events.Info) { notices = append(notices, e.Message) })
 			p.OnTurn = func() {
 				if err := store.Save(sess, p.Brain.History()); err != nil {
 					t.Error(err)
@@ -215,16 +221,26 @@ func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
 				}
 			}
 
+			label := map[string]string{"muse-spark": "Muse Spark", "obey": "Obey"}[provider]
+			want := "Scout runs on " + label + ", a hosted service. Only what is said from when it was invited is sent to " + label + ", plus jobs it started earlier and their results; earlier lines stay on this machine."
+			if whole {
+				want = "Scout runs on " + label + ", a hosted service. The whole conversation is sent to " + label + "."
+			}
+			if len(notices) != 1 || notices[0] != want {
+				t.Fatalf("notices = %q, want %q", notices, want)
+			}
 			prompts := readFixturePrompts(t, log)
 			if len(prompts) != 1 || prompts[0].Provider != map[string]string{"muse-spark": "muse", "obey": "obey"}[provider] {
 				t.Fatalf("%s calls = %+v", provider, prompts)
 			}
 			scoutPrompt := prompts[0].Prompt
-			if !strings.Contains(scoutPrompt, "You are Scout.") || !strings.Contains(scoutPrompt, emberReply) || !strings.Contains(scoutPrompt, `"persona":"Ember"`) {
-				t.Fatalf("%s did not receive Ember's attributed reply:\n%s", provider, scoutPrompt)
-			}
-			if strings.Contains(scoutPrompt, "You are Ember.") {
-				t.Fatalf("%s received Ember's identity prompt:\n%s", provider, scoutPrompt)
+			requireContains(t, scoutPrompt, "You are Scout.", `"content":"switch to Scout"`, `"content":"Scout here.","persona":"Scout"`, "What color is the door?")
+			requireOmits(t, scoutPrompt, "You are Ember.")
+			// Ember spoke before Scout was invited.
+			if whole {
+				requireContains(t, scoutPrompt, "Note that the vault code is cobalt.", `"content":"`+emberReply+`","persona":"Ember"`)
+			} else {
+				requireOmits(t, scoutPrompt, "vault code", emberReply, `"persona":"Ember"`)
 			}
 
 			mu.Lock()
@@ -247,7 +263,7 @@ func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
 }
 
 func TestSelectorRefusesUnverifiedProvider(t *testing.T) {
-	for _, provider := range []string{"claude", "grok", "cursor"} {
+	for _, provider := range []string{"grok", "cursor"} {
 		t.Run(provider, func(t *testing.T) {
 			scout := testProfile("scout", "Scout", "scout")
 			scout.Brain.Provider = provider

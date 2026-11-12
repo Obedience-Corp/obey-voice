@@ -43,9 +43,17 @@ type SelectionOptions struct {
 	Initial         *persona.SessionBinding
 	Persist         func([]brain.Turn, events.PersonaSelection) error
 	InitialContexts brain.PersonaContexts
+	// HostedNotified lists the hosted providers a restored conversation has
+	// already told the user about, and HostedNotifiedWhole those of them told
+	// that the whole conversation is sent; PersistHostedNotified saves both.
+	HostedNotified        []string
+	HostedNotifiedWhole   []string
+	PersistHostedNotified func(told, whole []string) error
 	// Transcript is the restored canonical conversation. It is authoritative
 	// while the live provider keeps no shared history of its own.
-	Transcript      []brain.Turn
+	Transcript []brain.Turn
+	// SessionProvider is the backend the restored session was created on.
+	SessionProvider string
 	PersistContexts func([]brain.Turn, events.PersonaSelection, brain.PersonaContexts) error
 	NewBrain        func(context.Context, *config.Config) (brain.Provider, error)
 	NewWorker       func(context.Context, *config.Config) (brain.Provider, error)
@@ -81,6 +89,9 @@ type Selector struct {
 	generation          uint64
 	contexts            brain.PersonaContexts
 	transcript          *transcript
+	parked              []parkedBrain // least recently used first; guarded by transitionMu
+	restored            restoredConversation
+	notices             hostedNotices
 	requiresSelection   bool // explicit restore may have no usable saved persona
 }
 
@@ -160,13 +171,23 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	if err != nil {
 		return nil, fmt.Errorf("persona selection: pin response identity: %w", err)
 	}
-	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: opts.InitialContexts.Clone()}
+	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text(), contexts: replayContexts(opts.InitialContexts)}
 	s.transcript = newTranscript(func() string { return opts.Pipeline.ConversationScope().ConversationEpoch }, opts.Transcript)
-	if live := opts.Pipeline.Brain; !brain.KeepsSharedHistory(live) && len(opts.Transcript) > 0 {
-		live.LoadHistory(sessionView(opts.Transcript, opts.Initial.Config()))
+	s.transcript.restoreSessions(opts.InitialContexts)
+	s.transcript.cleared = func() {
+		s.transitionMu.Lock()
+		defer s.transitionMu.Unlock()
+		s.retireParked(retireAll)
 	}
+	s.restored = restoredConversation{personaID: opts.Initial.PersonaID, provider: opts.SessionProvider}
+	startedOn := opts.Initial.BrainProvider
+	if len(opts.Transcript) > 0 {
+		startedOn = opts.SessionProvider
+	}
+	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, startedOn, opts.HostedNotified, opts.HostedNotifiedWhole)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
-	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok {
+	hostedShare := brain.HostedSharedHistory(opts.Pipeline.Brain)
+	if owner, ok := opts.Pipeline.Brain.(brain.ContinuityTransferProvider); ok && !hostedShare {
 		if state, exists := s.contexts[opts.Initial.PersonaID]; exists {
 			restored := state.Reconcile(opts.Pipeline.Brain.History())
 			if opts.InitialNative != nil {
@@ -183,8 +204,39 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 			}
 		}
 	}
-	captureContext(s.contexts, opts.Initial.PersonaID, opts.Pipeline.Brain)
-	if err := s.persistContexts(s.Transcript(), s.selected, s.contexts); err != nil {
+	if live := opts.Pipeline.Brain; brain.KeepsPersonaSession(live) {
+		turns := s.transcript.Turns()
+		cursor := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, false)
+		delete(s.contexts, opts.Initial.PersonaID)
+		s.transcript.setLive(opts.Initial.PersonaID, &cursor)
+		// The host loaded the whole conversation into a provider that has no
+		// session yet; keep only what it may receive.
+		live.LoadHistory(sessionHistory(turns, cursor, opts.Initial.Config()))
+	} else if hostedShare {
+		// The host loaded the whole conversation, which the provider keeps;
+		// it sends only its persona's share.
+		turns := live.History()
+		cursor := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, true)
+		delete(s.contexts, opts.Initial.PersonaID)
+		view := shareView(cursor, turns)
+		if opts.Native != nil {
+			if err := brain.ValidateTextProjection(view.Working); err != nil {
+				return nil, err
+			}
+		}
+		if err := live.(brain.ContinuityTransferProvider).ImportContinuity(view); err != nil {
+			return nil, fmt.Errorf("restore persona context: %w", err)
+		}
+		held := heldShare(cursor, live)
+		s.transcript.setLive(opts.Initial.PersonaID, &held)
+	} else {
+		captureContext(s.contexts, opts.Initial.PersonaID, live)
+		if !brain.KeepsSharedHistory(live) && len(opts.Transcript) > 0 {
+			live.LoadHistory(sessionView(opts.Transcript, opts.Initial.Config()))
+		}
+		s.transcript.setLive(opts.Initial.PersonaID, nil)
+	}
+	if err := s.persistContexts(s.Transcript(), s.selected, s.withSessions(s.contexts, "", nil)); err != nil {
 		// A provider without shared history ran without persona selection
 		// before, where a failed save only reported an error.
 		if !session.WriteCommitted(err) && brain.KeepsSharedHistory(opts.Pipeline.Brain) {
@@ -234,7 +286,9 @@ func (s *Selector) sharedTurns() []brain.Turn {
 }
 
 // RestoreTranscript follows RestoreSession at the same serialized boundary.
-func (s *Selector) RestoreTranscript(turns []brain.Turn) {
+// provider is the backend the restored session was created on.
+func (s *Selector) RestoreTranscript(turns []brain.Turn, provider string) {
+	s.restored = restoredConversation{personaID: s.Snapshot().PersonaID, provider: provider}
 	s.transcript.reset(turns)
 }
 
@@ -264,6 +318,9 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 	// Saving them must not trigger a responder brain/voice reload next turn.
 	responseCfg := cfg.Clone()
 	responseCfg.VoiceWorkers = nil
+	// Sharing applies to personas first addressed after a change; it must not
+	// reselect the persona that is already answering.
+	responseCfg.HostedPersonaSharing = ""
 	// Only the digest is exposed; credential-bearing config is never logged.
 	effectiveAudio := b.AudioConfig()
 	// Saved inactive native settings do not change a Standard response binding.
@@ -284,6 +341,7 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 		Generation: generation, BrainProvider: b.BrainProvider, BrainModel: b.BrainModel,
 		VoiceProvider: cfg.TTSProvider, Voice: config.TTSVoiceFor(cfg, cfg.TTSProvider), Reason: reason,
 		AudioMode: effectiveAudio.Mode, AudioControls: effectiveAudio.Controls, AudioTranscript: effectiveAudio.Transcript, AudioRetained: effectiveAudio.RetainAudio,
+		Hosted: brain.IsHosted(b.BrainProvider),
 	}
 }
 
@@ -382,6 +440,7 @@ func responseEnvelope(selected events.PersonaSelection) events.ResponseEnvelope 
 		SessionID: selected.SessionID, ConversationEpoch: selected.ConversationEpoch, ResponseID: rand.Text(),
 		PersonaID: selected.PersonaID, DisplayName: selected.DisplayName, PromptHash: selected.PromptHash,
 		BindingHash: selected.BindingHash, SelectionRevision: selected.Revision, VoiceProvider: selected.VoiceProvider, Voice: selected.Voice,
+		BrainProvider: selected.BrainProvider, Hosted: selected.Hosted,
 	}
 }
 
@@ -408,7 +467,11 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.generation++
 	s.opts.SessionID = sessionID
 	s.opts.UseDefaults = false
+	s.retireParked(retireAll)
+	s.restored = restoredConversation{}
+	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, s.liveProvider(), nil, nil)
 	s.transcript.reset(nil)
+	s.transcript.restoreSessions(nil)
 	s.mu.Lock()
 	s.requiresSelection = true
 	s.contexts = make(brain.PersonaContexts)
@@ -428,12 +491,14 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 // Close joins any in-flight selection publication before the host closes its
 // work, brain, and voice resources. The host cancels its run context first;
 // this final join also covers a filesystem commit outliving the turn timeout.
-// It does not close conversation resources or schedule turns itself.
+// It retires parked providers through the pipeline, so the host's final
+// CloseBrains joins them; it does not close the live provider or schedule turns.
 func (s *Selector) Close() {
 	s.EndDiscussion("superseded")
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	s.closed = true
+	s.retireParked(retireAll)
 	s.publicationMu.Lock()
 	s.publicationClosed = true
 	s.bindingToken = ""

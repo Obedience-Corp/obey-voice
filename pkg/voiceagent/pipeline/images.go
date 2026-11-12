@@ -26,7 +26,7 @@ func (p *Pipeline) ImageValidator() func(context.Context, []chatmedia.Ref) error
 			return nil
 		}
 		if !ok {
-			return errors.New("this provider does not support image input; choose a vision-capable Ollama model or Codex")
+			return errors.New("this provider does not support image input; choose a vision-capable Ollama model, Codex or Claude")
 		}
 		return validator.ValidateImages(ctx, refs)
 	}
@@ -35,6 +35,9 @@ func (p *Pipeline) ImageValidator() func(context.Context, []chatmedia.Ref) error
 // Validate retained user media after persona admission, on the serialized turn
 // goroutine. This also protects continuations and resumed group discussions.
 func (p *Pipeline) validateRetainedImages(ctx context.Context) error {
+	if brain.ReplaysImagesBestEffort(p.Brain) {
+		return nil
+	}
 	turns := p.Brain.History()
 	if working, ok := p.Brain.(brain.ContextHistoryProvider); ok {
 		turns = working.ContextHistory()

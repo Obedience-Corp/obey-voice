@@ -19,6 +19,9 @@ type workerOrigin struct {
 	Envelope      events.ResponseEnvelope
 	Voices        responseVoices
 	releaseVoice  func()
+	// admission is the frozen worker config, which names the persona and
+	// backend that started the job.
+	admission map[string]string
 }
 type workerReply struct {
 	Attachments []chatmedia.Ref

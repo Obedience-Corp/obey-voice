@@ -1125,6 +1125,24 @@
       "editable": true
     },
     {
+      "key": "hosted_persona_sharing",
+      "type": "enum",
+      "default": "from_invite",
+      "enum": [
+        "from_invite",
+        "whole_conversation"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Hosted persona sharing",
+      "help": "What a persona on Claude, Codex, Muse Spark or Obey receives of a conversation shared with other personas; a persona on Grok or Cursor only holds a conversation started on it. from_invite sends only what is said from when the persona is first addressed, plus the task and result of each background job it started earlier, on any backend. whole_conversation sends the spoken lines from the start; tool calls, tool output and attachment names are never sent. Read when a persona is first addressed; a running conversation applies a change only after settings reload, and only to personas first addressed afterwards.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "HOSTED_PERSONA_SHARING",
+      "editable": true
+    },
+    {
       "key": "max_history",
       "type": "int",
       "default": 40,

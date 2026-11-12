@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -58,8 +59,11 @@ var ErrWorkScopeConflict = errors.New("session: work scope conflict")
 
 // Session represents a saved conversation.
 type Session struct {
-	Selection       *SelectionState                 `json:"selection,omitempty"`
-	Participation   *discussion.Settings            `json:"participation,omitempty"`
+	Selection     *SelectionState      `json:"selection,omitempty"`
+	Participation *discussion.Settings `json:"participation,omitempty"`
+	// HostedNotified lists the hosted providers the user was told about in
+	// this conversation.
+	HostedNotified  []string                        `json:"hosted_notified,omitempty"`
 	Directories     *config.ConversationDirectories `json:"directories,omitempty"`
 	WorkDir         string                          `json:"work_dir,omitempty"`
 	WorkDirSource   string                          `json:"work_dir_source,omitempty"`
@@ -72,6 +76,10 @@ type Session struct {
 	PersonaContexts brain.PersonaContexts           `json:"persona_contexts,omitempty"`
 	Turns           []brain.Turn                    `json:"turns"`
 	Summary         string                          `json:"summary"` // first user message, for display
+
+	// HostedNotifiedWhole lists the providers in HostedNotified the user was
+	// told receive the whole conversation.
+	HostedNotifiedWhole []string `json:"hosted_notified_whole,omitempty"`
 	// Work is the canonical durable background-work snapshot. It is optional so
 	// sessions written before work persistence was introduced remain compatible.
 	Work                       *work.Snapshot `json:"work,omitempty"`
@@ -722,6 +730,30 @@ func (st *Store) SaveParticipation(s *Session, settings discussion.Settings) err
 	}
 	copied := settings.Clone()
 	candidate.Participation = &copied
+	if err := saveSessionWithFailures(st.dir, &candidate, candidate.Turns, candidate.Work, st.failBeforeRename, st.failAfterRename); err != nil {
+		if WriteCommitted(err) {
+			*s = candidate
+		}
+		return err
+	}
+	*s = candidate
+	return nil
+}
+
+// SaveHostedNotified updates only the hosted providers the user has been told
+// about, preserving current identity, turns and work.
+func (st *Store) SaveHostedNotified(s *Session, told, whole []string) error {
+	sessionWriteMu.Lock()
+	defer sessionWriteMu.Unlock()
+	current, err := loadFrom(st.dir, s.ID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	candidate := *s
+	if err == nil {
+		candidate = *current
+	}
+	candidate.HostedNotified, candidate.HostedNotifiedWhole = slices.Clone(told), slices.Clone(whole)
 	if err := saveSessionWithFailures(st.dir, &candidate, candidate.Turns, candidate.Work, st.failBeforeRename, st.failAfterRename); err != nil {
 		if WriteCommitted(err) {
 			*s = candidate

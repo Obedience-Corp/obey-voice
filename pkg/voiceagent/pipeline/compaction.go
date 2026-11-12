@@ -132,7 +132,10 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 	}
 	before := append([]brain.Turn(nil), history...)
 	tailSource := before
-	if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
+	if brain.HostedSharedHistory(p.Brain) {
+		// It sends only its persona's share; the seed must not add to it.
+		tailSource = working
+	} else if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
 		tailSource = canonical.CanonicalHistory()
 	}
 	tail := compactTail(tailSource)
@@ -161,12 +164,27 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 			return nil
 		}
 	}
+	if err := p.announceLiveHosted(ctx); err != nil {
+		return err
+	}
 	ctx, cancel := p.withBrainTimeout(ctx)
 	defer cancel()
 	// The dense briefing replaces voice instructions. Tools and durable-history
 	// writes stay off; only a successful summary can reseed the working context.
 	stage("summarize")
-	summary, err := p.Brain.ThinkFull(ctx, p.compactionInstruction(), brain.StreamOptions{OmitTurnInstruction: true, TransientHistory: true})
+	opts := brain.StreamOptions{OmitTurnInstruction: true, TransientHistory: true}
+	// A provider keeping a persona session summarizes the lines it has not
+	// seen as well; its next session starts from the summary and only the
+	// lines after it.
+	var summarized func()
+	if t, ok := p.transcriptFor(p.Brain).(SessionTranscript); ok && brain.KeepsPersonaSession(p.Brain) {
+		if id, catchUp, covered, ok := t.LiveCatchUp(); ok {
+			epoch := p.ConversationScope().ConversationEpoch
+			opts.CatchUp = &catchUp
+			summarized = func() { _ = t.AppendSeen(epoch, id, covered) }
+		}
+	}
+	summary, err := p.Brain.ThinkFull(ctx, p.compactionInstruction(), opts)
 	if err == nil && strings.TrimSpace(summary) == "" {
 		err = errors.New("empty summary")
 	}
@@ -191,6 +209,9 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 		reseed.ReseedContinuity(seed)
 	} else {
 		p.Brain.LoadHistory(seed)
+	}
+	if summarized != nil {
+		summarized()
 	}
 	if automatic {
 		if budget, ok := p.Brain.(interface{ NeedsContinuityCompact(string) bool }); ok && budget.NeedsContinuityCompact(input) {

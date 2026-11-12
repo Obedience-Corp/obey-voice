@@ -386,7 +386,7 @@ func TestHostTranscriptRequestsOnOneProviderNeverOverlap(t *testing.T) {
 		unsubscribe()
 		cancel()
 	}
-	if err := p.settleProvider(t.Context()); err != nil {
+	if err := p.awaitRequests(t.Context(), p.Brain); err != nil {
 		t.Fatal(err)
 	}
 	if n := b.overlaps.Load(); n != 0 {

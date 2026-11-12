@@ -20,6 +20,10 @@ import (
 // projection and reply attribution are covered by selection tests.
 var sharedHistoryProviders = []string{"ollama", "codex", "muse-spark", "obey"}
 
+// sessionCatchUpProviders lists the brain providers whose parked sessions and
+// transcript catch-up are covered by selection tests.
+var sessionCatchUpProviders = []string{"claude"}
+
 func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reason string, preCommit func(context.Context) error) (events.PersonaSelection, error) {
 	if s.closed {
 		return events.PersonaSelection{}, errors.New("persona selection is closed")
@@ -35,6 +39,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	if p.ConversationRetired() {
 		return events.PersonaSelection{}, errors.New("persona selection belongs to a closed conversation")
 	}
+	s.retireParked(func(parked parkedBrain) bool { return parked.epoch != scope.ConversationEpoch })
 	var binding *persona.SessionBinding
 	var cfg *config.Config
 	var hash string
@@ -48,8 +53,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	token := rand.Text()
 	var turns []brain.Turn
 	var stagedContexts brain.PersonaContexts
+	var targetCursor *brain.PersonaContext // the selected persona's cursor when its provider keeps a session or a hosted share
 	var err, workerErr, durabilityErr error
 	unchanged, installed, rebind, keepLive := false, false, false, false
+	// reused marks a parked provider, which stays parked if selection fails;
+	// park keeps the outgoing provider for its persona's return.
+	reused, park := false, false
 	defer func() {
 		if prepared != nil {
 			_ = prepared.Discard()
@@ -60,7 +69,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 		if !installed {
 			if native != nil {
 				_ = native.Close()
-			} else if !keepLive {
+			} else if !keepLive && !reused {
 				closeBrain(nextBrain)
 			}
 			if inputCleanup != nil {
@@ -80,6 +89,9 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			}
 			previous = s.Snapshot()
 			currentScope := s.opts.Pipeline.ConversationScope()
+			if dropped, stale := s.notices.sync(currentScope.ConversationEpoch, s.liveProvider()), s.notices.takeStale(); dropped || stale {
+				s.persistNotices()
+			}
 			if s.opts.Native != nil && (!currentScope.Valid() || currentScope.SessionID != s.opts.SessionID) {
 				return errors.New("native selection requires a live matching conversation scope")
 			}
@@ -134,10 +146,10 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				unchanged = true
 				return nil
 			}
-			// A provider without shared history projection may only be rebound
-			// to the persona it already serves; it cannot be switched to.
+			// A provider with neither shared history projection nor session
+			// catch-up may only be rebound to the persona it already serves.
 			rebind = !brain.KeepsSharedHistory(oldBrain) && s.binding != nil && binding.PersonaID == s.binding.PersonaID && binding.BrainProvider == s.binding.BrainProvider
-			if !rebind && !slices.Contains(sharedHistoryProviders, cfg.BrainProvider) {
+			if !rebind && !slices.Contains(sharedHistoryProviders, cfg.BrainProvider) && !slices.Contains(sessionCatchUpProviders, cfg.BrainProvider) {
 				return fmt.Errorf("persona %q: provider %q has no verified shared history projection", id, cfg.BrainProvider)
 			}
 			// Such a provider keeps its session through a voice or audio change,
@@ -153,6 +165,10 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			}
 			if keepLive {
 				nextBrain, turns, stagedContexts = oldBrain, s.sharedTurns(), s.contexts.Clone()
+				if brain.KeepsPersonaSession(nextBrain) {
+					cursor := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, false, false)
+					targetCursor = &cursor
+				}
 				if s.opts.Voices != nil && (s.opts.Native == nil || !s.opts.Native.Silent) {
 					if err := s.opts.VoiceAssets(ctx, cfg); err != nil {
 						return fmt.Errorf("prepare persona voice: %w", err)
@@ -218,16 +234,29 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 					voice = native.Voice
 				}
 			} else {
-				nextBrain, err = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewBrain(ctx, cfg) }, closeBrain)
+				if parked := s.parkedFor(binding.PersonaID, next.BindingHash, scope.ConversationEpoch); parked != nil {
+					// A session no longer aligned with the transcript cannot be caught up.
+					if _, ok := s.transcript.session(binding.PersonaID, s.sharedTurns()); ok {
+						nextBrain, reused = parked, true
+					} else {
+						s.retireParked(func(p parkedBrain) bool { return p.provider == parked })
+					}
+				}
+				if nextBrain == nil {
+					nextBrain, err = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewBrain(ctx, cfg) }, closeBrain)
+				}
 			}
 			if err != nil {
 				return fmt.Errorf("prepare persona brain: %w", err)
 			}
+			// A provider keeping its own session is caught up from the host
+			// transcript, which records each reply under its admitted identity.
+			keepsSession := brain.KeepsPersonaSession(nextBrain)
 			projection, projects := nextBrain.(brain.HistoryProjectionProvider)
-			if !projects && !rebind {
+			if !projects && !rebind && !keepsSession {
 				return errors.New("persona brain does not support shared history projection")
 			}
-			if _, freezes := nextBrain.(brain.PersonaPromptFreezer); !freezes && !rebind {
+			if _, freezes := nextBrain.(brain.PersonaPromptFreezer); !freezes && !rebind && !keepsSession {
 				return errors.New("persona brain cannot pin response identity")
 			}
 			pinned, pinErr := pinPersonaPrompt(nextBrain, cfg)
@@ -243,9 +272,26 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				stagedContexts = make(brain.PersonaContexts)
 			}
 			if !s.requiresSelection {
-				captureContext(stagedContexts, previous.PersonaID, oldBrain)
+				if brain.HostedSharedHistory(oldBrain) {
+					s.refreshShare(previous.PersonaID, oldBrain)
+				} else {
+					captureContext(stagedContexts, previous.PersonaID, oldBrain)
+				}
 			}
-			targetView := stagedContexts[binding.PersonaID].Reconcile(turns)
+			// A provider keeping the shared history on a hosted backend keeps
+			// every turn but is given only its persona's share to send.
+			hostedShare := brain.HostedSharedHistory(nextBrain)
+			if keepsSession || hostedShare {
+				cursor := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, reason == "agent-handoff", hostedShare)
+				targetCursor = &cursor
+				delete(stagedContexts, binding.PersonaID)
+			}
+			var targetView brain.ContinuitySnapshot
+			if hostedShare {
+				targetView = shareView(*targetCursor, turns)
+			} else {
+				targetView = stagedContexts[binding.PersonaID].Reconcile(turns)
+			}
 			if native != nil {
 				if err := brain.ValidateNativeProjection(targetView.Working); err != nil {
 					return err
@@ -259,14 +305,23 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if err := target.ImportContinuity(targetView); err != nil {
 					return fmt.Errorf("restore persona continuity: %w", err)
 				}
+				if hostedShare {
+					held := heldShare(*targetCursor, nextBrain)
+					targetCursor = &held
+				}
 			} else if projects {
 				if err := projection.ImportHistory(turns); err != nil {
 					return fmt.Errorf("project conversation: %w", err)
 				}
-			} else {
+			} else if !keepsSession {
 				nextBrain.LoadHistory(sessionView(turns, cfg))
+			} else if !reused {
+				// A parked provider keeps its session; loading history would end it.
+				nextBrain.LoadHistory(sessionHistory(turns, *targetCursor, cfg))
 			}
-			captureContext(stagedContexts, binding.PersonaID, nextBrain)
+			if !hostedShare {
+				captureContext(stagedContexts, binding.PersonaID, nextBrain)
+			}
 
 			if s.opts.Voices != nil && native == nil && (s.opts.Native == nil || !s.opts.Native.Silent) {
 				voice, err = prepareResource(ctx, func() (*voiceagent.TTSSet, error) { return s.opts.NewVoice(ctx, cfg) }, func(v *voiceagent.TTSSet) { v.Close() })
@@ -307,6 +362,11 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			prepared, err = p.PrepareConversationBrain(nextBrain, worker, cfg, workerErr)
 			if err != nil {
 				return err
+			}
+			park = outgoingNative == nil && brain.KeepsPersonaSession(oldBrain) && !s.requiresSelection &&
+				previous.PersonaID != "" && previous.PersonaID != binding.PersonaID && previous.ConversationEpoch == scope.ConversationEpoch
+			if park {
+				prepared.RetainPrevious()
 			}
 
 			return nil
@@ -351,7 +411,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if generation != s.generation || oldBrain != p.Brain || scope != p.ConversationScope() || p.ConversationRetired() {
 					return errors.New("persona selection belongs to a retired conversation boundary")
 				}
-				err := s.persistContexts(turns, next, stagedContexts)
+				err := s.persistContexts(turns, next, s.withSessions(stagedContexts, binding.PersonaID, targetCursor))
 				if session.WriteCommitted(err) {
 					// The file already contains this selection. Install the same
 					// binding and report uncertainty without pretending rollback.
@@ -383,6 +443,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			}
 			s.bindingToken = token
 			installed = true
+			if reused {
+				s.unpark(nextBrain)
+			}
+			if park {
+				s.park(parkedBrain{personaID: previous.PersonaID, bindingHash: previous.BindingHash, epoch: scope.ConversationEpoch, provider: oldBrain})
+			}
 			s.opts.Base.ConversationDirectories = cfg.ConversationDirectories.Clone()
 			if reason != "response_boundary" {
 				s.opts.UseDefaults = false
@@ -395,7 +461,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if brain.KeepsSharedHistory(nextBrain) {
 				// The projected provider now records the conversation itself.
 				s.transcript.reset(nil)
+			} else if targetCursor != nil {
+				// The host records the conversation again, starting from the
+				// turns the outgoing provider held.
+				s.transcript.reset(turns)
 			}
+			s.transcript.setLive(binding.PersonaID, targetCursor)
 			s.publicationMu.Unlock()
 			publicationLocked = false
 			if oldNative != nil {

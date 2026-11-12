@@ -27,6 +27,20 @@ type Transcript interface {
 	SetRecordedReplyMedia(reply brain.Turn, text string, refs []chatmedia.Ref) error
 }
 
+// SessionTranscript is a Transcript that also tracks, per persona, how much
+// of the conversation a provider keeping its own session already holds.
+type SessionTranscript interface {
+	Transcript
+	// CatchUp returns what the persona's session may receive and the
+	// transcript length it covers, or false when the persona has no cursor.
+	CatchUp(personaID string) (brain.SessionCatchUp, int, bool)
+	// AppendSeen records a completed request whose catch-up covered the
+	// transcript up to covered, and marks its turns seen by the persona.
+	AppendSeen(epoch, personaID string, covered int, turns ...brain.Turn) error
+	// LiveCatchUp is CatchUp for the selected persona, and its id.
+	LiveCatchUp() (string, brain.SessionCatchUp, int, bool)
+}
+
 // transcriptFor returns the host transcript when provider does not keep the
 // shared history itself.
 func (p *Pipeline) transcriptFor(provider brain.Provider) Transcript {
@@ -293,38 +307,61 @@ func awaitEnded(ctx context.Context, requests []*transcriptRecording) error {
 	return nil
 }
 
-// stillEnding returns provider's recorded request when it has neither ended
+// stillEnding returns provider's recorded requests that have neither ended
 // nor been abandoned.
 func (p *Pipeline) stillEnding(provider brain.Provider) []*transcriptRecording {
 	p.requestMu.Lock()
-	r := p.lastRequest
-	p.requestMu.Unlock()
-	if r == nil || r.provider != provider || r.ended() {
-		return nil
+	defer p.requestMu.Unlock()
+	var pending []*transcriptRecording
+	for _, r := range p.requests {
+		if r.provider == provider && !r.ended() {
+			pending = append(pending, r)
+		}
 	}
-	return []*transcriptRecording{r}
+	return pending
 }
 
-// settleProvider waits until a request that an earlier turn stopped has
-// ended on the live provider, abandoned or not.
-func (p *Pipeline) settleProvider(ctx context.Context) error {
+// awaitRequests waits until provider has no recorded request still ending,
+// abandoned or not.
+// A provider can be parked and taken up again while one is.
+func (p *Pipeline) awaitRequests(ctx context.Context, provider brain.Provider) error {
 	p.requestMu.Lock()
-	r := p.lastRequest
+	var pending []*transcriptRecording
+	for _, r := range p.requests {
+		if r.provider == provider {
+			pending = append(pending, r)
+		}
+	}
 	p.requestMu.Unlock()
-	if r == nil || r.provider != p.Brain {
-		return nil
+	for _, r := range pending {
+		select {
+		case <-r.drained:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
-	select {
-	case <-r.drained:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return nil
+}
+
+func (p *Pipeline) trackRequest(r *transcriptRecording) {
+	p.requestMu.Lock()
+	defer p.requestMu.Unlock()
+	p.requests = slices.DeleteFunc(p.requests, func(r *transcriptRecording) bool {
+		select {
+		case <-r.drained:
+			return true
+		default:
+			return false
+		}
+	})
+	p.requests = append(p.requests, r)
 }
 
 // startRecordedStream starts the live provider. When the host owns the
 // transcript, the request and the text delivered from it are recorded under
-// the response identity.
+// the response identity. A provider keeping its own session receives the
+// turns it has not seen; they count as seen only when the provider itself
+// finishes without error, never when an interrupted turn records them.
 func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, *transcriptRecording, error) {
 	t := p.transcriptFor(p.Brain)
 	if t == nil {
@@ -336,6 +373,13 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 	}
 	epoch := p.ConversationScope().ConversationEpoch
 	started := time.Now().UTC()
+	var sessions SessionTranscript
+	covered := 0
+	if s, ok := t.(SessionTranscript); ok && opts.Identity != nil && brain.KeepsPersonaSession(p.Brain) {
+		if catchUp, n, ok := s.CatchUp(opts.Identity.PersonaID); ok {
+			opts.CatchUp, sessions, covered = &catchUp, s, n
+		}
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	provider := p.Brain
 	stream, err := p.startBrainStream(ctx, input, opts)
@@ -349,7 +393,13 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 			if len(turns) == 0 {
 				return nil
 			}
-			if appendErr := t.Append(epoch, turns...); appendErr != nil {
+			var appendErr error
+			if sessions != nil && err == nil {
+				appendErr = sessions.AppendSeen(epoch, opts.Identity.PersonaID, covered, turns...)
+			} else {
+				appendErr = t.Append(epoch, turns...)
+			}
+			if appendErr != nil {
 				p.emit(events.Error{Stage: "history", Message: fmt.Sprintf("record reply in conversation transcript: %v", appendErr)})
 				return nil
 			}
@@ -359,9 +409,7 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 			return nil
 		}}
 	rec.handed.L = &rec.mu
-	p.requestMu.Lock()
-	p.lastRequest = rec
-	p.requestMu.Unlock()
+	p.trackRequest(rec)
 	// Unbuffered, so text counts as delivered only once the turn has read it.
 	out := make(chan string)
 	var thinking chan string

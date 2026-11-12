@@ -3,14 +3,20 @@ package personaruntime
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -53,7 +59,54 @@ func installClaudeFixture(t *testing.T) string {
 	return log
 }
 
-type claudeRequest struct{ Prompt, Format, Resume string }
+// claudeRequest is one fixture invocation: its prompt, flags, the session it
+// answered in, its process id, and the length of its longest argument. A
+// request sent as stream-json content blocks has Input set, its text blocks
+// joined as Prompt, and an entry in Images for each image block.
+type claudeRequest struct {
+	Prompt, Format, Resume, Session, Input string
+	PID, MaxArg                            int
+	Images                                 []fixtureImage `json:",omitempty"`
+}
+
+// fixtureImage is an image block as the fixture received it: its media type
+// and the sha256 of its decoded bytes.
+type fixtureImage struct{ MediaType, SHA256 string }
+
+// decodeContentInput turns a stream-json user message into its text and images.
+func decodeContentInput(req *claudeRequest) {
+	var line struct {
+		Message struct {
+			Content []struct {
+				Type, Text string
+				Source     struct {
+					MediaType string `json:"media_type"`
+					Data      string
+				}
+			}
+		}
+	}
+	if err := json.Unmarshal([]byte(req.Prompt), &line); err != nil {
+		os.Exit(3)
+	}
+	var text []string
+	for _, block := range line.Message.Content {
+		switch block.Type {
+		case "text":
+			text = append(text, block.Text)
+		case "image":
+			data, err := base64.StdEncoding.DecodeString(block.Source.Data)
+			if err != nil {
+				os.Exit(3)
+			}
+			sum := sha256.Sum256(data)
+			req.Images = append(req.Images, fixtureImage{MediaType: block.Source.MediaType, SHA256: hex.EncodeToString(sum[:])})
+		}
+	}
+	req.Prompt = strings.Join(text, "\n")
+}
+
+var fixturePersonaName = regexp.MustCompile(`You are (\w+)\.`)
 
 func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	log := os.Getenv("OBEY_CLAUDE_FIXTURE_LOG")
@@ -68,14 +121,44 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 		}
 	}
 	var req claudeRequest
+	name := "Mira"
+	for _, a := range args {
+		req.MaxArg = max(req.MaxArg, len(a))
+	}
+	// The SDK leaves -p without a value and pipes a large prompt on stdin.
+	if len(args) > 0 && args[0] == "-p" && (len(args) == 1 || strings.HasPrefix(args[1], "--")) {
+		data, _ := io.ReadAll(os.Stdin)
+		req.Prompt = string(data)
+	}
 	for i := 0; i+1 < len(args); i++ {
 		switch args[i] {
 		case "-p":
-			req.Prompt = args[i+1]
+			if !strings.HasPrefix(args[i+1], "--") {
+				req.Prompt = args[i+1]
+			}
 		case "--output-format":
 			req.Format = args[i+1]
 		case "--resume":
 			req.Resume = args[i+1]
+		case "--input-format":
+			req.Input = args[i+1]
+		case "--system-prompt":
+			if m := fixturePersonaName.FindStringSubmatch(args[i+1]); m != nil {
+				name = m[1]
+			}
+		}
+	}
+	if req.Input == "stream-json" {
+		decodeContentInput(&req)
+	}
+	data, _ := os.ReadFile(log)
+	n := bytes.Count(data, []byte("\n")) + 1
+	// Distinct sessions let a test tell a resumed session from a new one.
+	req.Session, req.PID = "claude-fixture", os.Getpid()
+	if os.Getenv("OBEY_CLAUDE_FIXTURE_SESSIONS") == "distinct" {
+		req.Session = req.Resume
+		if req.Session == "" {
+			req.Session = fmt.Sprintf("claude-session-%d", n)
 		}
 	}
 	f, err := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o600)
@@ -85,27 +168,34 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	line, _ := json.Marshal(req)
 	_, _ = f.Write(append(line, '\n'))
 	_ = f.Close()
-	data, _ := os.ReadFile(log)
-	n := bytes.Count(data, []byte("\n"))
 	out := json.NewEncoder(os.Stdout)
 	if req.Format == "json" {
-		_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": claudeSummary, "session_id": "claude-fixture"})
+		_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": claudeSummary, "session_id": req.Session})
 		os.Exit(0)
 	}
-	text := fmt.Sprintf("Mira: Mira reply %d.", n)
-	if strings.Contains(req.Prompt, claudeStall) {
-		text = "Mira: " + claudePartial
+	text := fmt.Sprintf("%s: %s reply %d.", name, name, n)
+	// Only the current request triggers a scripted reply; a conversation
+	// record line may quote an earlier request.
+	var current strings.Builder
+	for line := range strings.Lines(req.Prompt) {
+		if !strings.HasPrefix(line, "{") {
+			current.WriteString(line)
+		}
 	}
-	if strings.Contains(req.Prompt, claudeHandoff) {
-		text = "Mira: Ask @ember about it."
+	stall := strings.Contains(current.String(), claudeStall)
+	switch {
+	case stall:
+		text = name + ": " + claudePartial
+	case strings.Contains(current.String(), claudeHandoff):
+		text = name + ": Ask @ember about it."
 	}
-	_ = out.Encode(map[string]any{"type": "system", "subtype": "init", "session_id": "claude-fixture"})
-	_ = out.Encode(map[string]any{"type": "assistant", "session_id": "claude-fixture", "message": map[string]any{"content": []map[string]string{{"type": "text", "text": text}}}})
-	if strings.Contains(req.Prompt, claudeStall) {
+	_ = out.Encode(map[string]any{"type": "system", "subtype": "init", "session_id": req.Session})
+	_ = out.Encode(map[string]any{"type": "assistant", "session_id": req.Session, "message": map[string]any{"content": []map[string]string{{"type": "text", "text": text}}}})
+	if stall {
 		time.Sleep(time.Minute)
 		os.Exit(0)
 	}
-	_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": text, "session_id": "claude-fixture"})
+	_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": text, "session_id": req.Session})
 	os.Exit(0)
 }
 
@@ -129,12 +219,16 @@ func readClaudeRequests(t *testing.T, log string) []claudeRequest {
 	return out
 }
 
-type ollamaMessage struct{ Role, Content string }
+type ollamaMessage struct {
+	Role, Content string
+	ToolCalls     json.RawMessage `json:"tool_calls"`
+}
 
-// claudeConversation is a conversation that starts on Mira, a Claude persona,
-// with Ember on a fake Ollama server as the other participant.
+// claudeConversation is a conversation between Mira, a persona on Claude or
+// another hosted provider, and Ember, a persona on a fake Ollama server.
 type claudeConversation struct {
 	t        *testing.T
+	provider string
 	log      string
 	base     *config.Config
 	catalog  persona.Catalog
@@ -149,14 +243,48 @@ type claudeConversation struct {
 	ollama   [][]ollamaMessage
 	ready    []events.ResponseReady
 	errors   []events.Error
+	notices  []hostedNoticeEvent
+	// emberSays replaces Ember's reply when set.
+	emberSays string
+	// vision makes the fake Ollama model accept images.
+	vision bool
 }
 
 func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
 	t.Helper()
-	c := &claudeConversation{t: t, log: installClaudeFixture(t)}
+	return newMixedConversation(t, maxHistory, "mira")
+}
+
+// newMixedConversation starts the conversation on the persona start.
+func newMixedConversation(t *testing.T, maxHistory int, start string) *claudeConversation {
+	t.Helper()
+	return newConversation(t, maxHistory, start, "claude", "")
+}
+
+// newConversation starts a conversation between Mira, a persona on provider,
+// and Ember on Ollama, on the persona start, with hosted_persona_sharing set
+// to sharing.
+func newConversation(t *testing.T, maxHistory int, start, provider, sharing string) *claudeConversation {
+	t.Helper()
+	c := &claudeConversation{t: t, provider: provider}
+	switch provider {
+	case "claude":
+		c.log = installClaudeFixture(t)
+	case "codex":
+		c.log = installCodexSelectorFixture(t)
+	default:
+		c.log = installMixedProviderBinaries(t)
+	}
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		c.mu.Lock()
+		vision := c.vision
+		c.mu.Unlock()
+		if r.URL.Path == "/api/show" && vision {
+			_, _ = w.Write([]byte(`{"capabilities":["completion","vision"]}`))
+			return
+		}
 		if r.URL.Path != "/api/chat" {
 			_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
 			return
@@ -168,8 +296,9 @@ func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
 		}
 		c.mu.Lock()
 		c.ollama = append(c.ollama, req.Messages)
+		reply := cmp.Or(c.emberSays, emberReply)
 		c.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": emberReply}, "done": true, "done_reason": "stop"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": reply}, "done": true, "done_reason": "stop"})
 	}))
 	t.Cleanup(server.Close)
 	c.catalog = persona.Catalog{Dir: filepath.Join(root, "personas")}
@@ -178,16 +307,19 @@ func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
 		profile := testProfile(id, display, id)
 		profile.Brain.Model = ""
 		if id == "mira" {
-			profile.Brain.Provider = "claude"
+			profile.Brain.Provider = provider
 		}
 		writeTestProfile(t, c.catalog.Dir, profile)
 		writeTestPrompt(t, promptDir, id, "You are {agent_name}.")
 	}
-	c.base = &config.Config{ActivePersona: "mira", BrainProvider: "claude", OllamaModel: "fixture:latest", OllamaHost: server.URL,
-		PromptsDir: promptDir, WorkDir: root, MaxHistory: maxHistory, OllamaNumCtx: 8192}
+	c.base = &config.Config{ActivePersona: "mira", BrainProvider: provider, OllamaModel: "fixture:latest", OllamaHost: server.URL,
+		PromptsDir: promptDir, WorkDir: root, MaxHistory: maxHistory, OllamaNumCtx: 8192, HostedPersonaSharing: sharing}
+	if provider == "obey" {
+		c.base.ObeyProvider, c.base.ObeyModel, c.base.ObeyToolPolicy = "fixture", "fixture", "daemon"
+	}
 	c.store = session.NewStore(filepath.Join(root, "sessions"))
-	c.sess = session.New("claude", "")
-	c.start("mira", nil, nil)
+	c.sess = session.New(provider, "")
+	c.start(start, nil, nil)
 	return c
 }
 
@@ -229,7 +361,8 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 		}
 	})
 	selector, err := NewSelector(SelectionOptions{Base: c.base, Catalog: c.catalog, Pipeline: p, SessionID: c.sess.ID, Initial: binding,
-		Transcript: turns, InitialContexts: contexts,
+		Transcript: turns, InitialContexts: contexts, SessionProvider: c.sess.Provider, HostedNotified: c.sess.HostedNotified, HostedNotifiedWhole: c.sess.HostedNotifiedWhole,
+		PersistHostedNotified: func(told, whole []string) error { return c.store.SaveHostedNotified(c.sess, told, whole) },
 		PersistContexts: func(turns []brain.Turn, s events.PersonaSelection, contexts brain.PersonaContexts) error {
 			if c.saveErr != nil {
 				return c.saveErr
@@ -240,7 +373,19 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Runs before CloseBrains, so the brains it parks are joined there.
+	t.Cleanup(selector.Close)
 	p.AdmitInput = selector.Route
+	p.HostedNotice, p.LiveHostedNotice = selector.HostedNotice, selector.LiveHostedNotice
+	events.Subscribe(p.Events, func(e events.Info) {
+		sent := 0
+		if data, err := os.ReadFile(c.log); err == nil {
+			sent = bytes.Count(data, []byte("\n"))
+		}
+		c.mu.Lock()
+		c.notices = append(c.notices, hostedNoticeEvent{message: e.Message, claudeRequests: sent})
+		c.mu.Unlock()
+	})
 	p.OnTurn = func() {
 		if err := c.store.Save(c.sess, selector.Transcript(), selector.ContextSnapshots()); err != nil {
 			t.Error(err)
@@ -381,18 +526,32 @@ func TestConversationStartedOnClaudeOwnsAttributedTranscript(t *testing.T) {
 	}
 }
 
-func TestClaudeStartedConversationStillRefusesSwitchToAnotherClaudePersona(t *testing.T) {
+func TestClaudeStartedConversationSwitchesBetweenClaudePersonas(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
 	c := newClaudeConversation(t, 20)
 	nova := testProfile("nova", "Nova", "nova")
 	nova.Brain.Provider, nova.Brain.Model = "claude", ""
 	writeTestProfile(t, c.catalog.Dir, nova)
 	writeTestPrompt(t, c.base.PromptsDir, "nova", "You are {agent_name}.")
-	_, err := c.selector.Select(t.Context(), "nova", "explicit")
-	if err == nil || !strings.Contains(err.Error(), `provider "claude" has no verified shared history projection`) {
-		t.Fatalf("err = %v", err)
+	c.say("Note that the vault code is cobalt.", "switch to Nova", "What do you think?", "switch to Mira", "And you?")
+
+	requests := readClaudeRequests(t, c.log)
+	if len(requests) != 3 {
+		t.Fatalf("requests = %+v", requests)
 	}
-	if got := c.selector.Snapshot().PersonaID; got != "mira" {
-		t.Fatalf("selection moved to %q", got)
+	mira, novaFirst, miraAgain := requests[0], requests[1], requests[2]
+	if novaFirst.Resume != "" || novaFirst.Session == mira.Session {
+		t.Fatalf("Nova did not start its own session: %+v", novaFirst)
+	}
+	requireOmits(t, novaFirst.Prompt, "cobalt", "Mira reply 1.")
+	if miraAgain.Resume != mira.Session {
+		t.Fatalf("Mira's session did not survive Nova speaking: %+v", miraAgain)
+	}
+	requireContains(t, miraAgain.Prompt, `"content":"Nova here.","persona":"Nova"`, `"content":"Nova reply 2.","persona":"Nova"`, `"content":"Mira here.","persona":"Mira"`)
+	requireOmits(t, miraAgain.Prompt, "cobalt", "Mira reply 1.")
+	got := replies(c.selector.Transcript())
+	if len(got) != 5 || got[0].PersonaID != "mira" || got[2].PersonaID != "nova" || got[2].Content != "Nova reply 2." || got[4].PersonaID != "mira" || got[4].Content != "Mira reply 3." {
+		t.Fatalf("replies = %+v", got)
 	}
 }
 
@@ -687,11 +846,6 @@ func TestClaudeWithoutReachablePersonasLeavesEveryInputToTheModel(t *testing.T) 
 				t.Fatal(err)
 			}
 		},
-		"other personas on claude": func(c *claudeConversation) {
-			ember := testProfile("ember", "Ember", "ember")
-			ember.Brain.Provider, ember.Brain.Model = "claude", ""
-			writeTestProfile(t, c.catalog.Dir, ember)
-		},
 		"shipped personas inheriting claude": func(c *claudeConversation) {
 			if err := os.RemoveAll(filepath.Join(c.catalog.Dir, "ember")); err != nil {
 				t.Fatal(err)
@@ -727,8 +881,13 @@ func TestClaudeWithoutReachablePersonasLeavesEveryInputToTheModel(t *testing.T) 
 	}
 }
 
-func TestClaudeRefusesImplicitSwitchItCouldNotReturnFrom(t *testing.T) {
+// oneWayProvider stands in for Grok and Cursor: a live provider that keeps
+// neither the shared history nor a session the host can bring up to date.
+type oneWayProvider struct{ brain.Provider }
+
+func TestOneWayProviderRefusesImplicitSwitchItCouldNotReturnFrom(t *testing.T) {
 	c := newClaudeConversation(t, 20)
+	c.p.Brain = oneWayProvider{c.p.Brain}
 	c.say("Note that the vault code is cobalt.")
 	for _, input := range []string{"Ember, what do you think?", "Ember.", "Hey Ember"} {
 		err := c.p.RunTurnTextMode(t.Context(), input)
@@ -745,7 +904,13 @@ func TestClaudeRefusesImplicitSwitchItCouldNotReturnFrom(t *testing.T) {
 	nova := testProfile("nova", "Nova", "nova")
 	nova.Brain.Provider, nova.Brain.Model = "claude", ""
 	writeTestProfile(t, c.catalog.Dir, nova)
-	if err := c.p.RunTurnTextMode(t.Context(), "Nova, what do you think?"); err == nil || strings.Contains(err.Error(), "switch to") || !strings.Contains(err.Error(), `provider "claude" has no verified shared history projection`) {
+	if err := c.p.RunTurnTextMode(t.Context(), "Nova, what do you think?"); err == nil || !strings.Contains(err.Error(), `say "switch to Nova"`) {
+		t.Fatalf("a persona on Claude can take the conversation and give it back: %v", err)
+	}
+	rex := testProfile("rex", "Rex", "rex")
+	rex.Brain.Provider, rex.Brain.Model = "cursor", ""
+	writeTestProfile(t, c.catalog.Dir, rex)
+	if err := c.p.RunTurnTextMode(t.Context(), "Rex, what do you think?"); err == nil || strings.Contains(err.Error(), "switch to") || !strings.Contains(err.Error(), `provider "cursor" has no verified shared history projection`) {
 		t.Fatalf("a persona that cannot take over was offered a switch: %v", err)
 	}
 	c.say("@ember what do you think?")
@@ -754,12 +919,93 @@ func TestClaudeRefusesImplicitSwitchItCouldNotReturnFrom(t *testing.T) {
 	}
 }
 
-func TestClaudeReplyDoesNotHandOffTheConversation(t *testing.T) {
+func TestClaudeAndOllamaPersonasAreAddressedByName(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	c.say("Note that the vault code is cobalt.", "Ember, what do you think?")
+	if got := c.selector.Snapshot().PersonaID; got != "ember" || len(c.ollamaRequests()) != 1 {
+		t.Fatalf("addressing Ember by name from Mira selected %q", got)
+	}
+	// Ollama's own addressee model, which the fake server does not answer.
+	c.selector.opts.AddressResolver = addressResolverFunc(func(_ context.Context, r brain.AddressRequest) (brain.Addressee, error) {
+		if strings.HasPrefix(r.Text, "Mira") {
+			return brain.Addressee{Kind: "address", Name: "Mira"}, nil
+		}
+		return brain.Addressee{Kind: "none"}, nil
+	})
+	c.say("Mira, do you agree?")
+	if got := c.selector.Snapshot().PersonaID; got != "mira" {
+		t.Fatalf("addressing Mira by name from Ember selected %q", got)
+	}
+	c.selector.opts.AddressResolver = nil
+	c.say("Ember.", "Hey Mira")
+	got := replies(c.selector.Transcript())
+	want := []string{"mira", "ember", "mira", "ember", "mira"}
+	if len(got) != len(want) {
+		t.Fatalf("replies = %+v", got)
+	}
+	for i, id := range want {
+		if got[i].PersonaID != id {
+			t.Fatalf("reply %d = %+v, want %s", i, got[i], id)
+		}
+	}
+}
+
+func TestClaudeOnlyConversationHandsOverOnlyOnExplicitSwitch(t *testing.T) {
+	c := newClaudeConversation(t, 20)
+	ember := testProfile("ember", "Ember", "ember")
+	ember.Brain.Provider, ember.Brain.Model = "claude", ""
+	writeTestProfile(t, c.catalog.Dir, ember)
+	c.start("mira", nil, nil)
+	c.p.RouteHandoff = c.selector.RouteHandoff
+	c.say("Mira", "Ember, what do you think?", "Hey Ember", "Who else? "+claudeHandoff)
+	if got := c.selector.Snapshot().PersonaID; got != "mira" {
+		t.Fatalf("an implicit address or a reply moved the conversation to %q", got)
+	}
+	c.say("switch to Ember", "What do you think?", "@mira and you?")
+	if got := c.selector.Snapshot().PersonaID; got != "mira" {
+		t.Fatalf("explicit switch and mention ended on %q", got)
+	}
+	got := replies(c.selector.Transcript())
+	want := []struct{ persona, content string }{
+		{"mira", "Mira reply 1."}, {"mira", "Mira reply 2."}, {"mira", "Mira reply 3."}, {"mira", "Ask @ember about it."},
+		{"ember", "Ember here."}, {"ember", "Ember reply 5."}, {"mira", "Mira reply 6."},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("replies = %+v", got)
+	}
+	for i, w := range want {
+		if got[i].PersonaID != w.persona || got[i].Content != w.content {
+			t.Fatalf("reply %d = %s/%q, want %s/%q", i, got[i].PersonaID, got[i].Content, w.persona, w.content)
+		}
+	}
+	for _, req := range readClaudeRequests(t, c.log) {
+		if strings.Contains(req.Prompt, "Other available agent personas") {
+			t.Fatalf("Claude received a persona roster:\n%s", req.Prompt)
+		}
+	}
+}
+
+func TestClaudeReplyHandsOffByMentionWhereThePersonaCanReturn(t *testing.T) {
 	c := newClaudeConversation(t, 20)
 	c.p.RouteHandoff = c.selector.RouteHandoff
+	c.mu.Lock()
+	c.emberSays = "It looks fine to me."
+	c.mu.Unlock()
 	c.say("Who should look at this? " + claudeHandoff)
-	if got := c.selector.Snapshot().PersonaID; got != "mira" || len(c.ollamaRequests()) != 0 {
-		t.Fatalf("Mira's mention handed the conversation to %q", got)
+	if got := c.selector.Snapshot().PersonaID; got != "ember" || len(c.ollamaRequests()) != 1 {
+		t.Fatalf("Mira's @ember did not hand the floor to Ember: selection %q", got)
+	}
+	got := replies(c.selector.Transcript())
+	if len(got) != 2 || got[0].PersonaID != "mira" || got[1].PersonaID != "ember" || got[1].Content != "It looks fine to me." {
+		t.Fatalf("replies = %+v", got)
+	}
+
+	oneWay := newClaudeConversation(t, 20)
+	oneWay.p.Brain = oneWayProvider{oneWay.p.Brain}
+	oneWay.p.RouteHandoff = oneWay.selector.RouteHandoff
+	oneWay.say("Who should look at this? " + claudeHandoff)
+	if got := oneWay.selector.Snapshot().PersonaID; got != "mira" || len(oneWay.ollamaRequests()) != 0 {
+		t.Fatalf("a reply moved the conversation off a provider that cannot take it back: %q", got)
 	}
 }
 

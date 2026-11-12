@@ -27,7 +27,10 @@ type chatItem struct {
 	attachments []chatmedia.Ref
 	kind        chatItemKind
 	name        string
-	think       string
+	// hosted marks a reply from a persona whose backend sent the conversation
+	// off this machine.
+	hosted bool
+	think  string
 	// thinkLabel paints the dim "thinking" marker when the stored text is
 	// tag-only markup with no inner body (session replay leftovers).
 	thinkLabel bool
@@ -49,7 +52,11 @@ func (it chatItem) render(showThink bool) string {
 	if it.spoken == "" && !show {
 		return ""
 	}
-	return renderAgentBubble(it.name, it.think, it.spoken, show)
+	name := it.name
+	if it.hosted {
+		name += " [hosted]"
+	}
+	return renderAgentBubble(name, it.think, it.spoken, show)
 }
 
 func (m *conversationModel) appendAgentTurn(item chatItem) {

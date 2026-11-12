@@ -2,6 +2,8 @@ package personaruntime
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -12,24 +14,41 @@ import (
 // transcript is the canonical conversation while the live provider keeps no
 // shared history of its own. Only an explicit clear or restore replaces its
 // turns; a turn recorded for a conversation that is no longer current is
-// refused rather than added to the next one.
+// refused rather than added to the next one. It also holds, for personas whose
+// provider keeps its own session, how much of the conversation that session
+// holds, and for personas whose provider keeps the shared history on a hosted
+// backend, the share it sends; a clear drops those cursors with the turns.
 type transcript struct {
-	mu      sync.Mutex
-	current func() string
-	turns   []brain.Turn
+	mu       sync.Mutex
+	current  func() string
+	turns    []brain.Turn
+	sessions brain.PersonaContexts
+	live     string // the selected persona when its provider keeps a session
+	// cleared runs after a clear, outside the lock.
+	cleared func()
 }
 
 func newTranscript(current func() string, turns []brain.Turn) *transcript {
 	return &transcript{current: current, turns: canonicalTurns(turns)}
 }
 
+// reset replaces the turns. Session cursors survive; each is checked against
+// the turns before use.
 func (t *transcript) reset(turns []brain.Turn) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.turns = canonicalTurns(turns)
 }
 
-func (t *transcript) Clear() { t.reset(nil) }
+func (t *transcript) Clear() {
+	t.mu.Lock()
+	t.turns, t.sessions = nil, nil
+	cleared := t.cleared
+	t.mu.Unlock()
+	if cleared != nil {
+		cleared()
+	}
+}
 
 func (t *transcript) Turns() []brain.Turn {
 	t.mu.Lock()
@@ -45,6 +64,124 @@ func (t *transcript) Append(epoch string, turns ...brain.Turn) error {
 	}
 	t.turns = append(t.turns, canonicalTurns(turns)...)
 	return nil
+}
+
+// CatchUp returns what personaID's provider session may receive and the
+// transcript length it covers. It reports false when the persona has no
+// cursor that still matches the transcript. The selected persona's cursor is
+// then started again at the end of the transcript, so its session receives
+// nothing said before but stays caught up from here on.
+func (t *transcript) CatchUp(personaID string) (brain.SessionCatchUp, int, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cursor, ok := t.sessions[personaID]
+	if !ok || cursor.Session == nil || !cursor.Matches(t.turns) {
+		if personaID == "" || personaID != t.live {
+			return brain.SessionCatchUp{}, 0, false
+		}
+		if len(t.turns) > 0 {
+			fmt.Fprintf(os.Stderr, "obey-voice: persona %q lost its place in the conversation; its session receives only what is said from now on\n", personaID)
+		}
+		if t.sessions == nil {
+			t.sessions = make(brain.PersonaContexts)
+		}
+		t.sessions[personaID] = brain.SessionContext(t.turns, brain.SessionCursor{From: len(t.turns), Provider: "claude"}, len(t.turns))
+		return brain.SessionCatchUp{}, len(t.turns), true
+	}
+	var catchUp brain.SessionCatchUp
+	for i := cursor.Session.From; i < len(t.turns); i++ {
+		turn, ok := hostedTurn(t.turns[i])
+		if !ok {
+			continue
+		}
+		if i < cursor.Through {
+			catchUp.Seen++
+		}
+		catchUp.Turns = append(catchUp.Turns, turn)
+	}
+	return catchUp, len(t.turns), true
+}
+
+// AppendSeen records a completed request of personaID whose catch-up covered
+// the transcript up to covered. Its session then holds these turns too,
+// unless other turns were recorded after covered, which it has not seen.
+func (t *transcript) AppendSeen(epoch, personaID string, covered int, turns ...brain.Turn) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if epoch != t.current() {
+		return errors.New("transcript: turn belongs to a replaced conversation")
+	}
+	recorded := len(t.turns)
+	t.turns = append(t.turns, canonicalTurns(turns)...)
+	cursor, ok := t.sessions[personaID]
+	if !ok || cursor.Session == nil || covered < cursor.Through || covered > recorded {
+		return nil
+	}
+	through := covered
+	if recorded == covered {
+		through = len(t.turns)
+	}
+	t.sessions[personaID] = brain.SessionContext(t.turns, *cursor.Session, through)
+	return nil
+}
+
+// session returns personaID's cursor when it still matches turns.
+func (t *transcript) session(personaID string, turns []brain.Turn) (brain.PersonaContext, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cursor, ok := t.sessions[personaID]
+	return cursor, ok && cursor.Session != nil && cursor.Matches(turns)
+}
+
+// setLive records the selected persona with its cursor when its provider
+// keeps a session, or removes any cursor it had when cursor is nil.
+func (t *transcript) setLive(personaID string, cursor *brain.PersonaContext) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if cursor == nil {
+		delete(t.sessions, personaID)
+		t.live = ""
+		return
+	}
+	if t.sessions == nil {
+		t.sessions = make(brain.PersonaContexts)
+	}
+	t.sessions[personaID], t.live = *cursor, personaID
+}
+
+// LiveCatchUp is CatchUp for the selected persona.
+func (t *transcript) LiveCatchUp() (string, brain.SessionCatchUp, int, bool) {
+	t.mu.Lock()
+	live := t.live
+	t.mu.Unlock()
+	if live == "" {
+		return "", brain.SessionCatchUp{}, 0, false
+	}
+	catchUp, covered, ok := t.CatchUp(live)
+	return live, catchUp, covered, ok
+}
+
+// restoreSessions replaces every session cursor with those in contexts.
+func (t *transcript) restoreSessions(contexts brain.PersonaContexts) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.sessions, t.live = make(brain.PersonaContexts), ""
+	for id, state := range contexts.Clone() {
+		if state.Session != nil {
+			t.sessions[id] = state
+		}
+	}
+}
+
+// addSessions copies the session cursors other than except's into contexts.
+func (t *transcript) addSessions(contexts brain.PersonaContexts, except string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for id, state := range t.sessions.Clone() {
+		if id != except {
+			contexts[id] = state
+		}
+	}
 }
 
 // SetRecordedReplyMedia moves a reply's images into attachments, as the

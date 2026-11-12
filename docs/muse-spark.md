@@ -20,8 +20,10 @@ A failed, cancelled, or missing terminal result returns an error and leaves
 conversation history unchanged. Calls have no automatic retry.
 
 Obey Voice keeps the complete transcript for persistence and replays a separate,
-bounded working view each turn. `max_history` limits that view by whole exchanges,
-without deleting earlier transcript turns. Compaction replaces only the working
+bounded working view each turn. `max_history` limits that view by whole
+exchanges, without deleting earlier transcript turns. In a conversation shared
+with other personas, that view is only the persona's share: see [Hosted
+backends](personas.md#hosted-backends). Compaction replaces only the working
 view with shared notes and a recent exchange; provider transfers preserve both
 views and continuity metadata. There is no native Muse session resume. Clear,
 load, transient compaction requests, and fresh worker jobs therefore cannot

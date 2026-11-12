@@ -275,33 +275,281 @@ includes model queueing/loading as well as classification; a cold or busy model
 can exceed the former fixed 15-second limit before generating a decision. A
 shorter parent deadline or cancellation still stops the request immediately.
 Shared-history projection
-is verified for Ollama, Codex, Muse Spark, and Obey personas: Codex is tested
-on its own, and Muse Spark and Obey each share a conversation with an Ollama
-persona. Switching to a persona on another provider (Claude, Grok, Cursor) is
-refused rather than silently replaced. The local acceptance uses Qwen3:8b and
-Kokoro voices `af_heart` and `am_michael`; it does not establish parity for every
-provider.
+is verified for Ollama, Codex, Muse Spark, and Obey personas: Codex, Muse Spark
+and Obey each share a conversation with an Ollama persona, and Codex also with
+another persona on Codex. A persona on Claude can also be switched to and back.
+These are tested with fake backends, not with live models. Switching to a
+persona on Grok or Cursor is refused rather than silently replaced. The local
+acceptance uses Qwen3:8b and Kokoro voices `af_heart` and `am_michael`; it does
+not establish parity for every provider.
 
-A conversation can still start on a Claude, Grok, or Cursor persona. Those
+A conversation can still start on a persona on Claude, Grok, or Cursor. Those
 providers keep their own session history without speaker identity, so Obey
 Voice keeps the shared transcript itself and records each reply, including an
 interrupted one, under the persona that gave it.
 
 If no Ollama, Codex, Muse Spark, or Obey persona is enabled, such a
 conversation stays with its persona: every input, including the persona's name
-alone or another persona's name, goes to the model. Otherwise, because the
-conversation cannot come back once another persona takes it over, it moves only
-when you ask explicitly with `switch to Name`, `@id`, or `/personas`; addressing
-another persona by name is refused with that hint. Selecting an Ollama, Codex,
-Muse Spark, or Obey persona hands it the attributed transcript. Its replies
-never hand the conversation off by mentioning another persona.
+alone or another persona's name, goes to the model, and its prompts carry no
+persona roster. On Claude, `switch to Name`, `@id` and `/personas` still hand it
+to another persona on Claude, where it stays the same way; replies never hand
+it off.
+
+Otherwise a persona on Claude takes part like any other: you address personas
+by name from it and to it, and its replies hand the floor to another persona
+with an `@` mention. A conversation on Grok or Cursor cannot come back once
+another persona takes it over, so it moves only when you ask explicitly with
+`switch to Name`, `@id`, or `/personas`; addressing another persona by name is
+refused with that hint, and its replies never hand the conversation off.
+Selecting a persona on Ollama hands it the attributed transcript. A persona on
+Codex, Muse Spark or Obey keeps that transcript too, but is sent only its share
+of it (see below).
 
 Voice and audio settings changes keep the provider session. Clearing the
 conversation, or changing the persona's provider, model, prompt, name or
 directory, restarts the session from the transcript: the provider's own
-session is dropped and a new one starts with the transcript's last
-`max_history` turns. Group participation is not offered while one of these
+session is dropped. A new Grok or Cursor session starts with the transcript's
+last `max_history` turns; a new Claude session receives the persona's share as
+described below. Group participation is not offered while one of these
 personas is responding.
+
+A persona on Claude keeps its Claude session while other personas speak: Obey
+Voice parks it and resumes the same session when that persona is addressed
+again. Each request carries, as quoted conversation records, only the lines
+that session has not seen: your lines, other personas' replies, and replies
+Obey Voice recorded under that persona's name. Other personas' tool calls, tool
+output and the names of attached files are not sent. Lines count as seen only
+after a reply completes, so an interrupted reply is sent again next time, marked
+as unfinished, even if Claude reports success after it was stopped. A stopped
+reply finishes in the background, and its session is not used again until it
+has, unless your next line would wait more than five seconds for it: then that
+line goes ahead, the stopped reply keeps only what you heard, and nothing it
+sends after that is recorded or counted as seen. A parked session is closed
+only once its stopped reply has finished, or after five seconds.
+
+An image you attach while a persona on Claude is answering is sent to Claude
+with that line. Claude takes at most 7.5 MiB per image as sent (a GIF as the PNG
+of its first frame), below the 8 MiB the attachment store allows, so a larger
+image is refused before the request. If the service still refuses an image,
+the turn fails saying so and the session is kept: the line is not retried in a
+new session, which would lose the conversation and fail the same way. A resumed
+session already holds an image, so later requests carry only new images. A fresh session for the persona, after
+the session fuse, a catch-up that does not fit or a rejected resume, is sent the
+images of the persona's own earlier lines again where they fit: the newest
+first, within 20 images and 32 MiB together with the new line's images, which
+come first. An older image past those limits, one larger than Claude takes, or
+one no longer in the attachment store, is left out and named as no longer
+attached, so only the new line's images can make a request fail. The images of
+a line whose reply failed or was stopped are not replayed, and a compaction
+summary request is sent none. An image attached to a line said to another
+persona never reaches a persona on Claude, even with `hosted_persona_sharing`
+set to `whole_conversation`: the line reaches it as text, without the image or
+its file name. Only the lines the persona's running Claude provider answered
+itself keep their images: the provider drops the images of every line loaded
+into it, so after a resume or a compaction, or once Obey Voice closes the
+persona's parked session or starts its provider again, its earlier lines reach
+it as text and their images are not sent again. The saved conversation keeps
+every attachment. A background job on a Claude worker is sent the images of the
+line that started it, whichever persona or backend answered that line, as a
+Codex worker is: the worker provider is one you configured, and it gives no
+hosted notice.
+
+Claude receives nothing said before its persona was first addressed while on
+Claude in the conversation, unless `hosted_persona_sharing` is set to
+`whole_conversation` (see [Hosted backends](#hosted-backends)). Lines from
+before that point are not sent,
+including the persona's own replies from when it ran on another backend. When
+another agent hands it the floor, that agent's message is the first line it
+receives. The one exception is a conversation saved before replies named their
+persona: when it is resumed with the persona it was saved with, on the backend
+its session was created on, and no reply in it names a persona, that persona
+receives it from the start. The point is saved with the conversation and still
+applies after a resume, including when serve resumes another conversation and
+that fails.
+
+A line longer than half of one request's limit (64 KiB, or half of
+`claude_max_session_tokens` when that fuse is set) is shortened, and its record
+says how much was left out. When the unseen lines still do not fit, Obey Voice
+starts a fresh Claude session and sends the newest lines that fit, with a note
+of how many earlier lines were left out. A persona on Claude receives the
+pending results of background jobs it started, whichever backend it was on when
+it started them: a job it started on another backend, local or hosted, before
+it was moved onto Claude has its task and result sent to Claude when they are
+delivered. Results of jobs other personas started wait for those personas. A
+job saved before jobs recorded their persona goes to the persona answering when
+no other persona is in the conversation, and an unset `active_persona` counts
+as the default persona.
+
+A fresh Claude session therefore starts with a replay of up to 64 KiB of the
+persona's share, where it used to receive only the last six lines. This
+applies to a conversation with a single persona on Claude too: the first
+request after a resume, after the session fuse resets the session, or when the
+unseen lines do not fit, sends more input tokens and costs more than before.
+After a compaction the fresh session starts from the summary instead. A prompt
+of 100 KiB or more reaches the Claude CLI on stdin rather than as one
+command-line argument.
+
+At most four sessions stay parked; the least recently used one is closed first.
+A parked session is also closed when its persona's prompt, model, provider or
+other settings change, when the conversation is cleared, and when Obey Voice
+exits. After resuming a saved conversation, a persona on Claude starts a new
+session that receives the lines since that point, within the same limit. With
+group participation on, a persona on Claude can be addressed directly, but a
+discussion among several personas still requires every member to be on Ollama.
+
+A persona on Codex, Muse Spark or Obey keeps the whole attributed conversation
+on this machine, so the conversation is saved complete and a persona on Ollama
+that answers next is handed all of it. What it sends its backend is only its
+share, by the same rules as a persona on Claude: nothing said before it was
+first addressed while on that backend unless `hosted_persona_sharing` is
+`whole_conversation`; when another agent hands it the floor, that agent's
+message is its first line; and the same exception applies to a conversation
+saved before replies named their persona. Lines said while it was away are added
+to its share when it is addressed again. Each request replays the share as
+quoted conversation records (Codex replays it when it starts a thread, then
+continues that thread): your lines, other personas' spoken lines, and the
+persona's own lines and replies. Other personas' tool calls, tool ids and tool
+output, and the names and images of files attached to any line the persona did
+not record itself, are not sent. Lines it recorded while answering on that
+backend are kept as recorded, so Codex still receives an image you attached for
+it when it starts a new thread. The list of personas that have spoken, which
+these backends receive in a shared conversation, names only those that spoke
+within the share, including those whose lines compaction or `max_history` has
+since dropped from what is replayed. The share start is saved with the
+conversation and still applies after a resume. It starts again when the persona
+is moved to another backend, so a persona moved from a local backend sends
+none of its local turns; the task and result of a job it started there are
+still sent when the result is delivered. Compaction summarizes only the share,
+and the exchange kept after the summary is the last one in the share. Like a
+persona on Claude, it receives the pending results of background jobs it
+started, on whichever backend it started them, and not those of other personas.
+A job saved before jobs recorded their persona, or started outside a spawn,
+goes to it when no other persona is in the conversation, even one it started
+on a local backend before it was moved.
+Its hosted notice follows its share as for Claude: in a conversation it has to
+itself it reads "What is said to it is sent to Codex." (or Muse Spark, or Obey),
+not "This conversation is sent to Codex."
+
+A conversation saved by an earlier version of Obey Voice has no share start for
+these personas, and their replies name their persona, so the exception for
+older conversations does not apply: after such a resume, a persona on Codex,
+Muse Spark or Obey is sent nothing said before the resume, even in a
+conversation it had to itself, unless `hosted_persona_sharing` is
+`whole_conversation`.
+
+### Hosted backends
+
+A persona's backend is hosted when it sends conversation text to a service
+outside this machine. Claude, Codex, Cursor, Grok and Muse Spark are hosted.
+Obey is treated as hosted too: it passes the conversation to whichever provider
+its daemon is configured with, which Obey Voice cannot see. Only Ollama is
+local. A provider that is not classified is treated as hosted. The
+classification covers a persona's conversation backend. It does not cover its
+worker provider, and Ollama is local even when `ollama_host` points at another
+machine.
+
+Wherever personas are shown, a persona on a hosted backend is marked:
+
+- the Personas list in the terminal UI shows `[hosted]` after the provider and
+  model, and its detail pane says that conversation text leaves this machine;
+- `obey-voice persona list` prints `[hosted]` after the brain and its `--json`
+  rows carry `"hosted": true|false`; `GET /v1/personas` carries
+  `brain.hosted`;
+- the conversation header badge reads `brain claude · default · hosted`, and
+  each reply from such a persona is headed `Name [hosted]`;
+- persona selection events carry `hosted`, and the response envelope on every
+  reply, speech and metrics event carries `hosted` and `brain_provider`. The
+  desktop state carries `brain_hosted`, and each turn carries `hosted`.
+
+Replies restored from a saved session do not record the backend they were given
+on, so a resumed conversation marks new replies only; the header badge and the
+Personas list still show the persona's backend as it is now.
+
+The first time in a conversation that a persona on a hosted backend is about to
+be sent anything, Obey Voice says so once, before the request: an info line in
+the conversation and, in voice mode, the same sentence spoken. For a persona on
+Claude:
+
+> Mira runs on Claude, a hosted service. Only what is said from when it was
+> invited is sent to Claude, plus jobs it started earlier and their results;
+> earlier lines stay on this machine.
+
+The second sentence follows what that persona's session will actually receive:
+"The whole conversation is sent to Claude." when it starts from the beginning
+(`whole_conversation`, or a resumed conversation saved before replies named
+their persona), and "What is said to it is sent to Claude." when the
+conversation is still empty. A persona on Codex, Muse Spark or Obey is
+described the same way. A persona on Grok or Cursor, which only holds a
+conversation that started on it, gets "This conversation is sent to Grok." The
+notice is given once per conversation and provider, and once more if a persona
+on that provider would receive the whole conversation after the user was told
+it receives only what is said from its invitation (a later persona first
+addressed under `whole_conversation`, for example). It also comes before
+`/compact` when compaction is the first request to that provider. It is
+forgotten when the conversation is cleared, and is saved with the session so a
+resumed conversation does not repeat it (a session saved before this existed
+repeats it once, and one saved before the whole-conversation case was recorded
+gives that notice again when it applies). It counts as given only once it was
+shown and spoken and the request went ahead: a turn stopped during the notice
+gives it again next time. A turn that sends the persona nothing (one refused
+by its image check, or routed to a job or a story) does not give it, nor does a
+job result spoken while you are idle: that reaches the persona's provider with
+its next request, which gives the notice first.
+It is shown by the host: no model receives it and it is not recorded as any
+persona's reply. A bare `Mira here.` address sends
+nothing and does not trigger it.
+
+A conversation that started on the hosted provider itself, such as a Claude-only
+install, gets the info line but no spoken notice the first time, so it does not
+announce itself at every launch. A later notice for that provider, saying that a
+persona on it now receives the whole conversation, is spoken as well. The marker
+is still on every reply.
+
+`hosted_persona_sharing` chooses what a persona on Claude, Codex, Muse Spark or
+Obey receives of a conversation shared with other personas:
+
+| Value | Meaning |
+|-------|---------|
+| `from_invite` (default) | Only what is said from the point the persona is first addressed while on its backend, plus the task and result of each background job it started earlier, on any backend. |
+| `whole_conversation` | The spoken lines of the whole conversation, from its start. |
+
+Under both, other personas' tool calls, tool ids, tool output and attached file
+names are never sent, and the persona receives only the results of jobs it
+started, on any backend. Asked what is happening, such a persona names only the
+jobs it started, with their progress; any other running or queued job is only
+counted ("One other job is running."). That answer is
+recorded as the persona's reply and sent with its share, so it never carries
+another job's task or tool activity. On Claude, whole-conversation catch-up is
+bounded like any other: the line and request limits above still apply. On
+Codex, Muse Spark and Obey the share is replayed within `max_history`, as their
+history always was. The setting is read when a persona is first addressed on
+its backend; selecting it from a list and then switching to another persona
+without speaking to it does not count. Changing it mid-conversation does not
+send earlier lines to a persona whose share has already started; it applies to
+personas first addressed after the change. A persona on Grok or Cursor can only
+hold a conversation that started on it, and is sent all of it.
+
+The notice covers a persona's conversation backend only. Two other paths can
+send conversation text off this machine without it: a background job on a
+hosted worker provider, and [decision routing](decision-routing.md) when set to
+Jev or OpenAI. Both are services you configure yourself, so neither gives a
+notice.
+
+The brief a new background job is given carries up to eight recent spoken
+lines to the worker provider: with a persona on Claude, Codex, Muse Spark or
+Obey answering, only lines from that persona's share.
+
+Known gaps: a reply from a background worker started through the older worker
+path is recorded as a spoken line of the persona that started it. Like any
+spoken line, it is sent to a persona on Claude, Codex, Muse Spark or Obey whose
+share includes it, including the one that is live when it arrives. The optional
+work-decision service, when one is configured, is sent the live provider's
+conversation while it is at most eight turns long; with a persona on Codex, Muse
+Spark or Obey live, that is the whole conversation, including other personas'
+tool output. A persona selected from a list while `whole_conversation` is set
+is sent the whole conversation if the setting is narrowed while it is still the
+one answering, before anything is said to it; the change takes effect for it
+only after another persona is selected in between.
 
 Conversation identity and reconnect snapshots do not require
 `voice_work_enabled`. That setting remains a separate opt-in for experimental
@@ -323,10 +571,15 @@ Older sessions remain readable; missing identity stays unknown, including old
 assistant-role names. A future unsupported format is refused. Compaction keeps
 the canonical transcript and a `<id>.pre-compact.json` backup while producing
 a bounded model context with complete tool groups and attributed source facts.
-In a conversation that started on Claude, Grok, or Cursor, the summary reseeds
-only that provider's session; the saved transcript stays complete. As with the
-other providers' saved history, it keeps every turn, in memory and on disk,
-until the conversation is cleared.
+In a conversation that started on Grok or Cursor, the summary reseeds only that
+provider's session; the saved transcript stays complete. For a persona on
+Claude, the summary is taken from its live Claude session, which also receives
+the lines it had not seen (shortened or left out with a note when they do not
+fit), and the next request starts a fresh Claude session from the summary
+followed by only the lines said after it. For a persona on Codex, Muse Spark or
+Obey, only its share is summarized and the saved transcript stays complete. As
+with the other providers' saved history, the transcript keeps every turn, in
+memory and on disk, until the conversation is cleared.
 A stored transcript alone does not prove a model received all of it: its
 configured history/context limits still govern the projection.
 

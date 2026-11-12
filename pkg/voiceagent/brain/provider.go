@@ -48,6 +48,10 @@ type StreamOptions struct {
 	// WorkResults is request-private canonical result context. Providers may
 	// include it in the next prompt, but must never append it to history.
 	WorkResults []CompletionResult
+	// CatchUp is the host transcript a provider keeping its own session may
+	// receive. Providers render it as request-local conversation record and
+	// never append it to history.
+	CatchUp *SessionCatchUp
 	// Background marks a host-scheduled result notification, not a user utterance.
 	Background bool
 	// AgentContinuation means the latest agent in shared canonical history is
@@ -237,6 +241,17 @@ func KeepsSharedHistory(p Provider) bool {
 	return false
 }
 
+// KeepsPersonaSession reports whether a provider keeps a session of its own
+// for its persona across persona switches. The host parks such a provider
+// while another persona speaks instead of retiring it, and brings its session
+// up to date with StreamOptions.CatchUp instead of projecting history into it.
+func KeepsPersonaSession(p Provider) bool {
+	_, ok := p.(interface{ keepsPersonaSession() })
+	return ok
+}
+
+func (*Brain) keepsPersonaSession() {}
+
 // ContextHistoryProvider exposes the bounded model view for compaction only.
 // Its projected text is never an authority for persisted speaker identity.
 type ContextHistoryProvider interface{ ContextHistory() []Turn }
@@ -249,6 +264,9 @@ type ContinuitySnapshot struct {
 	Working          []Turn
 	Archive          []continuity.Entry
 	ContextHighWater int
+	// Speakers names the personas with replies in a hosted persona's share,
+	// which its working view may since have summarized or trimmed away.
+	Speakers []string
 }
 
 // ContinuityTransferProvider moves an active conversation between persona

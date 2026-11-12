@@ -330,11 +330,11 @@ func TestSelectorReportsMissingPromptAndUnsupportedProviderWithoutChangingState(
 	if got := f.selector.Snapshot(); !reflect.DeepEqual(got, before) || f.pipeline.Brain != f.old {
 		t.Fatalf("missing-prompt failure changed state: snapshot=%+v brain_changed=%v", got, f.pipeline.Brain != f.old)
 	}
-	provider := testProfile("claude", "Claude", "claude")
-	provider.Brain.Provider = "claude"
+	provider := testProfile("grok", "Grok", "grok")
+	provider.Brain.Provider = "grok"
 	writeTestProfile(t, f.catalog.Dir, provider)
-	writeTestPrompt(t, f.base.PromptsDir, "claude", "claude identity")
-	if _, err := f.selector.Select(context.Background(), "claude", "test"); err == nil {
+	writeTestPrompt(t, f.base.PromptsDir, "grok", "grok identity")
+	if _, err := f.selector.Select(context.Background(), "grok", "test"); err == nil {
 		t.Fatal("Select accepted provider without verified projection")
 	}
 	if f.pipeline.Brain != f.old {

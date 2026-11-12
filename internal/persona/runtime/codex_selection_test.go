@@ -30,7 +30,8 @@ func TestCodexSelectorInitialSwitchReloadAndRestore(t *testing.T) {
 		writeTestProfile(t, catalog.Dir, profile)
 		writeTestPrompt(t, promptDir, id, "You are {agent_name}.")
 	}
-	base := &config.Config{ActivePersona: "santa", BrainProvider: "codex", PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, EnvironmentContextEnabled: true}
+	// Samantha takes over Santa's conversation, so she is given all of it.
+	base := &config.Config{ActivePersona: "santa", BrainProvider: "codex", PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, EnvironmentContextEnabled: true, HostedPersonaSharing: "whole_conversation"}
 	binding, err := catalog.ResolveBinding(base, "santa")
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +93,7 @@ func TestCodexSelectorInitialSwitchReloadAndRestore(t *testing.T) {
 	if _, err := selector.Select(ctx, "samantha", "explicit"); err != nil {
 		t.Fatal(err)
 	}
-	sharedSnapshot := brain.ContinuitySnapshot{Canonical: snapshot.Canonical, Working: snapshot.Canonical}
+	sharedSnapshot := brain.ContinuitySnapshot{Canonical: snapshot.Canonical, Working: snapshot.Canonical, Speakers: []string{"Santa"}}
 	assertContinuity := func() {
 		t.Helper()
 		got := p.Brain.(brain.ContinuityTransferProvider).ContinuitySnapshot()

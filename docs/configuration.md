@@ -683,6 +683,26 @@ conversation/runtime. It requires local Ollama inference.
 Conversation controls save mode and member changes with that session, without
 changing global defaults. See [Group participation](personas.md#group-participation-experimental).
 
+### Hosted persona sharing
+
+`hosted_persona_sharing` (environment `HOSTED_PERSONA_SHARING`) chooses what a
+persona on Claude receives when it joins a conversation shared with other
+personas: `from_invite` (default) sends only what is said from the point
+the persona is first addressed on that backend, plus the task and result of
+each background job it started earlier, on any backend; `whole_conversation`
+sends the spoken lines from the start. Tool calls, tool output and attachment names of
+other personas are never sent in either mode. Changing it applies to personas
+first addressed after the change and does not widen a session that has already
+started. A running conversation picks the change up only when its settings
+reload; it has no Settings row, so set it with
+`obey-voice config set hosted_persona_sharing whole_conversation`. It governs
+personas on Claude, Codex, Muse Spark and Obey; a persona on Grok or Cursor only
+holds a conversation that started on it. Only `whole_conversation` widens what
+is sent; any other value, including an unrecognised one from the environment or
+a hand-edited file, sends from the invitation. See
+[Hosted backends](personas.md#hosted-backends) for what each receives and for
+how hosted personas are marked.
+
 ### Decision model
 
 `decision_enabled` (default `false`) turns on the optional decision model, and

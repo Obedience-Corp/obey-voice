@@ -36,7 +36,7 @@ func (p *Pipeline) BackgroundPending() bool {
 			return false
 		}
 		for _, r := range c.Pending(c.Scope()) {
-			if r.State == work.Pending || r.State == work.Ready {
+			if (r.State == work.Pending || r.State == work.Ready) && p.deliverableResult(r) {
 				return true
 			}
 		}
@@ -65,7 +65,8 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 		var err error
 		// Refresh selection before acquiring the completion lease: replacing a
 		// responder revokes the previous binding's capture permission.
-		ctx, _, err = p.admitInput(ctx, "", true, newTurnMetrics())
+		metrics := newTurnMetrics()
+		ctx, _, err = p.admitInput(ctx, "", true, metrics)
 		if err != nil {
 			return err
 		}
@@ -110,11 +111,15 @@ func (p *Pipeline) finishBackgroundStream(ctx context.Context, brainCtx context.
 
 // RetireBrain releases a replaced provider without blocking the UI dispatcher.
 // Final pipeline teardown joins every retired lifetime, including admission
-// reconciliation that must finish before it can cancel a newly created child.
+// reconciliation that must finish before it can cancel a newly created child,
+// and a stopped request still ending on the provider.
 func (p *Pipeline) RetireBrain(provider brain.Provider) {
 	p.retiredBrains.Add(1)
 	go func() {
 		defer p.retiredBrains.Done()
+		settle, cancel := context.WithTimeout(context.Background(), providerSettleTimeout)
+		_ = p.awaitRequests(settle, provider)
+		cancel()
 		if err := brain.CloseProvider(provider); err != nil {
 			fmt.Fprintf(os.Stderr, "obey-voice: retired brain cleanup: %v\n", err)
 		}

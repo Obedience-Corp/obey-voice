@@ -116,6 +116,13 @@ type Pipeline struct {
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.
 	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)
+	// HostedNotice is asked, once the responding persona is known and before
+	// anything is sent to the live provider, whether the user must first be told
+	// that the persona's backend is hosted.
+	HostedNotice func(events.ResponseEnvelope) (HostedNotice, bool)
+	// LiveHostedNotice is HostedNotice for the live persona, asked before a
+	// request made outside an admitted turn, such as compaction.
+	LiveHostedNotice func() (HostedNotice, bool)
 	// Decisions is off by default. The host configures independent points; a
 	// ready proposal still passes the ordinary worker admission policy.
 	Decisions decision.Controller
@@ -181,9 +188,11 @@ type Pipeline struct {
 	OnTurn func() // called after each completed turn for session auto-save
 	// Transcript owns the canonical conversation when the live provider keeps
 	// no shared history of its own. Nil leaves those providers' history alone.
-	Transcript  Transcript
-	requestMu   sync.Mutex
-	lastRequest *transcriptRecording
+	Transcript Transcript
+	requestMu  sync.Mutex
+	// requests are recorded provider requests that may still be ending, on
+	// the live provider or on one parked by persona selection.
+	requests []*transcriptRecording
 
 	// CompactPrompt is the resolved kind=compact instruction for /compact's
 	// summarize turn. Empty disables compaction with a clear error.

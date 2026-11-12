@@ -19,7 +19,21 @@ type PersonaContext struct {
 	ContextHighWater int                `json:"context_high_water,omitempty"`
 	Through          int                `json:"through"`
 	PrefixHash       string             `json:"prefix_hash"`
+	// Session is set for a persona whose provider keeps its own session, or
+	// keeps the shared history but sends a hosted service only its working
+	// view. Through then counts the canonical turns that provider already
+	// holds. Working is unused for the first and is the view for the second.
+	Session *SessionCursor `json:"session,omitempty"`
 }
+
+// SessionCursor bounds what a provider keeping its own session may receive.
+type SessionCursor struct {
+	// From is the first canonical turn its provider may receive.
+	From int `json:"from"`
+	// Provider is the backend the cursor belongs to.
+	Provider string `json:"provider,omitempty"`
+}
+
 type PersonaContexts map[string]PersonaContext
 
 func (contexts PersonaContexts) Clone() PersonaContexts {
@@ -27,9 +41,29 @@ func (contexts PersonaContexts) Clone() PersonaContexts {
 	for id, state := range contexts {
 		state.Working = deepCopyTurns(state.Working)
 		state.Archive = slices.Clone(state.Archive)
+		if state.Session != nil {
+			session := *state.Session
+			state.Session = &session
+		}
 		out[id] = state
 	}
 	return out
+}
+
+// SessionContext is the cursor of a persona whose provider keeps its own
+// session: the provider may receive canonical[cursor.From:] and holds
+// canonical[cursor.From:through].
+func SessionContext(canonical []Turn, cursor SessionCursor, through int) PersonaContext {
+	return PersonaContext{Through: through, PrefixHash: contextPrefixHash(canonical[:through]), Session: &cursor}
+}
+
+// Matches reports whether canonical still begins with the prefix this
+// context incorporated.
+func (state PersonaContext) Matches(canonical []Turn) bool {
+	if state.Through < 0 || state.Through > len(canonical) || state.PrefixHash != contextPrefixHash(canonical[:state.Through]) {
+		return false
+	}
+	return state.Session == nil || (state.Session.From >= 0 && state.Session.From <= state.Through)
 }
 
 // CloneTurns returns a copy that shares no mutable state with in.
@@ -81,8 +115,8 @@ func CapturePersonaContext(snapshot ContinuitySnapshot) PersonaContext {
 // Reconcile restores this persona's memory and adds only unseen shared turns.
 // A divergent/replaced transcript cannot inherit a private context by position.
 func (state PersonaContext) Reconcile(canonical []Turn) ContinuitySnapshot {
-	valid := state.Through >= 0 && state.Through <= len(canonical) && state.PrefixHash == contextPrefixHash(canonical[:state.Through])
-	if !valid {
+	// A session cursor carries no working view to restore.
+	if state.Session != nil || !state.Matches(canonical) {
 		return ContinuitySnapshot{Canonical: deepCopyTurns(canonical), Working: deepCopyTurns(canonical)}
 	}
 	working := deepCopyTurns(state.Working)

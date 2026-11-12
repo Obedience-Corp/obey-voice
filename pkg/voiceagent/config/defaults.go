@@ -159,6 +159,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("persona_routing_timeout", DefaultPersonaRoutingTimeout)
 	v.SetDefault("group_participation_enabled", false)
 	v.SetDefault("group_participation_mode", "invited")
+	v.SetDefault("hosted_persona_sharing", "from_invite")
 	for _, key := range decisionKeys() {
 		v.SetDefault(key.Key, key.Default)
 	}

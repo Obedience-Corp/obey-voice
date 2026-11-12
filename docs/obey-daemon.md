@@ -58,6 +58,8 @@ events remain subject to the caller's cancellation and CLI timeout.
 Voice owns the canonical transcript and bounded working context. Every request
 uses a new SDK-owned run; the SDK attempts to stop that session afterward.
 Subsequent turns replay the working context, including speaker/persona identity.
+In a conversation shared with other personas, that context is only the persona's
+share: see [Hosted backends](personas.md#hosted-backends).
 Compaction and persona changes therefore do not reuse hidden daemon history.
 Failed and canceled turns leave Voice's stored history unchanged. Runs are not
 retried automatically because daemon-side work may already have happened.

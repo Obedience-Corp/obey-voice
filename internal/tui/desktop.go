@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
@@ -41,6 +42,7 @@ type DesktopTurn struct {
 	Content     string            `json:"content"`
 	Name        string            `json:"name"`
 	Thinking    string            `json:"thinking,omitempty"`
+	Hosted      bool              `json:"hosted,omitempty"`
 }
 type DesktopActivity struct {
 	Stage        string `json:"stage"`
@@ -82,6 +84,7 @@ type DesktopState struct {
 	Name                 string                         `json:"name"`
 	BrainProvider        string                         `json:"brain_provider,omitempty"`
 	BrainModel           string                         `json:"brain_model,omitempty"`
+	BrainHosted          bool                           `json:"brain_hosted,omitempty"`
 	Status               string                         `json:"status"`
 	Error                bool                           `json:"error"`
 	Mic                  bool                           `json:"mic"`
@@ -360,6 +363,7 @@ func (m desktopModel) state() DesktopState {
 		state.Participation = &settings
 	}
 	state.BrainProvider, state.BrainModel = c.activeBrain()
+	state.BrainHosted = state.BrainProvider != "" && brain.IsHosted(state.BrainProvider)
 	state.AudioMode, state.AudioControls, state.AudioTranscript = c.selection.AudioMode, c.selection.AudioControls, c.selection.AudioTranscript
 	if m.rt.SessionCfg != nil {
 		state.WorkDir, state.WorkDirSource = m.rt.SessionCfg.WorkDir, m.rt.SessionCfg.WorkDirSource
@@ -379,6 +383,7 @@ func (m desktopModel) state() DesktopState {
 				agentIndex++
 				if item.kind == chatItemAgent && item.spoken == turn.text {
 					out.Name = item.name
+					out.Hosted = item.hosted
 					out.Thinking = item.think
 					break
 				}

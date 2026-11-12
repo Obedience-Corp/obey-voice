@@ -43,7 +43,7 @@ func (b *MuseSparkBrain) ImportContinuity(s ContinuitySnapshot) error {
 		working = s.Canonical
 	}
 	b.working = deepCopyTurns(working)
-	b.snapshot = ContinuitySnapshot{Archive: slices.Clone(s.Archive), ContextHighWater: s.ContextHighWater}
+	b.snapshot = ContinuitySnapshot{Archive: slices.Clone(s.Archive), ContextHighWater: s.ContextHighWater, Speakers: slices.Clone(s.Speakers)}
 	b.trimWorking()
 	return nil
 }

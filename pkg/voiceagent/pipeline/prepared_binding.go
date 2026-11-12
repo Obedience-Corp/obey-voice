@@ -35,6 +35,16 @@ type PreparedBrainReplacement struct {
 	noOp        bool
 	closed      bool
 	committed   bool
+	// retainPrevious leaves the replaced responder to the caller.
+	retainPrevious bool
+}
+
+// RetainPrevious hands the replaced responder to the caller instead of
+// retiring it on commit. The caller then owns closing it.
+func (r *PreparedBrainReplacement) RetainPrevious() {
+	if r != nil {
+		r.retainPrevious = true
+	}
 }
 
 // PrepareConversationBrain validates and prepares a responder replacement.
@@ -172,7 +182,7 @@ func (r *PreparedBrainReplacement) publish() {
 	} else if r.agency != nil && r.coordinator != nil {
 		r.agency.selectManaged(nil)
 	}
-	if old != nil {
+	if old != nil && !r.retainPrevious {
 		r.pipeline.RetireBrain(old)
 	}
 }

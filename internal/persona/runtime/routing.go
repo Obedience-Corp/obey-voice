@@ -25,6 +25,9 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 		s.EndDiscussion("superseded")
 	}
 	if s.fixedResponder() {
+		if handover, ok, err := s.routeExplicitHandover(ctx, input, background); ok {
+			return handover, err
+		}
 		envelope, err := s.Admit(ctx)
 		if err != nil {
 			return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
@@ -97,10 +100,12 @@ func (s *Selector) warnCatalogIssues(issues []persona.CatalogIssue) {
 	}
 }
 
-// fixedResponder reports whether this conversation cannot move to another
-// persona: its live provider keeps no shared history, and no other persona is
-// on a provider that could take it over. Routing then leaves every input to
-// the live persona, as before persona selection existed for that provider.
+// fixedResponder reports whether this conversation stays with its live
+// persona: the live provider keeps no shared history, and no other persona is
+// on a provider that does. Routing then leaves every input to the live persona
+// with no roster, as before persona selection existed for that provider. A
+// conversation on Claude with only other personas on Claude stays this way too;
+// there an explicit switch or @mention still hands it over.
 func (s *Selector) fixedResponder() bool {
 	if brain.KeepsSharedHistory(s.opts.Pipeline.Brain) {
 		return false
@@ -114,7 +119,7 @@ func (s *Selector) fixedResponder() bool {
 		if p.Inactive || p.ID == live {
 			continue
 		}
-		if _, ok := s.canTakeOver(p); ok {
+		if provider, _ := s.canTakeOver(p); slices.Contains(sharedHistoryProviders, provider) {
 			return false
 		}
 	}
@@ -122,24 +127,53 @@ func (s *Selector) fixedResponder() bool {
 }
 
 // canTakeOver resolves the provider a persona would answer on and reports
-// whether the conversation can be handed to it.
+// whether the conversation can be handed to it and back.
 func (s *Selector) canTakeOver(p *persona.Profile) (string, bool) {
 	cfg, _, err := persona.ResolveAudioConfig(s.opts.Base, p)
 	if err != nil {
 		return "", false
 	}
-	return cfg.BrainProvider, slices.Contains(sharedHistoryProviders, cfg.BrainProvider)
+	return cfg.BrainProvider, slices.Contains(sharedHistoryProviders, cfg.BrainProvider) || slices.Contains(sessionCatchUpProviders, cfg.BrainProvider)
+}
+
+// routeExplicitHandover honours an explicit switch or @mention in a
+// conversation that otherwise stays with a live persona on Claude.
+func (s *Selector) routeExplicitHandover(ctx context.Context, input string, background bool) (pipeline.ResponseAdmission, bool, error) {
+	admitted := pipeline.ResponseAdmission{Request: input}
+	if background || !brain.KeepsPersonaSession(s.opts.Pipeline.Brain) {
+		return admitted, false, nil
+	}
+	roster, _, err := s.conversationRoster()
+	if err != nil {
+		return admitted, false, nil
+	}
+	exact := roster.ResolveForegroundControl(input)
+	if exact.Kind != summon.ExactControlValid || !explicitHandover(exact.Address) {
+		return admitted, false, nil
+	}
+	admitted, err = s.routeExactControl(ctx, input, exact)
+	if err == nil && s.fixedResponder() {
+		// The conversation stays without a roster, as Admit leaves it.
+		s.setGroupParticipants(nil)
+	}
+	admitted.AgentMentionControl = agentMentionControl(roster)
+	return admitted, true, err
+}
+
+func explicitHandover(address summon.Address) bool {
+	return address.Reason == summon.ReasonExplicitSwitch || address.Reason == "explicit-mention"
 }
 
 // refuseOneWaySwitch keeps the conversation on a live provider that could not
 // take it back, unless the user asked for the move with an explicit switch or
-// @mention.
+// @mention. A persona on Claude can take it back, so it is addressed by name
+// like any other.
 func (s *Selector) refuseOneWaySwitch(address summon.Address) error {
 	live := s.Snapshot()
-	if brain.KeepsSharedHistory(s.opts.Pipeline.Brain) || address.PersonaID == "" || address.PersonaID == live.PersonaID {
+	if brain.KeepsSharedHistory(s.opts.Pipeline.Brain) || brain.KeepsPersonaSession(s.opts.Pipeline.Brain) || address.PersonaID == "" || address.PersonaID == live.PersonaID {
 		return nil
 	}
-	if address.Reason == summon.ReasonExplicitSwitch || address.Reason == "explicit-mention" {
+	if explicitHandover(address) {
 		return nil
 	}
 	target := address.PersonaID

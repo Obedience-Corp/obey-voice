@@ -191,3 +191,23 @@ func TestServePersonaListKeepsMissingDirectoryAvailableForRepair(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestServePersonaListMarksHostedBackends(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	for _, p := range []*persona.Profile{
+		{Schema: persona.Schema, ID: "mira", DisplayName: "Mira", Brain: persona.Brain{Provider: "claude"}, Prompts: persona.PromptRefs{Persona: "mira"}},
+		{Schema: persona.Schema, ID: "ember", DisplayName: "Ember", Brain: persona.Brain{Provider: "ollama", Model: "m"}, Prompts: persona.PromptRefs{Persona: "ember"}},
+		{Schema: persona.Schema, ID: "plain", DisplayName: "Plain", Prompts: persona.PromptRefs{Persona: "plain"}},
+	} {
+		if err := persona.Write(p, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := servePersonaList(&config.Config{ActivePersona: "ember", BrainProvider: "ollama", OllamaModel: "m"})()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !findPersonaRow(t, rows, "mira").Brain.Hosted || findPersonaRow(t, rows, "ember").Brain.Hosted || findPersonaRow(t, rows, "plain").Brain.Hosted {
+		t.Fatalf("rows = %+v", rows)
+	}
+}

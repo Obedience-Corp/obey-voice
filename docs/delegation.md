@@ -140,7 +140,9 @@ Without the TUI each row prints once as `[job-1]
 read 3 files`, when its kind gives way or the job ends. "What's happening"
 answers `Still working on {task}. So far: read 3 files · ran 1 command.` The
 spoken `{task}` is the request's first clause, at most ten words; the manager
-and transcript keep the whole request.
+and transcript keep the whole request. With a persona on a hosted backend
+answering, the answer names only the jobs that persona started, on any backend,
+and counts the rest (see [Hosted backends](personas.md#hosted-backends)).
 
 In the TUI, `/workers` provides **Stop task** (`s`), **Stop all** (`x`, then
 `y`), and **Allow background workers** (`t`). The permission is global, not

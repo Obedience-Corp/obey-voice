@@ -210,6 +210,10 @@
       "value": "invited",
       "source": "default"
     },
+    "hosted_persona_sharing": {
+      "value": "from_invite",
+      "source": "default"
+    },
     "input_device": {
       "value": "",
       "source": "default"

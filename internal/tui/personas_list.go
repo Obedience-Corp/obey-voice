@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -16,6 +17,8 @@ type personaListStack struct {
 	provider, model, voice      string
 	providerSource, modelSource string
 	note                        string
+	// hosted is set when the provider sends conversation text off this machine.
+	hosted bool
 }
 
 func (m *personasModel) reloadStacks() {
@@ -83,6 +86,7 @@ func resolvePersonaListStack(defaults *config.Config, p *persona.Profile) person
 			s.note = "Saved model is not routed by Claude; its CLI chooses the model."
 		}
 	}
+	s.hosted = s.provider != "unavailable" && brain.IsHosted(s.provider)
 	voice := config.TTSVoiceFor(effective, effective.TTSProvider)
 	s.voice = strings.Trim(strings.TrimSpace(effective.TTSProvider)+" / "+strings.TrimSpace(voice), " /")
 	if s.voice == "" {
@@ -195,6 +199,9 @@ func (m personasModel) listLines(bodyRows int) []string {
 		}
 		stack := m.stacks[p.ID]
 		llm := stack.provider + " / " + stack.model
+		if stack.hosted {
+			llm += " [hosted]"
+		}
 		lines = append(lines, style.Render(prefix+m.personaColumns(name, llm, stack.voice)))
 		if m.personaRowHeight() == 2 {
 			lines = append(lines, "    "+normalStyle.Render(llm))
@@ -240,7 +247,11 @@ func (m personasModel) personaDetailLines() []string {
 				body = append(body, normalStyle.Render(part))
 			}
 		}
-		value("LLM provider  ", s.provider, s.providerSource)
+		provider := s.provider
+		if s.hosted {
+			provider += " (hosted: conversation text leaves this machine)"
+		}
+		value("LLM provider  ", provider, s.providerSource)
 		value("LLM model     ", s.model, s.modelSource)
 		value("Voice         ", s.voice, "")
 		directory := strings.TrimSpace(p.StartingDirectory)

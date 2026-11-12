@@ -111,6 +111,7 @@ func (a *Agency) EnableConversationWork(sessionID string, saved *work.Snapshot, 
 		}
 		a.ReplaceWorker(worker, cfg, workerErr)
 	}
+	a.restartPersonas()
 	a.discardPendingSpeech()
 	a.workMu.Lock()
 	a.coordinator, a.workScope, a.workObserver = c, scope, observer
@@ -141,11 +142,13 @@ func (a *Agency) workChanged(snapshot work.Snapshot) {
 func (a *Agency) ClearConversation() error {
 	c, old := a.workAuthority()
 	if c == nil {
+		a.restartPersonas()
 		return nil
 	}
 	if err := c.Retire(old); err != nil && !errors.Is(err, work.ErrRetired) {
 		return err
 	}
+	a.restartPersonas()
 	next := work.WorkScope{SessionID: old.SessionID, RuntimeEpoch: old.RuntimeEpoch, ConversationEpoch: newWorkID()}
 	a.workMu.Lock()
 	a.workScope = next
@@ -218,6 +221,7 @@ func (a *Agency) ReplaceWorker(worker brain.Provider, cfg *config.Config, worker
 		next.VoiceWorkers = a.cfg.VoiceWorkers.Clone()
 	}
 	a.worker, a.cfg, a.workerInitErr = worker, next, workerErr
+	a.notePersonaLocked(next)
 	a.mu.Unlock()
 }
 

@@ -158,3 +158,27 @@ func TestPersonaListBuiltinBadgeAndLongModel(t *testing.T) {
 		}
 	}
 }
+
+func TestPersonaListMarksHostedBackends(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	base := &config.Config{BrainProvider: "ollama", OllamaModel: "local:8b", TTSProvider: "kokoro", TTSVoice: "af_heart"}
+	for provider, want := range map[string]bool{"claude": true, "codex": true, "muse-spark": true, "ollama": false, "": false} {
+		got := resolvePersonaListStack(base, &persona.Profile{ID: "test", Brain: persona.Brain{Provider: provider}})
+		if got.hosted != want {
+			t.Errorf("provider %q: hosted = %v, want %v", provider, got.hosted, want)
+		}
+	}
+	m := newPersonas(base)
+	m.width, m.height = 100, 24
+	m.items = []*persona.Profile{{ID: "mira", DisplayName: "Mira", Brain: persona.Brain{Provider: "claude"}}, {ID: "ember", DisplayName: "Ember"}}
+	m.reloadStacks()
+	var hosted []string
+	for _, line := range m.listLines(20) {
+		if strings.Contains(ansi.Strip(line), "[hosted]") {
+			hosted = append(hosted, ansi.Strip(line))
+		}
+	}
+	if len(hosted) != 1 || !strings.Contains(hosted[0], "Mira") {
+		t.Fatalf("hosted rows = %q", hosted)
+	}
+}
