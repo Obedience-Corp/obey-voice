@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/gif"
@@ -545,5 +546,98 @@ func TestClaudeRefusesAnImageOverItsOwnLimitLocally(t *testing.T) {
 	got := replayEntries(t, oneContentCall(t, freshRequest(t, "stream", heldImageTurns(older, big), small)))
 	if want := []string{"sent:" + older.ID, "skipped:" + big.ID, "sent:" + small.ID}; !slices.Equal(got, want) {
 		t.Fatalf("replay = %q, want %q", got, want)
+	}
+}
+
+// refusingClaude writes a fake claude executable that starts session s1 and,
+// asked to resume it, fails as mode says: the API refusing an image in an
+// error result or on stderr with exit 1, or the CLI not finding the session.
+// A fresh request after the first answers in session s2. It counts its runs.
+func refusingClaude(t *testing.T, mode string) (bin, runs string) {
+	t.Helper()
+	dir := t.TempDir()
+	runs = filepath.Join(dir, "runs")
+	const refusal = `API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"messages.2.content.1.image.source.base64: image exceeds 5 MB maximum"}}`
+	failed := map[string]string{
+		"result": `{"type":"result","subtype":"success","is_error":true,"result":` + strconv.Quote(refusal) + `,"session_id":"s1"}`,
+		"stale":  `{"type":"result","subtype":"error_during_execution","is_error":true,"result":"No conversation found with session ID: s1"}`,
+	}[mode]
+	resumed := "printf '%s\\n' " + shellQuote(failed) + "; exit 0"
+	if mode == "exit" {
+		resumed = "printf '%s\\n' " + shellQuote(refusal) + " >&2; exit 1"
+	}
+	script := strings.NewReplacer("RUNS", shellQuote(runs), "RESUMED", resumed).Replace(`#!/bin/sh
+echo run >> RUNS
+cat > /dev/null
+case " $* " in *" --resume "*) RESUMED ;; esac
+if [ -e RUNS.started ]; then s=s2; else s=s1; : > RUNS.started; fi
+result='{"type":"result","subtype":"success","result":"Seen.","session_id":"'$s'"}'
+case " $* " in *" --output-format json "*) printf '%s\n' "$result"; exit 0 ;; esac
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"'$s'"}' '{"type":"assistant","session_id":"'$s'","message":{"content":[{"type":"text","text":"Seen."}]}}' "$result"
+`)
+	bin = filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return bin, runs
+}
+
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+// An image the API refuses on a resumed session fails the turn and keeps the
+// session: a fresh retry would send the same image without the conversation.
+// Any other resume failure, or one on a request without images, still
+// retries fresh.
+func TestClaudeImageRefusedOnAResumedSessionKeepsTheSession(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	ref := importImage(t, "photo.png", testmedia.PNG())
+	for _, tc := range []struct {
+		mode   string
+		images bool
+		retry  bool
+	}{
+		{"result", true, false},
+		{"exit", true, false},
+		{"stale", true, true},
+		{"result", false, true},
+	} {
+		for _, blocking := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/images=%v/blocking=%v", tc.mode, tc.images, blocking), func(t *testing.T) {
+				bin, runs := refusingClaude(t, tc.mode)
+				b := newTestBrain(claude.NewClient(bin))
+				ask := func(input string, refs ...chatmedia.Ref) error {
+					opts := StreamOptions{Attachments: refs}
+					if blocking {
+						_, err := b.ThinkFull(context.Background(), input, opts)
+						return err
+					}
+					s, err := b.ThinkStream(context.Background(), input, opts)
+					if err != nil {
+						return err
+					}
+					_, res := collectStream(t, s)
+					return res.Err
+				}
+				if err := ask("Hello."); err != nil || b.SessionInfo().ID != "s1" {
+					t.Fatalf("first request: %v, session %q", err, b.SessionInfo().ID)
+				}
+				var refs []chatmedia.Ref
+				if tc.images {
+					refs = []chatmedia.Ref{ref}
+				}
+				err := ask("Look at this.", refs...)
+				data, _ := os.ReadFile(runs)
+				n := strings.Count(string(data), "run")
+				if tc.retry {
+					if err != nil || n != 3 || b.SessionInfo().ID != "s2" {
+						t.Fatalf("no fresh retry: %v, %d runs, session %q", err, n, b.SessionInfo().ID)
+					}
+					return
+				}
+				if !errors.Is(err, errImageRefused) || n != 2 || b.SessionInfo().ID != "s1" {
+					t.Fatalf("err = %v, %d runs, session %q", err, n, b.SessionInfo().ID)
+				}
+			})
+		}
 	}
 }

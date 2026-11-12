@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
 
@@ -118,6 +119,38 @@ func replayImages(refs []chatmedia.Ref, seen map[string]bool, budget, room int) 
 		fmt.Fprintf(os.Stderr, "obey-voice: claude: %d earlier images left out of a fresh session (missing, or past the request's image limits)\n", skipped)
 	}
 	return blocks
+}
+
+// errImageRefused is the API refusing an image a request carried. The session
+// is kept: retrying it fresh would send the same image without the context.
+var errImageRefused = errors.New("claude refused an image in this request; send a smaller or different image")
+
+// imageRefusal is err as errImageRefused when the request carried images and
+// the CLI reports the API refusing one, or nil. The CLI passes on only the
+// API's text, so the match is on that text and kept narrow: a request error
+// that names an image. It is not verified against the live service.
+func imageRefusal(images []claude.ContentBlock, err error) error {
+	if err == nil || len(images) == 0 {
+		return nil
+	}
+	text := err.Error()
+	// The SDK keeps a failed CLI's stderr out of its message.
+	var cliErr *claude.ClaudeError
+	if errors.As(err, &cliErr) {
+		if stderr, ok := cliErr.Details["stderr"].(string); ok {
+			text += " " + stderr
+		}
+	}
+	text = strings.ToLower(text)
+	if !strings.Contains(text, "image") {
+		return nil
+	}
+	for _, sign := range []string{"invalid_request_error", "api error: 400", "could not process image"} {
+		if strings.Contains(text, sign) {
+			return fmt.Errorf("%w (%w)", errImageRefused, err)
+		}
+	}
+	return nil
 }
 
 // contentBlocks is a request's prompt followed by its images. Replayed images

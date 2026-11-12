@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"io"
@@ -317,7 +318,7 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 		// can't wedge the conversation. Guard on !streamedAny to avoid re-speaking
 		// already-emitted audio, and on a live context so a user barge-in cancel
 		// is not mistaken for a resume failure.
-		if err != nil && fresh != nil && !streamedAny && b.dropForRetry(ctx) {
+		if err != nil && fresh != nil && !streamedAny && !errors.Is(err, errImageRefused) && b.dropForRetry(ctx) {
 			fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
 			var retry []claude.ContentBlock
 			if retry, err = requestImages(earlier, !streamOpts.TransientHistory, streamOpts.Attachments); err == nil {
@@ -612,6 +613,11 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 	if streamErr == nil {
 		streamErr = resultErr
 	}
+	if refused := imageRefusal(images, resultErr); refused != nil {
+		streamErr = refused
+	} else if refused := imageRefusal(images, streamErr); refused != nil {
+		streamErr = refused
+	}
 
 	// Release a short reply the label check still holds — but only on success.
 	// On a failed attempt nothing was emitted, so streamedAny stays false and
@@ -670,7 +676,7 @@ func (b *Brain) ThinkFull(ctx context.Context, input string, streamOpts StreamOp
 	// whole call, so drop the id and retry once via the flatten path. The live
 	// context check keeps a user cancellation from being treated as a resume
 	// failure.
-	if err != nil && fresh != nil && b.dropForRetry(ctx) {
+	if err != nil && fresh != nil && !errors.Is(err, errImageRefused) && b.dropForRetry(ctx) {
 		fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
 		if images, err = requestImages(earlier, !streamOpts.TransientHistory, streamOpts.Attachments); err == nil {
 			response, err = b.thinkFullAttempt(ctx, streamOpts, *fresh, images)
@@ -733,7 +739,11 @@ func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, 
 		result, err = b.client.RunPromptCtx(ctx, prompt, opts)
 	}
 	if err != nil {
-		return "", fmt.Errorf("claude error: %w", err)
+		err = fmt.Errorf("claude error: %w", err)
+		if refused := imageRefusal(images, err); refused != nil {
+			return "", refused
+		}
+		return "", err
 	}
 	b.noteSession(ctx, result.SessionID, 0)
 	// Same exit-0 failure shape as the streaming path: never speak the CLI's
@@ -742,7 +752,11 @@ func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, 
 		if streamOpts.OnWorkerUsage != nil {
 			streamOpts.OnWorkerUsage(WorkerUsage{ChargeMicroUSD: chargeMicroUSD(result.CostUSD)})
 		}
-		return "", resultError("claude", result.Subtype, result.Result)
+		err := resultError("claude", result.Subtype, result.Result)
+		if refused := imageRefusal(images, err); refused != nil {
+			return "", refused
+		}
+		return "", err
 	}
 	if streamOpts.OnWorkerUsage != nil {
 		streamOpts.OnWorkerUsage(WorkerUsage{ChargeMicroUSD: chargeMicroUSD(result.CostUSD)})

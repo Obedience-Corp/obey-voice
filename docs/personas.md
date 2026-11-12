@@ -327,8 +327,10 @@ only once its stopped reply has finished, or after five seconds.
 An image you attach while a persona on Claude is answering is sent to Claude
 with that line. Claude takes at most 7.5 MiB per image as sent (a GIF as the PNG
 of its first frame), below the 8 MiB the attachment store allows, so a larger
-image is refused before the request. A resumed session already holds it, so
-later requests carry only new images. A fresh session for the persona, after
+image is refused before the request. If the service still refuses an image,
+the turn fails saying so and the session is kept: the line is not retried in a
+new session, which would lose the conversation and fail the same way. A resumed
+session already holds an image, so later requests carry only new images. A fresh session for the persona, after
 the session fuse, a catch-up that does not fit or a rejected resume, is sent the
 images of the persona's own earlier lines again where they fit: the newest
 first, within 20 images and 32 MiB together with the new line's images, which
