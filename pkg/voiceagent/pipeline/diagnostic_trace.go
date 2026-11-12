@@ -57,6 +57,9 @@ func pipelineTraceRecord(event events.Event) map[string]any {
 		r["outcome"], r["interrupted"], r["degraded"] = e.Outcome, e.Interrupted, e.Degraded
 		r["sink"], r["tts_provider"] = e.AudibleSink, e.TTSProvider
 		r["timing"], r["stall_watchdog"], r["underruns"] = e.Timing, e.StallWatchdogFired, e.Underruns
+		if e.SpeechStop != nil {
+			r["speech_stop"] = e.SpeechStop
+		}
 	case events.Error:
 		r["stage"] = e.Stage
 	default:

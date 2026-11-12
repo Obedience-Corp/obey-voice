@@ -366,12 +366,27 @@ func (p *Pipeline) ttsReady() bool {
 // metrics. The remainder of this turn's speech is canceled while reply text
 // keeps streaming, including when the stop arrives before the first audio.
 func (p *Pipeline) StopPlayback() {
+	p.StopPlaybackFrom(StopSource{Name: "unspecified"})
+}
+
+// StopSource names the caller of a stop for the turn's metrics, so a reply
+// that went unspoken can be traced to what silenced it. Name is one of
+// keystroke, text_submit, talk_key, desktop, narration or replay. KeyRunes
+// and KeyPaste describe a keystroke's message; its text is never recorded.
+type StopSource struct {
+	Name     string
+	KeyRunes int
+	KeyPaste bool
+}
+
+// StopPlaybackFrom is StopPlayback with its caller named.
+func (p *Pipeline) StopPlaybackFrom(source StopSource) {
 	if p == nil || p.Player == nil {
 		return
 	}
 	p.activeMu.Lock()
 	if m := p.activeMetrics; m != nil {
-		m.stopSpeech()
+		m.stopSpeech(source)
 		if p.Player.IsPlaying() {
 			m.markBargeIn(time.Now())
 		}

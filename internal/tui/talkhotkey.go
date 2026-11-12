@@ -10,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 // talkHotkeyEventMsg carries one key edge, from either source: the native
@@ -315,9 +316,7 @@ func (m *conversationModel) interruptForTalk() tea.Cmd {
 	if m.turnCancel != nil {
 		m.turnCancel()
 	}
-	if stopper, ok := m.deps.runner.(interface{ StopPlayback() }); ok {
-		stopper.StopPlayback()
-	}
+	m.stopRunnerPlayback(pipeline.StopSource{Name: "talk_key"})
 	return nil
 }
 
