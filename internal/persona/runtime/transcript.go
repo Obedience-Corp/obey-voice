@@ -95,9 +95,9 @@ func (t *transcript) catchUp(personaID string) (brain.SessionCatchUp, int, bool,
 		if t.sessions == nil {
 			t.sessions = make(brain.PersonaContexts)
 		}
-		// liveProvider is set whenever live is: setLive sets both, from a
-		// cursor that always names a provider, and every other writer clears
-		// both. live is not empty here, so neither is liveProvider.
+		// liveProvider is never empty while live is not: setLive sets it
+		// with live through cursorProvider, which never returns "", and
+		// setLive(nil) and restoreSessions clear both.
 		t.sessions[personaID] = brain.SessionContext(t.turns, brain.SessionCursor{From: len(t.turns), Provider: t.liveProvider}, len(t.turns))
 		return brain.SessionCatchUp{}, len(t.turns), true, len(t.turns) > 0
 	}

@@ -439,10 +439,14 @@ persona is addressed again the thread is resumed and sent, as quoted records,
 only the lines it has not been sent, which are what was said while it was away
 and lines Obey Voice recorded under its name, such as an acknowledgement. It
 replays the whole share when it starts a new thread: after a restart or a
-resume, after a stopped or failed request, when its tools or prompt change, and
-when lines it missed fell out of `max_history` before it was addressed again.
-Unlike Claude, Grok and Cursor, Codex is sent its lines whole: none is shortened,
-and its replay is bounded by `max_history` rather than 64 KiB, as it always was.
+resume, after a stopped or failed request, when its tools or prompt change,
+when a line was recorded while its request ran, when the view it comes back to
+no longer begins with the lines its thread holds, and when lines it missed fell
+out of `max_history` before it was addressed again. When a line recorded
+during a request or a changed view drops the thread, the log says which.
+Unlike Claude, Grok and Cursor, Codex is sent its lines whole: none is
+shortened, and its replay is bounded by `max_history` rather than 64 KiB, as it
+always was. A request whose text passes 64 KiB is logged with its size.
 The records are your lines, other personas' spoken lines, and the persona's own
 lines and replies. Other personas' tool calls, tool ids and tool
 output, and the names and images of files attached to any line the persona did
