@@ -153,6 +153,12 @@ func startVoiceServerWith(t *testing.T, runner *voiceRunner, tune func(*Options)
 	return s, d, s.Addr().String(), creds
 }
 
+func connCount(h *hub) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.conns)
+}
+
 func micClaimed(h *hub) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -277,7 +283,13 @@ func TestQueuedVoiceStartReleasesOnDisconnect(t *testing.T) {
 	writeControl(t, ctx, b, controlMessage{Type: "voice_start"})
 	consistently(t, "the mic unclaimed while queued", func() bool { return !micClaimed(s.hub) })
 
+	before := connCount(s.hub)
 	b.Close(websocket.StatusNormalClosure, "gone")
+	// Close returns when the close handshake does, which is before the server's
+	// handler has run its deferred cleanup (dropStaged, then hub.remove).
+	// Interrupting A earlier can dequeue B's turn while the server still counts
+	// B as connected, and that turn runs. Wait until B has been removed.
+	eventually(t, "the server to drop the closed client", func() bool { return connCount(s.hub) < before })
 	writeControl(t, ctx, a, controlMessage{Type: "interrupt"})
 
 	consistently(t, "the mic unclaimed after the queued client left", func() bool {
