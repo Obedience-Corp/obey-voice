@@ -166,3 +166,31 @@ func TestCodexLogsARequestOverTheSizeThresholdWithItsSize(t *testing.T) {
 		t.Fatalf("large request log = %+v, want one warning of %d bytes", got, size)
 	}
 }
+
+func TestCodexLogsWhyAViewDropsItsThread(t *testing.T) {
+	logs := captureLogs(t)
+	c, _ := codexFixture(t)
+	c.cfg.MaxHistory = 20
+	if _, err := c.ThinkFull(t.Context(), "Remember cobalt.", StreamOptions{Speaker: "speaker-2"}); err != nil {
+		t.Fatal(err)
+	}
+	held := c.ContinuitySnapshot()
+	extended := held
+	extended.Working = append(deepCopyTurns(held.Working), Turn{Role: "user", Content: "And teal."})
+	if err := c.ImportContinuity(extended); err != nil {
+		t.Fatal(err)
+	}
+	if c.SessionInfo().ID != "thread-fixture" || len(logs.find("codex thread dropped")) != 0 {
+		t.Fatalf("a view adding a line dropped the thread: %+v %+v", c.SessionInfo(), logs.find("codex thread dropped"))
+	}
+
+	changed := c.ContinuitySnapshot()
+	changed.Working[0].Content = "Remember amber."
+	if err := c.ImportContinuity(changed); err != nil {
+		t.Fatal(err)
+	}
+	got := logs.find("codex thread dropped")
+	if c.SessionInfo().ID != "" || len(got) != 1 || got[0]["thread_id"] != "thread-fixture" || got[0]["reason"] != "line 0 of the view (user) differs from the line the thread holds" {
+		t.Fatalf("thread %q, drop log %+v", c.SessionInfo().ID, got)
+	}
+}

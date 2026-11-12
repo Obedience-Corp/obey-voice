@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -783,4 +785,36 @@ func lostPlaceIsAnInfoLine(t *testing.T, provider, loss string) {
 		t.Fatalf("Mira's session was not kept: resumed %q, want %q", last.Resume, session)
 	}
 	requireContains(t, last.Prompt, "What color is the car?")
+}
+
+// A line from a named speaker, addressed to Mira with an @ mention and
+// carrying an image, survives Mira's Codex thread being parked: the view it
+// comes back to extends the one the thread holds, so the thread is resumed.
+func TestCodexThreadSurvivesARoundTripOfARealisticLine(t *testing.T) {
+	c := newSessionConversation(t, "codex")
+	config.SetConfigDirForTest(t, t.TempDir())
+	c.p.CurrentSpeaker = func() string { return "speaker-2" }
+	c.say("switch to Mira")
+	ref := c.attachImage("diagram.png", 7)
+	c.sayWith([]chatmedia.Ref{ref}, "@Mira what is in this diagram?")
+	c.say("switch to Ember", "switch to Mira", "Anything to add?")
+
+	var line *brain.Turn
+	for _, turn := range c.selector.Transcript() {
+		if turn.Content == "@Mira what is in this diagram?" {
+			line = &turn
+		}
+	}
+	if line == nil || len(line.Attachments) != 1 || line.Speaker != "speaker-2" || line.RoutedInput != "what is in this diagram?" {
+		t.Fatalf("the line is not as realistic as intended: %+v", line)
+	}
+	requests := c.sessionRequests()
+	if len(requests) != 2 {
+		t.Fatalf("codex requests = %+v", requests)
+	}
+	if requests[1].Resume == "" || requests[1].Resume != requests[0].Session {
+		t.Fatalf("Mira's thread was not resumed after the round trip: %+v", requests[1])
+	}
+	requireContains(t, requests[1].Prompt, `"content":"Ember here.","persona":"Ember"`, "speaker-2: Anything to add?")
+	requireOmits(t, requests[1].Prompt, "what is in this diagram?", ref.ID)
 }

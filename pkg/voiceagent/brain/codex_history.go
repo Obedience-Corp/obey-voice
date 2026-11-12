@@ -2,6 +2,7 @@ package brain
 
 import (
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -101,25 +102,35 @@ func (c *CodexBrain) ImportContinuity(s ContinuitySnapshot) error {
 	c.snapshot.Archive = slices.Clone(s.Archive)
 	if s.Working != nil {
 		c.working = deepCopyTurns(s.Working)
-		if thread != "" && extendsView(held, c.working) {
-			c.sessionID, c.sessionTools, c.unsent = thread, tools, unsent+len(c.working)-len(held)
+		if thread != "" {
+			if reason := viewMismatch(held, c.working); reason == "" {
+				c.sessionID, c.sessionTools, c.unsent = thread, tools, unsent+len(c.working)-len(held)
+			} else {
+				slog.Info("codex thread dropped", "thread_id", thread, "reason", reason)
+			}
 		}
 		c.trimWorking()
+	} else if thread != "" {
+		slog.Info("codex thread dropped", "thread_id", thread, "reason", "the import carries no working view")
 	}
 	return nil
 }
 
-// extendsView reports whether working begins with every turn of held.
-func extendsView(held, working []Turn) bool {
+// viewMismatch says why working does not begin with every turn of held, the
+// view a thread holds, or returns "" when it does.
+func viewMismatch(held, working []Turn) string {
 	if len(working) < len(held) {
-		return false
+		return fmt.Sprintf("the new view has %d lines, fewer than the %d the thread holds", len(working), len(held))
 	}
 	for i, t := range held {
-		if t.ResponseID != working[i].ResponseID || cliHistoryRecord(t, nil) != cliHistoryRecord(working[i], nil) {
-			return false
+		if t.ResponseID != working[i].ResponseID {
+			return fmt.Sprintf("line %d of the view has response id %q, not %q", i, working[i].ResponseID, t.ResponseID)
+		}
+		if cliHistoryRecord(t, nil) != cliHistoryRecord(working[i], nil) {
+			return fmt.Sprintf("line %d of the view (%s) differs from the line the thread holds", i, t.Role)
 		}
 	}
-	return true
+	return ""
 }
 func (c *CodexBrain) appendTurn(t Turn) {
 	c.canonical = append(c.canonical, t)
