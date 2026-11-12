@@ -74,7 +74,7 @@ func probeProvider(ctx context.Context, cfg *config.Config, name string) Provide
 		}
 		return ProviderInfo{Name: name, Available: err == nil, Models: models}
 	case "claude":
-		return discoverClaude(cfg)
+		return discoverClaude(ctx, cfg)
 	case "cursor":
 		return discoverCursor(ctx)
 	case "obey":
@@ -90,17 +90,43 @@ func probeProvider(ctx context.Context, cfg *config.Config, name string) Provide
 	}
 }
 
-// discoverClaude lists only "default" and the saved claude_model: the CLI
-// installed today has no model catalog to read.
-func discoverClaude(cfg *config.Config) ProviderInfo {
-	_, err := exec.LookPath("claude")
-	models := []string{"default"}
-	if cfg != nil {
-		if model := strings.TrimSpace(cfg.ClaudeModel); model != "" && !strings.EqualFold(model, "default") {
-			models = append(models, model)
+// discoverClaude lists "default", then the models the installed claude CLI
+// reports, then the saved claude_model if the CLI did not report it. A CLI that
+// cannot answer (too old, signed out, too slow) leaves "default" and the saved
+// model. Nothing is cached: what "default" resolves to can change.
+func discoverClaude(parent context.Context, cfg *config.Config) ProviderInfo {
+	info := ProviderInfo{Name: "claude", Models: []string{"default"}}
+	if _, err := exec.LookPath("claude"); err == nil {
+		info.Available = true
+		if parent.Err() == nil {
+			ctx, cancel := context.WithTimeout(parent, probeTimeout)
+			reported, err := brain.ClaudeModels(ctx, cfg)
+			cancel()
+			if err == nil {
+				for _, model := range reported {
+					info.Models = appendModel(info.Models, model)
+				}
+			}
 		}
 	}
-	return ProviderInfo{Name: "claude", Available: err == nil, Models: models}
+	if cfg != nil {
+		info.Models = appendModel(info.Models, cfg.ClaudeModel)
+	}
+	return info
+}
+
+// appendModel adds model unless it is blank or already listed in any case.
+func appendModel(models []string, model string) []string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return models
+	}
+	for _, listed := range models {
+		if strings.EqualFold(listed, model) {
+			return models
+		}
+	}
+	return append(models, model)
 }
 
 func discoverCursor(parent context.Context) ProviderInfo {

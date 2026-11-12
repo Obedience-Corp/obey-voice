@@ -87,6 +87,14 @@ The dim line under the Voice row describes the pick when the catalog can
 From the Personas list, `e` opens the form on the name and `m` opens it straight
 on Model & voice.
 
+The Model row lists the models the brain provider reports when the form opens,
+between `(default)`, which leaves the choice to the provider, and `(custom)`,
+which takes any name. For Claude the list comes from the installed `claude`
+CLI, so it matches that CLI's version, account and settings. The CLI is asked
+once per form open, from the app's working directory and without a prompt, so
+no model is called. A CLI too old to list models, or one that does not answer
+within 3 seconds, leaves `(default)`, the saved model and `(custom)`.
+
 The System prompt row shows the document's opening line and its size; `enter`
 gives the vim editor the whole screen: `esc` for NORMAL; `i`/`a`/`o` to insert;
 `h`/`j`/`k`/`l`/`0`/`$`/`w`/`b`/`gg`/`G` to move; `x`/`D`/`dd` to delete; `tab`

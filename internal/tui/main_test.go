@@ -7,6 +7,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/Obedience-Corp/obey-voice/internal/discovery"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 const realClipboardMsg = "test reached the real system clipboard; inject a clipboardBackend fake"
@@ -30,6 +33,9 @@ func recordRealClipboard(call string) {
 func TestMain(m *testing.M) {
 	systemClipboardRead = func() (string, error) { recordRealClipboard("ReadAll"); return "", nil }
 	systemClipboardWrite = func(string) error { recordRealClipboard("WriteAll"); return nil }
+	// The real scan starts whatever provider CLIs are installed, the claude CLI
+	// among them. A test that needs it opts in with useRealDiscovery.
+	discoverProviders = func(*config.Config) []discovery.ProviderInfo { return nil }
 	code := m.Run()
 	if realClipboardHit.Load() {
 		realClipboardMu.Lock()
@@ -41,4 +47,13 @@ func TestMain(m *testing.M) {
 		code = 1
 	}
 	os.Exit(code)
+}
+
+// useRealDiscovery runs the real startup scan for the rest of the test. Put
+// stand-in CLIs on PATH first.
+func useRealDiscovery(t *testing.T) {
+	t.Helper()
+	stub := discoverProviders
+	discoverProviders = discovery.DiscoverProviders
+	t.Cleanup(func() { discoverProviders = stub })
 }
