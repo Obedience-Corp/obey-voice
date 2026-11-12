@@ -88,7 +88,7 @@ func TestMoveModelsRefusesWhenTheHomeFolderIsUnknown(t *testing.T) {
 func failingSave(t *testing.T) error {
 	t.Helper()
 	failure := errors.New("disk full")
-	moveHooks.writeConfig = func(func(func(string) (string, bool)) []keyValue) ([]keyValue, error) {
+	moveHooks.writeConfig = func(func(func(string) (string, bool)) []KeyWrite) ([]KeyWrite, error) {
 		return nil, failure
 	}
 	return failure
@@ -192,7 +192,7 @@ func TestMoveModelsKeepsTheOldPathWorkingUntilTheSave(t *testing.T) {
 	cfg, source, root := moveFixture(t)
 	dest := filepath.Join(root, "fast", "models")
 	write := moveHooks.writeConfig
-	moveHooks.writeConfig = func(build func(func(string) (string, bool)) []keyValue) ([]keyValue, error) {
+	moveHooks.writeConfig = func(build func(func(string) (string, bool)) []KeyWrite) ([]KeyWrite, error) {
 		if got, err := os.ReadFile(filepath.Join(source, "silero_vad.onnx")); err != nil || string(got) != "vad" {
 			t.Errorf("the old path did not lead to the models before the save: %q, %v", got, err)
 		}

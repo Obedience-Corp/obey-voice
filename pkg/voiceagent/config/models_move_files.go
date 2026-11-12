@@ -27,7 +27,7 @@ type moveHookSet struct {
 	syncDir    func(path string) error
 	syncConfig func(path string) error
 	// writeConfig saves models_dir and the repointed settings.
-	writeConfig func(build func(func(string) (string, bool)) []keyValue) ([]keyValue, error)
+	writeConfig func(build func(func(string) (string, bool)) []KeyWrite) ([]KeyWrite, error)
 	// afterCopy runs after each file is copied, with the move's context.
 	afterCopy func(ctx context.Context, rel string)
 	// afterRename runs after a same-drive rename, before the save.
@@ -47,7 +47,7 @@ func defaultMoveHooks() moveHookSet {
 		syncFile:   func(f *os.File) error { return f.Sync() },
 		syncDir:    syncDir,
 		syncConfig: syncFile,
-		writeConfig: func(build func(func(string) (string, bool)) []keyValue) ([]keyValue, error) {
+		writeConfig: func(build func(func(string) (string, bool)) []KeyWrite) ([]KeyWrite, error) {
 			return setKeyFileValuesFrom(build, false)
 		},
 	}
