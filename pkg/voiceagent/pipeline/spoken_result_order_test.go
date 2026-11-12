@@ -126,8 +126,19 @@ func spawnAttributedJob(t *testing.T, a *Agency, p *Pipeline, persona string) {
 }
 
 // A result that finishes while another reply is in flight is shown and saved
-// after that reply, at the point the user starts hearing it.
+// after that reply, at the point the user starts hearing it. It may finish
+// after that turn's admission, or before it while the user is still speaking.
 func TestSpokenJobResultFollowsTheReplyItWaitedBehind(t *testing.T) {
+	for _, beforeAdmission := range []bool{false, true} {
+		name := "finishes after admission"
+		if beforeAdmission {
+			name = "finishes before admission"
+		}
+		t.Run(name, func(t *testing.T) { spokenResultFollowsReply(t, beforeAdmission) })
+	}
+}
+
+func spokenResultFollowsReply(t *testing.T, beforeAdmission bool) {
 	const result = "The fixture has three files."
 	const reply = "Here is the other answer."
 	b := &orderedBrain{reply: reply, release: make(chan struct{}), entered: make(chan struct{})}
@@ -146,15 +157,30 @@ func TestSpokenJobResultFollowsTheReplyItWaitedBehind(t *testing.T) {
 	spawnAttributedJob(t, a, p, "dylan")
 	<-worker.started
 
-	turnDone := make(chan error, 1)
-	go func() { turnDone <- p.RunTurnTextMode(t.Context(), "question for raw") }()
-	<-b.entered
-	close(worker.done)
+	finish := func() events.JobFinished {
+		t.Helper()
+		close(worker.done)
+		select {
+		case finished := <-seen.finished:
+			return finished
+		case <-time.After(3 * time.Second):
+			t.Fatal("job did not finish")
+		}
+		return events.JobFinished{}
+	}
 	var finished events.JobFinished
-	select {
-	case finished = <-seen.finished:
-	case <-time.After(3 * time.Second):
-		t.Fatal("job did not finish")
+	turnDone := make(chan error, 1)
+	if beforeAdmission {
+		// The user's own turn is still listening when the job finishes.
+		p.incActiveTurn()
+		finished = finish()
+		go func() { turnDone <- p.RunTurnTextMode(t.Context(), "question for raw") }()
+		<-b.entered
+		p.decActiveTurn()
+	} else {
+		go func() { turnDone <- p.RunTurnTextMode(t.Context(), "question for raw") }()
+		<-b.entered
+		finished = finish()
 	}
 	if !finished.SpeechPending || finished.Summary != result {
 		t.Fatalf("finished = %+v, want a speech-pending result", finished)
@@ -194,9 +220,9 @@ func TestSpokenJobResultFollowsTheReplyItWaitedBehind(t *testing.T) {
 		t.Fatal(err)
 	}
 	history := b.Log()
-	answered, saved := indexOf(history, "assistant: "+reply), indexOf(history, "appended: "+result)
-	if answered < 0 || saved < 0 || saved < answered {
-		t.Fatalf("history = %v, want the result after the reply it was heard after", history)
+	asked, answered, saved := indexOf(history, "user: question for raw"), indexOf(history, "assistant: "+reply), indexOf(history, "appended: "+result)
+	if asked < 0 || answered < asked || saved < answered {
+		t.Fatalf("history = %v, want the question, its reply, then the result heard after it", history)
 	}
 	if p.BackgroundPending() {
 		t.Fatal("committed result still pending")
