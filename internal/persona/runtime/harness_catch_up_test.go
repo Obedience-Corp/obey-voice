@@ -2,6 +2,7 @@ package personaruntime
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -696,4 +697,90 @@ func TestGrokOrCursorRequestTooLargeForOneArgumentFailsBeforeTheCLIRuns(t *testi
 			}
 		})
 	}
+}
+
+// A persona whose session lost its place is told so on an info line, the same
+// on every backend that keeps one. The line is never spoken, recorded in the
+// conversation or sent to a model.
+func TestLostPlaceIsAnInfoLineOnEveryBackend(t *testing.T) {
+	for _, provider := range append([]string{"claude"}, sessionProviders...) {
+		for _, loss := range []string{"missing", "stale"} {
+			t.Run(provider+"/"+loss, func(t *testing.T) {
+				lostPlaceIsAnInfoLine(t, provider, loss)
+			})
+		}
+	}
+}
+
+// lostPlaceIsAnInfoLine has Mira's cursor go missing, or stop matching the
+// conversation, while Mira on provider is answering.
+func lostPlaceIsAnInfoLine(t *testing.T, provider, loss string) {
+	c := newSessionConversation(t, provider)
+	var mu sync.Mutex
+	var elsewhere []string
+	c.p.Events.SubscribeAll(func(e events.Event) {
+		if _, info := e.(events.Info); !info && strings.Contains(fmt.Sprintf("%+v", e), "lost its place") {
+			mu.Lock()
+			elsewhere = append(elsewhere, fmt.Sprintf("%T", e))
+			mu.Unlock()
+		}
+	})
+	c.say("switch to Mira", "Note that the vault code is cobalt.")
+	session := c.lastSessionRequest().Session
+	c.selector.transcript.mu.Lock()
+	if loss == "missing" {
+		delete(c.selector.transcript.sessions, "mira")
+	} else {
+		stale := c.selector.transcript.sessions["mira"]
+		stale.PrefixHash = "stale"
+		c.selector.transcript.sessions["mira"] = stale
+	}
+	c.selector.transcript.mu.Unlock()
+	c.say("The door is teal.", "switch to Ember", "What color is the car?", "switch to Mira", "And you?")
+
+	c.mu.Lock()
+	var lost []string
+	for _, n := range c.notices {
+		if strings.Contains(n.message, "lost its place") {
+			lost = append(lost, n.message)
+		}
+	}
+	c.mu.Unlock()
+	if want := "Mira lost its place in the conversation; its session receives only what is said from now on."; !slices.Equal(lost, []string{want}) {
+		t.Fatalf("info lines = %q, want %q once", lost, want)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(elsewhere) > 0 {
+		t.Fatalf("the notice also went out as %v", elsewhere)
+	}
+	for _, turn := range c.selector.Transcript() {
+		requireOmits(t, turn.Content, "lost its place")
+	}
+	for _, req := range c.sessionRequests() {
+		requireOmits(t, req.Prompt, "lost its place")
+	}
+	for _, messages := range c.ollamaRequests() {
+		for _, m := range messages {
+			requireOmits(t, m.Content, "lost its place")
+		}
+	}
+
+	last := c.lastSessionRequest()
+	requireContains(t, last.Prompt, "User: And you?")
+	requireOmits(t, last.Prompt, "The door is teal.", "Note that the vault code")
+	if provider == "codex" {
+		// Codex holds the share itself: it starts over where Mira is
+		// addressed again, in a new thread.
+		if last.Resume != "" {
+			t.Fatalf("a thread that lost its place was resumed: %+v", last)
+		}
+		requireOmits(t, last.Prompt, "What color is the car?")
+		return
+	}
+	// The session keeps catching up from where it lost its place.
+	if last.Resume != session {
+		t.Fatalf("Mira's session was not kept: resumed %q, want %q", last.Resume, session)
+	}
+	requireContains(t, last.Prompt, "What color is the car?")
 }

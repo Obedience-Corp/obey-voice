@@ -416,6 +416,10 @@ session is also closed when its persona's prompt, model, provider or other
 settings change, when the conversation is cleared, and when Obey Voice exits.
 After resuming a saved conversation, a persona on Claude, Grok or Cursor starts
 a new session that receives the lines since that point, within the same limit.
+If Obey Voice can no longer tell which lines a persona's session or Codex thread
+holds, an info line says that the persona lost its place in the conversation;
+its session then receives only what is said from that point. The line is shown,
+not spoken, and no model is sent it.
 With
 group participation on, a persona on Claude can be addressed directly, but a
 discussion among several personas still requires every member to be on Ollama.
