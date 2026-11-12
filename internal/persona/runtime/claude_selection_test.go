@@ -154,9 +154,21 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	if req.Input == "stream-json" {
 		decodeContentInput(&req)
 	}
+	// A rejected model fails in one of the shapes the CLI might use: the reason
+	// on stderr, or only in an is_error result with or without a failing exit.
 	if bad := os.Getenv("OBEY_CLAUDE_FIXTURE_REJECT_MODEL"); bad != "" && req.Model == bad {
-		fmt.Fprintf(os.Stderr, "Error: invalid model: %s\n", bad)
-		os.Exit(1)
+		reason := "invalid model: " + bad
+		switch shape := os.Getenv("OBEY_CLAUDE_FIXTURE_REJECT_SHAPE"); shape {
+		case "result", "result-exit0":
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "result", "subtype": "error_during_execution", "is_error": true, "result": reason})
+			if shape == "result" {
+				os.Exit(1)
+			}
+			os.Exit(0)
+		default:
+			fmt.Fprintf(os.Stderr, "Error: %s\n", reason)
+			os.Exit(1)
+		}
 	}
 	data, _ := os.ReadFile(log)
 	n := bytes.Count(data, []byte("\n")) + 1

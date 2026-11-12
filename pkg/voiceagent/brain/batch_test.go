@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
@@ -455,6 +456,13 @@ func TestClaudeBatchFailureNamesWhatTheCLIPrinted(t *testing.T) {
 	var got *claude.ClaudeError
 	if err == nil || !strings.HasSuffix(err.Error(), ": Error: invalid model: soonet") || !errors.As(err, &got) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestClaudeFailureCutsALongLineOnARune(t *testing.T) {
+	err := claudeFailure("claude batch", claude.ParseError(strings.Repeat("é", 300), 1))
+	if !utf8.ValidString(err.Error()) || !strings.HasSuffix(err.Error(), strings.Repeat("é", 240)+"…") {
+		t.Fatalf("err = %q", err)
 	}
 }
 

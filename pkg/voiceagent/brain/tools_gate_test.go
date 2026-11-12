@@ -182,4 +182,9 @@ func TestClaudeWorkerModelFallsBackToTheLiveClaudeModel(t *testing.T) {
 	if got := (&Brain{cfg: config.WorkerBrainConfig(live)}).runOptions(claude.JSONOutput, true).Model; got != "opus" {
 		t.Fatalf("pinned worker model = %q, want opus", got)
 	}
+	// A live brain on another provider leaves the app-level claude_model.
+	other := &config.Config{BrainProvider: "codex", CodexModel: "gpt-5.4", ClaudeModel: "haiku", VoiceWorkerProvider: "claude"}
+	if got := (&Brain{cfg: config.WorkerBrainConfig(other)}).runOptions(claude.JSONOutput, true).Model; got != "haiku" {
+		t.Fatalf("Claude worker under a Codex live brain = %q, want the app-level haiku", got)
+	}
 }

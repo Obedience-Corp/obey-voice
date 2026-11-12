@@ -19,7 +19,7 @@ func (b *Brain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (St
 		opts.SystemPrompt, opts.ResumeID, opts.NoSessionPersistence = req.SystemPrompt, "", true
 		r, err := b.client.RunPromptCtx(ctx, req.Text, opts)
 		if err != nil {
-			return "", err
+			return "", claudeFailure("claude routing", err)
 		}
 		if r == nil {
 			return "", fmt.Errorf("claude routing returned no result")

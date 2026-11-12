@@ -260,8 +260,8 @@ func claudeFailure(what string, err error) error {
 		if stderr, ok := cliErr.Details["stderr"].(string); ok {
 			lines := strings.Split(strings.TrimSpace(stderr), "\n")
 			if line := strings.TrimSpace(lines[len(lines)-1]); line != "" {
-				if len(line) > 240 {
-					line = line[:240] + "…"
+				if runes := []rune(line); len(runes) > 240 {
+					line = string(runes[:240]) + "…"
 				}
 				return fmt.Errorf("%s: %w: %s", what, err, line)
 			}
@@ -632,8 +632,13 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 			}
 		}
 	}
-	if streamErr == nil {
+	switch {
+	case streamErr == nil:
 		streamErr = resultErr
+	case resultErr != nil:
+		// A CLI that exits non-zero after an is_error result may print nothing
+		// on stderr; the result is then the only text naming the cause.
+		streamErr = fmt.Errorf("%w: %w", streamErr, resultErr)
 	}
 	if refused := imageRefusal(images, resultErr); refused != nil {
 		streamErr = refused
