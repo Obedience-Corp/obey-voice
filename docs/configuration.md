@@ -688,8 +688,9 @@ changing global defaults. See [Group participation](personas.md#group-participat
 `hosted_persona_sharing` (environment `HOSTED_PERSONA_SHARING`) chooses what a
 persona on Claude receives when it joins a conversation shared with other
 personas: `from_invite` (default) sends only what is said from the point
-the persona is first addressed on that backend; `whole_conversation` sends the
-spoken lines from the start. Tool calls, tool output and attachment names of
+the persona is first addressed on that backend, plus the task and result of
+each background job it started earlier, on any backend; `whole_conversation`
+sends the spoken lines from the start. Tool calls, tool output and attachment names of
 other personas are never sent in either mode. Changing it applies to personas
 first addressed after the change and does not widen a session that has already
 started. A running conversation picks the change up only when its settings

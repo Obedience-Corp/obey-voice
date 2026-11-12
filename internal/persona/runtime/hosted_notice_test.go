@@ -14,7 +14,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
-const miraNotice = "Mira runs on Claude, a hosted service. Only what is said from when it was invited is sent to Claude; earlier lines stay on this machine."
+const miraNotice = "Mira runs on Claude, a hosted service. Only what is said from when it was invited is sent to Claude, plus jobs it started earlier and their results; earlier lines stay on this machine."
 
 type hostedNoticeEvent struct {
 	message        string

@@ -468,7 +468,8 @@ the conversation and, in voice mode, the same sentence spoken. For a persona on
 Claude:
 
 > Mira runs on Claude, a hosted service. Only what is said from when it was
-> invited is sent to Claude; earlier lines stay on this machine.
+> invited is sent to Claude, plus jobs it started earlier and their results;
+> earlier lines stay on this machine.
 
 The second sentence follows what that persona's session will actually receive:
 "The whole conversation is sent to Claude." when it starts from the beginning
@@ -506,7 +507,7 @@ Obey receives of a conversation shared with other personas:
 
 | Value | Meaning |
 |-------|---------|
-| `from_invite` (default) | Only what is said from the point the persona is first addressed while on its backend. |
+| `from_invite` (default) | Only what is said from the point the persona is first addressed while on its backend, plus the task and result of each background job it started earlier, on any backend. |
 | `whole_conversation` | The spoken lines of the whole conversation, from its start. |
 
 Under both, other personas' tool calls, tool ids, tool output and attached file

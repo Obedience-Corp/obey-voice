@@ -194,5 +194,5 @@ func (s *Selector) noticeScope(personaID, provider, label string) (string, bool)
 	case from == 0:
 		return fmt.Sprintf("The whole conversation is sent to %s.", label), true
 	}
-	return fmt.Sprintf("Only what is said from when it was invited is sent to %s; earlier lines stay on this machine.", label), false
+	return fmt.Sprintf("Only what is said from when it was invited is sent to %s, plus jobs it started earlier and their results; earlier lines stay on this machine.", label), false
 }
