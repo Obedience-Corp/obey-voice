@@ -140,6 +140,31 @@ func TestStorageCancelAfterTheSaveSaysTheMoveWillFinish(t *testing.T) {
 	}
 }
 
+// A cancel can land after the worker's last cancel check. The phases it then
+// goes through must still reach the screen, not a frozen "Cancelling".
+func TestStorageCancelThatArrivesTooLateShowsTheMoveFinishing(t *testing.T) {
+	cfg := &config.Config{ModelsDir: "/old"}
+	m := newSettings(cfg, nil)
+	h := newHeldMove()
+	pump, done := startHeld(t, &m, h, "/fast")
+	m.cancelStorageMove()
+	if m.message != "Cancelling the move…" {
+		t.Fatalf("cancel message = %q", m.message)
+	}
+	h.phases <- config.MoveProgress{Phase: config.MovePhaseSave}
+	pumped := make(chan tea.Msg, 1)
+	go func() { pumped <- pump() }()
+	m, _ = m.Update(recv(t, pumped))
+	if !strings.Contains(m.message, "already saved, so the move will finish") {
+		t.Fatalf("after a committed phase the message is %q", m.message)
+	}
+	h.finish <- nil
+	m, _ = m.Update(recv(t, done))
+	if cfg.ModelsDir != "/fast" || !strings.Contains(m.message, "already saved, so the move finished: Moved 1.0 MiB to /fast") {
+		t.Fatalf("models_dir=%q message=%q", cfg.ModelsDir, m.message)
+	}
+}
+
 // Picking a speaker used to stop every preview and, with them, a running move.
 func TestChangingTheSpeakerDoesNotCancelAMove(t *testing.T) {
 	m := newSettings(&config.Config{ModelsDir: "/old"}, nil)
@@ -198,6 +223,28 @@ func TestAppAppliesAMoveThatFinishesAfterSettingsWasLeft(t *testing.T) {
 	}
 	if !strings.Contains(app.launcher.banner, "Moved 1.0 MiB to /fast") {
 		t.Fatalf("launcher banner = %q", app.launcher.banner)
+	}
+}
+
+// Leaving Settings with esc cancels the move, as the confirmation says.
+func TestLeavingSettingsWithEscCancelsTheMove(t *testing.T) {
+	app := storageTestApp(t)
+	h := newHeldMove()
+	_, done := startHeld(t, &app.settings, h, "/fast")
+	ctx := app.settings.storage.job.ctx
+	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("esc did not leave Settings")
+	}
+	model, _ = model.(App).Update(cmd())
+	app = model.(App)
+	if app.screen == screenSettings || ctx.Err() == nil {
+		t.Fatalf("after esc: screen=%v, move context=%v", app.screen, ctx.Err())
+	}
+	h.finish <- context.Canceled
+	model, _ = app.Update(recv(t, done))
+	if banner := model.(App).launcher.banner; banner != "Move cancelled; the models are still in /old" {
+		t.Fatalf("launcher banner = %q", banner)
 	}
 }
 

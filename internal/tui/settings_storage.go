@@ -36,9 +36,12 @@ type storageState struct {
 }
 
 type storageMove struct {
-	seq        int64
-	ctx        context.Context
-	cancel     context.CancelFunc
+	seq    int64
+	ctx    context.Context
+	cancel context.CancelFunc
+	// pump ends when the worker returns, not on Cancel, so the phases a
+	// cancelled move still goes through keep reaching the screen.
+	pump       context.Context
 	events     *eventBridge
 	dest       string
 	phase      string
@@ -237,7 +240,8 @@ func (m *settingsModel) startStorageMove(dest string) tea.Cmd {
 	}
 	m.storage.stopMeasure()
 	ctx, cancel := context.WithCancel(context.Background())
-	job := &storageMove{seq: storageSeq.Add(1), ctx: ctx, cancel: cancel, events: newEventBridge(16), dest: dest}
+	pump, pumpDone := context.WithCancel(context.Background())
+	job := &storageMove{seq: storageSeq.Add(1), ctx: ctx, cancel: cancel, pump: pump, events: newEventBridge(16), dest: dest}
 	m.storage.job = job
 	cfg, move := m.cfg, m.storage.runMove
 	if move == nil {
@@ -245,6 +249,7 @@ func (m *settingsModel) startStorageMove(dest string) tea.Cmd {
 	}
 	m.message = "Moving models…"
 	run := func() tea.Msg {
+		defer pumpDone()
 		defer cancel()
 		lastPhase, lastPct := "", int64(-1)
 		result, err := move(ctx, cfg.Clone(), dest, config.MoveOptions{Progress: func(p config.MoveProgress) {
@@ -260,7 +265,7 @@ func (m *settingsModel) startStorageMove(dest string) tea.Cmd {
 		}})
 		return storageMoveDoneMsg{seq: job.seq, result: result, err: err}
 	}
-	return tea.Batch(job.events.waitContext(ctx), trackedCommand(m.storage.lifetime, m.storage.wg, run))
+	return tea.Batch(job.events.waitContext(pump), trackedCommand(m.storage.lifetime, m.storage.wg, run))
 }
 
 func (m *settingsModel) cancelStorageMove() {
@@ -309,7 +314,7 @@ func (m *settingsModel) applyStorage(msg tea.Msg) tea.Cmd {
 		default:
 			m.message = "Moving models: " + p.Phase + "…"
 		}
-		return job.events.waitContext(job.ctx)
+		return job.events.waitContext(job.pump)
 	case storageMoveDoneMsg:
 		job := s.job
 		current := job != nil && msg.seq == job.seq
