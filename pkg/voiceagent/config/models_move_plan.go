@@ -291,9 +291,9 @@ func environmentRefusals(source string) []string {
 // After a same-drive rename the old folder no longer exists, so a value is
 // also matched by its spelling against the old folder's two spellings, as
 // given and with links resolved.
-func modelPathPairs(from, source, to string) func(func(string) (string, bool)) []keyValue {
-	return func(fileValue func(string) (string, bool)) []keyValue {
-		var rewrites []keyValue
+func modelPathPairs(from, source, to string) func(func(string) (string, bool)) []KeyWrite {
+	return func(fileValue func(string) (string, bool)) []KeyWrite {
+		var rewrites []KeyWrite
 		for _, spec := range Schema() {
 			if spec.Type != TypeString || spec.Key == "models_dir" {
 				continue
@@ -306,11 +306,11 @@ func modelPathPairs(from, source, to string) func(func(string) (string, bool)) [
 				value, _ = spec.Default.(string)
 			}
 			if rel, inside := insideOldFolder(from, source, expandHomePath(strings.TrimSpace(value))); inside {
-				rewrites = append(rewrites, keyValue{Key: spec.Key, Value: filepath.Join(to, rel)})
+				rewrites = append(rewrites, KeyWrite{Key: spec.Key, Value: filepath.Join(to, rel)})
 			}
 		}
 		sort.Slice(rewrites, func(i, j int) bool { return rewrites[i].Key < rewrites[j].Key })
-		return append([]keyValue{{Key: "models_dir", Value: to}}, rewrites...)
+		return append([]KeyWrite{{Key: "models_dir", Value: to}}, rewrites...)
 	}
 }
 

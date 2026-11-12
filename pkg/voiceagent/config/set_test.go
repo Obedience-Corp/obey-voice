@@ -399,6 +399,7 @@ func backupsFor(t *testing.T, path string) []string {
 
 func TestSetKeyFileAtomicAndBacked(t *testing.T) {
 	path := newInstall(t, commentedConfig)
+	noBackupCoalescing(t)
 
 	for i, value := range []string{"0.6", "0.7", "0.8", "0.9", "1.0", "1.1"} {
 		result := mustSet(t, "vad_silence_duration", value)

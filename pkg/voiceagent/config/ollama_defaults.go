@@ -65,7 +65,7 @@ func ApplyOllamaDefaults(cfg *Config) {
 // file as a written default, which made InConfig true and left Ollama
 // tool-less.
 //
-// It writes through the surgical writer, one key at a time. It used to call
+// It writes through the surgical writer, all keys in one save. It used to call
 // save() -> viper.WriteConfigAs, which replaced config.yaml with an
 // alphabetized dump of every setting viper knew: comments gone, blank lines
 // gone, every built-in default frozen into the file as if the user had chosen
@@ -82,30 +82,19 @@ func SetAndSaveBrainProvider(cfg *Config, provider string) error {
 	applyOllamaDefaults(&next, v, true)
 	mu.RUnlock()
 
-	writes := []struct {
-		key   string
-		value any
-	}{{key: "brain_provider", value: provider}}
+	writes := []KeyWrite{{Key: "brain_provider", Value: provider}}
 	if strings.EqualFold(strings.TrimSpace(provider), "ollama") {
 		if !envForcesFalse("VOICE_TOOLS_ENABLED") {
-			writes = append(writes, struct {
-				key   string
-				value any
-			}{key: "voice_tools_enabled", value: true})
+			writes = append(writes, KeyWrite{Key: "voice_tools_enabled", Value: true})
 			next.VoiceToolsEnabled = true
 		}
 		if !envForcesFalse("SKILLS_ENABLED") {
-			writes = append(writes, struct {
-				key   string
-				value any
-			}{key: "skills_enabled", value: true})
+			writes = append(writes, KeyWrite{Key: "skills_enabled", Value: true})
 			next.SkillsEnabled = true
 		}
 	}
-	for _, write := range writes {
-		if _, err := SetKeyFileValue(write.key, write.value); err != nil {
-			return err
-		}
+	if err := SetKeyFileValues(writes); err != nil {
+		return err
 	}
 	*cfg = next
 	return nil

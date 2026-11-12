@@ -27,7 +27,7 @@ func TestMoveModelsFlushesTheCopyBeforeRemovingTheOriginal(t *testing.T) {
 		return syncDir(path)
 	}
 	write := moveHooks.writeConfig
-	moveHooks.writeConfig = func(build func(func(string) (string, bool)) []keyValue) ([]keyValue, error) {
+	moveHooks.writeConfig = func(build func(func(string) (string, bool)) []KeyWrite) ([]KeyWrite, error) {
 		events = append(events, "save")
 		return write(build)
 	}
