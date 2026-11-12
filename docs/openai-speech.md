@@ -3,7 +3,7 @@
 `tts_provider: openai-speech` speaks through any server that implements the
 OpenAI `POST /v1/audio/speech` endpoint and can stream raw PCM. It is an
 additional engine next to Kokoro, Qwen3-TTS and audio8. Kokoro is the compiled
-default; builtin Obey, Samantha, Jarvis and Veronica personas select Phonon.
+default; builtin Obey, Samantha, Jarvis, Veronica and Dylan personas select Phonon.
 The server owns the model. When the server is Ollama, obey-voice
 installs it there and fetches Phonon's voice catalog file (see
 [Install](#install)).
@@ -55,9 +55,12 @@ assets live below `<models_dir>/phonon/native`; model cleaning protects that
 tree while an OpenAI speech provider/persona references it.
 
 The managed model is `gradium/phonon-31m-en`. Harper, Juniper, Edwin and Zoey
-remain their existing Phonon voices. Optional `openai_speech_native_binary`
-accepts an absolute path to a compatible native server instead of building one;
-model/catalog pins and readiness checks still apply. To use a custom model or
+remain their existing Phonon voices. Setup also verifies Fennick the Young Elf,
+the catalog voice Dylan uses. The server fetches every English voice in the
+pinned catalog during setup, so this adds no separate download. Optional
+`openai_speech_native_binary` accepts an absolute path to a compatible native
+server instead of building one; model/catalog pins and readiness checks still
+apply. To use a custom model or
 an operator-managed server, select `openai_speech_runtime: external` and its
 URL/model. This also keeps Linux clients using a remote Mac Ollama server.
 
@@ -77,8 +80,9 @@ The defaults already point at Ollama on this computer (`openai_speech_url`
 `openai_speech_voice` `default`). The current model includes named English
 voices alongside `default`, exposed through `/api/show`. The shipped Phonon
 personas use Harper, Juniper, Edwin, and Zoey; all four were verified through
-Ollama 0.40.11. Obey Voice lists the voices your server actually reports. If it
-only lists `default`, update Ollama if needed and run voice setup again as
+Ollama 0.40.11. Dylan uses Fennick the Young Elf, a character voice from the
+same English catalog. Obey Voice lists the voices your server actually reports.
+If it only lists `default`, update Ollama if needed and run voice setup again as
 described below.
 
 Measured on an M4 Max through Ollama's MLX runner, both engines through the

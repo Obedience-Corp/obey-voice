@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
+id: dylan
+display_name: Dylan
+aliases:
+    - Dillon
+builtin: true
+tts:
+    provider: openai-speech
+    voice: Fennick the Young Elf
+prompts:
+    persona: dylan

@@ -15,7 +15,7 @@ func TestSeedWritesDefaults(t *testing.T) {
 
 	// Every shipped document lands, named for the document rather than the
 	// file it is embedded as. Companion persona prompts (samantha, veronica,
-	// jarvis, santa) sit beside obey. Samantha also still has turn and compact
+	// jarvis, santa, dylan) sit beside obey. Samantha also still has turn and compact
 	// documents because a profile can reference those kinds by name.
 	want := map[string]bool{
 		filepath.Join("persona", "obey.yaml"):        true,
@@ -23,6 +23,7 @@ func TestSeedWritesDefaults(t *testing.T) {
 		filepath.Join("persona", "veronica.yaml"):    true,
 		filepath.Join("persona", "jarvis.yaml"):      true,
 		filepath.Join("persona", "santa.yaml"):       true,
+		filepath.Join("persona", "dylan.yaml"):       true,
 		filepath.Join("turn", "obey.yaml"):           true,
 		filepath.Join("turn", "samantha.yaml"):       true,
 		filepath.Join("compact", "obey.yaml"):        true,

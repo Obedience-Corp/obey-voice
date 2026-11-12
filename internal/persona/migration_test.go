@@ -483,6 +483,7 @@ func TestBuiltinsInheritBrainsAndPinVoices(t *testing.T) {
 		"veronica": {Provider: "openai-speech", Voice: "Zoey"},
 		"jarvis":   {Provider: "openai-speech", Voice: "Edwin"},
 		"santa":    {Provider: "kokoro", Voice: "am_santa"},
+		"dylan":    {Provider: "openai-speech", Voice: "Fennick the Young Elf"},
 	}
 	for _, p := range got {
 		if p.Brain != (Brain{}) {

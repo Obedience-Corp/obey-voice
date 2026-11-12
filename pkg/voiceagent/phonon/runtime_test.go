@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -84,6 +85,9 @@ func TestRuntimeChild(t *testing.T) {
 		voices := namedVoices
 		if os.Getenv("PHONON_TEST_MISSING_VOICE") == "1" {
 			voices = []string{"default"}
+		}
+		if drop := os.Getenv("PHONON_TEST_DROP_VOICE"); drop != "" {
+			voices = slices.DeleteFunc(slices.Clone(voices), func(v string) bool { return v == drop })
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"voices": voices})
 	})
@@ -253,7 +257,7 @@ func cacheFixture(t *testing.T, o Options) {
 	voices := filepath.Join(o.cache(), "hub", "models--gradium--phonon-voices", "snapshots", CatalogRevision)
 	for dir, files := range map[string][]string{
 		model:  {"config.json", "tokenizer.json", "model.safetensors", "default-voice.safetensors"},
-		voices: {"voices.jsonl", "voices/4SZHfMpw-p46Ywgs.safetensors", "voices/NIWIOv5vTi5eRMj8.safetensors", "voices/zUCxzrOrugTSis03.safetensors", "voices/NbpkqMVS3CJeq2j8.safetensors"},
+		voices: append([]string{"voices.jsonl"}, namedVoiceFiles...),
 	} {
 		for _, file := range files {
 			p := filepath.Join(dir, file)
@@ -291,6 +295,36 @@ func TestEnsureVerifiesVoicesAndCacheBeforeMarkingReady(t *testing.T) {
 	}
 	if Installed(o) {
 		t.Fatal("removed model still reported ready")
+	}
+}
+
+// Dylan's voice is provisioned and gated like the other shipped voices.
+func TestEnsureRequiresFennickTheYoungElf(t *testing.T) {
+	const fennick = "Fennick the Young Elf"
+	if len(namedVoiceFiles) != len(namedVoices) || !slices.Contains(namedVoices, fennick) {
+		t.Fatalf("named voices %v with files %v", namedVoices, namedVoiceFiles)
+	}
+	o := childOptions(t)
+	cacheFixture(t, o)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	t.Setenv("PHONON_TEST_DROP_VOICE", fennick)
+	if err := Ensure(ctx, o, nil); err == nil || !strings.Contains(err.Error(), fennick) {
+		t.Fatalf("got %v", err)
+	}
+	if Installed(o) {
+		t.Fatal("a runtime without Fennick reported ready")
+	}
+	t.Setenv("PHONON_TEST_DROP_VOICE", "")
+	if err := Ensure(ctx, o, nil); err != nil {
+		t.Fatal(err)
+	}
+	embedding := filepath.Join(o.cache(), "hub", "models--gradium--phonon-voices", "snapshots", CatalogRevision, "voices", "cXoIXJ2llS8S0WOW.safetensors")
+	if err := os.Remove(embedding); err != nil {
+		t.Fatal(err)
+	}
+	if Installed(o) {
+		t.Fatal("missing Fennick embedding still reported ready")
 	}
 }
 

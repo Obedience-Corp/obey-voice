@@ -54,9 +54,10 @@ matching `pkg/voiceagent/prompts/defaults/persona.<id>.yaml`, with Obey's prompt
 in `persona.yaml`). Adding a companion requires those two files.
 **obey** is the startup persona on a fresh install. All shipped profiles inherit
 the application brain and pin distinct voices: Obey / Phonon Harper,
-Samantha / Phonon Juniper, Jarvis / Phonon Edwin, Veronica / Phonon Zoey, and
-Santa / Kokoro `am_santa`. **Obey (default)** loads the complete saved Obey
-profile; unset fields inherit Settings. Existing profiles are preserved;
+Samantha / Phonon Juniper, Jarvis / Phonon Edwin, Veronica / Phonon Zoey,
+Dylan / Phonon Fennick the Young Elf, and Santa / Kokoro `am_santa`.
+**Obey (default)** loads the complete saved Obey profile; unset fields inherit
+Settings. Existing profiles are preserved;
 see [shipped personas](personas.md#shipped-personas) to adopt the new voices.
 
 On every load, empty catalog slots are filled and occupied slots are left
