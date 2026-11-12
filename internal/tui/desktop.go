@@ -216,7 +216,7 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if c.turnCancel != nil {
 				c.turnCancel()
 			}
-			m.rt.Pipeline.StopPlayback()
+			m.rt.Pipeline.StopPlaybackFrom(pipeline.StopSource{Name: "desktop"})
 		case "participation":
 			cmd = c.runParticipationCommand(strings.Fields(action.Text))
 		case "persona":

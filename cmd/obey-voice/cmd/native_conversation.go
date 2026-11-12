@@ -170,6 +170,6 @@ func (h *conversationAudio) replay(ctx context.Context, p *pipeline.Pipeline, de
 		defer func() { _ = owned.Close() }()
 		player = owned
 	}
-	p.StopPlayback()
+	p.StopPlaybackFrom(pipeline.StopSource{Name: "replay"})
 	return p.ReplayRecording(ctx, id, epoch, player)
 }

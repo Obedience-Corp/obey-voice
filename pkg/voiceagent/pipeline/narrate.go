@@ -428,7 +428,7 @@ func (n *Narrator) handlePause() {
 	n.mu.Lock()
 	n.paused = true
 	n.mu.Unlock()
-	n.pipeline.StopPlayback()
+	n.pipeline.StopPlaybackFrom(StopSource{Name: "narration"})
 }
 
 func (n *Narrator) handleResume() {
@@ -442,7 +442,7 @@ func (n *Narrator) handleResume() {
 }
 
 func (n *Narrator) handleSkip() {
-	n.pipeline.StopPlayback()
+	n.pipeline.StopPlaybackFrom(StopSource{Name: "narration"})
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if len(n.units) == 0 {
@@ -482,7 +482,7 @@ func (n *Narrator) handleStop() {
 	n.pendingPath = ""
 	n.storyJobID = ""
 	n.mu.Unlock()
-	n.pipeline.StopPlayback()
+	n.pipeline.StopPlaybackFrom(StopSource{Name: "narration"})
 	if cancel != nil {
 		cancel()
 	}

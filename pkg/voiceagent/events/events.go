@@ -198,6 +198,29 @@ type TurnMetrics struct {
 	// milestones above only ever describe the first segment; everything after
 	// it — where a long reply spends its time — is here.
 	Segments []SegmentMetric
+	// SpeechStop names who silenced this turn's speech with an explicit stop.
+	// Nil when nothing did. An interrupted turn with no audio otherwise reads
+	// the same whether the user typed, pressed the talk key or a client sent a
+	// stop.
+	SpeechStop *SpeechStop
+}
+
+// SpeechStop describes the explicit stops that landed on one turn. It never
+// carries typed text.
+type SpeechStop struct {
+	// Source is the first stop's caller: keystroke, text_submit, talk_key,
+	// desktop, narration, replay or unspecified.
+	Source string `json:"source"`
+	// Count is how many stops landed while the turn was active.
+	Count int `json:"count"`
+	// BeforeAudio is true when the first stop came before any of the turn's
+	// audio played, so the whole reply went unspoken.
+	BeforeAudio bool `json:"before_audio,omitempty"`
+	// KeyRunes and KeyPaste describe the first keystroke's message. Typing
+	// sends one rune per message and a paste is flagged; several runes
+	// without the flag arrived from the terminal in one piece.
+	KeyRunes int  `json:"key_runes,omitempty"`
+	KeyPaste bool `json:"key_paste,omitempty"`
 }
 
 func (e TurnMetrics) eventType() string { return "turn_metrics" }

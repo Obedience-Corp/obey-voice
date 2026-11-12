@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/app"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 // handleSubmit routes an Enter press by turn state: idle submits; any in-flight
@@ -108,13 +109,19 @@ func (m *conversationModel) beginTextBargeIn(text string) tea.Cmd {
 	if m.turnCancel != nil {
 		m.turnCancel()
 	}
-	// Stop audible playback ASAP when the pipeline exposes a player stop.
-	if m.deps.runner != nil {
-		if stopper, ok := m.deps.runner.(interface{ StopPlayback() }); ok {
-			stopper.StopPlayback()
-		}
-	}
+	m.stopRunnerPlayback(pipeline.StopSource{Name: "text_submit"})
 	return nil
+}
+
+// stopRunnerPlayback names the caller when the runner records it. A runner
+// with only StopPlayback still stops.
+func (m *conversationModel) stopRunnerPlayback(source pipeline.StopSource) {
+	switch runner := m.deps.runner.(type) {
+	case interface{ StopPlaybackFrom(pipeline.StopSource) }:
+		runner.StopPlaybackFrom(source)
+	case interface{ StopPlayback() }:
+		runner.StopPlayback()
+	}
 }
 
 // keystrokeBargeIn silences TTS the moment the user types a printable rune
@@ -130,12 +137,7 @@ func (m *conversationModel) keystrokeBargeIn(msg tea.KeyMsg) {
 	if m.turnState != turnVoiceResponding && m.turnState != turnTextRunning {
 		return
 	}
-	if m.deps.runner == nil {
-		return
-	}
-	if stopper, ok := m.deps.runner.(interface{ StopPlayback() }); ok {
-		stopper.StopPlayback()
-	}
+	m.stopRunnerPlayback(pipeline.StopSource{Name: "keystroke", KeyRunes: len(msg.Runes), KeyPaste: msg.Paste})
 }
 
 // discardDraft drops a barged-in draft that /compact beat to the cancel drain.
