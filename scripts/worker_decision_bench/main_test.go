@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func TestOllamaReplayDoesNotFollowRedirects(t *testing.T) {
 	defer origin.Close()
 	base, _ := url.Parse(origin.URL)
 	var calls atomic.Int64
-	proxy := localProxy(base, &calls)
+	proxy := localProxy(base, &calls, nil)
 	defer proxy.Close()
 	response, err := http.Get(proxy.URL + "/api/chat")
 	if err != nil {
@@ -117,7 +118,7 @@ func TestSpeakingReplayCannotExecuteWorkerTool(t *testing.T) {
 	var got sample
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if err := speak(ctx, b, decision.WorkInput{Text: "Save this note", EnabledTiers: []decision.Tier{decision.Simple}}, &got, time.Now()); err != nil {
+	if err := speak(ctx, b, decision.WorkInput{Text: "Save this note", EnabledTiers: []decision.Tier{decision.Simple}}, &got, time.Now(), false); err != nil {
 		t.Fatal(err)
 	}
 	if got.Route != "spawn" {
@@ -125,5 +126,68 @@ func TestSpeakingReplayCannotExecuteWorkerTool(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("lab executed a file tool: %v", err)
+	}
+}
+
+// The router comparison runs the same turn with the route tool and with the
+// tools-free JSON route, and records each request's shape and Ollama timing.
+// This checks the recording against a fake server, not routing quality.
+func TestRouterComparisonRecordsEachRequest(t *testing.T) {
+	dir := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			fmt.Fprint(w, `{"models":[{"name":"fixture"}]}`)
+			return
+		}
+		var request struct {
+			Tools  []json.RawMessage `json:"tools"`
+			Format json.RawMessage   `json:"format"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		message := map[string]any{"role": "assistant", "content": "A compiler translates code."}
+		switch {
+		case len(request.Tools) > 0:
+			message = map[string]any{"role": "assistant", "content": "", "tool_calls": []any{map[string]any{"function": map[string]any{"name": "route", "arguments": map[string]any{"kind": "chat", "tier": "simple"}}}}}
+		case len(request.Format) > 0:
+			message["content"] = `{"kind":"chat","tier":"simple"}`
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture", "done": true, "message": message, "prompt_eval_count": 40, "prompt_eval_duration": 2_000_000, "eval_count": 5})
+	}))
+	defer server.Close()
+	base, _ := url.Parse(server.URL)
+	var calls atomic.Int64
+	var rec chatRecorder
+	proxy := localProxy(base, &calls, &rec)
+	defer proxy.Close()
+	b, err := brain.NewOllama(&config.Config{OllamaHost: proxy.URL, OllamaModel: "fixture", Persona: "samantha", WorkDir: dir, PromptsDir: dir, MaxHistory: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.FreezePersonaPrompt()
+	c := replayCase{ID: "chat", Input: decision.WorkInput{Text: "What is a compiler?", EnabledTiers: []decision.Tier{decision.Simple}}}
+	want := map[string][]string{"route_only": {"tools", "plain"}, "json_route": {"schema", "plain"}}
+	for _, mode := range routerModes {
+		s := replayRouter(t.Context(), b, &rec, c, mode, 0)
+		kinds := make([]string, len(s.Requests))
+		for i, r := range s.Requests {
+			kinds[i] = r.Kind
+			if r.PromptEvalCount != 40 || r.PromptEvalMS != 2 || r.EvalCount != 5 {
+				t.Fatalf("%s request %d metrics: %+v", mode, i, r)
+			}
+		}
+		if s.Error != "" || !s.Correct || s.Route != "" || !slices.Equal(kinds, want[mode]) || s.ModelCalls != 2 {
+			t.Fatalf("%s: %+v kinds=%v", mode, s, kinds)
+		}
+	}
+	if calls.Load() != 4 {
+		t.Fatalf("calls=%d", calls.Load())
+	}
+	for rep := range 2 {
+		if a, b := pairedModes(routerModes, 0, rep), pairedModes(routerModes, 0, rep+1); a[0] == b[0] {
+			t.Fatal("router modes must alternate order across passes")
+		}
 	}
 }

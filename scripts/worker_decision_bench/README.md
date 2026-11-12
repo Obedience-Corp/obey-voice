@@ -38,6 +38,8 @@ Each JSON case has this shape:
 }
 ```
 
+A case without `want_work` expects chat; a `chat` route has an empty `route`.
+
 Fixtures deliberately have no persona changes. An unexpected address result
 ends that observation and cannot authorize a fast route. Exact control phrases,
 live host policy changes, interruption, real worker admission and audio require
@@ -49,3 +51,21 @@ prompt/cache changes. Both modes still call the real addressee resolver; no
 proposal is adopted and no speaking model request is issued. Its manifest
 explicitly marks that narrower scope. Use `-start-rep N` with a fresh output file
 to extend a retained comparison; do not overwrite or silently merge raw runs.
+
+## Router comparison
+
+`just bench worker-decision -compare router -cases /path/to/cases.json -out /path/to/new.jsonl -model <model>`
+runs each case once with the live `route` tool (`route_only`) and once with the
+tools-free JSON route (`json_route`), using the same case file. It makes no
+addressee or decision-model call and needs no decision endpoint, so every
+recorded request belongs to the turn. The order of the two modes alternates per
+case and pass, as above.
+
+Each sample lists its Ollama requests under `requests`, in order. `kind` is
+`tools` (the route tool was offered), `schema` (a JSON route or the recovery
+retry) or `plain` (the reply). Each carries Ollama's `prompt_eval_count`,
+`prompt_eval_ms`, `eval_count` and `total_ms` from the final response line.
+Compare `correct` for routing accuracy and the `plain` request's
+`prompt_eval_ms` for prompt-cache reuse. `prompt_eval_count` includes cached
+tokens on Ollama's llama.cpp server backend, so it does not show reuse.
+`-admission-only` does not apply to this comparison.
