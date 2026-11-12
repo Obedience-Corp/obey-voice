@@ -32,6 +32,13 @@ func TestJarvisPersonaGolden(t *testing.T) {
 	assertGolden(t, "testdata/persona.jarvis.golden", got)
 }
 
+// TestDylanPersonaGolden pins the shipped companion. The opening is the
+// owner's own prompt, kept verbatim; the group and tool sections are Santa's.
+func TestDylanPersonaGolden(t *testing.T) {
+	got := resolveNamed(t, prompts.KindPersona, "dylan", "TestAgent")
+	assertGolden(t, "testdata/persona.dylan.golden", got)
+}
+
 // TestDefaultPersonaGolden pins the shipped default persona: assembled and
 // resolved with an agent name, it must equal the checked-in golden. Changing
 // the identity every fresh install wakes up with is a product decision, so it
