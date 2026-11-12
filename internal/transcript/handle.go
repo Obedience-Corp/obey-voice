@@ -72,6 +72,7 @@ func (w *Writer) AttachAll(bus *events.Bus) func() {
 		events.SubscribeDetachable(bus, func(e events.JobQueued) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.JobStarted) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.JobFinished) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobResultDelivered) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.JobFailed) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.JobAborted) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.Error) { w.Handle(e) }),
@@ -117,6 +118,7 @@ var recordedEventTypes = map[string]bool{
 	"job_queued":               true,
 	"job_started":              true,
 	"job_finished":             true,
+	"job_result_delivered":     true,
 	"job_failed":               true,
 	"job_aborted":              true,
 	"error":                    true,
@@ -201,6 +203,12 @@ func encodeEvent(e events.Event) (record, bool) {
 		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "started"}, true
 	case events.JobFinished:
 		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "finished", ElapsedS: x.Elapsed.Seconds()}, true
+	case events.JobResultDelivered:
+		state := "result_shown"
+		if x.Spoken {
+			state = "result_spoken"
+		}
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: state}, true
 	case events.JobFailed:
 		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "failed", Message: x.Err, IsError: true, ElapsedS: x.Elapsed.Seconds()}, true
 	case events.JobAborted:

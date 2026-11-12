@@ -532,3 +532,27 @@ func TestWriterRetainsOptionalDecisionDiagnostic(t *testing.T) {
 		t.Fatalf("recorded %d diagnostics", found)
 	}
 }
+
+func TestWriterRecordsWhenAJobResultReachesTheUser(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	bus := events.NewBus()
+	w.Attach(bus)
+	bus.Emit(events.JobResultDelivered{ID: "job-1", Task: "count files", Spoken: true})
+	bus.Emit(events.JobResultDelivered{ID: "job-2", Task: "list files"})
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	states := map[string]string{}
+	for _, r := range readRecords(t, path) {
+		if r.Type == "job" {
+			states[r.JobID] = r.State
+		}
+	}
+	if states["job-1"] != "result_spoken" || states["job-2"] != "result_shown" {
+		t.Fatalf("delivery records = %v", states)
+	}
+}

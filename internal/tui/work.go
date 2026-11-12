@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
@@ -101,15 +102,39 @@ func (m *conversationModel) jobFinished(e events.JobFinished) {
 	}
 	m.workerRepliesSeen[e.ID] = true
 	m.jobEnded(e.ID, "finished", " · done in "+roundSeconds(e.Elapsed), e.Elapsed)
-	if text := strings.TrimSpace(e.Summary); text != "" {
-		name := m.agentName
-		if e.Envelope != nil && e.Envelope.DisplayName != "" {
-			name = e.Envelope.DisplayName
-		}
-		m.rememberAssistant(text)
-		m.attachAssistantMedia(e.Attachments)
-		m.appendAgentTurn(chatItem{name: name, spoken: text, attachments: e.Attachments})
+	// A reply that is queued to be spoken joins the thread when its speech
+	// starts, so reading order matches hearing order.
+	if !e.SpeechPending {
+		m.showWorkerReply(e.ID, e.Summary, e.Envelope, e.Attachments)
 	}
+}
+
+func (m *conversationModel) jobResultDelivered(e events.JobResultDelivered) {
+	if !m.acceptWorkScope(e.Scope) {
+		return
+	}
+	m.showWorkerReply(e.ID, e.Summary, e.Envelope, e.Attachments)
+}
+
+func (m *conversationModel) showWorkerReply(id, summary string, envelope *events.ResponseEnvelope, attachments []chatmedia.Ref) {
+	if m.workerRepliesShown[id] {
+		return
+	}
+	if m.workerRepliesShown == nil {
+		m.workerRepliesShown = make(map[string]bool)
+	}
+	m.workerRepliesShown[id] = true
+	text := strings.TrimSpace(summary)
+	if text == "" {
+		return
+	}
+	name := m.agentName
+	if envelope != nil && envelope.DisplayName != "" {
+		name = envelope.DisplayName
+	}
+	m.rememberAssistant(text)
+	m.attachAssistantMedia(attachments)
+	m.appendAgentTurn(chatItem{name: name, spoken: text, attachments: attachments})
 }
 
 func (m *conversationModel) jobFailed(e events.JobFailed) {

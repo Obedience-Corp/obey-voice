@@ -38,21 +38,28 @@ func (a *Agency) discardPendingSpeech() {
 		if item.releaseVoice != nil {
 			item.releaseVoice()
 		}
+		a.deliverResult(item, false)
 	}
 }
 
 // Worker callbacks publish their own reply without borrowing the foreground
 // response's streaming buffers. History mutations belong to the serialized
 // host, at admission or an idle background turn.
-func (a *Agency) queueWorkerReply(id, text string) workerOrigin {
+func (a *Agency) queueWorkerReply(id, text string, held bool) {
 	refs := a.workerReplyMedia(id)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	origin := a.workerOrigins[id]
-	if strings.TrimSpace(text) != "" {
-		a.workerReplies = append(a.workerReplies, workerReply{workerOrigin: origin, Text: text, Attachments: refs})
+	reply := workerReply{workerOrigin: a.workerOrigins[id], Text: text, Attachments: refs}
+	if held {
+		if a.heldReplies == nil {
+			a.heldReplies = make(map[string]workerReply)
+		}
+		a.heldReplies[id] = reply
+		return
 	}
-	return origin
+	if strings.TrimSpace(text) != "" {
+		a.workerReplies = append(a.workerReplies, reply)
+	}
 }
 
 func (p *Pipeline) hasWorkerReplies() bool {
@@ -62,6 +69,10 @@ func (p *Pipeline) hasWorkerReplies() bool {
 	p.Agency.mu.Lock()
 	defer p.Agency.mu.Unlock()
 	return len(p.Agency.workerReplies) > 0
+}
+
+func (p *Pipeline) heldResultWaiting() bool {
+	return p != nil && p.Agency != nil && p.Agency.heldResultWaiting()
 }
 
 func (p *Pipeline) commitWorkerReplies() error {
