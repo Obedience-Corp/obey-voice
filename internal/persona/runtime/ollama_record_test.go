@@ -42,6 +42,7 @@ type localConversation struct {
 	p        *pipeline.Pipeline
 	selector *Selector
 	codexLog string
+	mixedLog string
 
 	mu     sync.Mutex
 	bodies [][]byte
@@ -68,8 +69,11 @@ func newLocalConversation(t *testing.T, maxHistory int, personas ...string) *loc
 		if provider != "" {
 			profile.Brain.Provider = provider
 		}
-		if provider == "codex" && c.codexLog == "" {
+		switch {
+		case provider == "codex" && c.codexLog == "":
 			c.codexLog = installCodexSelectorFixture(t)
+		case (provider == "muse-spark" || provider == "obey") && c.mixedLog == "":
+			c.mixedLog = installMixedProviderBinaries(t)
 		}
 		writeTestProfile(t, c.catalog.Dir, profile)
 		writeTestPrompt(t, promptDir, id, "You are {agent_name}.")
@@ -78,6 +82,9 @@ func newLocalConversation(t *testing.T, maxHistory int, personas ...string) *loc
 	c.base = &config.Config{ActivePersona: start, BrainProvider: "ollama", OllamaModel: "fixture:latest", OllamaHost: server.URL,
 		PromptsDir: promptDir, WorkDir: c.root, MaxHistory: maxHistory, OllamaNumCtx: 8192,
 		ContinuityProjectionEnabled: true, ContinuityArchiveEnabled: true}
+	if c.mixedLog != "" {
+		c.base.ObeyProvider, c.base.ObeyModel, c.base.ObeyToolPolicy = "fixture", "fixture", "daemon"
+	}
 	c.store = session.NewStore(filepath.Join(c.root, "sessions"))
 	c.sess = session.New("ollama", "fixture:latest")
 	c.start(start, nil, nil)
@@ -85,9 +92,14 @@ func newLocalConversation(t *testing.T, maxHistory int, personas ...string) *loc
 }
 
 // serveOllama answers a request offering the route tool by choosing chat,
-// and any other request with a reply numbered by its request.
+// one offering read_file for a line asking to read by reading notes.txt, and
+// any other request with a reply numbered by its request.
 func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if r.URL.Path == "/api/show" {
+		_, _ = w.Write([]byte(`{"capabilities":["completion","vision"]}`))
+		return
+	}
 	if r.URL.Path != "/api/chat" {
 		_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
 		return
@@ -110,18 +122,31 @@ func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) 
 	n := len(c.bodies)
 	c.mu.Unlock()
 	last := req.Messages[len(req.Messages)-1]
-	routing := false
+	routing, reading := false, false
 	for _, tool := range req.Tools {
 		routing = routing || tool.Function.Name == "route"
+		reading = reading || tool.Function.Name == "read_file"
 	}
 	enc := json.NewEncoder(w)
-	if routing && last.Role != "tool" {
+	call := func(name string, args map[string]string) {
 		_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": true, "done_reason": "stop", "message": map[string]any{"role": "assistant", "content": "",
-			"tool_calls": []any{map[string]any{"id": fmt.Sprintf("call-%d", n), "function": map[string]any{"name": "route", "arguments": map[string]string{"kind": "chat"}}}}}})
+			"tool_calls": []any{map[string]any{"id": fmt.Sprintf("call-%d", n), "function": map[string]any{"name": name, "arguments": args}}}}})
+	}
+	if routing && last.Role != "tool" {
+		call("route", map[string]string{"kind": "chat"})
+		return
+	}
+	if reading && last.Role != "tool" && strings.Contains(lastUserLine(req.Messages), "Read the notes") {
+		call("read_file", map[string]string{"path": "notes.txt"})
 		return
 	}
 	if strings.Contains(lastUserLine(req.Messages), ollamaStall) {
 		_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": false, "message": map[string]string{"role": "assistant", "content": "Let me think about "}})
+		if strings.Contains(lastUserLine(req.Messages), ollamaStall+" LONG") {
+			for i := range 20 {
+				_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": false, "message": map[string]string{"role": "assistant", "content": fmt.Sprintf("w%d ", i)}})
+			}
+		}
 		w.(http.Flusher).Flush()
 		c.stalled <- struct{}{}
 		<-r.Context().Done()
