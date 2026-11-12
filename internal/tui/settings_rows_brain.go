@@ -57,6 +57,9 @@ func (m settingsModel) modelRows() []settingRow {
 		help:    "Which model thinks for the brain provider.",
 		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectModel(models[i]) },
 	}
+	if m.selectedModelsPending() {
+		row.detail = "reading the model list from the " + m.cfg.BrainProvider + " CLI…"
+	}
 	if key == "" {
 		row.detail = "not routed for " + m.cfg.BrainProvider
 	}

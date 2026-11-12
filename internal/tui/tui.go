@@ -55,8 +55,10 @@ type App struct {
 	// goroutine that reads config concurrently. See internal/config/config.go.
 	cfg       *config.Config
 	providers []discovery.ProviderInfo
-	width     int
-	height    int
+	// claudeModelsLoading is set while the Claude model list is being read.
+	claudeModelsLoading bool
+	width               int
+	height              int
 
 	launcher       launcherModel
 	settings       settingsModel
@@ -141,8 +143,8 @@ type App struct {
 }
 
 // discoverProviders is the startup provider scan. It starts every installed
-// provider CLI, so this package's tests replace it.
-var discoverProviders = discovery.DiscoverProviders
+// provider CLI except to list Claude's models, so this package's tests replace it.
+var discoverProviders = discovery.DiscoverProvidersStartup
 
 // NewApp creates the TUI application.
 func NewApp(cfg *config.Config) App {
@@ -290,6 +292,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case menuReadyMsg:
 		return a.onMenuReady(msg)
+	case claudeModelsMsg:
+		return a.onClaudeModels(msg)
 	case launcherTickMsg:
 		if a.launcherTicking && msg.id == a.launcherTickID {
 			a.launcherTicking = false

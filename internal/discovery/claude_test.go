@@ -164,3 +164,24 @@ func TestClaudeModelsLeaveOtherProvidersAlone(t *testing.T) {
 		t.Errorf("claude = %+v", claude)
 	}
 }
+
+func TestStartupScanDoesNotStartTheClaudeCLI(t *testing.T) {
+	cli := fakeclaude.OnPath(t, fakeclaude.Answer, fakeclaude.Models)
+	cfg := &config.Config{ClaudeModel: "opus", OllamaHost: "http://127.0.0.1:1"}
+
+	var claude ProviderInfo
+	for _, p := range DiscoverProvidersStartup(cfg) {
+		if p.Name == "claude" {
+			claude = p
+		}
+	}
+	if !claude.Available || !claude.ModelsPending || !slices.Equal(claude.Models, []string{"default", "opus"}) {
+		t.Fatalf("startup claude = %+v, want available, pending, default+saved model", claude)
+	}
+	if runs := cli.Runs(t); len(runs) != 0 {
+		t.Fatalf("startup scan ran the CLI %d times, want 0", len(runs))
+	}
+	if full := DiscoverProvider(t.Context(), cfg, "claude"); full.ModelsPending || !slices.Equal(full.Models, cliModels) {
+		t.Fatalf("on-demand claude = %+v", full)
+	}
+}

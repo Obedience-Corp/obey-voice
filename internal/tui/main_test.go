@@ -58,6 +58,6 @@ func TestMain(m *testing.M) {
 func useRealDiscovery(t *testing.T) {
 	t.Helper()
 	stub := discoverProviders
-	discoverProviders = discovery.DiscoverProviders
+	discoverProviders = discovery.DiscoverProvidersStartup
 	t.Cleanup(func() { discoverProviders = stub })
 }

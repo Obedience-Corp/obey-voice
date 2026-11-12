@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -141,21 +142,74 @@ func TestClaudeSettingsListsTheCLIModels(t *testing.T) {
 	}
 }
 
-// The app asks the CLI once at startup; opening Settings reuses that answer.
-func TestClaudeModelsAreAskedAtStartupOnly(t *testing.T) {
+// Startup does not start the CLI. Opening Settings reads the list once, shows
+// a loading note until it lands, and reopening Settings reuses the answer.
+func TestClaudeModelsAreReadOnFirstSettingsOpen(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	cli := fakeclaude.OnPath(t, fakeclaude.Answer, fakeclaude.Models)
 	useRealDiscovery(t)
 	app := NewApp(&config.Config{BrainProvider: "claude", OllamaHost: "http://127.0.0.1:1"})
-	for range 2 {
-		opened, _ := app.onSwitchScreen(switchScreenMsg(screenSettings))
-		app = opened.(App)
+	if runs := cli.Runs(t); len(runs) != 0 {
+		t.Fatalf("startup ran the CLI %d times, want 0", len(runs))
 	}
-	if got, want := app.settings.modelRows()[0].options, []string{"default", "sonnet", "opus", "haiku", "sonnet[1m]"}; !slices.Equal(got, want) {
-		t.Fatalf("Settings Model row = %q, want %q", got, want)
+
+	opened, cmd := app.onSwitchScreen(switchScreenMsg(screenSettings))
+	app = opened.(App)
+	row := app.settings.modelRows()[0]
+	if !strings.Contains(row.detail, "reading the model list") || !slices.Equal(row.options, []string{"default"}) {
+		t.Fatalf("loading Model row = %+v", row)
+	}
+	var loaded tea.Msg
+	for _, msg := range flattenCmd(cmd) {
+		if m, ok := msg.(claudeModelsMsg); ok {
+			loaded = m
+		}
+	}
+	if loaded == nil {
+		t.Fatal("opening Settings did not start a Claude model read")
+	}
+	model, _ := app.Update(loaded)
+	app = model.(App)
+	want := []string{"default", "sonnet", "opus", "haiku", "sonnet[1m]"}
+	if row := app.settings.modelRows()[0]; !slices.Equal(row.options, want) || row.detail != "" {
+		t.Fatalf("Settings Model row = %+v, want options %q", row, want)
+	}
+
+	opened, cmd = app.onSwitchScreen(switchScreenMsg(screenSettings))
+	app = opened.(App)
+	for _, msg := range flattenCmd(cmd) {
+		if _, ok := msg.(claudeModelsMsg); ok {
+			t.Fatal("reopening Settings read the model list again")
+		}
+	}
+	if got := app.settings.modelRows()[0].options; !slices.Equal(got, want) {
+		t.Fatalf("reopened Settings Model row = %q, want %q", got, want)
 	}
 	if runs := cli.Runs(t); len(runs) != 1 {
-		t.Fatalf("the CLI ran %d times, want once at startup", len(runs))
+		t.Fatalf("the CLI ran %d times, want once", len(runs))
+	}
+}
+
+// flattenCmd runs cmd and the commands a batch holds, skipping those that
+// block on a device or the clock, and returns what they produced.
+func flattenCmd(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+	select {
+	case msg := <-done:
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			var out []tea.Msg
+			for _, c := range batch {
+				out = append(out, flattenCmd(c)...)
+			}
+			return out
+		}
+		return []tea.Msg{msg}
+	case <-time.After(2 * time.Second):
+		return nil
 	}
 }
