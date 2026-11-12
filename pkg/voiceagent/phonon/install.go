@@ -30,7 +30,16 @@ const (
 )
 
 var sourceURL = "https://codeload.github.com/gradium-ai/xn-ptts/tar.gz/" + SourceRevision
-var namedVoices = []string{"Harper", "Juniper", "Edwin", "Zoey"}
+var namedVoices = []string{"Harper", "Juniper", "Edwin", "Zoey", "Fennick the Young Elf"}
+
+// namedVoiceFiles are the catalog embeddings of namedVoices at CatalogRevision.
+var namedVoiceFiles = []string{
+	"voices/4SZHfMpw-p46Ywgs.safetensors",
+	"voices/NIWIOv5vTi5eRMj8.safetensors",
+	"voices/zUCxzrOrugTSis03.safetensors",
+	"voices/NbpkqMVS3CJeq2j8.safetensors",
+	"voices/cXoIXJ2llS8S0WOW.safetensors",
+}
 
 type Options struct {
 	ModelsDir string
@@ -107,7 +116,7 @@ func Installed(o Options) bool {
 	}
 	// Include catalog embeddings in readiness, not only descriptive metadata.
 	voices := filepath.Join(o.cache(), "hub", "models--gradium--phonon-voices", "snapshots", CatalogRevision)
-	for _, name := range []string{"voices.jsonl", "voices/4SZHfMpw-p46Ywgs.safetensors", "voices/NIWIOv5vTi5eRMj8.safetensors", "voices/zUCxzrOrugTSis03.safetensors", "voices/NbpkqMVS3CJeq2j8.safetensors"} {
+	for _, name := range append([]string{"voices.jsonl"}, namedVoiceFiles...) {
 		if st, err := os.Stat(filepath.Join(voices, name)); err != nil || st.Size() == 0 {
 			return false
 		}

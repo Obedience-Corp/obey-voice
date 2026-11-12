@@ -129,23 +129,25 @@ remain available.
 | Jarvis | Precise, dry British assistant | `openai-speech` (Phonon) | `Edwin` |
 | Veronica | Playful conversational companion | `openai-speech` (Phonon) | `Zoey` |
 | Santa | Warm storyteller with a practical workshop streak | `kokoro` | `am_santa` |
+| Dylan | Laid-back companion who swears freely and picks his own persona | `openai-speech` (Phonon) | `Fennick the Young Elf` |
 
-All five inherit the application brain unless you set one on the profile.
+All six inherit the application brain unless you set one on the profile.
 The shipped Obey profile pins Harper; **Obey (default)** uses the saved Obey
 profile, including any voice or model you have chosen for it.
-Santa is a selectable companion, not the startup persona.
+Santa and Dylan are selectable companions, not the startup persona.
 
 Phonon profiles use the configured `openai_speech_url` and
 `openai_speech_model`, which default to local Ollama and `phonon`. They require
-a server that serves these named voices. The catalog and synthesis were checked
-with Ollama 0.40.11; an older runtime or model that only offers `default` needs
-an update and a fresh `ollama pull phonon`. See
+a server that serves these named voices. The catalog and synthesis of Harper,
+Juniper, Edwin and Zoey were checked with Ollama 0.40.11; an older runtime or
+model that only offers `default` needs an update and a fresh
+`ollama pull phonon`. See
 [Phonon setup](openai-speech.md#phonon-through-ollama). Selecting a Phonon persona
 does not make a different configured speech server serve Phonon automatically.
 
 Missing profiles are added on load. Existing profiles and prompt overrides are
-never replaced, including your own persona named Santa. To adopt the new voices
-on existing profiles, use **Personas → Model & voice**, or:
+never replaced, including your own persona named Santa or Dylan. To adopt the
+new voices on existing profiles, use **Personas → Model & voice**, or:
 
 ```bash
 obey-voice persona edit obey --tts-provider openai-speech --voice Harper
@@ -153,6 +155,7 @@ obey-voice persona edit samantha --tts-provider openai-speech --voice Juniper
 obey-voice persona edit jarvis --tts-provider openai-speech --voice Edwin
 obey-voice persona edit veronica --tts-provider openai-speech --voice Zoey --tier ""
 obey-voice persona edit santa --tts-provider kokoro --voice am_santa
+obey-voice persona edit dylan --tts-provider openai-speech --voice "Fennick the Young Elf"
 ```
 
 These commands change voice settings only. They keep each persona's name,
@@ -161,7 +164,8 @@ the group with `obey-voice persona disable <id>`.
 
 ### Names and recognition
 
-The shipped Obey profile also answers to **Obi**, **Obie**, and **Oh bay**.
+The shipped Obey profile also answers to **Obi**, **Obie**, and **Oh bay**, and
+the shipped Dylan profile to **Dillon**, which sounds the same.
 These are explicit alternate addresses, not a broader fuzzy matcher: ordinary
 words such as "okay" and "obituary" do not become persona selections. A nickname
 shared by two personas is ambiguous; use a unique name or select from the UI.

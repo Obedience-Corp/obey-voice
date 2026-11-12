@@ -1035,10 +1035,10 @@ that is correct, and a client that reads the config file instead will be wrong
 for the rest of the session.
 
 `builtin` marks a shipped persona, which cannot be deleted. The catalog ships
-`obey` (the default), `samantha`, `veronica`, and `jarvis`. An older install may
-have only a subset until the missing slots fill on load. It is also the
-provenance flag: a user persona is never marked builtin, even when its id
-happens to be `obey`. Additive beyond ADR-004; decode it as optional.
+`obey` (the default), `dylan`, `jarvis`, `samantha`, `santa`, and `veronica`.
+An older install may have only a subset until the missing slots fill on load.
+It is also the provenance flag: a user persona is never marked builtin, even
+when its id happens to be `obey`. Additive beyond ADR-004; decode it as optional.
 
 The route is **absent (404)** on a serve that did not wire persona resolution,
 the same way `/v1/meeting/*` is absent without meeting capture. Feature-detect
