@@ -14,6 +14,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/ollama/ollama/api"
 )
 
@@ -134,5 +135,61 @@ func TestResolveAddresseeParentDeadlineNotClassifiedAsLocalTimeout(t *testing.T)
 	}
 	if _, ok := admission.ClassifierFailureKindOf(err); ok {
 		t.Fatalf("parent deadline misclassified as local classifier timeout: %v", err)
+	}
+}
+
+func TestDecisionNormalizationMatchesOllamaClassifier(t *testing.T) {
+	participants := []GroupParticipant{{Name: "Jarvis", Aliases: []string{"J"}}, {Name: "Santa"}}
+	for _, account := range []string{"user", "agent"} {
+		for _, body := range []string{
+			`{"kind":"address","name":"Santa","bare":true}`,
+			`{"kind":"address","name":" santa ","bare":false}`,
+			`{"kind":"address","name":"J","bare":true}`,
+			`{"kind":"address","name":"Charles","bare":false}`,
+			`{"kind":"address","name":"","bare":false}`,
+			`{"kind":"none","name":"Santa","bare":true}`,
+			`{"kind":"ambiguous","name":"Santa","bare":true}`,
+			`{"kind":"switch","name":"Santa","bare":false}`,
+		} {
+			t.Run(account+" "+body, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_ = json.NewEncoder(w).Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: body}, Done: true})
+				}))
+				defer server.Close()
+				host, _ := url.Parse(server.URL)
+				o := &OllamaBrain{client: api.NewClient(host, server.Client()), model: "test", cfg: &config.Config{OllamaNumCtx: 8192}}
+				want, wantErr := o.ResolveAddressee(t.Context(), AddressRequest{Participants: participants, Account: account, Text: "x"})
+
+				var raw decision.Addressee
+				if err := json.Unmarshal([]byte(body), &raw); err != nil {
+					t.Fatal(err)
+				}
+				in := decision.AddresseeInput{Participants: []decision.AddresseeParticipant{{Name: "Jarvis", Aliases: []string{"J"}}, {Name: "Santa"}}, Account: account, Text: "x"}
+				got, gotErr := decision.NormalizeAddressee(raw, in)
+				if (wantErr != nil) != (gotErr != nil) || (wantErr == nil && (got.Kind != want.Kind || got.Name != want.Name || got.Bare != want.Bare)) {
+					t.Fatalf("classifier=%+v/%v decision=%+v/%v", want, wantErr, got, gotErr)
+				}
+				// A name outside the roster, and a stray name on none, both end
+				// as a plain none on each path rather than an error.
+				if strings.Contains(body, "Charles") || strings.HasPrefix(body, `{"kind":"none"`) {
+					if wantErr != nil || want != (Addressee{Kind: "none"}) {
+						t.Fatalf("classifier=%+v/%v, want plain none", want, wantErr)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestResolveAddresseeNoneClearsAStrayName(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: `{"kind":"none","name":"Santa","bare":true}`}, Done: true})
+	}))
+	defer server.Close()
+	host, _ := url.Parse(server.URL)
+	o := &OllamaBrain{client: api.NewClient(host, server.Client()), model: "test", cfg: &config.Config{OllamaNumCtx: 8192}}
+	got, err := o.ResolveAddressee(t.Context(), AddressRequest{Participants: []GroupParticipant{{Name: "Jarvis"}, {Name: "Santa"}}, Account: "user", Text: "I think Santa had a long day."})
+	if err != nil || got != (Addressee{Kind: "none"}) {
+		t.Fatalf("got %+v err=%v, want an accepted none with no name or bare", got, err)
 	}
 }

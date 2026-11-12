@@ -57,7 +57,7 @@ func (m *Manager) Configure(options Options, prepare Prepare) {
 	}
 	m.current = nil
 	m.status = RuntimeStatus{Phase: "off"}
-	if prepare == nil || options.Budget <= 0 || (!options.VoiceWork && !options.TextWork) {
+	if prepare == nil || options.Budget <= 0 || (!options.VoiceWork && !options.TextWork && !options.Addressee) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())

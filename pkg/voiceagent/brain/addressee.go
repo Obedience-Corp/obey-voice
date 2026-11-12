@@ -45,11 +45,10 @@ type AddresseeResolver interface {
 	ResolveAddressee(context.Context, AddressRequest) (Addressee, error)
 }
 
-// ResolveAddressee is private, bounded, tools-free inference. It uses the
-// installed responder model without adding classifier input/output to history.
-func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) (Addressee, error) {
-	// A correctly transcribed name needs no acoustic disambiguation. Repeating
-	// it as an extra hint can bias small classifiers toward false addresses.
+// WithoutRedundantAcousticName drops an acoustic hint that cannot help: a
+// correctly transcribed name needs no disambiguation, and repeating it can
+// bias small classifiers toward false addresses. Agent messages never carry one.
+func (req AddressRequest) WithoutRedundantAcousticName() AddressRequest {
 	if req.Account != "user" {
 		req.AcousticName = ""
 	}
@@ -59,6 +58,13 @@ func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) 
 			break
 		}
 	}
+	return req
+}
+
+// ResolveAddressee is private, bounded, tools-free inference. It uses the
+// installed responder model without adding classifier input/output to history.
+func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) (Addressee, error) {
+	req = req.WithoutRedundantAcousticName()
 	parentCtx := ctx
 	ctx, cancel := context.WithTimeout(parentCtx, config.PersonaRoutingTimeoutOf(o.cfg))
 	defer cancel()

@@ -199,6 +199,7 @@ type Config struct {
 	DecisionEnabled    bool   `mapstructure:"decision_enabled"`
 	DecisionVoiceWork  bool   `mapstructure:"decision_voice_work"`
 	DecisionTextWork   bool   `mapstructure:"decision_text_work"`
+	DecisionAddressee  bool   `mapstructure:"decision_addressee"`
 	DecisionProvider   string `mapstructure:"decision_provider"`
 	DecisionRuntime    string `mapstructure:"decision_runtime"`
 	DecisionDevice     string `mapstructure:"decision_device"`
