@@ -17,14 +17,16 @@ import (
 
 func TestDecisionManifestOnlyForEnabledManagedLocal(t *testing.T) {
 	base := Config{DecisionEnabled: true, DecisionVoiceWork: true, DecisionProvider: "local", DecisionRuntime: "managed", DecisionLocalModel: "2b"}
-	for _, variant := range []string{"on", "off", "points-off", "external", "hosted"} {
+	for _, variant := range []string{"on", "addressee-only", "off", "points-off", "external", "hosted"} {
 		t.Run(variant, func(t *testing.T) {
 			cfg := base
 			switch variant {
+			case "addressee-only":
+				cfg.DecisionVoiceWork, cfg.DecisionAddressee = false, true
 			case "off":
 				cfg.DecisionEnabled = false
 			case "points-off":
-				cfg.DecisionVoiceWork = false
+				cfg.DecisionVoiceWork, cfg.DecisionAddressee = false, false
 			case "external":
 				cfg.DecisionRuntime = "external"
 			case "hosted":
@@ -34,7 +36,7 @@ func TestDecisionManifestOnlyForEnabledManagedLocal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if variant != "on" {
+			if variant != "on" && variant != "addressee-only" {
 				if len(m.Assets) != 0 {
 					t.Fatal("inactive managed mode requested assets")
 				}

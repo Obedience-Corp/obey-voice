@@ -8,11 +8,14 @@ import "time"
 type DecisionEvaluated struct {
 	Trace *TraceContext `json:"trace,omitempty"`
 
-	Point       string        `json:"point"`
-	Disposition string        `json:"disposition"`
-	Model       string        `json:"model,omitempty"`
-	Tier        string        `json:"tier,omitempty"`
-	Elapsed     time.Duration `json:"elapsed_ns"`
+	Point       string `json:"point"`
+	Disposition string `json:"disposition"`
+	// Resolver names who settled an addressee question: decision_model,
+	// ollama_classifier, grammar, current_persona, or failed.
+	Resolver string        `json:"resolver,omitempty"`
+	Model    string        `json:"model,omitempty"`
+	Tier     string        `json:"tier,omitempty"`
+	Elapsed  time.Duration `json:"elapsed_ns"`
 }
 
 func (DecisionEvaluated) eventType() string { return "decision.evaluated" }

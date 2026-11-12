@@ -5,9 +5,11 @@ while Obey Voice performs input admission. If the answer is ready and passes the
 policy, Obey Voice can start the worker without asking the speaking LLM to route
 that request. Otherwise it immediately follows its ordinary speaking-LLM path.
 
-The experiment is **off by default**. Voice and typed requests have independent
-switches. It currently proposes worker routing; it does not replace admission,
-transcription, the worker itself or speech synthesis.
+The experiment is **off by default**. Voice work, typed work and the addressee
+question have independent switches. The model answers two questions: worker
+routing, and, in a conversation with several personas, who is being addressed
+(see below). It does not replace admission, transcription, the worker itself or
+speech synthesis.
 
 ## Pipeline without optional decisions
 
@@ -53,6 +55,106 @@ conversation/history/persona/worker settings, cancellation and disabling invalid
 its result. Worker permissions and queue policy remain enforced by normal worker
 admission.
 
+## Who is being addressed
+
+In a shared conversation Obey Voice decides which persona a message is for.
+Resolution runs in this order and stops at the first step that answers:
+
+1. Exact controls (`@id`, `switch to Name`, `Hey Name`, a leading `Name,`).
+   These never call a model. A message that names no persona also stops here
+   and stays with the current persona.
+2. The decision model, when `decision_enabled` and `decision_addressee` are on
+   and the runtime is ready. It chooses one persona, nobody, or "ambiguous". A
+   mention (`what did Mira say?`) is not an address.
+3. The Ollama classifier, only when the live brain is Ollama. It also answers
+   when the decision model fails, abstains or is not ready. If the decision model
+   fails or abstains with less than 50 ms of `persona_routing_timeout` left, the
+   classifier is not called with that time; step 4 applies, with the notice
+   below only when the decision model failed.
+4. Otherwise the name grammar used before either model existed (for example
+   `Santa tell me a story`), and failing that the current persona.
+
+A persona running on any other backend (Claude, Codex, Cursor and so on) is never
+asked to classify. If the decision model fails (it is still busy with an earlier
+question, misses its deadline, returns an error or returns unusable output) and
+the live brain is not Ollama, the turn is not failed: step 4 applies, exactly as
+it did before the decision model existed, and one notice says the decision model
+did not answer and why. Cancelling the turn still cancels it. An agent's reply
+that invites another persona by name goes through the same steps; on a failure
+without Ollama the reply stays with its speaker, with no notice (the diagnostic
+below records it).
+
+### What the addressee question sends
+
+For every user message that names a persona (or carries a spoken-name hint) and
+is not an exact control, and for every persona reply that names a persona (the
+handoff check), the decision provider receives:
+
+- the message or reply itself (up to 4,000 characters; longer ones are not sent);
+- up to eight earlier messages of the conversation, each cut to 1,000
+  characters, each labelled with its speaker's name (the human speaker's name,
+  or the persona's display name for a persona reply);
+- the speaker's name and whether the speaker is the user or a persona;
+- the name of the persona currently answering;
+- every persona name and alias in the conversation roster;
+- the spoken-name hint from speech recognition, when there is one.
+
+OpenAI also receives the private addressee instructions as its `instructions`
+field. The data goes to whichever decision provider is configured: the local
+model stays on this computer, while `jev` sends it to TypeSafe and `openai` sends
+it to OpenAI. The worker-routing question already sends up to eight recent
+messages (role and text) to the same provider; the addressee question adds
+speaker and persona names and runs whenever a message names a persona, even with
+both work switches off. With all three switches off nothing is prepared: no
+credential is read and no model is installed or loaded.
+
+### Upgrade note: on by default
+
+`decision_addressee` is on by default. This is a deliberate choice. It affects
+only setups where `decision_enabled` is already on, since that master switch is
+still off by default. After upgrading, such a setup asks its configured decision
+provider who is addressed, whether that provider is the local model or a hosted
+one. With a hosted provider (`jev` or `openai`), the text needed to pick the
+addressee, listed above, goes to that service. There is no separate opt-in: you
+chose the decision provider and are responsible for what it receives. To keep
+addressee picking as it was before, run
+`obey-voice config set decision_addressee false` or turn off
+**Settings → Brain → Decide who is addressed**; the Ollama classifier (when the
+live brain is Ollama) and the name grammar then answer.
+
+### Thresholds and timing
+
+The local and Jev answer is a probability distribution. It counts only when the
+chosen option has confidence of at least 0.85 and leads the next option by at
+least 0.20; otherwise the model abstains and step 3 or 4 answers (an abstention
+is not "nobody"). A user message is treated as only a greeting (`bare`, answered
+with "Name here.") when the model gives that at least 0.90. That is a single yes
+probability, so 0.90 is already a 0.80 lead over "no"; it is stricter than the
+target threshold because a wrong `bare` would drop the user's question. OpenAI
+returns one categorical answer with no probability threshold. Changing a
+threshold is a code change in `pkg/voiceagent/decision/addressee.go`.
+
+The question waits for the model for at most `decision_budget_ms` (the work
+question never waits) and runs alongside a work decision for the same message
+rather than behind it. When the Ollama classifier answers after the decision
+model, the two together are still bounded by `persona_routing_timeout`, not by
+the sum of both limits. A message the absent-person option fits ("unavailable")
+is answered by the current persona, as the Ollama classifier's instructions also
+require. The two questions are separate calls; they could be combined into one
+request per turn later, but are not.
+
+When the decision model or the Ollama classifier is configured, each message or
+reply that names a persona emits a `decision.evaluated` diagnostic with point
+`addressee`, the decision model's outcome as its disposition (`answered`,
+`abstained`, `skipped`, `busy`, `timeout`, `provider_error`, `invalid_output`,
+`cancelled`, or `not_asked` when the decision model is off), the step that
+settled it as `resolver` (`decision_model`, `ollama_classifier`, `grammar`,
+`current_persona`, or `failed`) and the total elapsed time. It carries no message
+text or names.
+
+Accuracy of this question on real speech has not been measured, and the 750 ms
+default may be short for a cold model or a long conversation.
+
 ## Enable and manage
 
 Open **Settings → Brain → Decision shortcuts (experimental)**. Choose the provider
@@ -65,7 +167,8 @@ guidance, while ordinary routing remains available. The settings show
 preparation/readiness/failure state. Starting a conversation, enabling decisions,
 or changing their model/device selection does not trigger installation.
 Disable the master switch to cancel optional work and stop its owned server.
-Voice and text switches can be changed independently and persist across restarts.
+Voice, text and addressee switches can be changed independently and persist
+across restarts. With all three off, an enabled master switch prepares nothing.
 
 The equivalent persisted configuration keys are:
 
@@ -74,6 +177,7 @@ The equivalent persisted configuration keys are:
 | `decision_enabled` | `false` | Master switch |
 | `decision_voice_work` | `true` | Voice worker routing |
 | `decision_text_work` | `true` | Typed worker routing |
+| `decision_addressee` | `true` | Who a message naming a persona is for |
 | `decision_provider` | `local` | `local`, `jev`, or `openai` |
 | `decision_runtime` | `managed` | Managed install or `external` local server |
 | `decision_local_model` | `2b` | `2b`, `0.8b`, `decider-2b-v12`, `decider-4b-v3`, or `d1-3b` |
@@ -81,7 +185,7 @@ The equivalent persisted configuration keys are:
 | `decision_endpoint` | empty | External loopback `/v1/systemone` URL |
 | `decision_model` | empty | Explicit hosted model ID |
 | `decision_api_key` | empty | Hosted credential (masked in settings) |
-| `decision_budget_ms` | `750` | Inference deadline; never a pipeline wait |
+| `decision_budget_ms` | `750` | Inference deadline; only the addressee question waits for it |
 | `decision_policy` | `route_choice` | Local/Jev question policy; also `intent_and_tier` |
 
 Use `obey-voice config KEY VALUE` to persist a key. With managed decisions
@@ -136,7 +240,9 @@ accuracy benchmark or a guarantee that longer requests meet the deadline.
 Hosted and external runtimes cannot use this test action.
 
 Jev and OpenAI are explicit alternatives. Selecting either sends the bounded
-request and recent conversation to that service and may incur its API charges.
+request and recent conversation to that service and may incur its API charges;
+with `decision_addressee` on, that includes the addressee question described
+above.
 They require a model ID and credential; `DECISION_API_KEY` is read only for an
 enabled hosted provider. Local mode ignores hosted credentials, and failures
 never select a hosted provider automatically. OpenAI uses strict categorical
@@ -147,7 +253,8 @@ adapters have fixture coverage, not a live paid-service performance result.
 
 The current conservative policy accepts only a subset of work requests. It uses
 at most eight history messages and bypasses longer conversations rather than
-silently dropping constraints. Ambiguous, malformed, unavailable-tier and
+silently dropping constraints. (The addressee question instead sends the latest
+eight, each cut to 1,000 characters.) Ambiguous, malformed, unavailable-tier and
 low-confidence results fall back. The 2B model is the tested default; the smaller
 model is available for comparison. Neither is a correctness guarantee.
 

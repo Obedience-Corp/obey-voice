@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -116,6 +117,69 @@ func TestManagedDecisionStartupRequiresExplicitSetup(t *testing.T) {
 			}
 			if !reflect.DeepEqual(*cfg, before) {
 				t.Fatal("startup changed saved selection")
+			}
+		})
+	}
+}
+
+func TestDecisionEnabledWithEveryPointOffPreparesNothing(t *testing.T) {
+	for _, provider := range []string{"local", "openai"} {
+		t.Run(provider, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "absent-models")
+			t.Setenv("DECISION_API_KEY", "unused-fixture-secret")
+			cfg := &config.Config{ModelsDir: dir, DecisionEnabled: true, DecisionProvider: provider, DecisionModel: "not-used", DecisionLocalModel: "2b", DecisionDevice: "cpu"}
+			p := &pipeline.Pipeline{}
+			closeRuntime := bindDecisions(p, cfg)
+			defer closeRuntime()
+			if phase := p.DecisionStatus().Phase; phase != "off" {
+				t.Fatalf("phase = %q, want off with no point enabled", phase)
+			}
+			for _, point := range []decision.Point{decision.VoiceWork, decision.TextWork, decision.AddresseeResolution} {
+				if p.Decisions.Enabled(point) {
+					t.Fatalf("%s enabled", point)
+				}
+			}
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Fatalf("touched model directory: %v", err)
+			}
+		})
+	}
+}
+
+func TestDecisionAddresseeSwitch(t *testing.T) {
+	for _, tc := range []struct {
+		name                       string
+		voice, addressee, wantUsed bool
+	}{
+		{name: "addressee only", addressee: true, wantUsed: true},
+		{name: "addressee off", voice: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				_, _ = io.Copy(io.Discard, r.Body)
+				_, _ = io.WriteString(w, `{"model":"fixture","answers":{"target":{"choice":"person_0","confidence":1,"probabilities":{"none":0,"ambiguous":0,"unavailable":0,"person_0":1}},"bare":{"noul":0}}}`)
+			}))
+			defer server.Close()
+			cfg := &config.Config{DecisionEnabled: true, DecisionVoiceWork: tc.voice, DecisionAddressee: tc.addressee, DecisionProvider: "local", DecisionRuntime: "external", DecisionEndpoint: server.URL + "/v1/systemone"}
+			p := &pipeline.Pipeline{}
+			closeRuntime := bindDecisions(p, cfg)
+			defer closeRuntime()
+			deadline := time.Now().Add(time.Second)
+			for p.DecisionStatus().Phase != "ready" {
+				if time.Now().After(deadline) {
+					t.Fatal(p.DecisionStatus())
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if p.Decisions.Enabled(decision.AddresseeResolution) != tc.addressee {
+				t.Fatalf("addressee enabled = %v", !tc.addressee)
+			}
+			in := decision.AddresseeInput{Participants: []decision.AddresseeParticipant{{Name: "Mira"}}, Account: "user", Text: "Mira, what now?"}
+			got, err := p.Decisions.ResolveAddressee(t.Context(), in, "")
+			if err != nil || got.Answered() != tc.wantUsed || (calls.Load() == 1) != tc.wantUsed {
+				t.Fatalf("got=%+v err=%v calls=%d", got, err, calls.Load())
 			}
 		})
 	}
