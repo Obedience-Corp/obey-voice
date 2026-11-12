@@ -37,7 +37,7 @@ impl VoiceApp {
                         self.start_task("Model storage", usage_arguments());
                     }
                     ui.separator();
-                    ui.label("Move the models to an empty or new folder, such as one on a larger drive. The current folder is removed only after the new one is complete; cancelling keeps the current folder in use.");
+                    ui.label("Move the models to an empty or new folder, given as a full path, such as one on a larger drive. Cancelling before the new folder is saved keeps the current folder in use; the old folder is removed only after every file is on disk in the new one.");
                     field(ui, "Move models to", &mut self.models_move_to);
                     let destination = self.models_move_to.trim().to_owned();
                     if ui

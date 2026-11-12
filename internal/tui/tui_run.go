@@ -77,6 +77,7 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	app.runCtx = ctx
 	app.runCancel = cancel
 	app.wg = &sync.WaitGroup{}
+	app.settings.storage.lifetime, app.settings.storage.wg = ctx, app.wg
 	app.progress = newEventBridge(16)
 	app.slot = newConversationSlot()
 	app.meetingSlot = newMeetingSlot()

@@ -11,6 +11,10 @@ import (
 )
 
 func (a App) onStartMeeting(msg startMeetingMsg) (tea.Model, tea.Cmd) {
+	if a.settings.storage.moving() {
+		a.launcher = a.launcher.withBanner(modelsMoveBusy, true)
+		return a, nil
+	}
 	a.meetingRoutePlan = meetingRoutePlan{
 		Kind: msg.RoutePlan,
 		Dest: msg.Destination,

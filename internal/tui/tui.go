@@ -363,6 +363,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.onReturnToMenu(msg)
 	case quitMsg:
 		return a.onQuit(msg)
+	case storageUsageMsg, storageMoveProgressMsg, storageMoveDoneMsg:
+		return a.onStorage(msg)
 	}
 
 	return a.delegate(msg)

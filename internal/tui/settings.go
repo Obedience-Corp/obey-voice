@@ -81,7 +81,7 @@ type settingsModel struct {
 	voiceLocale   string
 	speechSetup   speechSetup
 	decisionSetup decisionSetup
-	storage       storageState
+	storage       *storageState
 	// modelsInUse is set by the App when Settings is opened over a live
 	// conversation or meeting, which has model files open.
 	modelsInUse bool
@@ -182,6 +182,7 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 		ensureQwen:            managedqwen.Ensure,
 		saveWorkers:           config.CommitVoiceWorkersCAS,
 		workerMigrationConfig: func() *config.Config { return cfg },
+		storage:               &storageState{},
 	}
 	m.initEnrollSeams(cfg)
 	m.refreshQwenStatus()
@@ -537,6 +538,9 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		}
 		if m.confirmRemoveVoice != "" {
 			return m.updateRemoveVoiceConfirm(msg)
+		}
+		if m.storageConfirming() {
+			return m.updateStorageMoveConfirm(msg)
 		}
 		// One key, one verb: ←/→ (and the digits) move between sections,
 		// ↑/↓ move between lines, enter acts on the line, space flips,

@@ -106,6 +106,10 @@ func (a App) onVoiceReloaded(msg voiceReloadedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) onStartPipeline(msg startPipelineMsg) (tea.Model, tea.Cmd) {
+	if a.settings.storage.moving() {
+		a.launcher = a.launcher.withBanner(modelsMoveBusy, true)
+		return a, nil
+	}
 	a.settings.closePreview()
 	a.settings.cancelEnroll()
 	if a.builder == nil {

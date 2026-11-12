@@ -228,6 +228,10 @@ func (m *mover) commitRename() error {
 	if err := m.ctx.Err(); err != nil {
 		return undo(err)
 	}
+	// Best effort: the rename deletes nothing, so a lost flush only means the
+	// folder and the setting may disagree after a crash.
+	_ = syncDir(filepath.Dir(p.Dest))
+	_ = syncDir(filepath.Dir(p.Source))
 	m.report(MoveProgress{Phase: MovePhaseSave})
 	if err := m.save(); err != nil {
 		return undo(err)
