@@ -123,7 +123,7 @@ func planModelsMove(ctx context.Context, cfg *Config, to string) (MovePlan, func
 	}
 
 	// The remaining checks are independent; report every one that applies.
-	rewrites, envKeys := modelPathRewrites([]string{plan.From, source}, plan.To)
+	rewrites, envKeys := modelPathRewrites(source, plan.To)
 	plan.Refusals = append(plan.Refusals, envKeys...)
 	plan.rewrites = rewrites
 	for _, kv := range rewrites {
@@ -134,7 +134,7 @@ func planModelsMove(ctx context.Context, cfg *Config, to string) (MovePlan, func
 		plan.Refusals = append(plan.Refusals, describeSaveError(err))
 	}
 
-	scan, err := scanModelsTree(ctx, plan.From, source)
+	scan, err := scanModelsTree(ctx, source)
 	if err != nil {
 		return plan, noop, err
 	}
@@ -236,35 +236,55 @@ func (p *MovePlan) checkDestination() string {
 }
 
 // modelPathRewrites lists every other text setting that names a file inside
-// one of the old folders, with the same file in the new one. A setting that
-// comes from the environment cannot be rewritten and is returned as a refusal.
-func modelPathRewrites(olds []string, to string) (rewrites []keyValue, envRefusals []string) {
+// the old folder, with the same file in the new one. A setting that comes
+// from the environment cannot be rewritten and is returned as a refusal.
+// Paths are matched by folder identity, so a value that reaches the folder
+// through a link or another spelling still counts.
+func modelPathRewrites(source, to string) (rewrites []keyValue, envRefusals []string) {
 	for _, spec := range Schema() {
 		if spec.Type != TypeString || spec.Key == "models_dir" {
+			continue
+		}
+		if name, raw, ok := envValueFor(spec.Key); ok {
+			if _, inside := insideFolder(source, expandHomePath(strings.TrimSpace(raw))); inside {
+				envRefusals = append(envRefusals, fmt.Sprintf("%s (%s) is set in the environment to %s, inside the models folder, and cannot be updated; unset it or point it at the new folder, then try again", name, spec.Key, raw))
+			}
 			continue
 		}
 		mu.RLock()
 		value := v.GetString(spec.Key)
 		mu.RUnlock()
-		if strings.TrimSpace(value) == "" {
-			continue
-		}
-		clean := filepath.Clean(expandHomePath(value))
-		for _, old := range olds {
-			if !within(clean, old) {
-				continue
-			}
-			if name, _, ok := envValueFor(spec.Key); ok {
-				envRefusals = append(envRefusals, fmt.Sprintf("%s (%s) is set in the environment to %s, inside the models folder, and cannot be updated; unset it or point it at the new folder, then try again", name, spec.Key, value))
-				break
-			}
-			rel, _ := filepath.Rel(old, clean)
+		if rel, inside := insideFolder(source, expandHomePath(strings.TrimSpace(value))); inside {
 			rewrites = append(rewrites, keyValue{Key: spec.Key, Value: filepath.Join(to, rel)})
-			break
 		}
 	}
 	sort.Slice(rewrites, func(i, j int) bool { return rewrites[i].Key < rewrites[j].Key })
 	return rewrites, envRefusals
+}
+
+// insideFolder reports where an absolute path lies inside dir. Folders are
+// compared by identity, so a link or a case variant on the way is seen
+// through; the path itself need not exist.
+func insideFolder(dir, path string) (string, bool) {
+	if !filepath.IsAbs(path) {
+		return "", false
+	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		return "", false
+	}
+	path = filepath.Clean(path)
+	for p := path; ; {
+		if info, err := os.Stat(p); err == nil && os.SameFile(info, dirInfo) {
+			rel, err := filepath.Rel(p, path)
+			return rel, err == nil
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return "", false
+		}
+		p = parent
+	}
 }
 
 func describeSaveError(err error) string {
@@ -286,7 +306,7 @@ type modelsScan struct {
 // scanModelsTree measures the folder and finds what a move could not carry
 // over faithfully: special files, and links that would point somewhere else
 // once the folder has moved.
-func scanModelsTree(ctx context.Context, configured, source string) (modelsScan, error) {
+func scanModelsTree(ctx context.Context, source string) (modelsScan, error) {
 	var scan modelsScan
 	sizes := map[string]int64{}
 	err := filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
@@ -311,7 +331,7 @@ func scanModelsTree(ctx context.Context, configured, source string) (modelsScan,
 			if err != nil {
 				return fmt.Errorf("reading link %s: %w", path, err)
 			}
-			if linkBreaksOnMove(rel, target, configured, source) {
+			if linkBreaksOnMove(rel, target, source) {
 				scan.strayLinks = append(scan.strayLinks, rel+" → "+target)
 			}
 		case d.Type().IsRegular():
@@ -340,15 +360,10 @@ func scanModelsTree(ctx context.Context, configured, source string) (modelsScan,
 // linkBreaksOnMove reports a link that names its target through the old
 // folder's path (absolute into it, or relative out of it), so it would point
 // somewhere else after the move.
-func linkBreaksOnMove(rel, target, configured, source string) bool {
+func linkBreaksOnMove(rel, target, source string) bool {
 	if filepath.IsAbs(target) {
-		clean := filepath.Clean(target)
-		for _, old := range []string{configured, source} {
-			if clean == old || within(clean, old) {
-				return true
-			}
-		}
-		return false
+		_, inside := insideFolder(source, target)
+		return inside
 	}
 	resolved := filepath.Clean(filepath.Join(filepath.Dir(rel), target))
 	return resolved == ".." || strings.HasPrefix(resolved, ".."+string(filepath.Separator))

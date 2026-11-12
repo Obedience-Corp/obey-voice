@@ -21,6 +21,13 @@ func TestMoveModelsFlushesTheCopyBeforeRemovingTheOriginal(t *testing.T) {
 	if _, err := MoveModels(context.Background(), cfg, dest, opts); err != nil {
 		t.Fatal(err)
 	}
+	// The move writes to the destination with links resolved (macOS's /var
+	// is a link to /private/var).
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest = filepath.Join(realRoot, "fast", "models")
 	save := slices.Index(events, "save")
 	remove := slices.IndexFunc(events, func(e string) bool { return strings.HasPrefix(e, "remove ") })
 	if save < 0 || remove < save {
@@ -113,7 +120,7 @@ func TestMoveModelsRefusesACopyThatDoesNotFit(t *testing.T) {
 
 func TestMoveModelsRefusesTheTopOfADrive(t *testing.T) {
 	cfg, source, root := moveFixture(t)
-	moveHooks.isMountPoint = func(p string) bool { return p == source }
+	moveHooks.isMountPoint = func(p string) bool { return samePath(p, source) }
 	dest := filepath.Join(root, "fast", "models")
 	_, err := MoveModels(context.Background(), cfg, dest, copyOpts(t, nil))
 	if err == nil || !strings.Contains(err.Error(), "top of a drive") {
