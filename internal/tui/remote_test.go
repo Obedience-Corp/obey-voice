@@ -3,6 +3,7 @@ package tui
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -325,4 +326,59 @@ func TestRemoteHelperProcess(t *testing.T) {
 	fmt.Println("Pairing code: 654321  (expires 12:34:56)")
 	// The subprocess must terminate without running the parent test suite.
 	os.Exit(0)
+}
+
+func TestRemoteCopyKeysUseInjectedClipboard(t *testing.T) {
+	cases := []struct {
+		key   rune
+		label string
+	}{
+		{'c', "Link"},
+		{'p', "Pairing code"},
+		{'o', "Client setup link"},
+	}
+	for _, tc := range cases {
+		m := newRemote(context.Background(), nil)
+		clip := &testClipboard{}
+		m.clipboard = clip
+		m.url = "https://example.test/join"
+		m.pairing = "ABCD-1234"
+		m.setupURL = "https://example.test/setup"
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{tc.key}})
+		if cmd == nil {
+			t.Fatalf("%c: no copy cmd", tc.key)
+		}
+		msg, ok := cmd().(remoteCopiedMsg)
+		if !ok || msg.err != nil || msg.label != tc.label {
+			t.Fatalf("%c: msg = %#v", tc.key, msg)
+		}
+		want := m.url
+		switch tc.key {
+		case 'p':
+			want = m.pairing
+		case 'o':
+			want = m.setupURL
+		}
+		if clip.value != want {
+			t.Fatalf("%c: copied %q, want %q", tc.key, clip.value, want)
+		}
+	}
+}
+
+func TestRemoteCopyFailureShowsDetail(t *testing.T) {
+	for _, key := range []rune{'c', 'p', 'o'} {
+		m := newRemote(context.Background(), nil)
+		m.clipboard = &testClipboard{err: errors.New("no clipboard")}
+		m.url = "https://example.test/join"
+		m.pairing = "ABCD-1234"
+		m.setupURL = "https://example.test/setup"
+		m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+		if cmd == nil {
+			t.Fatalf("%c: no copy cmd", key)
+		}
+		m, _ = m.Update(cmd())
+		if m.detail != "Copy failed: no clipboard" {
+			t.Fatalf("%c: detail = %q", key, m.detail)
+		}
+	}
 }

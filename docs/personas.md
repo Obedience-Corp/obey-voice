@@ -245,7 +245,10 @@ Exact persona controls are intentionally narrow and whole-input only:
 
 Quoted names (for example `"Santa"`), multi-target phrases (`Santa and Jarvis`)
 and substantive tails (`switch to Santa and tell me a story`) stay semantic and
-use normal addressee inference.
+use normal addressee inference. Addressee inference uses the optional decision
+model when enabled, then the Ollama classifier when the live brain is Ollama; a
+persona on another backend is never asked to classify (see
+[decision routing](decision-routing.md#who-is-being-addressed)).
 
 A leading punctuated address such as `Joker, ask Venessa what she thinks`
 also selects the named listener directly and preserves the full request. Joker

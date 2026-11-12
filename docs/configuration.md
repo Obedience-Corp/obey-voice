@@ -683,6 +683,27 @@ conversation/runtime. It requires local Ollama inference.
 Conversation controls save mode and member changes with that session, without
 changing global defaults. See [Group participation](personas.md#group-participation-experimental).
 
+### Decision model
+
+`decision_enabled` (default `false`) turns on the optional decision model, and
+three switches choose what it answers: `decision_voice_work` and
+`decision_text_work` (worker routing) and `decision_addressee` (which persona a
+message naming one is for). All three default to `true`. With all three off,
+nothing is prepared even when `decision_enabled` is on: no credential is read and
+no model is installed, loaded or contacted. These keys have no environment
+variables; `DECISION_API_KEY` is read only for an enabled hosted provider.
+
+The addressee question sends the message (or a persona's reply, when checking
+for a handoff), up to eight earlier messages (each cut
+to 1,000 characters and labelled with its speaker's name), the speaker's name,
+the current persona's name, and every persona name and alias in the conversation
+to the configured `decision_provider`. With `local` that stays on this computer;
+with `jev` or `openai` the hosted service receives it. Turn the question off with
+`obey-voice config set decision_addressee false`. The full list, thresholds and
+fallback order are in [Decision routing](decision-routing.md#who-is-being-addressed),
+and why the question is on by default is in its
+[upgrade note](decision-routing.md#upgrade-note-on-by-default).
+
 ### Ollama thinking in the terminal
 
 In Settings → Brain → Thinking, select `false` to disable model thinking or
