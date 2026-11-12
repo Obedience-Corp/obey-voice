@@ -879,13 +879,26 @@
       "editable": true
     },
     {
+      "key": "decision_addressee",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decide who is addressed",
+      "help": "Ask the decision model which persona a message naming one is for. Sends the message, up to eight recent messages, speaker and persona names to the decision provider, including Jev or OpenAI when selected.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "decision_budget_ms",
       "type": "int",
       "default": 750,
       "allows_empty": false,
       "group": "brain",
       "title": "Decision deadline",
-      "help": "Cancel optional inference after this deadline. The conversation never waits for it.",
+      "help": "Cancel optional inference after this deadline. Work decisions never delay a reply; the addressee question waits at most this long.",
       "unit": "ms",
       "min": 25,
       "max": 3000,

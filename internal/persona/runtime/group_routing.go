@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
@@ -78,7 +80,8 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 	if resolver == nil {
 		resolver, _ = s.opts.Pipeline.Brain.(brain.AddresseeResolver)
 	}
-	if resolver == nil {
+	viaDecision := s.opts.Pipeline.Decisions.Enabled(decision.AddresseeResolution)
+	if resolver == nil && !viaDecision {
 		// Compatibility for hosts/providers without a semantic classifier. Agent
 		// handoffs require semantic support; legacy grammar cannot infer intent.
 		if account == "agent" {
@@ -121,19 +124,41 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 		request.Conversation = append(request.Conversation, brain.AddressMessage{Name: name, Account: kind, Text: string(content)})
 	}
 	slices.Reverse(request.Conversation)
-	decision, err := resolver.ResolveAddressee(ctx, request)
+	started := time.Now()
+	var trace addresseeTrace
+	decided, err := s.classifyAddressee(ctx, resolver, viaDecision, request, &trace)
 	if err != nil {
+		trace.resolver = resolutionFailed
+		s.emitAddresseeTrace(trace, started)
 		return summon.Address{}, classifyAdmissionFailure(ctx, "resolve_addressee", err)
 	}
+	if decided == nil {
+		trace.resolver = resolvedByCurrent
+		if account == "agent" {
+			s.emitAddresseeTrace(trace, started)
+			return summon.Address{Remainder: text}, nil
+		}
+		address, err := roster.Resolve(text)
+		if err != nil || address.PersonaID != "" {
+			trace.resolver = resolvedByGrammar
+		}
+		s.emitAddresseeTrace(trace, started)
+		if err != nil {
+			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
+		}
+		return address, nil
+	}
+	s.emitAddresseeTrace(trace, started)
+	chosen := *decided
 	if err := ctx.Err(); err != nil {
 		return summon.Address{}, classifyAdmissionFailure(ctx, "resolve_addressee", err)
 	}
-	switch decision.Kind {
+	switch chosen.Kind {
 	case "none":
 		return summon.Address{Remainder: text}, nil
 	case "ambiguous":
 		// Lookup preserves the existing precise collision error when possible.
-		if _, err := roster.Lookup(decision.Name); err != nil {
+		if _, err := roster.Lookup(chosen.Name); err != nil {
 			if _, ok := err.(*summon.AmbiguousTargetError); ok {
 				return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
 			}
@@ -144,7 +169,7 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 			fmt.Errorf("conversation addressee is ambiguous; address one persona by a unique name"),
 		)
 	case "address":
-		address, err := roster.Lookup(decision.Name)
+		address, err := roster.Lookup(chosen.Name)
 		if err != nil {
 			var unknown *summon.UnknownTargetError
 			if errors.As(err, &unknown) {
@@ -156,12 +181,12 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
 		}
 		// Keep the user's words exactly, including the name at any position.
-		address.Remainder, address.Bare = text, decision.Bare && account == "user"
+		address.Remainder, address.Bare = text, chosen.Bare && account == "user"
 		return address, nil
 	default:
 		return summon.Address{}, wrapInvalidClassifierOutput(
 			"resolve_addressee",
-			fmt.Errorf("invalid conversation addressee decision %q", decision.Kind),
+			fmt.Errorf("invalid conversation addressee decision %q", chosen.Kind),
 		)
 	}
 }

@@ -114,6 +114,10 @@
       "value": "",
       "source": "default"
     },
+    "decision_addressee": {
+      "value": true,
+      "source": "default"
+    },
     "decision_api_key": {
       "value": "",
       "source": "default"

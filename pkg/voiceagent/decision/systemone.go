@@ -122,10 +122,10 @@ func (s *SystemOne) Evaluate(ctx context.Context, input Request) (Response, erro
 		return result, fmt.Errorf("read decision: %w", err)
 	}
 	if len(raw) > maxBody {
-		return result, fmt.Errorf("decision response exceeds limit")
+		return result, fmt.Errorf("%w: decision response exceeds limit", ErrInvalidOutput)
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return result, fmt.Errorf("decode decision: %w", err)
+		return result, fmt.Errorf("%w: decode decision: %w", ErrInvalidOutput, err)
 	}
 	result.Raw = raw
 	return result, nil

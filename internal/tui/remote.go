@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	ansi "github.com/charmbracelet/x/ansi"
 
@@ -49,13 +48,15 @@ type remoteCopiedMsg struct {
 type remoteModel struct {
 	ctx     context.Context
 	factory remoteCommandFactory // optional override (tests); nil → mode factory
-	server  *remoteServer
-	width   int
-	height  int
-	status  string
-	detail  string
-	url     string
-	pairing string
+	// clipboard is injectable for tests; nil → system clipboard.
+	clipboard clipboardBackend
+	server    *remoteServer
+	width     int
+	height    int
+	status    string
+	detail    string
+	url       string
+	pairing   string
 	// setupURL is the one-click admin page for enabling full mic (when limited).
 	setupURL   string
 	logs       []string
@@ -232,15 +233,15 @@ func (m remoteModel) Update(msg tea.Msg) (remoteModel, tea.Cmd) {
 			return m, m.switchNetwork(remoteNetworkTailscale)
 		case "c":
 			if m.url != "" {
-				return m, copyRemoteValue("Link", m.url)
+				return m, copyRemoteValue(m.clipboard, "Link", m.url)
 			}
 		case "p":
 			if m.pairing != "" {
-				return m, copyRemoteValue("Pairing code", m.pairing)
+				return m, copyRemoteValue(m.clipboard, "Pairing code", m.pairing)
 			}
 		case "o":
 			if setup := m.clientSetupLink(); setup != "" {
-				return m, copyRemoteValue("Client setup link", setup)
+				return m, copyRemoteValue(m.clipboard, "Client setup link", setup)
 			}
 		}
 	}
@@ -346,9 +347,10 @@ func remoteField(line, label string) (string, bool) {
 	return value, value != ""
 }
 
-func copyRemoteValue(label, value string) tea.Cmd {
+func copyRemoteValue(backend clipboardBackend, label, value string) tea.Cmd {
+	backend = orSystemClipboard(backend)
 	return func() tea.Msg {
-		return remoteCopiedMsg{label: label, err: clipboard.WriteAll(value)}
+		return remoteCopiedMsg{label: label, err: backend.WriteAll(value)}
 	}
 }
 
