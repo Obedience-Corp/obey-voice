@@ -20,15 +20,16 @@ Conversation participants already listed by the host are existing personas. Insp
 ## Inspect the installed interface
 
 - `obey-voice --help` and `<command> --help` describe the installed version. Prefer these over remembered flags.
-- `obey-voice persona list --json` lists installed personas. Use `persona show <id> --with-prompt --json` to inspect a specific profile and its prompt.
-- `obey-voice config get --json` and `config schema --json` report current settings, valid keys, ownership and restart requirements. Do not print or repeat secrets.
+- `obey-voice persona list --json` lists installed personas. `persona show <id> --json` shows one profile; add `--with-prompt` for its prompt. Pass the id: with none, `persona show` reports the default persona for new conversations, which may not be the one speaking.
+- A persona's brain provider and model, worker and voice live in its profile, not in app settings. Change them with `persona edit <id>` and its `--brain-provider`, `--brain-model`, `--tts-provider`, `--voice` and `--tier` flags.
+- `obey-voice config get <key> --json` reads one app setting: its value, source, restart requirement and whether the default persona overrides it. Do not run `config get` without a key or `config schema`: both print every setting, more than a command result shows. Do not print or repeat secrets.
 - `obey-voice doctor` diagnoses runtime readiness; `obey-voice models --help` and `voices --help` describe model and voice discovery.
 
 ## Make and verify requested changes
 
 Create a persona with `obey-voice persona create "Display Name" --prompt-file <utf8-file> --no-activate --json`. The ID is derived from the name. `--no-activate` keeps creation separate from switching; use `persona use <id> --json` when the user requests changing the default persona. Inspect `persona edit --help` before editing an existing profile.
 
-Use `obey-voice config set <key> <value> --json` for app settings and `config unset <key> --json` to restore inheritance. These validate types and preserve unrelated configuration. Persona overrides can take precedence over app defaults; inspect the profile before changing a global setting that it overrides. Prefer owning persona/config commands over manually rewriting YAML.
+Use `obey-voice config set <key> <value> --json` for app settings and `config unset <key> --json` to restore inheritance. These validate the value, report what a rejected value should be, and preserve unrelated configuration. A persona's own model or voice wins over the app setting, so change persona settings with `persona edit`. Prefer owning persona/config commands over manually rewriting YAML.
 
 Re-read the profile or setting after a write and report the actual saved value. Check provider/model/voice availability where relevant. A saved default does not prove an already-running conversation changed: use the current TUI's persona selector or a leading `@persona-id` message for in-session selection. Honor the command's restart requirement for settings that cannot reload live.
 
