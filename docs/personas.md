@@ -401,9 +401,14 @@ resets the session, or when the unseen lines do not fit, sends more input tokens
 and costs more than before. After a compaction the fresh session starts from the
 summary instead. A prompt of 100 KiB or more reaches the Claude CLI on stdin
 rather than as one command-line argument. The Grok and Cursor CLIs take the
-prompt only as an argument: the conversation record stays within 64 KiB, but a
-line you type or paste is sent whole, and Linux refuses one argument of 128 KiB
-or more.
+whole request as one argument, so Obey Voice keeps it within 100 KiB: Linux
+refuses a single argument of 128 KiB or more, and macOS limits all arguments
+and the environment together to 1 MiB. The conversation record gets what the
+rest of the request leaves, up to 64 KiB, so a long line you type or paste
+leaves less room for it. Unseen lines that no longer fit start a fresh session
+with the newest lines that do, shortened to half that room. A request that does
+not fit even without the record is refused before the CLI runs, with an error
+saying it is too large; the session is kept.
 
 At most four sessions stay parked, whatever their backends, a Codex thread
 included (see below); the least recently used one is closed first. A parked

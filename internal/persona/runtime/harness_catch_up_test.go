@@ -611,3 +611,89 @@ func TestGrokOrCursorConversationSavedWithoutACursorSendsNothingEarlier(t *testi
 		})
 	}
 }
+
+// promptArgLimit is the most a Grok or Cursor request may be: the CLI takes
+// it as one command-line argument.
+const promptArgLimit = 100 << 10
+
+// A long request leaves the catch-up less room in the one argument: unseen
+// lines that fit the catch-up limit by themselves but not beside the request
+// start a fresh session with the newest lines that fit.
+func TestGrokOrCursorLongRequestShrinksTheCatchUpToFitOneArgument(t *testing.T) {
+	for _, provider := range []string{"grok", "cursor"} {
+		t.Run(provider, func(t *testing.T) {
+			c := newSessionConversation(t, provider)
+			c.base.OllamaNumCtx = 1 << 17
+			c.start("ember", nil, nil)
+			c.say("switch to Mira", "What do you think?", "switch to Ember")
+			// Three lines of about 20 KB: about 60 KB unseen, within the
+			// catch-up limit, none long enough to be shortened there.
+			for i := range 3 {
+				c.say("LINE-" + string(rune('A'+i)) + " " + strings.Repeat("teal ", 4000))
+			}
+			c.say("switch to Mira", "PASTE-START "+strings.Repeat("amber ", 12000)+"PASTE-END")
+
+			requests := c.sessionRequests()
+			if len(requests) != 2 {
+				t.Fatalf("%s requests = %d", provider, len(requests))
+			}
+			first, second := requests[0], requests[1]
+			if len(second.Prompt) > promptArgLimit {
+				t.Fatalf("the request is %d bytes, over the %d one argument may carry", len(second.Prompt), promptArgLimit)
+			}
+			if second.Resume != "" || second.Session == first.Session {
+				t.Fatalf("a catch-up that no longer fits beside the request resumed the old session: %+v", second)
+			}
+			transcript := c.selector.Transcript()
+			unseen := len(transcript) - 2
+			records := promptRecords(t, second.Prompt)
+			if len(records) == 0 || len(records) >= unseen {
+				t.Fatalf("replay has %d records of %d", len(records), unseen)
+			}
+			// The newest lines, each shortened to fit the smaller record.
+			for i, want := range recordsOf(transcript[unseen-len(records) : unseen]) {
+				got := records[i]
+				head, _, _ := strings.Cut(got.Content, " [")
+				if got.Role != want.Role || got.Persona != want.Persona || !strings.HasPrefix(want.Content, head) {
+					t.Fatalf("replay record %d = %+v, want %+v", i, got, want)
+				}
+			}
+			requireContains(t, second.Prompt, "earlier conversation records omitted]", "more characters of this line omitted]", "LINE-C", "User: PASTE-START", "PASTE-END")
+			requireOmits(t, second.Prompt, "LINE-A")
+			if cursor := c.selector.ContextSnapshots()["mira"]; cursor.Through != len(transcript) {
+				t.Fatalf("cursor after the replay = %+v for %d turns", cursor, len(transcript))
+			}
+		})
+	}
+}
+
+// A request too large for one argument even with no catch-up fails before the
+// CLI runs, and the session stays for the next request.
+func TestGrokOrCursorRequestTooLargeForOneArgumentFailsBeforeTheCLIRuns(t *testing.T) {
+	for _, provider := range []string{"grok", "cursor"} {
+		t.Run(provider, func(t *testing.T) {
+			c := newSessionConversation(t, provider)
+			c.say("switch to Mira", "What do you think?")
+			before := c.sessionRequests()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			_ = c.p.RunTurnTextMode(ctx, strings.Repeat("amber ", 20000))
+			if got := c.sessionRequests(); len(got) != len(before) {
+				t.Fatalf("the CLI ran for a request too large for one argument: %d requests, had %d", len(got), len(before))
+			}
+			var reported bool
+			for _, e := range c.errorEvents() {
+				reported = reported || strings.Contains(e.Message, "too large to pass to the CLI as one command-line argument")
+			}
+			if !reported {
+				t.Fatalf("errors = %+v", c.errorEvents())
+			}
+
+			c.say("Still there?")
+			if last := c.lastSessionRequest(); last.Resume != before[0].Session || len(last.Prompt) > promptArgLimit {
+				t.Fatalf("the session did not survive the refused request: %+v", last)
+			}
+		})
+	}
+}

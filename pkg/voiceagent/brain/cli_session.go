@@ -1,10 +1,41 @@
 package brain
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
+
+// maxPromptArgBytes is the largest request passed to a CLI as one
+// command-line argument. Linux refuses any single argument of MAX_ARG_STRLEN
+// (131072 bytes, its terminating NUL included), whatever the total. macOS has
+// no per-argument cap, but ARG_MAX (1048576 bytes, getconf ARG_MAX) bounds the
+// arguments and the environment together. This stays under the first and
+// leaves most of the second to the other arguments and the environment.
+const maxPromptArgBytes = 100 << 10
+
+var errPromptArgTooLarge = errors.New("the request is too large to pass to the CLI as one command-line argument")
+
+// argCatchUpBudget is how much conversation record a request passed as one
+// command-line argument can carry: what the rest of the request leaves, at
+// most maxCatchUpBytes. render renders the whole request with its record held
+// to a budget. The result is negative when the rest alone does not fit.
+func argCatchUpBudget(render func(budget int) string) int {
+	return min(maxCatchUpBytes, maxPromptArgBytes-len(render(0)))
+}
+
+// argPrompt renders a request passed to a CLI as one command-line argument,
+// its conversation record held to what fits beside the rest. It fails, so
+// nothing is run, when the request does not fit even without the record.
+func argPrompt(provider string, render func(budget int) string) (string, error) {
+	prompt := render(max(argCatchUpBudget(render), 0))
+	if len(prompt) > maxPromptArgBytes {
+		return "", fmt.Errorf("%s: %w (%d KiB; at most %d KiB fits)", provider, errPromptArgTooLarge, (len(prompt)+1023)>>10, maxPromptArgBytes>>10)
+	}
+	return prompt, nil
+}
 
 // cliSessionPrompt is what a provider driving a CLI session (Claude, Grok,
 // Cursor) renders its next request from.

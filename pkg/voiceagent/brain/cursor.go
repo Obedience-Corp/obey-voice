@@ -155,11 +155,11 @@ func (c *CursorBrain) ThinkStream(ctx context.Context, input string, streamOpts 
 	}
 	c.refreshPrompts(streamOpts.OnPromptWarn)
 	c.mu.Lock()
-	c.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
 	// A handoff from another agent is not a user turn.
 	if !streamOpts.AgentContinuation {
 		c.history = append(c.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
 	}
+	c.prepareCatchUp(streamOpts)
 	first, fresh := c.attempts(streamOpts)
 	c.mu.Unlock()
 
@@ -174,7 +174,7 @@ func (c *CursorBrain) ThinkStream(ctx context.Context, input string, streamOpts 
 		// the id and retry once via the flatten path so one bad CLI session file
 		// cannot wedge the conversation. Guard on a live context so a user
 		// barge-in cancel is not mistaken for a resume failure.
-		if err != nil && fresh != nil && c.dropForRetry(ctx) {
+		if err != nil && first.err == nil && fresh != nil && c.dropForRetry(ctx) {
 			fmt.Fprintf(os.Stderr, "obey-voice: cursor resume failed, retrying without session: %v\n", err)
 			raw, err = c.askAttempt(ctx, streamOpts, *fresh)
 		}
@@ -229,16 +229,16 @@ func (c *CursorBrain) ThinkFull(ctx context.Context, input string, streamOpts St
 	// Same append-then-roll-back contract as Claude: the prompt comes from
 	// history, and a turn that never answered must not leave its input behind.
 	c.mu.Lock()
-	c.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
 	restore := len(c.history)
 	if !streamOpts.AgentContinuation {
 		c.history = append(c.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
 	}
+	c.prepareCatchUp(streamOpts)
 	first, fresh := c.attempts(streamOpts)
 	c.mu.Unlock()
 
 	response, err := c.thinkFullAttempt(ctx, streamOpts, first)
-	if err != nil && fresh != nil && c.dropForRetry(ctx) {
+	if err != nil && first.err == nil && fresh != nil && c.dropForRetry(ctx) {
 		fmt.Fprintf(os.Stderr, "obey-voice: cursor resume failed, retrying without session: %v\n", err)
 		response, err = c.thinkFullAttempt(ctx, streamOpts, *fresh)
 	}
@@ -269,19 +269,19 @@ func (c *CursorBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOpt
 }
 
 // cursorAttempt is one CLI request as the provider's state stood when its
-// request started.
+// request started. err is set when the request cannot be passed to the CLI;
+// it is then not run.
 type cursorAttempt struct {
 	prompt string
 	opts   *cursor.AskOptions
+	err    error
 }
 
 // attempts is Brain.attempts for Cursor. The caller holds c.mu.
 func (c *CursorBrain) attempts(streamOpts StreamOptions) (cursorAttempt, *cursorAttempt) {
 	build := func() cursorAttempt {
-		return cursorAttempt{
-			prompt: c.buildPrompt(streamOpts) + harnessRoutingContext(c.cfg, streamOpts) + currentRequestContext(c.cfg, streamOpts),
-			opts:   c.askOptions(liveCLITools(streamOpts)),
-		}
+		prompt, err := argPrompt(providerCursor, c.request(streamOpts))
+		return cursorAttempt{prompt: prompt, opts: c.askOptions(liveCLITools(streamOpts)), err: err}
 	}
 	first := build()
 	if c.sessionID == "" {
@@ -309,6 +309,9 @@ func (c *CursorBrain) dropForRetry(ctx context.Context) bool {
 // for resume. The SDK's Classify already turns result.IsError into a Go error,
 // so a rejected --resume falls through to the flatten retry.
 func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions, attempt cursorAttempt) (string, error) {
+	if attempt.err != nil {
+		return "", attempt.err
+	}
 	result, err := c.client.AskCtx(ctx, attempt.prompt, attempt.opts)
 	if err != nil {
 		return "", wrapCursorAskError(err)
@@ -345,9 +348,16 @@ func (c *CursorBrain) dropSession() {
 	c.promptTokens = 0
 }
 
-// prepareCatchUp is Brain.prepareCatchUp for Cursor. The caller holds c.mu.
-func (c *CursorBrain) prepareCatchUp(catchUp *SessionCatchUp, summary bool) {
-	if catchUpOverflows(providerCursor, catchUp, c.sessionID != "", summary, c.speakerNames, maxCatchUpBytes) {
+// prepareCatchUp is Brain.prepareCatchUp for Cursor, with the catch-up held
+// to what fits beside the rest of the request in one argument. The caller
+// holds c.mu and has recorded the request.
+func (c *CursorBrain) prepareCatchUp(opts StreamOptions) {
+	if opts.CatchUp == nil || c.sessionID == "" {
+		return
+	}
+	// A request too large even without its catch-up fails, and keeps the session.
+	budget := argCatchUpBudget(c.request(opts))
+	if budget >= 0 && catchUpOverflows(providerCursor, opts.CatchUp, true, opts.TransientHistory, c.speakerNames, budget) {
 		c.dropSession()
 	}
 }
@@ -410,12 +420,20 @@ func firstNonEmptyLine(s string) string {
 // buildPrompt renders the next turn for the CLI, as Brain.buildPrompt does.
 // The system prompt is inlined into a fresh session's prompt because print
 // mode has no --system-prompt flag.
-func (c *CursorBrain) buildPrompt(opts StreamOptions) string {
+func (c *CursorBrain) buildPrompt(opts StreamOptions, budget int) string {
 	return cliSessionPrompt{
 		cfg: c.cfg, provider: providerCursor, history: c.history, live: c.sessionID != "", system: c.systemPrompt,
 		hostContext: c.hostContext, seed: c.seed, names: c.speakerNames, group: &c.groupContext,
-		turnInstruction: c.turnInstruction, budget: maxCatchUpBytes,
+		turnInstruction: c.turnInstruction, budget: budget,
 	}.render(opts)
+}
+
+// request renders the whole next request, its conversation record held to
+// budget. The caller holds c.mu.
+func (c *CursorBrain) request(opts StreamOptions) func(budget int) string {
+	return func(budget int) string {
+		return c.buildPrompt(opts, budget) + harnessRoutingContext(c.cfg, opts) + currentRequestContext(c.cfg, opts)
+	}
 }
 
 func (c *CursorBrain) trimHistory() {
@@ -468,7 +486,9 @@ func (c *CursorBrain) loadHistory(turns []Turn) {
 	c.dropSession()
 }
 
-// ReseedContinuity is Brain.ReseedContinuity for Cursor.
+// ReseedContinuity is Brain.ReseedContinuity for Cursor. turns must lead
+// with the compaction summary, as the compaction seed does; the next session
+// starts from it.
 func (c *CursorBrain) ReseedContinuity(turns []Turn) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
