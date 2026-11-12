@@ -40,11 +40,12 @@ func (m *settingsModel) armStorageMove(dest string) tea.Cmd {
 	seq := storageSeq.Add(1)
 	m.storage.checking, m.storage.confirm = seq, nil
 	m.message = "Checking the move…"
-	cfg, plan, storage := m.cfg.Clone(), m.storage.plan, m.storage
+	screenCfg, plan, storage := m.cfg.Clone(), m.storage.plan, m.storage
 	if plan == nil {
 		plan = config.PlanModelsMove
 	}
 	return func() tea.Msg {
+		cfg := storage.moveConfig(screenCfg)
 		result, err := plan(context.Background(), cfg, dest, config.MoveOptions{Personas: storage.movePersonas(cfg)})
 		return storagePlanMsg{seq: seq, plan: result, err: err}
 	}

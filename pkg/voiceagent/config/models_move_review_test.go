@@ -437,41 +437,86 @@ func TestMoveModelsRepointsOnADriveWithoutLinks(t *testing.T) {
 	assertMoved(t, cfg, source, dest, result)
 }
 
-// The installer lock a move takes is created if missing, and taken away
-// again: a folder the user never had a decider folder in gets none.
-func TestMoveModelsLeavesNoLockFileBehind(t *testing.T) {
-	t.Run("moved", func(t *testing.T) {
-		cfg, _, root := moveFixture(t)
-		dest := filepath.Join(root, "fast", "models")
-		if _, err := MoveModels(context.Background(), cfg, dest, copyOpts(t, nil)); err != nil {
+// Something can start between the first check and the move taking its
+// locks. The locks themselves, and the check made again under them, must
+// still refuse.
+func TestMoveModelsRefusesWhatStartsBeforeItTakesItsLocks(t *testing.T) {
+	hold := func(t *testing.T, path string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := os.Lstat(filepath.Join(dest, "decider")); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("the move left its lock folder in the new folder: %v", err)
-		}
-	})
-	t.Run("cancelled", func(t *testing.T) {
-		cfg, source, root := moveFixture(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		opts := copyOpts(t, nil)
-		moveHooks.afterCopy = func(context.Context, string) { cancel() }
-		if _, err := MoveModels(ctx, cfg, filepath.Join(root, "fast", "models"), opts); !errors.Is(err, context.Canceled) {
-			t.Fatalf("err = %v", err)
-		}
-		if _, err := os.Lstat(filepath.Join(source, "decider")); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("the move left its lock folder in the old folder: %v", err)
-		}
-	})
-	t.Run("an existing lock is kept", func(t *testing.T) {
-		cfg, _, root := moveFixture(t)
-		cfgSource := cfg.ModelsDir
-		writeMoveFile(t, filepath.Join(cfgSource, "decider", "native-install.lock"), "")
-		dest := filepath.Join(root, "fast", "models")
-		if _, err := MoveModels(context.Background(), cfg, dest, copyOpts(t, nil)); err != nil {
+		release, err := acquireLockGuard(path)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := os.Lstat(filepath.Join(dest, "decider", "native-install.lock")); err != nil {
-			t.Fatalf("the user's own install lock was removed: %v", err)
+		t.Cleanup(release)
+	}
+	for name, tc := range map[string]struct {
+		gap  func(t *testing.T, source, dest string)
+		want string
+	}{
+		"another move":             {func(t *testing.T, _, _ string) { hold(t, filepath.Join(ConfigDir(), "models-move.lock")) }, "another models move"},
+		"an install":               {func(t *testing.T, source, _ string) { hold(t, filepath.Join(source, "decider", "native-install.lock")) }, "decision model"},
+		"files at the destination": {func(t *testing.T, _, dest string) { writeMoveFile(t, filepath.Join(dest, "mine.txt"), "mine") }, "already has files"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, source, root := moveFixture(t)
+			dest := filepath.Join(root, "fast", "models")
+			opts := copyOpts(t, nil)
+			moveHooks.beforeLocks = func() { tc.gap(t, source, dest) }
+			_, err := MoveModels(context.Background(), cfg, dest, opts)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want it to mention %q", err, tc.want)
+			}
+			if _, err := os.Stat(filepath.Join(source, "silero_vad.onnx")); err != nil || ModelsDir() != source {
+				t.Fatalf("the old folder is not in use: %v", err)
+			}
+		})
+	}
+}
+
+// The plan refuses a copy that cannot fit before anything is created, not
+// only the copy step.
+func TestMoveModelsPlanRefusesACopyThatDoesNotFit(t *testing.T) {
+	cfg, source, root := moveFixture(t)
+	dest := filepath.Join(root, "fast", "models")
+	sourceDev, _ := deviceOf(source)
+	moveHooks.deviceOf = func(path string) (uint64, bool) {
+		if containsPath(source, path) {
+			return sourceDev, true
 		}
-	})
+		return sourceDev + 1, true
+	}
+	moveHooks.freeSpace = func(string) (int64, error) { return 1 << 20, nil }
+	plan, err := PlanModelsMove(context.Background(), cfg, dest, MoveOptions{})
+	if err != nil || plan.SameVolume || len(plan.Refusals) != 1 || !strings.Contains(plan.Refusals[0], "1.0 MiB free") {
+		t.Fatalf("plan = %+v, %v", plan, err)
+	}
+	if _, err := MoveModels(context.Background(), cfg, dest, MoveOptions{}); err == nil || !strings.Contains(err.Error(), "not enough space") {
+		t.Fatalf("err = %v", err)
+	}
+	assertNothingMoved(t, cfg, source, dest)
+}
+
+// A copy is marked unfinished for as long as it is being written.
+func TestMoveModelsMarksTheCopyUnfinishedWhileItIsWritten(t *testing.T) {
+	cfg, source, root := moveFixture(t)
+	dest := filepath.Join(root, "fast", "models")
+	opts := copyOpts(t, nil)
+	copied, marked := 0, 0
+	moveHooks.afterCopy = func(context.Context, string) {
+		copied++
+		if _, err := os.Lstat(filepath.Join(resolveExisting(dest), moveIncompleteMarker)); err == nil {
+			marked++
+		}
+	}
+	result, err := MoveModels(context.Background(), cfg, dest, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copied < 2 || marked != copied {
+		t.Fatalf("the copy was marked unfinished during %d of %d files", marked, copied)
+	}
+	assertMoved(t, cfg, source, dest, result)
 }

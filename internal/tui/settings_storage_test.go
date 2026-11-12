@@ -68,7 +68,7 @@ func TestStorageMeasuresOffTheUIThreadAndIgnoresStaleResults(t *testing.T) {
 func TestStorageMoveReportsProgressThenUsesTheNewFolder(t *testing.T) {
 	cfg := &config.Config{ModelsDir: "/old"}
 	m := newSettings(cfg, nil)
-	m.storage.personas = noPersonas
+	m.storage.personas, m.storage.fileConfig = noPersonas, noFileConfig
 	release := make(chan struct{})
 	m.storage.runMove = func(_ context.Context, c *config.Config, dest string, opts config.MoveOptions) (config.MoveResult, error) {
 		if c == cfg {
@@ -91,7 +91,7 @@ func TestStorageMoveReportsProgressThenUsesTheNewFolder(t *testing.T) {
 	m.storage.plan = func(_ context.Context, _ *config.Config, dest string, _ config.MoveOptions) (config.MovePlan, error) {
 		return config.MovePlan{From: "/old", To: dest, Measured: true, Bytes: 4 << 30, Files: 7}, nil
 	}
-	m.storage.personas = noPersonas
+	m.storage.personas, m.storage.fileConfig = noPersonas, noFileConfig
 	m.edit.input.SetValue("  /fast/models ")
 	m, check := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.storage.moving() || check == nil {
@@ -129,7 +129,7 @@ func TestStorageMoveReportsProgressThenUsesTheNewFolder(t *testing.T) {
 func TestStorageMoveFailureAndCancelKeepTheCurrentFolder(t *testing.T) {
 	cfg := &config.Config{ModelsDir: "/old"}
 	m := newSettings(cfg, nil)
-	m.storage.personas = noPersonas
+	m.storage.personas, m.storage.fileConfig = noPersonas, noFileConfig
 	m.storage.runMove = func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error) {
 		return config.MoveResult{}, errors.New("/fast already has files in it")
 	}
@@ -177,7 +177,7 @@ func TestStorageMoveIsRefusedDuringAConversation(t *testing.T) {
 func TestStorageMoveThatFinishesAfterCancelStillApplies(t *testing.T) {
 	cfg := &config.Config{ModelsDir: "/old"}
 	m := newSettings(cfg, nil)
-	m.storage.personas = noPersonas
+	m.storage.personas, m.storage.fileConfig = noPersonas, noFileConfig
 	release := make(chan struct{})
 	m.storage.runMove = func(_ context.Context, _ *config.Config, dest string, _ config.MoveOptions) (config.MoveResult, error) {
 		<-release

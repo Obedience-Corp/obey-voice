@@ -4,9 +4,9 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -82,9 +82,6 @@ func probeMoveLocks(source string) []string {
 type moveLocks struct {
 	releases []func()
 	once     sync.Once
-	// madeDir and madeFile record that the move itself created the
-	// installer's lock, so it can take it away again.
-	madeDir, madeFile bool
 }
 
 func (l *moveLocks) release() {
@@ -95,24 +92,12 @@ func (l *moveLocks) release() {
 	})
 }
 
-// removeMade takes away the installer lock this move created, from the
-// folder the models ended up in, so nothing is left that the user never had.
-func (l *moveLocks) removeMade(modelsDir string) {
-	dir := filepath.Join(modelsDir, deciderLockSubdir)
-	if l.madeFile {
-		if info, err := os.Lstat(filepath.Join(dir, deciderLockName)); err == nil && info.Mode().IsRegular() && info.Size() == 0 {
-			_ = os.Remove(filepath.Join(dir, deciderLockName))
-		}
-	}
-	if l.madeDir {
-		_ = os.Remove(dir)
-	}
-}
-
 // takeMoveLocks takes the locks a move holds for its whole run: its own, so
 // two moves cannot overlap, and the decision-model installer's, created the
 // way the installer creates it, so an install cannot start writing into the
-// folder mid-move.
+// folder mid-move. The installer's lock file is left in place afterwards, as
+// the installer leaves it: removing a lock file lets a waiter and a newcomer
+// lock different files.
 func takeMoveLocks(source string) (*moveLocks, []string) {
 	locks := &moveLocks{}
 	dir := ConfigDir()
@@ -130,19 +115,18 @@ func takeMoveLocks(source string) (*moveLocks, []string) {
 
 	var refusals []string
 	deciderDir := filepath.Join(source, deciderLockSubdir)
-	lockPath := filepath.Join(deciderDir, deciderLockName)
-	_, dirErr := os.Lstat(deciderDir)
-	_, fileErr := os.Lstat(lockPath)
 	// A folder nothing can write into has no installer to fear.
 	if err := os.MkdirAll(deciderDir, 0o700); err == nil {
-		locks.madeDir = errors.Is(dirErr, fs.ErrNotExist)
-		held, err := acquireLockGuard(lockPath)
-		locks.madeFile = errors.Is(fileErr, fs.ErrNotExist)
+		held, err := acquireLockGuard(filepath.Join(deciderDir, deciderLockName))
 		switch {
 		case errors.Is(err, errLockGuardBusy):
 			refusals = append(refusals, deciderBusy)
 		case err != nil:
 			refusals = append(refusals, fmt.Sprintf("cannot take the decision model install lock in %s: %v", deciderDir, err))
+		case runtime.GOOS == "windows":
+			// Windows will not rename a folder with a file open inside it,
+			// so there the lock is only checked, not held.
+			held()
 		default:
 			locks.releases = append(locks.releases, held)
 		}

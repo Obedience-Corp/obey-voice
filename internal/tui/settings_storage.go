@@ -37,6 +37,9 @@ type storageState struct {
 	plan     func(context.Context, *config.Config, string, config.MoveOptions) (config.MovePlan, error)
 	runMove  func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error)
 	personas func(*config.Config) ([]config.PersonaAssets, error)
+	// fileConfig reads config.yaml as stored, without the active persona
+	// laid over it.
+	fileConfig func() (*config.Config, error)
 }
 
 // Worker states: a move is claimed by its worker or abandoned by a program
@@ -201,6 +204,20 @@ func (m *settingsModel) startStorageUsage() tea.Cmd {
 	}
 }
 
+// moveConfig is the config a move is checked and run with: the file as
+// stored, so the models its own settings use count as used even when the
+// active persona speaks with others. The screen's config is the fallback.
+func (s *storageState) moveConfig(screen *config.Config) *config.Config {
+	read := s.fileConfig
+	if read == nil {
+		read = config.LoadRaw
+	}
+	if cfg, err := read(); err == nil && cfg != nil {
+		return cfg
+	}
+	return screen
+}
+
 // movePersonas lists every persona's models, so models only a persona uses
 // are not taken for someone else's files. A failure only means the old folder
 // may be kept.
@@ -236,7 +253,7 @@ func (m *settingsModel) startStorageMove(dest string) tea.Cmd {
 	// way, and the move's cleanup runs instead of the process dying mid-copy.
 	signal.Notify(job.hangup, syscall.SIGHUP)
 	m.storage.job = job
-	cfg, move := m.cfg.Clone(), m.storage.runMove
+	screenCfg, move := m.cfg.Clone(), m.storage.runMove
 	if move == nil {
 		move = config.MoveModels
 	}
@@ -250,6 +267,7 @@ func (m *settingsModel) startStorageMove(dest string) tea.Cmd {
 		if !job.state.CompareAndSwap(movePending, moveRunning) {
 			return storageMoveDoneMsg{seq: job.seq, err: context.Canceled}
 		}
+		cfg := storage.moveConfig(screenCfg)
 		personas := storage.movePersonas(cfg)
 		lastPhase, lastPct := "", int64(-1)
 		result, err := move(ctx, cfg, dest, config.MoveOptions{Personas: personas, Progress: func(p config.MoveProgress) {

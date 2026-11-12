@@ -15,6 +15,9 @@ import (
 
 func noPersonas(*config.Config) ([]config.PersonaAssets, error) { return nil, nil }
 
+// noFileConfig keeps a test off any config.yaml; the screen's config is used.
+func noFileConfig() (*config.Config, error) { return nil, errors.New("no config file in this test") }
+
 // heldMove is a fake move the test steps through: it reports the phases it is
 // given, then waits for the test to say how it ended. With stopOnCancel it
 // ends as soon as it is cancelled, as a real move before its save does.
@@ -54,7 +57,7 @@ func (h *heldMove) run(ctx context.Context, _ *config.Config, dest string, opts 
 // returning the event pump, the hang-up watcher and the worker's message.
 func startHeld(t *testing.T, m *settingsModel, h *heldMove, dest string) (pump, hangup tea.Cmd, done <-chan tea.Msg) {
 	t.Helper()
-	m.storage.runMove, m.storage.personas = h.run, noPersonas
+	m.storage.runMove, m.storage.personas, m.storage.fileConfig = h.run, noPersonas, noFileConfig
 	batch, ok := m.startStorageMove(dest)().(tea.BatchMsg)
 	if !ok || len(batch) != 3 {
 		t.Fatalf("start returned %T", batch)
@@ -82,7 +85,7 @@ func recv(t *testing.T, ch <-chan tea.Msg) tea.Msg {
 
 func TestStorageMoveIsCheckedAndConfirmedBeforeItStarts(t *testing.T) {
 	m := newSettings(&config.Config{ModelsDir: "/old"}, nil)
-	m.storage.personas = noPersonas
+	m.storage.personas, m.storage.fileConfig = noPersonas, noFileConfig
 	m.storage.runMove = func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error) {
 		t.Fatal("moved without a yes")
 		return config.MoveResult{}, nil
@@ -421,5 +424,31 @@ func TestEndingTheProgramBeforeTheMoveStartsDoesNotWait(t *testing.T) {
 	}
 	if ran {
 		t.Fatal("an abandoned move ran")
+	}
+}
+
+// The TUI's config has the active persona laid over it. The move must judge
+// what is in use by the config file itself, or the file's own voice pack
+// would be listed as unused and its old folder kept.
+func TestStorageMoveIsJudgedByTheConfigFileNotThePersonaOverlay(t *testing.T) {
+	m := newSettings(&config.Config{ModelsDir: "/old", TTSProvider: "qwen3-tts"}, nil)
+	m.storage.personas = noPersonas
+	m.storage.fileConfig = func() (*config.Config, error) {
+		return &config.Config{ModelsDir: "/old", TTSProvider: "kokoro"}, nil
+	}
+	var planned, moved string
+	m.storage.plan = func(_ context.Context, cfg *config.Config, dest string, _ config.MoveOptions) (config.MovePlan, error) {
+		planned = cfg.TTSProvider
+		return config.MovePlan{From: "/old", To: dest}, nil
+	}
+	m.storage.runMove = func(_ context.Context, cfg *config.Config, dest string, _ config.MoveOptions) (config.MoveResult, error) {
+		moved = cfg.TTSProvider
+		return config.MoveResult{From: "/old", To: dest}, nil
+	}
+	m, _ = m.Update(m.armStorageMove("/fast")())
+	batch := m.startStorageMove("/fast")().(tea.BatchMsg)
+	m, _ = m.Update(batch[2]())
+	if planned != "kokoro" || moved != "kokoro" {
+		t.Fatalf("checked with %q and moved with %q, want the config file's kokoro", planned, moved)
 	}
 }

@@ -32,6 +32,8 @@ type moveHookSet struct {
 	afterCopy func(ctx context.Context, rel string)
 	// afterRename runs after a same-drive rename, before the save.
 	afterRename func(ctx context.Context)
+	// beforeLocks runs between the first check and taking the locks.
+	beforeLocks func()
 	// beforeVerify runs before each comparison of the set-aside old folder.
 	beforeVerify func(quarantine string, pass int)
 }
