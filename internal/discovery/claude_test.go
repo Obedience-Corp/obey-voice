@@ -15,10 +15,6 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-// A loaded machine can take longer than the production cap just to start the
-// stand-in CLI; tests that expect an answer must not depend on that cap.
-func init() { probeTimeout = time.Minute }
-
 // cliModels is fakeclaude.Models as discovery lists it.
 var cliModels = []string{"default", "sonnet", "opus", "haiku", "sonnet[1m]"}
 
