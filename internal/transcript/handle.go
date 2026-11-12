@@ -243,6 +243,7 @@ func encodeEvent(e events.Event) (record, bool) {
 			PlaybackStartS:     x.PlaybackStartElapsed.Seconds(),
 			SpokeS:             x.PlaybackCompleteElapsed.Seconds(),
 			BargeInS:           x.BargeInElapsed.Seconds(),
+			StopWaitS:          x.StopWaitElapsed.Seconds(),
 			LeakLines:          x.ToolLeakLines,
 			TTSProvider:        x.TTSProvider,
 			TTSTier:            x.TTSTier,

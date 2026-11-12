@@ -152,12 +152,27 @@ model had already sent but the conversation had not yet shown or spoken is
 left out, and a stopped reply of which you were given nothing is dropped. A
 reply still being delivered when you stopped it is marked unfinished even if
 the model had finished generating it. The model's next request, and any
-persona that answers next, receive the reply as it is kept. It is recorded
-before the stopped turn ends, unless the request takes more than five seconds
-to stop, so a save straight after it keeps it; the next line, a persona
-switch or an idle job delivery waits until it is recorded. When
-the model chose to hand the request to a worker and the turn stopped before
-it did, your line stays in the conversation.
+persona that answers next, receive the reply as it is kept. If the answer
+had already used tools, its earlier rounds stay as the model left them: the
+text it wrote before each tool call, the calls and their results, even if you
+were given none of that text; only the last reply is cut to what you were
+given. When the model chose to hand the request to a worker and the turn
+stopped before it did, your line stays in the conversation.
+
+The stopped turn waits for the request to end, up to five seconds, so a save
+straight after it keeps the reply; this applies to Ollama as well as to
+Codex, Muse Spark and Obey. A request that has not ended by then is given up
+on: the turn ends, and the next line, a persona switch and an idle job
+delivery go ahead without waiting for it again. Obey Voice does not record
+such a request. On Codex, Muse Spark and Obey neither your line nor the part
+of the reply you were given is kept, nothing the request does when it
+finally ends changes the conversation, and a clear goes ahead at once. On
+Ollama your line stays, and so does whatever reply Ollama itself writes when
+the request ends, uncut; a clear waits up to five seconds more for it. A
+stopped request that ends after you cleared the conversation is not added to
+the new one, except on Ollama when it ends more than five seconds after the
+clear. How long each stopped turn waited is recorded with the turn's metrics
+as `stop_wait_s`.
 
 ## Repeated answers
 

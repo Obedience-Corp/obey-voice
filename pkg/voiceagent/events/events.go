@@ -106,6 +106,12 @@ type TurnMetrics struct {
 	// Do not subtract PlaybackStartElapsed (start-relative) from this field.
 	PlaybackCompleteElapsed time.Duration
 	BargeInElapsed          time.Duration
+	// StopWaitElapsed is how long a turn that stopped its model request
+	// waited for the provider to end it: up to 100ms for a provider whose
+	// reply the host records, up to the stop timeout (5s) for one keeping
+	// the shared history, which is abandoned after that. Zero when the turn
+	// did not stop its request or the request had already ended.
+	StopWaitElapsed time.Duration
 	// FirstTokenElapsed is T_eou to the first byte on Chunks or Thinking.
 	FirstTokenElapsed time.Duration
 	// FirstThinkElapsed is T_eou to the first ThinkingDelta. Zero if none.

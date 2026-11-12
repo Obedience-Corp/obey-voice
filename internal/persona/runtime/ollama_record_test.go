@@ -43,6 +43,8 @@ type localConversation struct {
 	selector *Selector
 	codexLog string
 	mixedLog string
+	// wrap, when set, replaces each provider a persona switch creates.
+	wrap func(brain.Provider) brain.Provider
 
 	mu     sync.Mutex
 	bodies [][]byte
@@ -203,6 +205,13 @@ func (c *localConversation) start(id string, turns []brain.Turn, contexts brain.
 	})
 	selector, err := NewSelector(SelectionOptions{Base: c.base, Catalog: c.catalog, Pipeline: p, SessionID: c.sess.ID, Initial: binding,
 		Transcript: turns, InitialContexts: contexts, SessionProvider: c.sess.Provider,
+		NewBrain: func(_ context.Context, cfg *config.Config) (brain.Provider, error) {
+			provider, err := brain.NewProvider(cfg)
+			if err == nil && c.wrap != nil {
+				provider = c.wrap(provider)
+			}
+			return provider, err
+		},
 		PersistContexts: func(turns []brain.Turn, s events.PersonaSelection, contexts brain.PersonaContexts) error {
 			return c.store.SaveSelectionState(c.sess, turns, s, contexts)
 		},

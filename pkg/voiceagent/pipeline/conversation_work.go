@@ -131,9 +131,16 @@ func (p *Pipeline) ClearConversation() error {
 		p.adoptConversationScope(next)
 	}
 	if p.Brain != nil {
-		settle, cancel := context.WithTimeout(context.Background(), providerSettleTimeout)
-		_ = p.awaitRequests(settle, p.Brain)
-		cancel()
+		if _, fenced := p.Brain.(brain.RequestAbandoner); fenced {
+			// A request abandoned there changes nothing when it ends.
+			settle, cancel := context.WithTimeout(context.Background(), providerStopTimeout)
+			_ = awaitEnded(settle, p.stillEnding(p.Brain))
+			cancel()
+		} else {
+			settle, cancel := context.WithTimeout(context.Background(), providerSettleTimeout)
+			_ = p.awaitRequests(settle, p.Brain)
+			cancel()
+		}
 		turns := p.Brain.History()
 		if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
 			turns = canonical.CanonicalHistory()
