@@ -132,6 +132,9 @@ type App struct {
 	// chooser retries the same resumed session rather than creating a new one.
 	startingSessionID string
 
+	// clipboard is handed to the screens the app builds; nil → system clipboard.
+	clipboard clipboardBackend
+
 	quitting     bool
 	returnToMenu bool
 	menuDone     chan struct{}
@@ -161,6 +164,15 @@ func newApp(cfg *config.Config, providers []discovery.ProviderInfo, saved []sess
 		library:      newLibrary(cfg),
 		personas:     newPersonas(cfg),
 	}
+}
+
+// withClipboard routes every copy the app and its screens make through b.
+func (a App) withClipboard(b clipboardBackend) App {
+	a.clipboard = b
+	a.launcher.clipboard = b
+	a.remote.clipboard = b
+	a.conversation.deps.clipboard = b
+	return a
 }
 
 func (a App) Init() tea.Cmd {

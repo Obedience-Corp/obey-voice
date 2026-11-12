@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -200,4 +202,98 @@ func cmdEmitsQuit(cmd tea.Cmd) bool {
 		}
 	}
 	return false
+}
+
+func TestAppCopyKeysUseInjectedClipboard(t *testing.T) {
+	clip := &testClipboard{}
+	app := newApp(&config.Config{BrainProvider: "ollama"}, nil, nil).withClipboard(clip)
+	app.launcher.width, app.launcher.height = 100, 40
+
+	model, _ := app.Update(switchScreenMsg(screenRemote))
+	app = model.(App)
+	app.remote.url = "https://example.test/join"
+	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	app = model.(App)
+	if cmd == nil {
+		t.Fatal("c did not produce a copy cmd")
+	}
+	cmd()
+	if clip.value != "https://example.test/join" {
+		t.Fatalf("remote copy reached %q", clip.value)
+	}
+
+	app.screen = screenLauncher
+	app.launcher = app.launcher.withBanner("Meeting saved: /tmp/meetings/call.meeting", false)
+	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	app = model.(App)
+	_, cmd = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter did not produce a copy cmd")
+	}
+	cmd()
+	if clip.value != "/tmp/meetings/call.meeting" {
+		t.Fatalf("notice copy reached %q", clip.value)
+	}
+}
+
+func TestRuntimeReadyHandsConversationTheInjectedClipboard(t *testing.T) {
+	clip := &testClipboard{value: "pasted text"}
+	rt := fakeRuntime()
+	app := wiredApp(func(context.Context, BuildProgress, string, string) (*ConversationRuntime, error) {
+		return rt, nil
+	}).withClipboard(clip)
+	model, _ := app.Update(startPipelineMsg{personaName: "Uncle Fu"})
+	app = model.(App)
+	model, _ = app.Update(runtimeReadyMsg{rt: rt})
+	app = model.(App)
+
+	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	app = model.(App)
+	if cmd == nil {
+		t.Fatal("ctrl+v did not produce a paste cmd")
+	}
+	if msg, ok := cmd().(clipboardPasteMsg); !ok || msg.text != "pasted text" {
+		t.Fatalf("paste did not read the injected clipboard: %#v", msg)
+	}
+
+	app.conversation.lastAssistantText = "last reply"
+	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyCtrlY})
+	app = model.(App)
+	if clip.value != "last reply" {
+		t.Fatalf("copy did not reach the injected clipboard: %q", clip.value)
+	}
+}
+
+func TestAppRebuiltScreensKeepInjectedClipboard(t *testing.T) {
+	clip := &testClipboard{}
+	app := newApp(&config.Config{BrainProvider: "ollama"}, nil, nil).withClipboard(clip)
+	model, _ := app.Update(switchScreenMsg(screenRemote))
+	app = model.(App)
+	if app.remote.clipboard != clip {
+		t.Fatal("remote screen lost the injected clipboard")
+	}
+	app.screen = screenPersonas
+	model, _ = app.Update(switchScreenMsg(screenLauncher))
+	app = model.(App)
+	if app.launcher.clipboard != clip {
+		t.Fatal("rebuilt launcher lost the injected clipboard")
+	}
+}
+
+func TestNoticeCopyFailureFlashesCopyFailed(t *testing.T) {
+	m := sizedLauncher(t)
+	m.clipboard = &testClipboard{err: errors.New("no clipboard")}
+	m = m.withBanner("Meeting saved: /tmp/meetings/call.meeting", false)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter did not try to copy")
+	}
+	m, _ = m.Update(cmd())
+	if m.noticeFlash != "copy failed" {
+		t.Fatalf("flash = %q, want copy failed", m.noticeFlash)
+	}
+	if !strings.Contains(stripANSI(m.View()), "copy failed") {
+		t.Fatal("view does not show the copy failed flash")
+	}
 }

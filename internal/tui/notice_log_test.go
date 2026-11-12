@@ -55,6 +55,8 @@ func TestNoticeLogOpensFilingDetail(t *testing.T) {
 
 func TestNoticeEnterNamesTheCopyTarget(t *testing.T) {
 	m := sizedLauncher(t)
+	clip := &testClipboard{}
+	m.clipboard = clip
 	m = m.withBanner("Meeting saved: /tmp/meetings/call.meeting", false)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	if m.notices[0].copyLabel != "path" || m.notices[0].copyText != "/tmp/meetings/call.meeting" {
@@ -64,8 +66,12 @@ func TestNoticeEnterNamesTheCopyTarget(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("enter did not try to copy")
 	}
-	if _, ok := cmd().(noticeCopiedMsg); !ok {
-		t.Fatalf("copy message = %#v", cmd())
+	copied, ok := cmd().(noticeCopiedMsg)
+	if !ok || copied.err != nil {
+		t.Fatalf("copy message = %#v", copied)
+	}
+	if clip.value != "/tmp/meetings/call.meeting" {
+		t.Fatalf("copied %q", clip.value)
 	}
 	if !next.noticesOpen {
 		t.Fatal("enter closed the log")
