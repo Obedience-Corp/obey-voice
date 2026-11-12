@@ -84,6 +84,9 @@ type launcherModel struct {
 	// listPersonas feeds the New-conversation picker (injectable for tests).
 	listPersonas func() ([]*persona.Profile, error)
 
+	// clipboard is injectable for tests; nil → system clipboard.
+	clipboard clipboardBackend
+
 	// Cached newest meeting for the Meeting submenu. Indexing walks every
 	// bundle in the meetings dir and runs on the Update goroutine, while the
 	// answer only moves when a meeting is recorded or routed.

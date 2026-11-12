@@ -1,5 +1,7 @@
-// Package decision contains optional, bounded decision policies. Providers do
-// not select personas, execute tools, or grant worker authority.
+// Package decision contains optional, bounded decision policies. Providers
+// answer fixed questions about one turn (worker routing, who is addressed);
+// the host validates every answer and acts on it. Providers never execute
+// tools, grant worker authority, or choose anything outside the host's roster.
 package decision
 
 import (
@@ -16,6 +18,9 @@ type Question struct {
 type Request struct {
 	State     any                 `json:"state"`
 	Questions map[string]Question `json:"questions"`
+
+	// addressee is set only by AddresseeRequest and never leaves the process.
+	addressee *addresseeSpec
 }
 
 type Answer struct {
@@ -34,6 +39,8 @@ type Response struct {
 	// Structured is set only by the OpenAI adapter after strict validation.
 	// It is a categorical model answer, not a calibrated probability.
 	Structured *StructuredRoute `json:"-"`
+	// StructuredAddressee is set only by the OpenAI adapter for the addressee question.
+	StructuredAddressee *Addressee `json:"-"`
 }
 
 type StructuredRoute struct {

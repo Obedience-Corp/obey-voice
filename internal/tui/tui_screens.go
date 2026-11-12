@@ -215,6 +215,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		return a, a.library.InitCmd()
 	case screenRemote:
 		a.remote = newRemote(a.runCtx, nil)
+		a.remote.clipboard = a.clipboard
 		a.remote.width, a.remote.height = a.width, a.height
 		return a, a.remote.start()
 	case screenPersonas:
@@ -248,6 +249,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		if prev == screenPersonas || prev == screenSettings {
 			saved := resumableSessions(session.List())
 			a.launcher = newLauncher(a.cfg, a.providers, saved)
+			a.launcher.clipboard = a.clipboard
 			a.launcher.width, a.launcher.height = a.width, a.height
 		}
 	}
