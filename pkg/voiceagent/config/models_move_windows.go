@@ -4,6 +4,7 @@ package config
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -44,3 +45,19 @@ func freeSpace(path string) (int64, error) {
 
 // syncDir is a no-op: Windows cannot flush a directory handle.
 func syncDir(string) error { return nil }
+
+func stampOf(f *os.File) (fileStamp, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return fileStamp{}, err
+	}
+	return fileStamp{size: info.Size(), mtime: info.ModTime().UnixNano()}, nil
+}
+
+func stampAt(path string) (fileStamp, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fileStamp{}, err
+	}
+	return fileStamp{size: info.Size(), mtime: info.ModTime().UnixNano()}, nil
+}

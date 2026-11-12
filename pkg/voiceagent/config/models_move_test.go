@@ -19,12 +19,12 @@ func moveFixture(t *testing.T) (cfg *Config, source, root string) {
 	isolateMoveHooks(t, root)
 	SetConfigDirForTest(t, filepath.Join(root, "install"))
 	source = filepath.Join(root, "models")
-	writeMoveFile(t, filepath.Join(source, "vad.onnx"), "vad")
+	writeMoveFile(t, filepath.Join(source, "silero_vad.onnx"), "vad")
 	writeMoveFile(t, filepath.Join(source, "whispercpp", "ggml-base.en.bin"), "whisper-weights")
 	outside := filepath.Join(root, "elsewhere")
 	writeMoveFile(t, filepath.Join(outside, "voice.bin"), "linked")
 	if runtime.GOOS != "windows" {
-		if err := os.Symlink(outside, filepath.Join(source, "audio8-tts")); err != nil {
+		if err := os.Symlink(outside, filepath.Join(source, "audio8-voices")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -42,6 +42,8 @@ func isolateMoveHooks(t *testing.T, root string) {
 	t.Helper()
 	orig, origRoot := moveHooks, serveControlRoot
 	moveHooks = defaultMoveHooks()
+	// Never look up the real user's home.
+	moveHooks.homeFallback = func() string { return "" }
 	serveRoot := filepath.Join(root, "serve-control")
 	serveControlRoot = func() string { return serveRoot }
 	t.Cleanup(func() { moveHooks, serveControlRoot = orig, origRoot })
@@ -91,7 +93,7 @@ func assertMoved(t *testing.T, cfg *Config, source, dest string, result MoveResu
 	if _, err := os.Lstat(source); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("old folder still present: %v", err)
 	}
-	for rel, want := range map[string]string{"vad.onnx": "vad", "whispercpp/ggml-base.en.bin": "whisper-weights"} {
+	for rel, want := range map[string]string{"silero_vad.onnx": "vad", "whispercpp/ggml-base.en.bin": "whisper-weights"} {
 		got, err := os.ReadFile(filepath.Join(dest, rel))
 		if err != nil || string(got) != want {
 			t.Fatalf("%s = %q, %v", rel, got, err)
@@ -101,12 +103,12 @@ func assertMoved(t *testing.T, cfg *Config, source, dest string, result MoveResu
 		t.Fatalf("the unfinished-copy marker was left in the finished folder: %v", err)
 	}
 	if runtime.GOOS != "windows" {
-		got, err := os.ReadFile(filepath.Join(dest, "audio8-tts", "voice.bin"))
+		got, err := os.ReadFile(filepath.Join(dest, "audio8-voices", "voice.bin"))
 		if err != nil || string(got) != "linked" {
 			t.Fatalf("link was not carried over: %q, %v", got, err)
 		}
-		if info, err := os.Lstat(filepath.Join(dest, "audio8-tts")); err != nil || info.Mode()&os.ModeSymlink == 0 {
-			t.Fatalf("audio8-tts should still be a link, not a copy of its target: %v", err)
+		if info, err := os.Lstat(filepath.Join(dest, "audio8-voices")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("audio8-voices should still be a link, not a copy of its target: %v", err)
 		}
 	}
 	if ModelsDir() != dest || cfg.ModelsDir != dest {
@@ -178,7 +180,7 @@ func TestMoveModelsCopiesAcrossVolumes(t *testing.T) {
 		t.Fatal("expected the copy path")
 	}
 	assertMoved(t, cfg, source, dest, result)
-	if got := strings.Join(phases, ","); got != strings.Join([]string{MovePhaseMeasure, MovePhaseCopy, MovePhaseSave, MovePhaseRemove}, ",") {
+	if got := strings.Join(phases, ","); got != strings.Join([]string{MovePhaseMeasure, MovePhaseCopy, MovePhaseSave, MovePhaseVerify, MovePhaseRemove}, ",") {
 		t.Fatalf("phases = %s", got)
 	}
 }
@@ -198,7 +200,7 @@ func TestMoveModelsCancelledMidCopyLeavesTheOldFolderInUse(t *testing.T) {
 	if _, err := os.Stat(dest); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("partial copy was left behind: %v", err)
 	}
-	for _, rel := range []string{"vad.onnx", "whispercpp/ggml-base.en.bin"} {
+	for _, rel := range []string{"silero_vad.onnx", "whispercpp/ggml-base.en.bin"} {
 		if _, err := os.Stat(filepath.Join(source, rel)); err != nil {
 			t.Fatalf("old folder lost %s: %v", rel, err)
 		}
@@ -252,7 +254,7 @@ func TestMoveModelsRefusesUnsafeTargets(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(occupied, "keep.txt")); err != nil || string(got) != "mine" {
 		t.Fatalf("a refused move touched the target: %q, %v", got, err)
 	}
-	if _, err := os.Stat(filepath.Join(source, "vad.onnx")); err != nil {
+	if _, err := os.Stat(filepath.Join(source, "silero_vad.onnx")); err != nil {
 		t.Fatalf("a refused move touched the source: %v", err)
 	}
 }
@@ -299,7 +301,7 @@ func TestMoveModelsCancelledBeforeSaveUndoesTheCopy(t *testing.T) {
 	if _, err := os.Stat(dest); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the finished copy was left behind: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(source, "vad.onnx")); err != nil || ModelsDir() != source {
+	if _, err := os.Stat(filepath.Join(source, "silero_vad.onnx")); err != nil || ModelsDir() != source {
 		t.Fatalf("old folder not in use after cancel: %v, models_dir=%q", err, ModelsDir())
 	}
 }

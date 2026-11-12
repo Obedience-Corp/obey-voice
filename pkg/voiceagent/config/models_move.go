@@ -17,17 +17,18 @@ const (
 	MovePhaseMeasure = "measuring"
 	MovePhaseCopy    = "copying"
 	MovePhaseSave    = "saving"
+	MovePhaseVerify  = "checking the old copy"
 	MovePhaseRemove  = "removing the old copy"
 )
 
 // MovePhaseCommitted reports whether a move in phase has saved the new folder
 // and will finish even if cancelled.
 func MovePhaseCommitted(phase string) bool {
-	return phase == MovePhaseSave || phase == MovePhaseRemove
+	return phase == MovePhaseSave || phase == MovePhaseVerify || phase == MovePhaseRemove
 }
 
 // MoveProgress is one progress report from MoveModels. Done and Total are
-// bytes and are zero outside the copy phase.
+// bytes, reported while copying and while checking the old copy.
 type MoveProgress struct {
 	Phase string `json:"phase"`
 	Done  int64  `json:"done_bytes"`
@@ -100,9 +101,12 @@ func setConfigString(cfg *Config, key, value string) {
 	}
 }
 
-// MoveOptions carries the optional hooks for MoveModels.
+// MoveOptions carries the optional inputs for MoveModels and PlanModelsMove.
 type MoveOptions struct {
 	Progress func(MoveProgress)
+	// Personas lets the move recognise models only a persona uses. Without
+	// them those count as unrecognized, which only keeps the old folder.
+	Personas []PersonaAssets
 }
 
 // ModelsUsage reports the bytes and regular files under dir. A missing dir is
@@ -140,25 +144,39 @@ func ModelsUsage(ctx context.Context, dir string) (int64, int, error) {
 // *MoveRefusedError if any fails. Until the new folder is saved, a failure or
 // cancellation leaves the old folder and the config as they were and removes
 // only what the move itself created. After the save the move runs to the end:
-// the old folder is set aside, anything written to it during the copy is
-// brought over, and it is deleted only when every file in it is on disk in
-// the new folder. Otherwise it is kept and a warning says where.
+// the old folder is set aside, every file in it is read and compared with
+// what was copied, anything that differs is brought over, and the folder is
+// deleted only when a second look finds nothing changing and it holds nothing
+// unrecognized. Otherwise it is kept and a warning says where.
 func MoveModels(ctx context.Context, cfg *Config, dest string, opts MoveOptions) (MoveResult, error) {
 	report := opts.Progress
 	if report == nil {
 		report = func(MoveProgress) {}
 	}
 	report(MoveProgress{Phase: MovePhaseMeasure})
-	plan, release, err := planModelsMove(ctx, cfg, dest)
-	defer release()
+	plan, err := planModelsMove(ctx, cfg, dest, opts, false)
 	if err != nil {
 		return MoveResult{}, err
 	}
 	if len(plan.Refusals) > 0 {
 		return MoveResult{}, &MoveRefusedError{Reasons: plan.Refusals}
 	}
-	m := &mover{ctx: ctx, cfg: cfg, plan: plan, report: report,
-		result: MoveResult{From: plan.From, To: plan.To, Bytes: plan.Bytes, Files: plan.Files}}
+	// The sizes reported are the user's models, not the lock taken below.
+	bytes, files := plan.Bytes, plan.Files
+	release, refusals := takeMoveLocks(plan.Source)
+	defer release()
+	if len(refusals) > 0 {
+		return MoveResult{}, &MoveRefusedError{Reasons: refusals}
+	}
+	// Checked again under the locks, so nothing changed in between.
+	if plan, err = planModelsMove(ctx, cfg, dest, opts, true); err != nil {
+		return MoveResult{}, err
+	}
+	if len(plan.Refusals) > 0 {
+		return MoveResult{}, &MoveRefusedError{Reasons: plan.Refusals}
+	}
+	m := &mover{ctx: ctx, cfg: cfg, plan: plan, report: report, rec: newCopyRecord(),
+		result: MoveResult{From: plan.From, To: plan.To, Bytes: bytes, Files: files}}
 	if err := m.run(); err != nil {
 		return MoveResult{}, err
 	}
@@ -171,6 +189,7 @@ type mover struct {
 	plan    MovePlan
 	report  func(MoveProgress)
 	result  MoveResult
+	rec     *copyRecord
 	parents []string
 	// keepOld is why the old folder must not be deleted, once saved.
 	keepOld string
@@ -212,9 +231,19 @@ func (m *mover) run() error {
 	return m.copyAndCommit()
 }
 
+// commitRename finishes a same-drive move. Until the new folder is saved, a
+// link at the old path leads to it, so anything that looks for the models
+// there, after a kill in between too, still finds them.
 func (m *mover) commitRename() error {
 	p := m.plan
+	linked := moveHooks.symlink(p.Dest, p.Source) == nil
+	unlink := func() {
+		if target, err := os.Readlink(p.Source); linked && err == nil && target == p.Dest {
+			_ = os.Remove(p.Source)
+		}
+	}
 	undo := func(cause error) error {
+		unlink()
 		if err := moveHooks.rename(p.Dest, p.Source); err != nil {
 			// Not wrapped: the move did not cleanly stop, whatever the cause.
 			return fmt.Errorf("%v; the models could not be put back and are now in %s, while models_dir still names %s. Run `obey-voice config set models_dir %s` to use them", cause, p.Dest, p.From, p.To)
@@ -225,6 +254,9 @@ func (m *mover) commitRename() error {
 		removeEmpty(m.parents)
 		return cause
 	}
+	if moveHooks.afterRename != nil {
+		moveHooks.afterRename(m.ctx)
+	}
 	if err := m.ctx.Err(); err != nil {
 		return undo(err)
 	}
@@ -232,10 +264,11 @@ func (m *mover) commitRename() error {
 	if err := m.save(); err != nil {
 		return undo(err)
 	}
+	unlink()
 	// Best effort: the rename deletes nothing, so a lost flush only means the
 	// folder and the setting may disagree after a crash.
-	_ = syncDir(filepath.Dir(p.Dest))
-	_ = syncDir(filepath.Dir(p.Source))
+	_ = moveHooks.syncDir(filepath.Dir(p.Dest))
+	_ = moveHooks.syncDir(filepath.Dir(p.Source))
 	m.afterMove()
 	return nil
 }
@@ -258,7 +291,7 @@ func (m *mover) copyAndCommit() error {
 		return fail(nil, err)
 	}
 	m.report(MoveProgress{Phase: MovePhaseCopy, Total: p.Bytes})
-	if err := copyModelsTree(m.ctx, p.Source, p.Dest, p.Bytes, m.report); err != nil {
+	if err := copyModelsTree(m.ctx, p.Source, p.Dest, "", p.Bytes, m.report, m.rec); err != nil {
 		return fail(d, err)
 	}
 	if err := d.finish(); err != nil {
@@ -274,28 +307,27 @@ func (m *mover) copyAndCommit() error {
 	if err := m.save(); err != nil {
 		return fail(d, err)
 	}
-	m.report(MoveProgress{Phase: MovePhaseRemove})
 	m.retireOld()
 	m.afterMove()
 	return nil
 }
 
-// save writes models_dir and every repointed setting in one change, so they
-// cannot disagree, and flushes it before anything old is deleted.
+// save writes models_dir and every repointed setting in one change, decided
+// from config.yaml as read under its lock, and flushes it before anything old
+// is deleted.
 func (m *mover) save() error {
-	pairs := append([]keyValue{{Key: "models_dir", Value: m.plan.To}}, m.plan.rewrites...)
-	if err := setKeyFileValues(pairs, false); err != nil {
+	pairs, err := moveHooks.writeConfig(modelPathPairs(m.plan.Source, m.plan.To))
+	if err != nil {
 		return &moveSaveError{msg: describeSaveError(err), err: err}
 	}
-	traceMove("save")
-	if err := syncFile(ConfigFile()); err != nil {
+	if err := moveHooks.syncConfig(ConfigFile()); err != nil {
 		m.keepOld = fmt.Sprintf("the new setting could not be flushed to disk (%v)", err)
 	}
 	m.result.values = map[string]string{}
-	for _, kv := range m.plan.rewrites {
+	for _, kv := range pairs[min(1, len(pairs)):] {
 		m.result.values[kv.Key] = kv.Value.(string)
+		m.result.RewrittenKeys = append(m.result.RewrittenKeys, kv.Key)
 	}
-	m.result.RewrittenKeys = m.plan.RewriteKeys
 	m.result.ApplyTo(m.cfg)
 	return nil
 }
@@ -320,10 +352,10 @@ func syncFile(path string) error {
 	return syncDir(filepath.Dir(path))
 }
 
-// retireOld deletes the old folder of a copied move, but only once nothing in
-// it is missing from the new one. It never deletes anything at the old path
-// itself: the folder is renamed aside first, so a late writer gets an error
-// instead of writing into a folder that is about to go.
+// retireOld deletes the old folder of a copied move, but only once every file
+// in it has been read and matched against the new one. It never deletes
+// anything at the old path itself: the folder is renamed aside first, so a
+// late writer gets an error instead of writing into a folder about to go.
 func (m *mover) retireOld() {
 	p := m.plan
 	if m.keepOld != "" {
@@ -337,8 +369,13 @@ func (m *mover) retireOld() {
 		m.warn("the old folder %s was kept because it could not be set aside (%v); delete it once you have checked the new one", p.Source, err)
 		return
 	}
+	if err := writeQuarantineReadme(old, p.To); err != nil {
+		m.warn("the old folder was kept at %s because a note could not be written into it (%v); check it, then delete it", old, err)
+		return
+	}
+	m.report(MoveProgress{Phase: MovePhaseVerify})
 	// The move is committed; a cancel no longer stops it.
-	differ, err := reconcile(context.WithoutCancel(m.ctx), old, p.Dest)
+	differ, err := reconcile(context.WithoutCancel(m.ctx), old, p.Dest, m.rec, m.report)
 	switch {
 	case err != nil:
 		m.warn("the old folder was kept at %s because comparing it with the new one failed (%v); check it, then delete it", old, err)
@@ -346,8 +383,15 @@ func (m *mover) retireOld() {
 	case len(differ) > 0:
 		m.warn("the old folder was kept at %s because %s kept changing during the move; check, then delete it", old, listPaths(differ))
 		return
+	case len(p.Unrecognized) > 0:
+		m.warn("the old folder was kept at %s because it holds files obey-voice does not recognise (%s); they were copied too. Check, then delete it", old, listEntries(p.Unrecognized))
+		return
 	}
-	traceMove("remove %s", old)
+	if mount, ok := mountInside(old); ok {
+		m.warn("the old folder was kept at %s because another drive is mounted inside it (%s)", old, mount)
+		return
+	}
+	m.report(MoveProgress{Phase: MovePhaseRemove})
 	if err := os.RemoveAll(old); err != nil {
 		m.warn("the old copy at %s could not be removed: %v", old, err)
 	}

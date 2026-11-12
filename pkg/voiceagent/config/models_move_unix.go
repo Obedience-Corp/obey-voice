@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -36,14 +37,6 @@ func isMountPoint(path string) bool {
 	return ok && parentOK && dev != parentDev
 }
 
-func freeSpace(path string) (int64, error) {
-	var st unix.Statfs_t
-	if err := unix.Statfs(path, &st); err != nil {
-		return 0, err
-	}
-	return int64(st.Bavail) * int64(st.Bsize), nil
-}
-
 // syncDir flushes a directory's entries. Some volumes (exFAT, network shares)
 // cannot sync a directory at all; that is not a reason to fail the move.
 func syncDir(path string) error {
@@ -56,4 +49,32 @@ func syncDir(path string) error {
 		return err
 	}
 	return nil
+}
+
+// stampOf identifies one state of an open file: which file it is, its size,
+// and when its contents and its metadata last changed.
+func stampOf(f *os.File) (fileStamp, error) {
+	var st unix.Stat_t
+	if err := unix.Fstat(int(f.Fd()), &st); err != nil {
+		return fileStamp{}, err
+	}
+	return stampFrom(&st), nil
+}
+
+func stampAt(path string) (fileStamp, error) {
+	var st unix.Stat_t
+	if err := unix.Lstat(path, &st); err != nil {
+		return fileStamp{}, err
+	}
+	return stampFrom(&st), nil
+}
+
+func stampFrom(st *unix.Stat_t) fileStamp {
+	return fileStamp{
+		dev:   uint64(st.Dev),
+		ino:   uint64(st.Ino),
+		size:  st.Size,
+		mtime: time.Unix(int64(st.Mtim.Sec), int64(st.Mtim.Nsec)).UnixNano(),
+		ctime: time.Unix(int64(st.Ctim.Sec), int64(st.Ctim.Nsec)).UnixNano(),
+	}
 }

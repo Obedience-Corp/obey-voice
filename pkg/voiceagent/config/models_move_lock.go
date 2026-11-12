@@ -55,11 +55,32 @@ func lockHeld(path string) bool {
 	return false
 }
 
-// moveLocks takes the locks a move holds for its whole run: its own, so two
-// moves cannot overlap, and the decision-model installer's, so an install
-// cannot start writing into the folder mid-move. It also refuses while a serve
-// process of this install is running, because serve reads models on demand.
-func moveLocks(source string) (release func(), refusals []string) {
+const (
+	moveLockName      = "models-move.lock"
+	deciderLockSubdir = "decider"
+	deciderLockName   = "native-install.lock"
+	moveBusy          = "another models move is already running"
+	deciderBusy       = "a decision model is being installed into this folder; wait for it to finish"
+)
+
+// probeMoveLocks reports what would stop a move right now without creating
+// or holding anything, for a dry run or the confirm step.
+func probeMoveLocks(source string) []string {
+	var refusals []string
+	if lockHeld(filepath.Join(ConfigDir(), moveLockName)) {
+		refusals = append(refusals, moveBusy)
+	}
+	if lockHeld(filepath.Join(source, deciderLockSubdir, deciderLockName)) {
+		refusals = append(refusals, deciderBusy)
+	}
+	return append(refusals, serveRefusals()...)
+}
+
+// takeMoveLocks takes the locks a move holds for its whole run: its own, so
+// two moves cannot overlap, and the decision-model installer's, created the
+// way the installer creates it, so an install cannot start writing into the
+// folder mid-move.
+func takeMoveLocks(source string) (release func(), refusals []string) {
 	var releases []func()
 	release = func() {
 		for i := len(releases) - 1; i >= 0; i-- {
@@ -70,31 +91,37 @@ func moveLocks(source string) (release func(), refusals []string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return release, []string{fmt.Sprintf("cannot open the settings folder %s: %v", dir, err)}
 	}
-	own, err := acquireLockGuard(filepath.Join(dir, "models-move.lock"))
+	own, err := acquireLockGuard(filepath.Join(dir, moveLockName))
 	switch {
 	case errors.Is(err, errLockGuardBusy):
-		return release, []string{"another models move is already running"}
+		return release, []string{moveBusy}
 	case err != nil:
 		return release, []string{fmt.Sprintf("cannot take the models move lock: %v", err)}
 	}
 	releases = append(releases, own)
 
-	decider := filepath.Join(source, "decider", "native-install.lock")
-	if _, err := os.Lstat(decider); err == nil {
-		held, err := acquireLockGuard(decider)
+	// A folder nothing can write into has no installer to fear.
+	deciderDir := filepath.Join(source, deciderLockSubdir)
+	if err := os.MkdirAll(deciderDir, 0o700); err == nil {
+		held, err := acquireLockGuard(filepath.Join(deciderDir, deciderLockName))
 		switch {
 		case errors.Is(err, errLockGuardBusy):
-			refusals = append(refusals, "a decision model is being installed into this folder; wait for it to finish")
+			refusals = append(refusals, deciderBusy)
 		case err != nil:
-			refusals = append(refusals, fmt.Sprintf("cannot check the decision model install lock %s: %v", decider, err))
+			refusals = append(refusals, fmt.Sprintf("cannot take the decision model install lock in %s: %v", deciderDir, err))
 		default:
 			releases = append(releases, held)
 		}
 	}
-	for _, path := range runningServeLocks(dir) {
+	return release, append(refusals, serveRefusals()...)
+}
+
+func serveRefusals() []string {
+	var refusals []string
+	for _, path := range runningServeLocks(ConfigDir()) {
 		name := strings.TrimSuffix(filepath.Base(path), ".sock.lock")
 		port := name[strings.LastIndex(name, "-")+1:]
 		refusals = append(refusals, fmt.Sprintf("`obey-voice serve` is running on port %s and reads these models; stop it first with `obey-voice serve stop --port %s`", port, port))
 	}
-	return release, refusals
+	return refusals
 }

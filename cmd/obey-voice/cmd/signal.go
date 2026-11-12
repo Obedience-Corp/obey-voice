@@ -66,26 +66,37 @@ func signalContext() (context.Context, context.CancelFunc) {
 	return ctx, cancel
 }
 
-// interruptContext is signalContext under parent, for work whose cleanup must
-// not be cut short by the force-quit timer: only a second signal exits 130.
-// The returned stop unregisters the handler.
-func interruptContext(parent context.Context) (context.Context, context.CancelFunc) {
+// interruptExit ends the process on a second Ctrl-C; tests replace it.
+var interruptExit = os.Exit
+
+// interruptContext is cancelled by the first SIGINT, SIGTERM or SIGHUP, for
+// work whose cleanup must not be cut short by a timer. Only a second SIGINT,
+// someone at the keyboard insisting, exits 130; SIGTERM and SIGHUP, which a
+// parent app or a closed terminal sends, never cut the cleanup short.
+// onSignal, when set, runs on every signal before it takes effect. The
+// returned stop unregisters the handler.
+func interruptContext(parent context.Context, onSignal func(sig os.Signal, first bool)) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(parent)
-	sigCh := make(chan os.Signal, 2)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	sigCh := make(chan os.Signal, 4)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	done := make(chan struct{})
 	go func() {
 		defer signal.Stop(sigCh)
-		select {
-		case <-sigCh:
-			cancel()
-		case <-done:
-			return
-		}
-		select {
-		case <-sigCh:
-			os.Exit(130)
-		case <-done:
+		first := true
+		for {
+			select {
+			case sig := <-sigCh:
+				if onSignal != nil {
+					onSignal(sig, first)
+				}
+				if !first && sig == os.Interrupt {
+					interruptExit(130)
+				}
+				first = false
+				cancel()
+			case <-done:
+				return
+			}
 		}
 	}()
 	var once sync.Once

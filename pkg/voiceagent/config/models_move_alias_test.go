@@ -111,7 +111,7 @@ func TestMoveModelsRefusesAnEnvironmentSettingSpelledThroughALink(t *testing.T) 
 // another spelling would point into the deleted old folder after the move.
 func TestMoveModelsRefusesALinkIntoTheFolderSpelledThroughALink(t *testing.T) {
 	cfg, source, _, alias := aliasFixture(t)
-	if err := os.Symlink(filepath.Join(alias, "models", "vad.onnx"), filepath.Join(source, "vad-current.onnx")); err != nil {
+	if err := os.Symlink(filepath.Join(alias, "models", "silero_vad.onnx"), filepath.Join(source, "vad-current.onnx")); err != nil {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(t.TempDir(), "fast", "models")

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -37,17 +38,23 @@ type MovePlan struct {
 	To   string `json:"to"`
 	// Source and Dest are From and To with links resolved: where the files
 	// are read from and where they land.
-	Source      string      `json:"source,omitempty"`
-	Dest        string      `json:"dest,omitempty"`
-	Bytes       int64       `json:"bytes"`
-	Files       int         `json:"files"`
-	Entries     []MoveEntry `json:"entries,omitempty"`
-	SameVolume  bool        `json:"same_volume"`
-	FreeBytes   int64       `json:"free_bytes,omitempty"`
-	RewriteKeys []string    `json:"rewrite_keys,omitempty"`
-	Refusals    []string    `json:"refusals,omitempty"`
+	Source string `json:"source,omitempty"`
+	Dest   string `json:"dest,omitempty"`
+	// Measured is false when the move was refused before the folder was
+	// read; Bytes, Files and Entries are then empty.
+	Measured bool        `json:"measured"`
+	Bytes    int64       `json:"bytes"`
+	Files    int         `json:"files"`
+	Entries  []MoveEntry `json:"entries,omitempty"`
+	// Unrecognized are top-level entries that are not models this install
+	// knows. They move along, and a copied old folder holding any of them is
+	// kept rather than deleted.
+	Unrecognized []MoveEntry `json:"unrecognized,omitempty"`
+	SameVolume   bool        `json:"same_volume"`
+	FreeBytes    int64       `json:"free_bytes,omitempty"`
+	RewriteKeys  []string    `json:"rewrite_keys,omitempty"`
+	Refusals     []string    `json:"refusals,omitempty"`
 
-	rewrites    []keyValue
 	destExisted bool
 	destPerm    fs.FileMode
 }
@@ -58,21 +65,19 @@ type MoveRefusedError struct{ Reasons []string }
 func (e *MoveRefusedError) Error() string { return strings.Join(e.Reasons, "; ") }
 
 // PlanModelsMove checks a move of the models folder to dest and reports what
-// it would do, without changing anything. An error means the check itself
-// failed; reasons the move would be refused are in Refusals.
-func PlanModelsMove(ctx context.Context, cfg *Config, dest string) (MovePlan, error) {
-	plan, release, err := planModelsMove(ctx, cfg, dest)
-	release()
-	return plan, err
+// it would do. It writes nothing, not even a lock file. An error means the
+// check itself failed; reasons the move would be refused are in Refusals.
+func PlanModelsMove(ctx context.Context, cfg *Config, dest string, opts MoveOptions) (MovePlan, error) {
+	return planModelsMove(ctx, cfg, dest, opts, false)
 }
 
-// planModelsMove is PlanModelsMove that keeps the move's locks until release.
-func planModelsMove(ctx context.Context, cfg *Config, to string) (MovePlan, func(), error) {
+// planModelsMove is PlanModelsMove; held says the caller already holds the
+// move's locks, so they are not probed.
+func planModelsMove(ctx context.Context, cfg *Config, to string, opts MoveOptions, held bool) (MovePlan, error) {
 	var plan MovePlan
-	noop := func() {}
-	refuse := func(format string, args ...any) (MovePlan, func(), error) {
+	refuse := func(format string, args ...any) (MovePlan, error) {
 		plan.Refusals = append(plan.Refusals, fmt.Sprintf(format, args...))
-		return plan, noop, nil
+		return plan, nil
 	}
 	if Source("models_dir") == SourceEnv {
 		return refuse("the models folder is set by the MODELS_DIR environment variable; unset it or change it there, then move the files yourself")
@@ -96,7 +101,7 @@ func planModelsMove(ctx context.Context, cfg *Config, to string) (MovePlan, func
 		return refuse("there are no models to move: %s does not exist. Set the folder with `obey-voice config set models_dir <folder>` instead", plan.From)
 	}
 	if err != nil {
-		return plan, noop, fmt.Errorf("resolving %s: %w", plan.From, err)
+		return plan, fmt.Errorf("resolving %s: %w", plan.From, err)
 	}
 	if info, err := os.Stat(source); err != nil || !info.IsDir() {
 		return refuse("%s is not a folder", plan.From)
@@ -123,21 +128,20 @@ func planModelsMove(ctx context.Context, cfg *Config, to string) (MovePlan, func
 	}
 
 	// The remaining checks are independent; report every one that applies.
-	rewrites, envKeys := modelPathRewrites(source, plan.To)
-	plan.Refusals = append(plan.Refusals, envKeys...)
-	plan.rewrites = rewrites
-	for _, kv := range rewrites {
-		plan.RewriteKeys = append(plan.RewriteKeys, kv.Key)
-	}
-	pairs := append([]keyValue{{Key: "models_dir", Value: plan.To}}, rewrites...)
-	if err := setKeyFileValues(pairs, true); err != nil {
+	plan.Refusals = append(plan.Refusals, environmentRefusals(source)...)
+	pairs, err := setKeyFileValuesFrom(modelPathPairs(source, plan.To), true)
+	if err != nil {
 		plan.Refusals = append(plan.Refusals, describeSaveError(err))
+	}
+	for _, kv := range pairs[min(1, len(pairs)):] {
+		plan.RewriteKeys = append(plan.RewriteKeys, kv.Key)
 	}
 
 	scan, err := scanModelsTree(ctx, source)
 	if err != nil {
-		return plan, noop, err
+		return plan, err
 	}
+	plan.Measured = true
 	plan.Bytes, plan.Files, plan.Entries = scan.bytes, scan.files, scan.entries
 	if len(scan.special) > 0 {
 		plan.Refusals = append(plan.Refusals, fmt.Sprintf("%s cannot be copied (not a file, folder or link); move or delete it first", listPaths(scan.special)))
@@ -145,23 +149,29 @@ func planModelsMove(ctx context.Context, cfg *Config, to string) (MovePlan, func
 	if len(scan.strayLinks) > 0 {
 		plan.Refusals = append(plan.Refusals, fmt.Sprintf("these links would point at the wrong place after the move: %s; replace or remove them first", listPaths(scan.strayLinks)))
 	}
+	if len(scan.mounts) > 0 {
+		plan.Refusals = append(plan.Refusals, fmt.Sprintf("%s is another drive mounted inside the models folder; unmount it first", listPaths(scan.mounts)))
+	}
+	plan.Unrecognized = unrecognizedEntries(ctx, cfg, plan.From, plan.Entries, opts.Personas)
 
 	existing := existingAncestor(dest)
-	sourceDev, ok1 := deviceOf(source)
-	destDev, ok2 := deviceOf(existing)
+	sourceDev, ok1 := moveHooks.deviceOf(source)
+	destDev, ok2 := moveHooks.deviceOf(existing)
 	plan.SameVolume = ok1 && ok2 && sourceDev == destDev
 	if !plan.SameVolume {
 		if reason := checkFreeSpace(existing, plan.Bytes, &plan.FreeBytes); reason != "" {
 			plan.Refusals = append(plan.Refusals, reason)
 		}
 	}
-
-	release, lockRefusals := moveLocks(source)
-	plan.Refusals = append(plan.Refusals, lockRefusals...)
-	return plan, release, nil
+	if !held {
+		plan.Refusals = append(plan.Refusals, probeMoveLocks(source)...)
+	}
+	return plan, nil
 }
 
 // checkFreeSpace refuses a copy that would not fit on the volume holding dir.
+// Unknown free space is not a refusal: a full drive fails the copy, which is
+// then removed.
 func checkFreeSpace(dir string, need int64, free *int64) string {
 	avail, err := moveHooks.freeSpace(dir)
 	if err != nil {
@@ -174,17 +184,30 @@ func checkFreeSpace(dir string, need int64, free *int64) string {
 	return ""
 }
 
+func userHomeDir() string {
+	if u, err := user.Current(); err == nil {
+		return u.HomeDir
+	}
+	return ""
+}
+
 // protectedModelsFolder refuses a models folder whose wholesale move would take
 // far more than models with it.
 func protectedModelsFolder(configured, source string) string {
 	home := homeDir()
+	if !filepath.IsAbs(home) {
+		home = moveHooks.homeFallback()
+	}
+	if !filepath.IsAbs(home) {
+		return "obey-voice cannot tell where your home folder is (HOME is not set), so it cannot check that the models folder is safe to move; set HOME and try again"
+	}
 	cfgDir := ConfigDir()
 	for _, p := range []string{configured, source} {
-		if filepath.IsAbs(home) && containsPath(p, home) {
+		if containsPath(p, home) {
 			return fmt.Sprintf("%s is your home folder or contains it; obey-voice only moves a folder that holds models. Set models_dir to a folder of its own first", configured)
 		}
 		for _, name := range standardFolders {
-			if filepath.IsAbs(home) && samePath(p, filepath.Join(home, name)) {
+			if samePath(p, filepath.Join(home, name)) {
 				return fmt.Sprintf("%s is your %s folder, which holds more than models; set models_dir to a folder of its own first", configured, name)
 			}
 		}
@@ -202,11 +225,9 @@ func protectedModelsFolder(configured, source string) string {
 // destination is followed, never replaced.
 func resolveMoveDest(to string) (string, string) {
 	if info, err := os.Lstat(to); err == nil && info.Mode()&fs.ModeSymlink != 0 {
-		target, err := filepath.EvalSymlinks(to)
-		if err != nil {
+		if _, err := filepath.EvalSymlinks(to); err != nil {
 			return "", fmt.Sprintf("%s is a link to a folder that does not exist; create that folder or choose another destination", to)
 		}
-		return target, ""
 	}
 	return resolveExisting(to), ""
 }
@@ -226,8 +247,12 @@ func (p *MovePlan) checkDestination() string {
 		return fmt.Sprintf("%s is not a usable folder: %v", p.To, err)
 	}
 	if len(entries) > 0 {
-		if _, err := os.Lstat(filepath.Join(p.Dest, moveIncompleteMarker)); err == nil {
-			return fmt.Sprintf("%s holds an unfinished copy from an earlier move that was stopped, and nothing uses it; delete that folder, then try again", p.To)
+		if marker := filepath.Join(p.Dest, moveIncompleteMarker); fileExists(marker) {
+			where := p.Dest
+			if p.Dest != p.To {
+				where = fmt.Sprintf("%s (where %s leads)", p.Dest, p.To)
+			}
+			return fmt.Sprintf("%s holds an unfinished copy from an earlier move that was stopped (%s is there) and nothing uses those files; delete everything inside %s, then try again", where, marker, p.Dest)
 		}
 		return fmt.Sprintf("%s already has files in it. To use models that are already there, set the folder with `obey-voice config set models_dir %s` instead", p.To, p.To)
 	}
@@ -235,36 +260,60 @@ func (p *MovePlan) checkDestination() string {
 	return ""
 }
 
-// modelPathRewrites lists every other text setting that names a file inside
-// the old folder, with the same file in the new one. A setting that comes
-// from the environment cannot be rewritten and is returned as a refusal.
-// Paths are matched by folder identity, so a value that reaches the folder
-// through a link or another spelling still counts.
-func modelPathRewrites(source, to string) (rewrites []keyValue, envRefusals []string) {
+func fileExists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+// environmentRefusals names settings set in the environment that point into
+// the old folder: they cannot be rewritten, and would name deleted files.
+func environmentRefusals(source string) []string {
+	var refusals []string
 	for _, spec := range Schema() {
 		if spec.Type != TypeString || spec.Key == "models_dir" {
 			continue
 		}
 		if name, raw, ok := envValueFor(spec.Key); ok {
 			if _, inside := insideFolder(source, expandHomePath(strings.TrimSpace(raw))); inside {
-				envRefusals = append(envRefusals, fmt.Sprintf("%s (%s) is set in the environment to %s, inside the models folder, and cannot be updated; unset it or point it at the new folder, then try again", name, spec.Key, raw))
+				refusals = append(refusals, fmt.Sprintf("%s (%s) is set in the environment to %s, inside the models folder, and cannot be updated; unset it or point it at the new folder, then try again", name, spec.Key, raw))
 			}
-			continue
-		}
-		mu.RLock()
-		value := v.GetString(spec.Key)
-		mu.RUnlock()
-		if rel, inside := insideFolder(source, expandHomePath(strings.TrimSpace(value))); inside {
-			rewrites = append(rewrites, keyValue{Key: spec.Key, Value: filepath.Join(to, rel)})
 		}
 	}
-	sort.Slice(rewrites, func(i, j int) bool { return rewrites[i].Key < rewrites[j].Key })
-	return rewrites, envRefusals
+	return refusals
 }
 
-// insideFolder reports where an absolute path lies inside dir. Folders are
-// compared by identity, so a link or a case variant on the way is seen
-// through; the path itself need not exist.
+// modelPathPairs builds the settings a move saves from what config.yaml says
+// when it is read under the write lock: models_dir, and every other text
+// setting naming a file inside the old folder, pointed at the same file in
+// the new one. A setting config.yaml does not hold is judged by its default.
+// Settings set in the environment are refused beforehand, not rewritten.
+func modelPathPairs(source, to string) func(func(string) (string, bool)) []keyValue {
+	return func(fileValue func(string) (string, bool)) []keyValue {
+		var rewrites []keyValue
+		for _, spec := range Schema() {
+			if spec.Type != TypeString || spec.Key == "models_dir" {
+				continue
+			}
+			if _, _, ok := envValueFor(spec.Key); ok {
+				continue
+			}
+			value, ok := fileValue(spec.Key)
+			if !ok {
+				value, _ = spec.Default.(string)
+			}
+			if rel, inside := insideFolder(source, expandHomePath(strings.TrimSpace(value))); inside {
+				rewrites = append(rewrites, keyValue{Key: spec.Key, Value: filepath.Join(to, rel)})
+			}
+		}
+		sort.Slice(rewrites, func(i, j int) bool { return rewrites[i].Key < rewrites[j].Key })
+		return append([]keyValue{{Key: "models_dir", Value: to}}, rewrites...)
+	}
+}
+
+// insideFolder reports where path lies inside dir ("." when it is dir).
+// Folders are compared by identity along both the given spelling and the one
+// with links resolved, so a link or case variant anywhere on the way, on
+// either side, is seen through. The path itself need not exist.
 func insideFolder(dir, path string) (string, bool) {
 	if !filepath.IsAbs(path) {
 		return "", false
@@ -274,17 +323,20 @@ func insideFolder(dir, path string) (string, bool) {
 		return "", false
 	}
 	path = filepath.Clean(path)
-	for p := path; ; {
-		if info, err := os.Stat(p); err == nil && os.SameFile(info, dirInfo) {
-			rel, err := filepath.Rel(p, path)
-			return rel, err == nil
+	for _, spelled := range []string{path, resolveExisting(path)} {
+		for p := spelled; ; {
+			if info, err := os.Stat(p); err == nil && os.SameFile(info, dirInfo) {
+				rel, err := filepath.Rel(p, spelled)
+				return rel, err == nil
+			}
+			parent := filepath.Dir(p)
+			if parent == p {
+				break
+			}
+			p = parent
 		}
-		parent := filepath.Dir(p)
-		if parent == p {
-			return "", false
-		}
-		p = parent
 	}
+	return "", false
 }
 
 func describeSaveError(err error) string {
@@ -301,14 +353,16 @@ type modelsScan struct {
 	entries    []MoveEntry
 	special    []string
 	strayLinks []string
+	mounts     []string
 }
 
 // scanModelsTree measures the folder and finds what a move could not carry
-// over faithfully: special files, and links that would point somewhere else
-// once the folder has moved.
+// over faithfully: special files, links that would point somewhere else once
+// the folder has moved, and other drives mounted inside it.
 func scanModelsTree(ctx context.Context, source string) (modelsScan, error) {
 	var scan modelsScan
 	sizes := map[string]int64{}
+	rootDev, rootDevOK := moveHooks.deviceOf(source)
 	err := filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", path, err)
@@ -326,6 +380,10 @@ func scanModelsTree(ctx context.Context, source string) (modelsScan, error) {
 		}
 		switch {
 		case d.IsDir():
+			if dev, ok := moveHooks.deviceOf(path); rootDevOK && ok && dev != rootDev {
+				scan.mounts = append(scan.mounts, rel)
+				return fs.SkipDir
+			}
 		case d.Type()&fs.ModeSymlink != 0:
 			target, err := os.Readlink(path)
 			if err != nil {
@@ -357,6 +415,28 @@ func scanModelsTree(ctx context.Context, source string) (modelsScan, error) {
 	return scan, nil
 }
 
+// unrecognizedEntries lists the top-level entries that are not models this
+// install references (through its settings or any persona) and not files the
+// installers or the move write themselves. If the models in use cannot be
+// worked out, every entry is unrecognized: that only means the old folder is
+// kept.
+func unrecognizedEntries(ctx context.Context, cfg *Config, modelsDir string, entries []MoveEntry, personas []PersonaAssets) []MoveEntry {
+	set, err := RequiredAssetPaths(ctx, cfg, modelsDir, personas)
+	var out []MoveEntry
+	for _, e := range entries {
+		name, path := e.Name, filepath.Join(modelsDir, e.Name)
+		switch {
+		case skipAtRoot(name), name == deciderLockSubdir, name == ".DS_Store",
+			strings.HasPrefix(name, ".samantha-asset-"), cleanCategory(name) == CleanCategoryJunk:
+			continue
+		case err == nil && (set.own.has(path) || set.own.holdsRequired(path)):
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 // linkBreaksOnMove reports a link that names its target through the old
 // folder's path (absolute into it, or relative out of it), so it would point
 // somewhere else after the move.
@@ -377,25 +457,24 @@ func listPaths(paths []string) string {
 	return fmt.Sprintf("%s and %d more", strings.Join(paths[:shown], ", "), len(paths)-shown)
 }
 
-// containsPath reports whether dir is path or one of its ancestors. Existing
-// folders are compared by identity, so a case variant or a link on the way is
-// seen through.
+// listEntries renders entries with their sizes.
+func listEntries(entries []MoveEntry) string {
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, fmt.Sprintf("%s (%s)", e.Name, FormatBytes(e.Bytes)))
+	}
+	return listPaths(names)
+}
+
+// containsPath reports whether dir is path or one of its ancestors, by
+// identity along both spellings of path (see insideFolder).
 func containsPath(dir, path string) bool {
-	dirInfo, err := os.Stat(dir)
-	if err != nil {
+	if _, err := os.Stat(dir); err != nil {
 		clean := filepath.Clean(path)
 		return clean == filepath.Clean(dir) || within(clean, filepath.Clean(dir))
 	}
-	for p := filepath.Clean(path); ; {
-		if info, err := os.Stat(p); err == nil && os.SameFile(info, dirInfo) {
-			return true
-		}
-		parent := filepath.Dir(p)
-		if parent == p {
-			return false
-		}
-		p = parent
-	}
+	_, inside := insideFolder(dir, path)
+	return inside
 }
 
 func samePath(a, b string) bool {

@@ -15,36 +15,48 @@ type keyValue struct {
 // config.yaml, so either all of them land or none do. With dryRun it only
 // checks that the edit would apply and writes nothing.
 func setKeyFileValues(pairs []keyValue, dryRun bool) error {
+	_, err := setKeyFileValuesFrom(func(func(string) (string, bool)) []keyValue { return pairs }, dryRun)
+	return err
+}
+
+// setKeyFileValuesFrom is setKeyFileValues where the pairs are decided from
+// the file as read under the write lock: build gets each key's text value in
+// config.yaml (false when the file does not set it) and returns what to write.
+func setKeyFileValuesFrom(build func(fileValue func(key string) (string, bool)) []keyValue, dryRun bool) ([]keyValue, error) {
+	fileWriteMu.Lock()
+	defer fileWriteMu.Unlock()
+	path := ConfigFile()
+	if !dryRun {
+		release, err := openConfigForWrite(path, "")
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+	}
+	data, existed, doc, err := readConfigDocument(path, "")
+	if err != nil {
+		return nil, err
+	}
+	pairs := build(func(key string) (string, bool) {
+		value, found := yamlValueAt(doc.Content[0], strings.Split(key, "."))
+		text, ok := value.(string)
+		return text, found && ok
+	})
 	if len(pairs) == 0 {
-		return nil
+		return nil, nil
 	}
 	specs := make([]KeySpec, len(pairs))
 	values := make([]any, len(pairs))
 	for i, p := range pairs {
 		spec, err := resolveSpec(p.Key, false)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		value, err := normalizeToSpec(spec, p.Value)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		specs[i], values[i] = spec, value
-	}
-
-	fileWriteMu.Lock()
-	defer fileWriteMu.Unlock()
-	path := ConfigFile()
-	if !dryRun {
-		release, err := openConfigForWrite(path, specs[0].Key)
-		if err != nil {
-			return err
-		}
-		defer release()
-	}
-	data, existed, doc, err := readConfigDocument(path, specs[0].Key)
-	if err != nil {
-		return err
 	}
 	patched := data
 	for i, spec := range specs {
@@ -54,13 +66,13 @@ func setKeyFileValues(pairs []keyValue, dryRun bool) error {
 		}
 		next, err := patchConfigSource(patched, doc, segments, values[i])
 		if err != nil {
-			return writeOrShapeFailed(spec.Key, "updating config", err)
+			return nil, writeOrShapeFailed(spec.Key, "updating config", err)
 		}
 		if _, err := verifyPatched(next, segments, values[i]); err != nil {
-			return writeFailed(spec.Key, "updating config", err)
+			return nil, writeFailed(spec.Key, "updating config", err)
 		}
 		if doc, err = migrationYAMLDocument(next); err != nil {
-			return writeFailed(spec.Key, "updating config", err)
+			return nil, writeFailed(spec.Key, "updating config", err)
 		}
 		patched = next
 	}
@@ -68,20 +80,20 @@ func setKeyFileValues(pairs []keyValue, dryRun bool) error {
 	for i, spec := range specs {
 		got, err := verifyPatched(patched, strings.Split(spec.Key, "."), values[i])
 		if err != nil {
-			return writeFailed(spec.Key, "updating config", err)
+			return nil, writeFailed(spec.Key, "updating config", err)
 		}
 		refreshed[i] = got
 	}
 	if dryRun {
-		return nil
+		return pairs, nil
 	}
 	if !bytes.Equal(patched, data) {
 		if _, err := backupAndReplace(path, patched, existed, specs[0].Key); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	for i, spec := range specs {
 		Set(spec.Key, refreshed[i])
 	}
-	return nil
+	return pairs, nil
 }

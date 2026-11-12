@@ -14,7 +14,7 @@ import (
 // was: the old folder whole and in use, and no destination.
 func assertNothingMoved(t *testing.T, cfg *Config, source, dest string) {
 	t.Helper()
-	for rel, want := range map[string]string{"vad.onnx": "vad", "whispercpp/ggml-base.en.bin": "whisper-weights"} {
+	for rel, want := range map[string]string{"silero_vad.onnx": "vad", "whispercpp/ggml-base.en.bin": "whisper-weights"} {
 		got, err := os.ReadFile(filepath.Join(source, rel))
 		if err != nil || string(got) != want {
 			t.Fatalf("old folder lost %s: %q, %v", rel, got, err)
@@ -56,7 +56,7 @@ func TestMoveModelsKeepsBytesAppendedAfterAFileWasCopied(t *testing.T) {
 	_, err := MoveModels(context.Background(), cfg, dest, copyOpts(t, func(p MoveProgress) {
 		if p.Phase == MovePhaseCopy && p.Done >= int64(len("vad")) && !appended {
 			appended = true
-			f, err := os.OpenFile(filepath.Join(source, "vad.onnx"), os.O_APPEND|os.O_WRONLY, 0)
+			f, err := os.OpenFile(filepath.Join(source, "silero_vad.onnx"), os.O_APPEND|os.O_WRONLY, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -67,8 +67,8 @@ func TestMoveModelsKeepsBytesAppendedAfterAFileWasCopied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := os.ReadFile(filepath.Join(dest, "vad.onnx")); string(got) != "vad+appended" {
-		t.Fatalf("dest vad.onnx = %q, the appended bytes are gone", got)
+	if got, _ := os.ReadFile(filepath.Join(dest, "silero_vad.onnx")); string(got) != "vad+appended" {
+		t.Fatalf("dest silero_vad.onnx = %q, the appended bytes are gone", got)
 	}
 }
 
@@ -98,7 +98,7 @@ func TestMoveModelsIntoALinkLandsInItsTarget(t *testing.T) {
 			if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
 				t.Fatalf("the link was replaced: %v", err)
 			}
-			if got, err := os.ReadFile(filepath.Join(target, "vad.onnx")); err != nil || string(got) != "vad" {
+			if got, err := os.ReadFile(filepath.Join(target, "silero_vad.onnx")); err != nil || string(got) != "vad" {
 				t.Fatalf("the models did not reach the link's target: %q, %v", got, err)
 			}
 			if ModelsDir() != link {
@@ -124,7 +124,7 @@ func TestMoveModelsRefusesALinkToNothing(t *testing.T) {
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("the link was replaced: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(source, "vad.onnx")); err != nil || ModelsDir() != source {
+	if _, err := os.Stat(filepath.Join(source, "silero_vad.onnx")); err != nil || ModelsDir() != source {
 		t.Fatalf("the old folder is not in use: %v, models_dir=%q", err, ModelsDir())
 	}
 }
@@ -216,7 +216,7 @@ func TestMoveModelsRefusesFoldersThatHoldMoreThanModels(t *testing.T) {
 		source := filepath.Join(root, "obey")
 		install := filepath.Join(source, "agents", "voice", "obey-voice")
 		SetConfigDirForTest(t, install)
-		writeMoveFile(t, filepath.Join(source, "vad.onnx"), "vad")
+		writeMoveFile(t, filepath.Join(source, "silero_vad.onnx"), "vad")
 		writeMoveFile(t, filepath.Join(install, "personas", "veronica", "persona.yaml"), "id: veronica")
 		setMoveKey(t, "models_dir", source)
 		setMoveKey(t, "ollama_model", "qwen3:8b")
@@ -295,7 +295,7 @@ func TestMoveModelsCancelRemovesOnlyWhatItCreated(t *testing.T) {
 		if err != nil || len(entries) != 0 {
 			t.Fatalf("the user's folder was removed or left dirty: %v, %d entries", err, len(entries))
 		}
-		if _, err := os.Stat(filepath.Join(source, "vad.onnx")); err != nil || ModelsDir() != source {
+		if _, err := os.Stat(filepath.Join(source, "silero_vad.onnx")); err != nil || ModelsDir() != source {
 			t.Fatalf("the old folder is not in use: %v", err)
 		}
 	})
@@ -331,12 +331,12 @@ func TestMoveModelsRetryAfterAStoppedCopySaysToDeleteIt(t *testing.T) {
 	cfg, source, root := moveFixture(t)
 	dest := filepath.Join(root, "fast", "models")
 	writeMoveFile(t, filepath.Join(dest, ".obey-voice-move-incomplete"), "")
-	writeMoveFile(t, filepath.Join(dest, "vad.onnx"), "va")
+	writeMoveFile(t, filepath.Join(dest, "silero_vad.onnx"), "va")
 	_, err := MoveModels(context.Background(), cfg, dest, MoveOptions{})
 	if err == nil || !strings.Contains(err.Error(), "unfinished copy") || strings.Contains(err.Error(), "config set") {
 		t.Fatalf("err = %v, want it to call the folder an unfinished copy and not suggest using it", err)
 	}
-	if _, err := os.Stat(filepath.Join(source, "vad.onnx")); err != nil {
+	if _, err := os.Stat(filepath.Join(source, "silero_vad.onnx")); err != nil {
 		t.Fatal(err)
 	}
 }

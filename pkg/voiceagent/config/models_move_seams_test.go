@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,11 +14,29 @@ import (
 )
 
 func TestMoveModelsFlushesTheCopyBeforeRemovingTheOriginal(t *testing.T) {
-	cfg, _, root := moveFixture(t)
+	cfg, source, root := moveFixture(t)
 	dest := filepath.Join(root, "fast", "models")
 	var events []string
 	opts := copyOpts(t, nil)
-	moveHooks.trace = func(e string) { events = append(events, e) }
+	moveHooks.syncFile = func(f *os.File) error {
+		events = append(events, "sync file "+f.Name())
+		return f.Sync()
+	}
+	moveHooks.syncDir = func(path string) error {
+		events = append(events, "sync dir "+path)
+		return syncDir(path)
+	}
+	write := moveHooks.writeConfig
+	moveHooks.writeConfig = func(build func(func(string) (string, bool)) []keyValue) ([]keyValue, error) {
+		events = append(events, "save")
+		return write(build)
+	}
+	moveHooks.beforeVerify = func(string, int) {
+		if _, err := os.Lstat(source); err == nil {
+			t.Error("the old folder was still in place when it was checked for removal")
+		}
+		events = append(events, "verify")
+	}
 	if _, err := MoveModels(context.Background(), cfg, dest, opts); err != nil {
 		t.Fatal(err)
 	}
@@ -29,15 +48,16 @@ func TestMoveModelsFlushesTheCopyBeforeRemovingTheOriginal(t *testing.T) {
 	}
 	dest = filepath.Join(realRoot, "fast", "models")
 	save := slices.Index(events, "save")
-	remove := slices.IndexFunc(events, func(e string) bool { return strings.HasPrefix(e, "remove ") })
-	if save < 0 || remove < save {
-		t.Fatalf("save at %d, removal at %d: %v", save, remove, events)
+	verify := slices.Index(events, "verify")
+	if save < 0 || verify < save {
+		t.Fatalf("save at %d, old folder checked at %d: %v", save, verify, events)
 	}
 	for _, want := range []string{
-		"sync file " + filepath.Join(dest, "vad.onnx"),
+		"sync file " + filepath.Join(dest, "silero_vad.onnx"),
 		"sync file " + filepath.Join(dest, "whispercpp", "ggml-base.en.bin"),
 		"sync dir " + dest,
 		"sync dir " + filepath.Join(dest, "whispercpp"),
+		"sync dir " + filepath.Dir(dest),
 	} {
 		if i := slices.Index(events, want); i < 0 || i > save {
 			t.Fatalf("%q at %d, save at %d: %v", want, i, save, events)
@@ -54,7 +74,7 @@ func TestMoveModelsKeepsTheOldFolderWhileAWriterKeepsChangingIt(t *testing.T) {
 	var quarantine string
 	moveHooks.beforeVerify = func(old string, pass int) {
 		quarantine = old
-		f, err := os.OpenFile(filepath.Join(old, "vad.onnx"), os.O_APPEND|os.O_WRONLY, 0)
+		f, err := os.OpenFile(filepath.Join(old, "silero_vad.onnx"), os.O_APPEND|os.O_WRONLY, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -65,14 +85,14 @@ func TestMoveModelsKeepsTheOldFolderWhileAWriterKeepsChangingIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], quarantine) || !strings.Contains(result.Warnings[0], "vad.onnx") {
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], quarantine) || !strings.Contains(result.Warnings[0], "silero_vad.onnx") {
 		t.Fatalf("warnings = %v, want the kept folder %s and the changing file named", result.Warnings, quarantine)
 	}
-	if got, _ := os.ReadFile(filepath.Join(quarantine, "vad.onnx")); string(got) != "vad+1+2" {
-		t.Fatalf("kept old vad.onnx = %q", got)
+	if got, _ := os.ReadFile(filepath.Join(quarantine, "silero_vad.onnx")); string(got) != "vad+1+2" {
+		t.Fatalf("kept old silero_vad.onnx = %q", got)
 	}
-	if got, _ := os.ReadFile(filepath.Join(dest, "vad.onnx")); string(got) != "vad+1" {
-		t.Fatalf("new vad.onnx = %q, want the first change brought over", got)
+	if got, _ := os.ReadFile(filepath.Join(dest, "silero_vad.onnx")); string(got) != "vad+1" {
+		t.Fatalf("new silero_vad.onnx = %q, want the first change brought over", got)
 	}
 	if ModelsDir() != dest {
 		t.Fatalf("models_dir = %q", ModelsDir())
@@ -140,11 +160,11 @@ func TestMoveModelsLinkFailureOnTheDestinationLeavesTheSourceIntact(t *testing.T
 	opts := copyOpts(t, nil)
 	moveHooks.symlink = func(string, string) error { return errors.New("operation not supported") }
 	_, err := MoveModels(context.Background(), cfg, dest, opts)
-	if err == nil || !strings.Contains(err.Error(), "audio8-tts") || !strings.Contains(err.Error(), "exFAT") {
+	if err == nil || !strings.Contains(err.Error(), "audio8-voices") || !strings.Contains(err.Error(), "exFAT") {
 		t.Fatalf("err = %v", err)
 	}
 	assertNothingMoved(t, cfg, source, dest)
-	if info, err := os.Lstat(filepath.Join(source, "audio8-tts")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+	if info, err := os.Lstat(filepath.Join(source, "audio8-voices")); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("the source link is gone: %v", err)
 	}
 }
@@ -173,10 +193,14 @@ func TestMoveModelsRefusesWhileServeIsRunning(t *testing.T) {
 	assertNothingMoved(t, cfg, source, dest)
 }
 
+// The installer's lock used to be taken only if an install had already
+// created its file, so an install could start mid-move on a fresh folder.
 func TestMoveModelsHoldsTheInstallLockWhileCopying(t *testing.T) {
 	cfg, source, root := moveFixture(t)
 	installLock := filepath.Join(source, "decider", "native-install.lock")
-	writeMoveFile(t, installLock, "")
+	if _, err := os.Lstat(installLock); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("the fixture should start with no install lock")
+	}
 	opts := copyOpts(t, nil)
 	checked := false
 	moveHooks.afterCopy = func(context.Context, string) {
@@ -204,36 +228,75 @@ func TestMoveModelsHoldsTheInstallLockWhileCopying(t *testing.T) {
 	release()
 }
 
-func TestPlanModelsMoveReportsWithoutChangingAnything(t *testing.T) {
-	cfg, source, root := moveFixture(t)
-	dest := filepath.Join(root, "fast", "models")
-	before, _ := os.ReadFile(ConfigFile())
-	plan, err := PlanModelsMove(context.Background(), cfg, dest)
+// snapshotTree records every path under root with its size and content, so a
+// test can show a call wrote nothing at all.
+func snapshotTree(t *testing.T, root string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		entry := info.Mode().String()
+		if info.Mode().IsRegular() {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			entry += " " + string(data)
+		}
+		out[path] = entry
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Refusals) != 0 || plan.From != source || plan.To != dest || plan.Files != 2 || !plan.SameVolume {
+	return out
+}
+
+// A dry run used to create the settings folder and a lock file.
+func TestPlanModelsMoveReportsWithoutChangingAnything(t *testing.T) {
+	cfg, source, root := moveFixture(t)
+	dest := filepath.Join(root, "fast", "models")
+	before := snapshotTree(t, root)
+	plan, err := PlanModelsMove(context.Background(), cfg, dest, MoveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Refusals) != 0 || plan.From != source || plan.To != dest || plan.Files != 2 || !plan.SameVolume || !plan.Measured {
 		t.Fatalf("plan = %+v", plan)
 	}
 	var names []string
 	for _, e := range plan.Entries {
 		names = append(names, e.Name)
 	}
-	want := []string{"vad.onnx", "whispercpp"}
+	want := []string{"silero_vad.onnx", "whispercpp"}
 	if runtime.GOOS != "windows" {
-		want = []string{"audio8-tts", "vad.onnx", "whispercpp"}
+		want = []string{"audio8-voices", "silero_vad.onnx", "whispercpp"}
 	}
 	if !slices.Equal(names, want) || !slices.Equal(plan.RewriteKeys, []string{"whispercpp_model_path"}) {
 		t.Fatalf("entries = %v, rewrites = %v", names, plan.RewriteKeys)
 	}
-	if after, _ := os.ReadFile(ConfigFile()); string(after) != string(before) {
-		t.Fatal("planning changed config.yaml")
+	if after := snapshotTree(t, root); !maps.Equal(before, after) {
+		for path, entry := range after {
+			if before[path] != entry {
+				t.Errorf("planning wrote %s", path)
+			}
+		}
+		t.FailNow()
 	}
-	assertNothingMoved(t, cfg, source, dest)
 
 	t.Setenv("WHISPERCPP_MODEL_PATH", filepath.Join(source, "whispercpp", "ggml-base.en.bin"))
-	plan, err = PlanModelsMove(context.Background(), cfg, dest)
+	plan, err = PlanModelsMove(context.Background(), cfg, dest, MoveOptions{})
 	if err != nil || len(plan.Refusals) != 1 || !strings.Contains(plan.Refusals[0], "WHISPERCPP_MODEL_PATH") {
 		t.Fatalf("refusals = %v, %v", plan.Refusals, err)
+	}
+	plan, _ = PlanModelsMove(context.Background(), cfg, filepath.Join(source, "inside"), MoveOptions{})
+	if plan.Measured || plan.Bytes != 0 {
+		t.Fatalf("a move refused before measuring reports a size: %+v", plan)
 	}
 }
