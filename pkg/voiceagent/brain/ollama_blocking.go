@@ -163,11 +163,21 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && !imageResultRetry {
 			chat = o.chatRouteRecovery
 		}
-		response, responseComplete, err := o.chatFullWithContinuation(ctx, req, opts, responseLimit, &continuations, chat)
+		requestCtx, cancelRequest := ctx, context.CancelFunc(func() {})
+		if finalAnswer {
+			requestCtx, cancelRequest = rounds.answerContext(ctx)
+		}
+		response, responseComplete, err := o.chatFullWithContinuation(requestCtx, req, opts, responseLimit, &continuations, chat)
+		cancelRequest()
 		if err != nil {
 			o.history = restore
 			o.canonical = restoreCanonical
 			o.working = restoreWorking
+			if finalAnswer {
+				if cut := rounds.cutOff(ctx, requestCtx, response.Content); cut != nil {
+					return "", cut
+				}
+			}
 			return "", fmt.Errorf("ollama error: %w", err)
 		}
 

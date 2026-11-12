@@ -657,10 +657,13 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		switch state {
 		case job.StateFailed:
 			status, text = work.OutcomeFailed, errorText(err, result)
+			if errors.Is(err, brain.ErrWorkerOutOfTime) {
+				status, text = work.OutcomeTimedOut, outOfTimeText(terminalElapsed, err)
+			}
 		case job.StateAborted:
 			status, text, termination = work.OutcomeCancelled, "Work was cancelled.", "unknown"
 			if errors.Is(err, job.ErrBudget) {
-				status, text = work.OutcomeTimedOut, fmt.Sprintf("Work stopped after %s.", spokenDuration(terminalElapsed))
+				status, text = work.OutcomeTimedOut, outOfTimeText(terminalElapsed, err)
 			}
 		}
 		if errors.Is(err, brain.ErrWorkerBudgetExceeded) || errors.Is(err, job.ErrBudget) || errors.Is(err, context.DeadlineExceeded) {
@@ -701,6 +704,17 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		a.emitJobTrace(id, events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason})
 	}
 	a.tryFlushPending()
+}
+
+// outOfTimeText reports a job whose time ran out before the worker delivered
+// its answer, with any part of the answer it had written.
+func outOfTimeText(elapsed time.Duration, err error) string {
+	text := fmt.Sprintf("Work ran out of time after %s, before it could write its answer.", spokenDuration(elapsed))
+	var cut *brain.WorkerOutOfTimeError
+	if errors.As(err, &cut) && cut.Partial != "" {
+		text += " Partial answer: " + cut.Partial
+	}
+	return text
 }
 
 func errorText(err error, fallback string) string {

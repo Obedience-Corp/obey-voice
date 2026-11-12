@@ -25,13 +25,14 @@ func fullWorkerContinuation(opts StreamOptions) bool {
 // original request. Only the final complete message reaches the tool executor
 // and canonical history. Private continuation instructions are never saved as
 // human turns. Each follow-on request uses chat's existing job accounting.
+// A failed request still returns the text of the segments before it.
 func (o *OllamaBrain) chatFullWithContinuation(ctx context.Context, req *api.ChatRequest, opts StreamOptions, limit *responseBudget, attempts *int, chat func(context.Context, *api.ChatRequest, api.ChatResponseFunc) error) (api.Message, bool, error) {
 	base := req.Messages
 	var partial strings.Builder
 	continued := false
 	for {
 		if err := ctx.Err(); err != nil {
-			return api.Message{}, false, err
+			return api.Message{Content: partial.String()}, false, err
 		}
 		var response api.Message
 		var reason string
@@ -56,10 +57,10 @@ func (o *OllamaBrain) chatFullWithContinuation(ctx context.Context, req *api.Cha
 			return limit.observe(resp)
 		})
 		if err != nil {
-			return api.Message{}, false, err
+			return api.Message{Content: partial.String()}, false, err
 		}
 		if err := ctx.Err(); err != nil {
-			return api.Message{}, false, err
+			return api.Message{Content: partial.String()}, false, err
 		}
 		if reason != "length" {
 			if continued {
