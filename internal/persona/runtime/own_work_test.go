@@ -272,3 +272,49 @@ func TestPersonaOnOllamaDoesItsOwnWorkOnItsOwnModel(t *testing.T) {
 		})
 	}
 }
+
+// An edit to brain.work reaches the conversation when the persona is next
+// selected, and does not restart its talking session.
+func TestWorkEditAppliesOnTheNextSelectionWithoutRestartingTheSession(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SPAWN", "haiku")
+	miraDir, _ := filepath.EvalSymlinks(t.TempDir())
+	c := newConversation(t, 50, "mira", "claude", "", ownWorkSetup(t, "", miraDir))
+	finished := make(chan events.JobFinished, 1)
+	events.Subscribe(c.p.Events, func(e events.JobFinished) { finished <- e })
+
+	c.say("Mira, hello there.")
+	_, live := jobRequests(t, c.log)
+	miraSession := live[len(live)-1].Session
+	c.say("Mira, can you change it to haiku?")
+	select {
+	case done := <-finished:
+		if done.Summary != claudeJobResult {
+			t.Fatalf("result = %+v, want Mira's own", done)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("job did not finish: %+v", c.p.Workers())
+	}
+
+	mira := testProfile("mira", "Mira", "mira")
+	mira.Brain = persona.Brain{Provider: "claude", Model: "haiku", Work: config.WorkWorker}
+	mira.StartingDirectory = miraDir
+	writeTestProfile(t, c.catalog.Dir, mira)
+	c.say("Ember, what do you think?", "Mira, can you change it to haiku?")
+	select {
+	case done := <-finished:
+		if !strings.HasPrefix(done.Summary, ollamaJobResult) {
+			t.Fatalf("result = %+v, want the configured worker's", done)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("job did not finish: %+v", c.p.Workers())
+	}
+	c.say("Mira, thanks.")
+	jobs, live := jobRequests(t, c.log)
+	if len(jobs) != 1 {
+		t.Fatalf("Mira's own backend ran %d job request(s), want only the one before she was set to worker", len(jobs))
+	}
+	if last := live[len(live)-1]; last.Resume != miraSession {
+		t.Fatalf("Mira's session restarted: resume %q, was %q", last.Resume, miraSession)
+	}
+}

@@ -62,8 +62,7 @@ func OwnWorkConfig(cfg *Config) *Config {
 	own.VoiceWorkerProvider = provider
 	own.VoiceWorkerModel = BrainModelFor(cfg, provider)
 	own.VoiceWorkerOllamaHost = ""
-	// Same model, same window: a different num_ctx would make Ollama reload
-	// the model the persona is talking on.
+	// The persona's own context window, not the worker's.
 	own.VoiceWorkerNumCtx = cfg.OllamaNumCtx
 	if own.VoiceWorkers != nil && own.VoiceWorkers.Mode == WorkerModeTiered {
 		own.VoiceToolsEnabled = true

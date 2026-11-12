@@ -139,8 +139,8 @@ An own job runs with the same permissions as a worker on that backend. With
 
 With `voice_tools_enabled` off, an own job runs with tools off, as a worker
 does. An Ollama persona doing its own work uses its own `ollama_num_ctx`
-rather than `voice_worker_num_ctx`, so the job does not make Ollama reload the
-model the persona is talking on.
+rather than `voice_worker_num_ctx`; when `ollama_num_ctx` is unset, the job
+uses the model's advertised window, as a worker would.
 
 The limits are the worker's: `voice_worker_job_budget`, the concurrency limit
 (`voice_worker_max_concurrent`, or the tiered policy's), cancelling by voice,
@@ -150,7 +150,8 @@ persona set to `own` runs a tiered or decision-model spawn on its own backend,
 with full tools, as a tiered worker would. The tier's runtime limit and
 request allowances, the paid-worker switch and `worker-usage.sqlite`
 accounting do not cover it; the persona's backend is already the one you chose
-for it to talk on. The experimental `voice_work_enabled` inbox runs local
+for it to talk on. Its only time limit, in tiered mode too, is
+`voice_worker_job_budget`, which is unlimited by default. The experimental `voice_work_enabled` inbox runs local
 workers only, so there a persona on a hosted backend hands its work to the
 worker as before, and only a persona on Ollama can do its own.
 

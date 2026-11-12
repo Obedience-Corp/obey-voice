@@ -275,6 +275,26 @@ func TestOwnWorkObeysTheJobBudgetAndCancel(t *testing.T) {
 			t.Fatal("the job was not the persona's own")
 		}
 	})
+	t.Run("budget in tiered mode", func(t *testing.T) {
+		cfg := tierTestConfig()
+		cfg.ActivePersona, cfg.BrainProvider = "mira", "claude"
+		h := newOwnHarness(t, cfg, nil, job.WithBudget(60*time.Millisecond))
+		release := make(chan struct{})
+		defer close(release)
+		h.own.release = release
+		h.spawn("audit everything", config.WorkerTierSimple)
+		select {
+		case e := <-h.aborted:
+			if e.Reason != events.AbortBudget {
+				t.Fatalf("reason = %q", e.Reason)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("voice_worker_job_budget never stopped the own job in tiered mode")
+		}
+		if len(h.builtConfigs()) != 1 || h.planned != 0 {
+			t.Fatal("the job was not the persona's own")
+		}
+	})
 	t.Run("cancel", func(t *testing.T) {
 		h := newOwnHarness(t, claudePersona(), nil)
 		release := make(chan struct{})
@@ -432,5 +452,61 @@ func TestOwnWorkOnASharedHistoryBackendGetsOnlyThePersonasShare(t *testing.T) {
 		if strings.Contains(brief, secret) {
 			t.Fatalf("brief carries %q:\n%s", secret, brief)
 		}
+	}
+}
+
+// The result waits for the turn in progress, then is spoken in the voice the
+// persona had when it took the work, even after another voice took over.
+func TestOwnWorkResultIsSpokenInThePersonasVoiceAtTheNextPause(t *testing.T) {
+	mira, ember := &fakeTTS{}, &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	own := &slowWorker{started: make(chan struct{}), done: make(chan struct{}), reply: "The failing test passes now."}
+	p := &Pipeline{TTS: mira, Player: player, Events: events.NewBus()}
+	if err := p.BeginConversationIdentity("own-voice"); err != nil {
+		t.Fatal(err)
+	}
+	jobs := job.NewTable(t.Context())
+	defer jobs.Close()
+	configured := &recordingWorker{reply: "The configured worker did it."}
+	a := NewAgency(p, jobs, configured, claudePersona(), nil)
+	a.ownFactory = func(context.Context, *config.Config) (brain.Provider, error) { return own, nil }
+	a.Wire()
+	finished := make(chan struct{}, 1)
+	jobs.OnDone(func(id string, state job.State, result string, err error) {
+		a.onJobDone(id, state, result, err)
+		finished <- struct{}{}
+	})
+	var speaker string
+	events.Subscribe(p.Events, func(e events.SpeechSegmentReady) {
+		if e.Text == own.reply && e.Envelope != nil {
+			speaker = e.Envelope.PersonaID
+		}
+	})
+	metrics := newTurnMetrics()
+	metrics.response = events.ResponseEnvelope{PersonaID: "mira", DisplayName: "Mira"}
+	a.handleSpawn(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteSpawn, Transcript: "fix the failing test"})
+	select {
+	case <-own.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the persona's own backend never started the job")
+	}
+	p.ReplaceTTS(ember, nil)
+	p.incActiveTurn()
+	close(own.done)
+	select {
+	case <-finished:
+	case <-time.After(3 * time.Second):
+		t.Fatal("missing job completion")
+	}
+	if strings.Contains(strings.Join(mira.Texts(), " "), own.reply) {
+		t.Fatal("the result was spoken over a turn in progress")
+	}
+	p.decActiveTurn()
+	if !strings.Contains(strings.Join(mira.Texts(), " "), own.reply) || len(ember.Texts()) != 0 || speaker != "mira" {
+		t.Fatalf("mira=%q ember=%q speaker=%q", mira.Texts(), ember.Texts(), speaker)
+	}
+	if configured.calls() != 0 {
+		t.Fatal("the configured worker ran the persona's job")
 	}
 }
