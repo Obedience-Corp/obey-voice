@@ -189,8 +189,9 @@ func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions
 		return response, nil
 	}
 	// Lines recorded while the request ran come before its own, and the
-	// thread was never sent them.
-	missed := len(c.canonical) - recorded
+	// thread was never sent them. A thread dropped meanwhile, by a clear, an
+	// import or a compaction, no longer matches the conversation.
+	missed, dropped := len(c.canonical)-recorded, c.sessionID != req.ThreadID
 	// The thread now holds everything this request carried.
 	c.unsent = 0
 	if !opts.AgentContinuation {
@@ -211,8 +212,12 @@ func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions
 	c.appendTurn(reply)
 	c.sessionID = result.ThreadID
 	c.sessionTools = tools
-	if missed != 0 {
-		slog.Info("codex thread dropped", "thread_id", result.ThreadID, "reason", "lines were recorded while its request ran", "lines", missed)
+	if missed != 0 || dropped {
+		reason := "lines were recorded while its request ran"
+		if dropped {
+			reason = "its conversation changed while its request ran"
+		}
+		slog.Info("codex thread dropped", "thread_id", result.ThreadID, "reason", reason, "lines", missed)
 		c.dropThread()
 	}
 	return response, nil

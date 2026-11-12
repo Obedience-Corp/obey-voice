@@ -401,11 +401,17 @@ resets the session, or when the unseen lines do not fit, sends more input tokens
 and costs more than before. After a compaction the fresh session starts from the
 summary instead. A prompt of 100 KiB or more reaches the Claude CLI on stdin
 rather than as one command-line argument. The Grok and Cursor CLIs take the
-whole request as one argument, so Obey Voice keeps it within 100 KiB: Linux
-refuses a single argument of 128 KiB or more, and macOS limits all arguments
-and the environment together to 1 MiB. The conversation record gets what the
-rest of the request leaves, up to 64 KiB, so a long line you type or paste
-leaves less room for it. Unseen lines that no longer fit start a fresh session
+whole request as one argument, so Obey Voice keeps it within 100 KiB on Linux
+and macOS: Linux refuses a single argument of 128 KiB or more, and macOS limits
+all arguments and the environment together to 1 MiB. On Windows the whole
+command line is limited to 32,767 UTF-16 code units, so the request and the
+CLI's other arguments that vary with the conversation, such as Grok's system
+prompt, are kept within 30,000 together, counted as Windows quotes them; a CLI
+installed as a `.cmd` or `.bat` file runs under `cmd.exe`, whose 8,191 limit is
+not allowed for. Obey Voice does not build for Windows yet, so the Windows
+limit is untested there. The conversation record gets what the rest of the
+request leaves, up to 64 KiB, so a long line you type or paste leaves less
+room for it. Unseen lines that no longer fit start a fresh session
 with the newest lines that do, shortened to half that room; the recent lines a
 fresh session gets without a conversation record are held to that room the same
 way. A request that does not fit even without the record is refused before the
@@ -445,7 +451,11 @@ resume, after a stopped or failed request, when its tools or prompt change,
 when a line was recorded while its request ran, when the view it comes back to
 no longer begins with the lines its thread holds, and when lines it missed fell
 out of `max_history` before it was addressed again. When a line recorded
-during a request or a changed view drops the thread, the log says which.
+during a request or a changed view drops the thread, the log says which. A new
+thread is sent only the conversation, not the work the old thread did, such as
+the files it read or the commands it ran: so a job result that lands while a
+Codex persona is answering costs it that context, even though its answer is
+kept.
 A request you stop, or one that fails, stays in the conversation once the
 backend has ended it: your line, and the part of the reply you were given,
 marked as unfinished, under the persona's name. Its next request and the
@@ -453,10 +463,10 @@ persona that answers next receive both, and the saved conversation keeps
 them. A stopped reply that the backend still completed keeps only what you
 were given. A line recorded while the request ran, such as a job result,
 stays, ahead of your line. Stopping waits up to five seconds for the backend
-to end. A
-request that has not ended by then is given up on and not recorded: neither
-your line nor the part of the reply you were given is kept, and your next
-line, a persona switch or a clear go ahead without waiting for it.
+to end. A request that has not ended by then is given up on and not
+recorded: neither your line nor the part of the reply you were given is kept,
+and your next line, a persona switch or a clear go ahead without waiting for
+it.
 Unlike Claude, Grok and Cursor, Codex is sent its lines whole: none is
 shortened, and its replay is bounded by `max_history` rather than 64 KiB, as it
 always was. A request whose text passes 64 KiB is logged with its size.

@@ -195,7 +195,7 @@ type grokAttempt struct {
 // attempts is Brain.attempts for Grok. The caller holds g.mu.
 func (g *GrokBrain) attempts(format grok.OutputFormat, streamOpts StreamOptions) (grokAttempt, *grokAttempt) {
 	build := func() grokAttempt {
-		prompt, err := argPrompt(providerGrok, g.request(streamOpts))
+		prompt, err := argPrompt(providerGrok, g.request(streamOpts), g.argOthers()...)
 		return grokAttempt{prompt: prompt, opts: g.runOptions(format, liveCLITools(streamOpts)), err: err}
 	}
 	first := build()
@@ -386,7 +386,7 @@ func (g *GrokBrain) prepareCatchUp(opts StreamOptions) {
 		return
 	}
 	// A request too large even without its catch-up fails, and keeps the session.
-	budget := argCatchUpBudget(g.request(opts))
+	budget := argCatchUpBudget(g.request(opts), g.argOthers()...)
 	if budget >= 0 && catchUpOverflows(providerGrok, opts.CatchUp, true, opts.TransientHistory, g.speakerNames, budget) {
 		g.dropSession()
 	}
@@ -444,6 +444,12 @@ func (g *GrokBrain) request(opts StreamOptions) func(budget int) string {
 	return func(budget int) string {
 		return g.buildPrompt(opts, budget) + harnessRoutingContext(g.cfg, opts) + currentRequestContext(g.cfg, opts)
 	}
+}
+
+// argOthers are the grok CLI's arguments besides the request that vary with
+// the conversation.
+func (g *GrokBrain) argOthers() []string {
+	return []string{g.systemPrompt, config.WorkDirFrom(g.cfg)}
 }
 
 // buildPrompt renders the next turn for the CLI, as Brain.buildPrompt does.

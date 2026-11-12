@@ -615,8 +615,8 @@ func TestGrokOrCursorConversationSavedWithoutACursorSendsNothingEarlier(t *testi
 	}
 }
 
-// promptArgLimit is the most a Grok or Cursor request may be: the CLI takes
-// it as one command-line argument.
+// promptArgLimit is the most a Grok or Cursor request may be on Linux and
+// macOS: the CLI takes it as one command-line argument.
 const promptArgLimit = 100 << 10
 
 // A long request leaves the catch-up less room in the one argument: unseen
@@ -671,7 +671,9 @@ func TestGrokOrCursorLongRequestShrinksTheCatchUpToFitOneArgument(t *testing.T) 
 }
 
 // A request too large for one argument even with no catch-up fails before the
-// CLI runs, and the session stays for the next request.
+// CLI runs, and the session stays for the next request. The refused line is
+// recorded, so the next request carries it to the live session, shortened to
+// half its catch-up limit.
 func TestGrokOrCursorRequestTooLargeForOneArgumentFailsBeforeTheCLIRuns(t *testing.T) {
 	for _, provider := range []string{"grok", "cursor"} {
 		t.Run(provider, func(t *testing.T) {
@@ -681,7 +683,7 @@ func TestGrokOrCursorRequestTooLargeForOneArgumentFailsBeforeTheCLIRuns(t *testi
 
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			_ = c.p.RunTurnTextMode(ctx, strings.Repeat("amber ", 20000))
+			_ = c.p.RunTurnTextMode(ctx, "PASTE-START "+strings.Repeat("amber ", 20000)+"PASTE-END")
 			if got := c.sessionRequests(); len(got) != len(before) {
 				t.Fatalf("the CLI ran for a request too large for one argument: %d requests, had %d", len(got), len(before))
 			}
@@ -694,9 +696,21 @@ func TestGrokOrCursorRequestTooLargeForOneArgumentFailsBeforeTheCLIRuns(t *testi
 			}
 
 			c.say("Still there?")
-			if last := c.lastSessionRequest(); last.Resume != before[0].Session || len(last.Prompt) > promptArgLimit {
+			last := c.lastSessionRequest()
+			if last.Resume != before[0].Session || len(last.Prompt) > promptArgLimit {
 				t.Fatalf("the session did not survive the refused request: %+v", last)
 			}
+			var carried string
+			for _, r := range promptRecords(t, last.Prompt) {
+				if strings.HasPrefix(r.Content, "PASTE-START") {
+					carried = r.Content
+				}
+			}
+			if !strings.HasSuffix(carried, "more characters of this line omitted]") || len(carried) > 32<<10 {
+				t.Fatalf("the refused line reached the live session as %d bytes: %.120q", len(carried), carried)
+			}
+			requireContains(t, last.Prompt, "User: Still there?")
+			requireOmits(t, last.Prompt, "PASTE-END")
 		})
 	}
 }

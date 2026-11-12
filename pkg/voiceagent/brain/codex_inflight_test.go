@@ -98,6 +98,139 @@ func TestCodexJobResultRecordedWhileARequestRunsReachesTheNextRequestOnce(t *tes
 	}
 }
 
+// heldCodexBrain is a Codex persona whose requests wait for the test.
+func heldCodexBrain(t *testing.T) (*CodexBrain, *heldCodex, context.Context) {
+	t.Helper()
+	f := newHeldCodex()
+	c := &CodexBrain{client: f, cfg: &config.Config{AgentName: "Obey", ActivePersona: "helper", MaxHistory: 20}, systemPrompt: "Persona fixture", turnInstruction: "Speak briefly."}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	t.Cleanup(cancel)
+	return c, f, ctx
+}
+
+// whileRunning starts a streamed request, runs during once Codex holds it,
+// lets it finish and returns its error.
+func (f *heldCodex) whileRunning(t *testing.T, ctx context.Context, c *CodexBrain, input string, opts StreamOptions, during func()) error {
+	t.Helper()
+	stream, err := c.ThinkStream(ctx, input, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	during()
+	f.release <- struct{}{}
+	_, res := collectStream(t, stream)
+	return res.Err
+}
+
+// next runs one more request and returns what Codex was sent.
+func (f *heldCodex) next(t *testing.T, ctx context.Context, c *CodexBrain, input string) codexRequest {
+	t.Helper()
+	f.release <- struct{}{}
+	if _, err := c.ThinkFull(ctx, input, StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.requests[len(f.requests)-1]
+}
+
+func TestCodexJobResultRecordedWhileANewThreadStartsReachesTheNextRequestOnce(t *testing.T) {
+	c, f, ctx := heldCodexBrain(t)
+	if err := f.whileRunning(t, ctx, c, "Remember cobalt.", StreamOptions{}, func() {
+		if err := c.AppendAssistantResponseWithIdentity("Job result: the report is ready.", TurnIdentity{PersonaID: "helper"}); err != nil {
+			t.Fatal(err)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	next := f.next(t, ctx, c, "Anything new?")
+	if next.ThreadID != "" {
+		t.Fatalf("the thread started without the job result was resumed: %q", next.ThreadID)
+	}
+	for _, line := range []string{"the report is ready.", "Remember cobalt."} {
+		if got := strings.Count(next.Prompt, line); got != 1 {
+			t.Fatalf("%q reached the next request %d times:\n%s", line, got, next.Prompt)
+		}
+	}
+}
+
+func TestCodexClearWhileARequestRunsStartsANewThread(t *testing.T) {
+	c, f, ctx := heldCodexBrain(t)
+	f.release <- struct{}{}
+	if _, err := c.ThinkFull(ctx, "Remember cobalt.", StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	if err := f.whileRunning(t, ctx, c, "What next?", StreamOptions{}, c.ClearHistory); err != nil {
+		t.Fatal(err)
+	}
+	next := f.next(t, ctx, c, "Start over.")
+	if next.ThreadID != "" || strings.Contains(next.Prompt, "Remember cobalt.") {
+		t.Fatalf("a cleared conversation resumed its thread or kept what came before: %+v", next)
+	}
+}
+
+// A view imported while a request runs, here of the same length as the one
+// the request was built on, replaces the conversation: the request's thread
+// holds the old one, so it is not resumed.
+func TestCodexImportWhileARequestRunsStartsANewThread(t *testing.T) {
+	c, f, ctx := heldCodexBrain(t)
+	f.release <- struct{}{}
+	if _, err := c.ThinkFull(ctx, "Remember cobalt.", StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	other := []Turn{{Role: "user", Content: "Talk about teal."}, {Role: "assistant", Content: "Teal it is.", PersonaID: "rex", PersonaDisplayName: "Rex"}}
+	if err := f.whileRunning(t, ctx, c, "What next?", StreamOptions{}, func() {
+		if err := c.ImportContinuity(ContinuitySnapshot{Canonical: other, Working: other}); err != nil {
+			t.Fatal(err)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	next := f.next(t, ctx, c, "And now?")
+	if next.ThreadID != "" || !strings.Contains(next.Prompt, "Talk about teal.") || strings.Contains(next.Prompt, "Remember cobalt.") {
+		t.Fatalf("the thread of a replaced conversation was resumed, or the imported view not sent: %+v", next)
+	}
+}
+
+// A request on a copy of the view, as compaction makes, runs in a thread of
+// its own: a job result recorded meanwhile goes to the live thread, which the
+// next request resumes and sends it once, without the copy's request.
+func TestCodexTransientRequestLeavesTheLiveThreadToItsOwnLines(t *testing.T) {
+	c, f, ctx := heldCodexBrain(t)
+	f.release <- struct{}{}
+	if _, err := c.ThinkFull(ctx, "Remember cobalt.", StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	live := c.SessionInfo().ID
+	if err := f.whileRunning(t, ctx, c, "Summarize the conversation.", StreamOptions{TransientHistory: true, OmitTurnInstruction: true}, func() {
+		if err := c.AppendAssistantResponseWithIdentity("Job result: the report is ready.", TurnIdentity{PersonaID: "helper"}); err != nil {
+			t.Fatal(err)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	summary := f.requests[1]
+	f.mu.Unlock()
+	if summary.ThreadID != "" || !summary.Ephemeral || !strings.Contains(summary.Prompt, "Remember cobalt.") {
+		t.Fatalf("the transient request = %+v", summary)
+	}
+	next := f.next(t, ctx, c, "Anything new?")
+	if next.ThreadID != live || strings.Count(next.Prompt, "the report is ready.") != 1 || strings.Contains(next.Prompt, "Summarize the conversation.") {
+		t.Fatalf("live thread %q, next request %+v", live, next)
+	}
+	for _, turn := range c.History() {
+		if turn.Content == "Summarize the conversation." {
+			t.Fatalf("the transient request was recorded: %+v", c.History())
+		}
+	}
+}
+
 // capturedLogs collects what is logged through slog while a test runs.
 type capturedLogs struct {
 	mu      sync.Mutex
