@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	if realClipboardHit.Load() {
 		realClipboardMu.Lock()
-		fmt.Fprintf(os.Stderr, "FAIL: %s\n", realClipboardMsg)
+		fmt.Fprintf(os.Stderr, "FAIL: %s; the stacks below name the offending test, so read them for the *_test.go frame\n", realClipboardMsg)
 		for _, c := range realClipboardWhat {
 			fmt.Fprintln(os.Stderr, c)
 		}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -232,6 +233,34 @@ func TestAppCopyKeysUseInjectedClipboard(t *testing.T) {
 	cmd()
 	if clip.value != "/tmp/meetings/call.meeting" {
 		t.Fatalf("notice copy reached %q", clip.value)
+	}
+}
+
+func TestRuntimeReadyHandsConversationTheInjectedClipboard(t *testing.T) {
+	clip := &testClipboard{value: "pasted text"}
+	rt := fakeRuntime()
+	app := wiredApp(func(context.Context, BuildProgress, string, string) (*ConversationRuntime, error) {
+		return rt, nil
+	}).withClipboard(clip)
+	model, _ := app.Update(startPipelineMsg{personaName: "Uncle Fu"})
+	app = model.(App)
+	model, _ = app.Update(runtimeReadyMsg{rt: rt})
+	app = model.(App)
+
+	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	app = model.(App)
+	if cmd == nil {
+		t.Fatal("ctrl+v did not produce a paste cmd")
+	}
+	if msg, ok := cmd().(clipboardPasteMsg); !ok || msg.text != "pasted text" {
+		t.Fatalf("paste did not read the injected clipboard: %#v", msg)
+	}
+
+	app.conversation.lastAssistantText = "last reply"
+	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyCtrlY})
+	app = model.(App)
+	if clip.value != "last reply" {
+		t.Fatalf("copy did not reach the injected clipboard: %q", clip.value)
 	}
 }
 
