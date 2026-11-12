@@ -296,7 +296,7 @@ func TestJobFinishingWhileAnotherTurnThinksLeavesItsReplyAudible(t *testing.T) {
 }
 
 func TestJobFinishingMidSpeechDoesNotCutTheReply(t *testing.T) {
-	r := newJobTurnRig(t, true, 500*time.Millisecond)
+	r := newJobTurnRig(t, true, time.Millisecond)
 	jobID := r.spawn(t, "weather in Denver")
 	done := r.startTurn(t)
 	// Let the acknowledgement finish so the next start is the reply's.
@@ -307,6 +307,8 @@ func TestJobFinishingMidSpeechDoesNotCutTheReply(t *testing.T) {
 	for len(r.engine.StartedSignal()) > 0 {
 		<-r.engine.StartedSignal()
 	}
+	releaseReply := r.engine.HoldPlayback()
+	defer releaseReply()
 	close(r.brain.release)
 	select {
 	case <-r.engine.StartedSignal():
@@ -319,6 +321,7 @@ func TestJobFinishingMidSpeechDoesNotCutTheReply(t *testing.T) {
 	if !r.engine.IsPlaying() {
 		t.Fatal("the reply finished before the job did, so this run did not cover mid-speech")
 	}
+	releaseReply()
 	r.awaitTurn(t, done)
 	if got := r.engine.StopCount(); got != stopsWhilePlaying {
 		t.Fatalf("player stopped %d times while the reply played", got-stopsWhilePlaying)

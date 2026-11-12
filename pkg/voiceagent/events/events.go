@@ -213,8 +213,10 @@ type SpeechStop struct {
 	Source string `json:"source"`
 	// Count is how many stops landed while the turn was active.
 	Count int `json:"count"`
-	// BeforeAudio is true when the first stop came before any of the turn's
-	// audio played, so the whole reply went unspoken.
+	// BeforeAudio is true when the first stop came before the turn's playback
+	// began (the first playbackStarted event), so the whole reply went
+	// unspoken. A stop between playback starting and the first audible sample
+	// counts as after.
 	BeforeAudio bool `json:"before_audio,omitempty"`
 	// KeyRunes and KeyPaste describe the first keystroke's message. A typed
 	// key is usually one rune and a paste is flagged. Several runes without

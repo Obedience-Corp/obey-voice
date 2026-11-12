@@ -48,6 +48,7 @@ type speechStopSnapshot struct {
 	view, draft string
 }
 type speechStopHarness struct {
+	t         *testing.T
 	model     conversationModel
 	deps      conversationDeps
 	ready     chan struct{}
@@ -71,7 +72,11 @@ func (h *speechStopHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case busEventMsg:
 		if _, ok := msg.event.(events.UserInput); ok && h.heard != nil {
-			h.heard <- struct{}{}
+			select {
+			case h.heard <- struct{}{}:
+			default:
+				h.t.Error("the voice turn delivered more than one UserInput")
+			}
 		}
 		if response, ok := msg.event.(events.ResponseReady); ok {
 			h.responses <- speechStopSnapshot{response: response, view: stripANSI(h.model.View()), draft: h.model.input.Value()}
@@ -181,12 +186,13 @@ func TestKeystrokeDuringVoiceThinkingIsNamedInTurnMetrics(t *testing.T) {
 	runner := &pipeline.Pipeline{STT: &oneUtteranceSTT{text: "Obey, what do you think about Dylan?"}, Brain: provider, TTS: voice, Player: player, Events: bus}
 	metrics := make(chan events.TurnMetrics, 8)
 	events.Subscribe(bus, func(e events.TurnMetrics) {
-		if e.Outcome != "timed_out" {
+		if e.Outcome != "" && e.Outcome != "timed_out" {
 			metrics <- e
 		}
 	})
 	wg := new(sync.WaitGroup)
 	h := &speechStopHarness{
+		t:     t,
 		model: sizedConversation(t, 110, 30),
 		deps:  conversationDeps{runner: runner, bus: bus, voice: true, output: true, ctx: ctx, wg: wg},
 		ready: make(chan struct{}), typed: make(chan string, 1), responses: make(chan speechStopSnapshot, 1),

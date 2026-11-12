@@ -120,7 +120,7 @@ response/session identifiers, interruption reason and terminal outcome.
 A turn silenced by an explicit stop carries `speech_stop` on its
 `turn_metrics` line: the first stop's source (`keystroke`, `text_submit`,
 `talk_key`, `desktop`, `narration`, `replay` or `unspecified`), how many stops
-landed, whether the first came before any audio, and for a keystroke how many
+landed, whether the first came before playback began, and for a keystroke how many
 runes its key message carried. A typed key is usually one rune and a paste is
 flagged; several runes without the flag arrived in one terminal read (fast
 typing, an input method, or input the terminal sent itself). Typed text is
