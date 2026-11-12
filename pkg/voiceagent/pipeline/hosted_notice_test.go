@@ -222,3 +222,76 @@ func TestHostedNoticeIsRecordedOnlyWhenARequestGoesOut(t *testing.T) {
 		t.Fatalf("delivered %d times, requests %d: the notice must be recorded once, before the request", len(delivered), len(b.at))
 	}
 }
+
+// An idle delivery that words a job's result without asking the persona's
+// provider sends that provider nothing, so it gives no hosted notice; the
+// persona's next request does.
+func TestIdleDeliveryThatSendsNothingGivesNoHostedNotice(t *testing.T) {
+	const notice = "Mira runs on Claude, a hosted service."
+	p, _, _ := newCompletionLeasePipeline(t, false)
+	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", Hosted: true}}, nil
+	}
+	var infos []string
+	var started int
+	events.Subscribe(p.Events, func(e events.Info) { infos = append(infos, e.Message) })
+	events.Subscribe(p.Events, func(events.ThinkingStarted) { started++ })
+	delivered := 0
+	p.HostedNotice = func(events.ResponseEnvelope) (HostedNotice, bool) {
+		return HostedNotice{Text: notice, Delivered: func() { delivered++ }}, delivered == 0
+	}
+	if err := p.RunBackgroundTurn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if started != 1 || delivered != 0 || slices.Contains(infos, notice) {
+		t.Fatalf("deliveries %d; a delivery that sent nothing gave the notice (%q) or recorded it %d times", started, infos, delivered)
+	}
+	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if delivered != 1 {
+		t.Fatalf("the next request recorded the notice %d times", delivered)
+	}
+}
+
+// The voice turn gives the notice in the same place as the text turn: only
+// for a request that goes out.
+func TestHostedNoticeIsRecordedOnlyWhenAVoiceRequestGoesOut(t *testing.T) {
+	const notice = "Mira runs on Claude, a hosted service."
+	b := &streamClock{}
+	b.history = []brain.Turn{{Role: "user", Content: "Look.", Attachments: []chatmedia.Ref{{ID: "gone", Name: "gone.png", Format: "png"}}}}
+	bus := events.NewBus()
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	p := &Pipeline{Brain: b, Events: bus}
+	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", Hosted: true}}, nil
+	}
+	var delivered []time.Time
+	p.HostedNotice = func(events.ResponseEnvelope) (HostedNotice, bool) {
+		return HostedNotice{Text: notice, Delivered: func() { delivered = append(delivered, time.Now()) }}, len(delivered) == 0
+	}
+	say := func(text string) error {
+		p.STT = &fakeSTT{text: text}
+		_, err := p.RunTurn(t.Context())
+		return err
+	}
+
+	if err := say("hello"); err == nil {
+		t.Fatal("a turn whose retained image fails its check went ahead")
+	}
+	if len(delivered) != 0 || len(b.at) != 0 || slices.Contains(infos, notice) {
+		t.Fatalf("a turn that sent nothing gave the notice (%q) or recorded it %d times", infos, len(delivered))
+	}
+	b.history[0].Attachments = nil
+	_ = say("tell me a long story")
+	if len(delivered) != 0 || len(b.at) != 0 || slices.Contains(infos, notice) {
+		t.Fatalf("a routed turn gave the notice (%q) or recorded it %d times, requests %d", infos, len(delivered), len(b.at))
+	}
+	if err := say("hello"); err != nil {
+		t.Fatal(err)
+	}
+	if len(delivered) != 1 || len(b.at) != 1 || !delivered[0].Before(b.at[0]) {
+		t.Fatalf("delivered %d times, requests %d: the notice must be recorded once, before the request", len(delivered), len(b.at))
+	}
+}
