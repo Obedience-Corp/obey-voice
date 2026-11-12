@@ -423,3 +423,38 @@ func TestClaudeImageRequestKeepsALargePromptOffTheCommandLine(t *testing.T) {
 		}
 	}
 }
+
+// heldContentRunner is heldClaudeRunner for requests that carry images.
+type heldContentRunner struct{ heldClaudeRunner }
+
+func (r *heldContentRunner) StreamContent(ctx context.Context, blocks []claude.ContentBlock, opts *claude.RunOptions) (<-chan claude.Message, <-chan error) {
+	return r.StreamPrompt(ctx, blocks[0].Text, opts)
+}
+
+// A stopped image request that ends while the next request runs leaves the
+// provider alone, and its unanswered line keeps no images to replay.
+func TestStoppedClaudeImageRequestLeavesItsLineWithoutImages(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	ref := importImage(t, "stopped.png", testmedia.PNG())
+	release := make(chan struct{})
+	b := newTestBrain(&heldContentRunner{heldClaudeRunner{release: release}})
+	ctx, stop := context.WithCancel(t.Context())
+	first, err := b.ThinkStream(ctx, "Look at this.", StreamOptions{Attachments: []chatmedia.Ref{ref}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-first.Chunks
+	stop()
+	second, err := b.ThinkStream(t.Context(), "Never mind.", StreamOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	collectStream(t, second)
+	for range first.Chunks {
+	}
+	<-first.Done
+	if h := b.History(); len(h) != 3 || h[0].Attachments != nil {
+		t.Fatalf("history = %+v", h)
+	}
+}

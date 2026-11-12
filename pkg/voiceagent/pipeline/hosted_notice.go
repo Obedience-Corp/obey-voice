@@ -33,6 +33,15 @@ func (p *Pipeline) announceHosted(ctx context.Context, metrics *turnMetrics, tur
 	return p.deliverHostedNotice(ctx, notice, metrics, turn)
 }
 
+// announceHostedRequest is announceHosted just before a turn's request, once
+// any earlier request still stopping on the provider has ended.
+func (p *Pipeline) announceHostedRequest(ctx context.Context, metrics *turnMetrics, turn *turnConductor) error {
+	if err := p.awaitProvider(ctx); err != nil {
+		return err
+	}
+	return p.announceHosted(ctx, metrics, turn)
+}
+
 // announceLiveHosted is announceHosted for a request the host makes for the
 // live persona outside an admitted turn, such as compaction.
 func (p *Pipeline) announceLiveHosted(ctx context.Context) error {

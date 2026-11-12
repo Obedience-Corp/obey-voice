@@ -410,6 +410,9 @@ still sent when the result is delivered. Compaction summarizes only the share,
 and the exchange kept after the summary is the last one in the share. Like a
 persona on Claude, it receives the pending results of background jobs it
 started, on whichever backend it started them, and not those of other personas.
+A job saved before jobs recorded their persona, or started outside a spawn,
+goes to it when no other persona is in the conversation, even one it started
+on a local backend before it was moved.
 Its hosted notice follows its share as for Claude: in a conversation it has to
 itself it reads "What is said to it is sent to Codex." (or Muse Spark, or Obey),
 not "This conversation is sent to Codex."
@@ -474,13 +477,17 @@ resumed conversation does not repeat it (a session saved before this existed
 repeats it once, and one saved before the whole-conversation case was recorded
 gives that notice again when it applies). It counts as given only once it was
 shown and spoken and the request went ahead: a turn stopped during the notice
-gives it again next time. It is shown by the host: no model receives it and it
-is not recorded as any persona's reply. A bare `Mira here.` address sends
+gives it again next time, and a turn that sends the persona nothing (one
+refused by its image check, or routed to a job or a story) does not give it.
+It is shown by the host: no model receives it and it is not recorded as any
+persona's reply. A bare `Mira here.` address sends
 nothing and does not trigger it.
 
 A conversation that started on the hosted provider itself, such as a Claude-only
-install, gets the info line but no spoken notice, so it does not announce itself
-at every launch. The marker is still on every reply.
+install, gets the info line but no spoken notice the first time, so it does not
+announce itself at every launch. A later notice for that provider, saying that a
+persona on it now receives the whole conversation, is spoken as well. The marker
+is still on every reply.
 
 `hosted_persona_sharing` chooses what a persona on Claude, Codex, Muse Spark or
 Obey receives of a conversation shared with other personas:
@@ -509,7 +516,8 @@ hold a conversation that started on it, and is sent all of it.
 The notice covers a persona's conversation backend only. Two other paths can
 send conversation text off this machine without it: a background job on a
 hosted worker provider, and [decision routing](decision-routing.md) when set to
-Jev or OpenAI.
+Jev or OpenAI. Both are services you configure yourself, so neither gives a
+notice.
 
 The brief a new background job is given carries up to eight recent spoken
 lines to the worker provider: with a persona on Claude, Codex, Muse Spark or

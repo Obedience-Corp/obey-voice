@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -61,10 +62,15 @@ type Brain struct {
 	personaReloader *promptReloader
 	turnReloader    *promptReloader
 	turnInstruction string
-	history         []Turn
-	hostContext     string // queued host-authored context for the next resumed CLI request
 	// speakerNames resolves stable speaker ids for flatten prompts (optional).
 	speakerNames SpeakerNames
+
+	// mu guards the conversation state below. A request its turn stopped can
+	// still be ending while the next one runs, so a request reads this state
+	// only as it starts and changes it only while its context is live.
+	mu          sync.Mutex
+	history     []Turn
+	hostContext string // queued host-authored context for the next resumed CLI request
 	// sessionID is the claude CLI session captured on the first turn and reused
 	// via --resume thereafter, so subsequent turns send only the new input and
 	// get Anthropic-side prompt caching. Empty until the first turn captures it;
@@ -280,16 +286,23 @@ func (b *Brain) refreshPrompts(onWarn func(string)) {
 
 func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts StreamOptions) (*Stream, error) {
 	b.refreshPrompts(streamOpts.OnPromptWarn)
+	b.mu.Lock()
 	b.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
-	held := len(b.history)
-	images, err := b.requestImages(b.history, streamOpts.Attachments)
+	earlier, resuming := userAttachments(b.history), b.sessionID != ""
+	b.mu.Unlock()
+	images, err := requestImages(earlier, resuming, streamOpts.Attachments)
 	if err != nil {
 		return nil, err
 	}
+	b.mu.Lock()
+	held := len(b.history)
+	line := Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()}
 	// A handoff from another agent is not a user turn.
 	if !streamOpts.AgentContinuation {
-		b.history = append(b.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC(), Attachments: slices.Clone(streamOpts.Attachments)})
+		b.history = append(b.history, line)
 	}
+	first, fresh := b.attempts(claude.StreamJSONOutput, streamOpts)
+	b.mu.Unlock()
 
 	out := make(chan string, 8)
 	done := make(chan StreamResult, 1)
@@ -297,19 +310,17 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 		defer close(out)
 		defer close(done)
 
-		resuming := b.sessionID != ""
-		raw, streamedAny, err := b.streamAttempt(ctx, out, streamOpts, images)
+		raw, streamedAny, err := b.streamAttempt(ctx, out, streamOpts, first, images)
 		// A stale/rejected --resume session errors before any text streams. Drop
 		// the id and retry once via the flatten path so one bad CLI session file
 		// can't wedge the conversation. Guard on !streamedAny to avoid re-speaking
-		// already-emitted audio, and on ctx.Err()==nil so a user barge-in cancel
+		// already-emitted audio, and on a live context so a user barge-in cancel
 		// is not mistaken for a resume failure.
-		if err != nil && resuming && !streamedAny && ctx.Err() == nil {
+		if err != nil && fresh != nil && !streamedAny && b.dropForRetry(ctx) {
 			fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
-			b.dropSession()
 			var retry []claude.ContentBlock
-			if retry, err = b.requestImages(b.history[:held], streamOpts.Attachments); err == nil {
-				raw, _, err = b.streamAttempt(ctx, out, streamOpts, retry)
+			if retry, err = requestImages(earlier, false, streamOpts.Attachments); err == nil {
+				raw, _, err = b.streamAttempt(ctx, out, streamOpts, *fresh, retry)
 			}
 		}
 		if err == nil {
@@ -318,10 +329,6 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 			err = ctx.Err()
 		}
 		if err != nil {
-			// An unanswered line's images are not replayed into a later session.
-			if !streamOpts.AgentContinuation && held < len(b.history) {
-				b.history[held].Attachments = nil
-			}
 			done <- StreamResult{Err: err}
 			return
 		}
@@ -331,16 +338,85 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 			done <- StreamResult{Err: finErr}
 			return
 		}
+		b.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			b.mu.Unlock()
+			done <- StreamResult{Err: err}
+			return
+		}
+		// Only an answered line keeps its images for a later fresh session.
+		if len(streamOpts.Attachments) > 0 && !streamOpts.AgentContinuation && held < len(b.history) &&
+			b.history[held].At.Equal(line.At) && b.history[held].Content == line.Content {
+			b.history[held].Attachments = slices.Clone(streamOpts.Attachments)
+		}
 		b.history = append(b.history, Turn{Role: "samantha", Content: response, At: time.Now().UTC()})
 		b.hostContext, b.seed = "", nil
 		b.trimHistory()
 		// Checked after the turn lands so a reset never costs the turn in flight.
 		b.enforceSessionBudget()
-		b.warnSessionSize(streamOpts)
+		warn := b.sessionWarning()
+		b.mu.Unlock()
+		warn.report(streamOpts)
 		done <- StreamResult{}
 	}()
 
 	return &Stream{Chunks: out, Done: done}, nil
+}
+
+// claudeAttempt is one CLI request as the provider's state stood when its
+// request started.
+type claudeAttempt struct {
+	prompt string
+	opts   *claude.RunOptions
+}
+
+// attempts builds a request's attempt and, when it resumes a session, the
+// attempt without one that a rejected resume falls back to. The caller holds
+// b.mu.
+func (b *Brain) attempts(format claude.OutputFormat, streamOpts StreamOptions) (claudeAttempt, *claudeAttempt) {
+	build := func() claudeAttempt {
+		return claudeAttempt{
+			prompt: b.buildPrompt(streamOpts) + harnessRoutingContext(b.cfg, streamOpts) + currentRequestContext(b.cfg, streamOpts),
+			opts:   b.runOptions(format, liveCLITools(streamOpts)),
+		}
+	}
+	first := build()
+	if b.sessionID == "" {
+		return first, nil
+	}
+	session := b.sessionID
+	b.sessionID = ""
+	fresh := build()
+	b.sessionID = session
+	return first, &fresh
+}
+
+// noteSession records the CLI session and prompt size a request reported,
+// unless the request was stopped.
+func (b *Brain) noteSession(ctx context.Context, id string, promptTokens int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	if id != "" {
+		b.sessionID = id
+	}
+	if promptTokens > 0 {
+		b.promptTokens = promptTokens
+	}
+}
+
+// dropForRetry drops a session the CLI rejected so the request can retry
+// without it, and reports false when the request was stopped meanwhile.
+func (b *Brain) dropForRetry(ctx context.Context) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
+	b.dropSession()
+	return true
 }
 
 // enforceSessionBudget drops the CLI session once the transcript it replays
@@ -387,43 +463,50 @@ func (b *Brain) Fresh() Provider {
 	}
 }
 
-// warnSessionSize surfaces the replayed prompt size once per CLI session when
+// sessionWarning surfaces the replayed prompt size once per CLI session when
 // it crosses claude_session_warn_tokens. Warning is the default posture — the
 // fuse above is opt-in — so a runaway session is visible without being
 // silently dropped. Runs after enforceSessionBudget: a fuse reset clears the
 // id, which also suppresses a warning about a session that no longer exists.
-func (b *Brain) warnSessionSize(streamOpts StreamOptions) {
+// The caller holds b.mu and reports the warning once it is released.
+func (b *Brain) sessionWarning() sessionWarning {
 	threshold := b.cfg.ClaudeSessionWarnTokens
 	if threshold <= 0 || b.sessionWarned || b.sessionID == "" || b.promptTokens < threshold {
-		return
+		return sessionWarning{}
 	}
 	b.sessionWarned = true
-	fmt.Fprintf(os.Stderr, "obey-voice: claude session prompt is %d tokens (claude_session_warn_tokens=%d); consider clearing the conversation\n", b.promptTokens, threshold)
+	return sessionWarning{tokens: b.promptTokens, threshold: threshold}
+}
+
+type sessionWarning struct{ tokens, threshold int }
+
+func (w sessionWarning) report(streamOpts StreamOptions) {
+	if w.threshold == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "obey-voice: claude session prompt is %d tokens (claude_session_warn_tokens=%d); consider clearing the conversation\n", w.tokens, w.threshold)
 	if streamOpts.OnSessionWarn != nil {
-		streamOpts.OnSessionWarn(b.promptTokens, threshold)
+		streamOpts.OnSessionWarn(w.tokens, w.threshold)
 	}
 }
 
-// streamAttempt runs a single Claude streaming turn: it builds the prompt for
-// the current session state, forwards assistant text to out, and captures the
-// CLI session id for resume. It returns the raw (uncleaned) assistant text,
+// streamAttempt runs a single Claude streaming turn: it sends the attempt's
+// prompt and images, forwards assistant text to out, and captures the CLI
+// session id for resume. It returns the raw (uncleaned) assistant text,
 // whether any chunk reached out, and any terminal stream error. It does not
 // touch b.history or the fallback text — the caller finalizes once, after any
 // resume-failure retry, so a failed first attempt never emits the fallback.
-func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts StreamOptions, images []claude.ContentBlock) (string, bool, error) {
-	prompt := b.buildPrompt(streamOpts) + harnessRoutingContext(b.cfg, streamOpts) + currentRequestContext(b.cfg, streamOpts)
+func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts StreamOptions, attempt claudeAttempt, images []claude.ContentBlock) (string, bool, error) {
 	strip := newLabelStripper(b.agentName())
 
 	// Partial (stream_event) messages are not requested: chunking is
 	// per-assistant-message, so deltas would be discarded anyway.
-	opts := b.runOptions(claude.StreamJSONOutput, liveCLITools(streamOpts))
-
 	var messages <-chan claude.Message
 	var errs <-chan error
 	if len(images) > 0 {
-		messages, errs = b.client.StreamContent(ctx, contentBlocks(prompt, images), opts)
+		messages, errs = b.client.StreamContent(ctx, contentBlocks(attempt.prompt, images), attempt.opts)
 	} else {
-		messages, errs = b.client.StreamPrompt(ctx, prompt, opts)
+		messages, errs = b.client.StreamPrompt(ctx, attempt.prompt, attempt.opts)
 	}
 
 	var fullResponse strings.Builder
@@ -437,7 +520,7 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 		// The CLI stamps session_id on its init and result messages; capture it
 		// from whichever arrives so the next turn can resume.
 		if msg.SessionID != "" {
-			b.sessionID = msg.SessionID
+			b.noteSession(ctx, msg.SessionID, 0)
 		}
 
 		// Extract text content from assistant messages
@@ -456,9 +539,7 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 				if u := content.Usage; u != nil {
 					// Budget watches the full prompt (input + cache reads +
 					// cache writes): that is what --resume replays next turn.
-					if p := u.prompt(); p > 0 {
-						b.promptTokens = p
-					}
+					b.noteSession(ctx, "", u.prompt())
 					// OnUsage "prefill" is the tokens the server actually
 					// processed this turn — exclude cache reads so a warm
 					// prefix still shows a small prefill and cache regressions
@@ -567,30 +648,41 @@ func (b *Brain) ThinkFull(ctx context.Context, input string, streamOpts StreamOp
 	// The prompt is built from history, so the input has to be appended before
 	// the call — and rolled back if the turn never produced an answer, or the
 	// unanswered prompt stays in the transcript as a user turn.
-	restore := len(b.history)
+	b.mu.Lock()
 	b.prepareCatchUp(streamOpts.CatchUp, streamOpts.TransientHistory)
-	images, err := b.requestImages(b.history, streamOpts.Attachments)
+	earlier, resuming := userAttachments(b.history), b.sessionID != ""
+	b.mu.Unlock()
+	images, err := requestImages(earlier, resuming, streamOpts.Attachments)
 	if err != nil {
 		return "", err
 	}
+	b.mu.Lock()
+	restore := len(b.history)
 	if !streamOpts.AgentContinuation {
 		b.history = append(b.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC(), Attachments: slices.Clone(streamOpts.Attachments)})
 	}
+	first, fresh := b.attempts(claude.JSONOutput, streamOpts)
+	b.mu.Unlock()
 
-	resuming := b.sessionID != ""
-	response, err := b.thinkFullAttempt(ctx, streamOpts, images)
+	response, err := b.thinkFullAttempt(ctx, streamOpts, first, images)
 	// Same stale-session guard as ThinkStream: a rejected --resume fails the
-	// whole call, so drop the id and retry once via the flatten path. ctx.Err()
-	// gate keeps a user cancellation from being treated as a resume failure.
-	if err != nil && resuming && ctx.Err() == nil {
+	// whole call, so drop the id and retry once via the flatten path. The live
+	// context check keeps a user cancellation from being treated as a resume
+	// failure.
+	if err != nil && fresh != nil && b.dropForRetry(ctx) {
 		fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
-		b.dropSession()
-		if images, err = b.requestImages(b.history[:restore], streamOpts.Attachments); err == nil {
-			response, err = b.thinkFullAttempt(ctx, streamOpts, images)
+		if images, err = requestImages(earlier, false, streamOpts.Attachments); err == nil {
+			response, err = b.thinkFullAttempt(ctx, streamOpts, *fresh, images)
 		}
 	}
+	b.mu.Lock()
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err != nil {
+		// The caller waits for this call, so no later request has started.
 		b.history = b.history[:restore]
+		b.mu.Unlock()
 		return "", err
 	}
 
@@ -602,7 +694,9 @@ func (b *Brain) ThinkFull(ctx context.Context, input string, streamOpts StreamOp
 	// overwrite promptTokens with real CLI usage when available.
 	b.promptTokens = b.estimateSessionTokens()
 	b.enforceSessionBudget()
-	b.warnSessionSize(streamOpts)
+	warn := b.sessionWarning()
+	b.mu.Unlock()
+	warn.report(streamOpts)
 
 	return response, nil
 }
@@ -624,10 +718,8 @@ func (b *Brain) estimateSessionTokens() int {
 // thinkFullAttempt runs a single blocking Claude turn and captures the session
 // id for resume. JSON output is required here (not plain text): the SDK only
 // populates ClaudeResult.SessionID when it parses a JSON transcript.
-func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, images []claude.ContentBlock) (string, error) {
-	prompt := b.buildPrompt(streamOpts) + harnessRoutingContext(b.cfg, streamOpts) + currentRequestContext(b.cfg, streamOpts)
-	opts := b.runOptions(claude.JSONOutput, liveCLITools(streamOpts))
-
+func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, attempt claudeAttempt, images []claude.ContentBlock) (string, error) {
+	prompt, opts := attempt.prompt, attempt.opts
 	var result *claude.ClaudeResult
 	var err error
 	switch {
@@ -642,9 +734,7 @@ func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, 
 	if err != nil {
 		return "", fmt.Errorf("claude error: %w", err)
 	}
-	if result.SessionID != "" {
-		b.sessionID = result.SessionID
-	}
+	b.noteSession(ctx, result.SessionID, 0)
 	// Same exit-0 failure shape as the streaming path: never speak the CLI's
 	// error text, and let a rejected --resume fall through to the flatten retry.
 	if result.IsError {
@@ -751,11 +841,15 @@ func (b *Brain) trimHistory() {
 
 // History returns the conversation history.
 func (b *Brain) History() []Turn {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return b.history
 }
 
 // SessionInfo reports the live CLI session for /session display.
 func (b *Brain) SessionInfo() SessionState {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return SessionState{
 		Kind:         SessionKindHarness,
 		ID:           b.sessionID,
@@ -768,6 +862,8 @@ func (b *Brain) SessionInfo() SessionState {
 // a fresh conversation starts a fresh CLI session instead of resuming the old
 // one.
 func (b *Brain) ClearHistory() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.hostContext, b.seed = "", nil
 	b.history = nil
 	b.dropSession()
@@ -778,6 +874,12 @@ func (b *Brain) ClearHistory() {
 // first turn after load runs the flatten path, then captures a new session id
 // and resumes from there.
 func (b *Brain) LoadHistory(turns []Turn) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.loadHistory(turns)
+}
+
+func (b *Brain) loadHistory(turns []Turn) {
 	b.hostContext, b.seed = "", nil
 	b.history = normalizePromptHistory(turns)
 	b.dropSession()
@@ -787,7 +889,9 @@ func (b *Brain) LoadHistory(turns []Turn) {
 // supplies the conversation, the next session starts from the summary that
 // leads the seed and the lines after it.
 func (b *Brain) ReseedContinuity(turns []Turn) {
-	b.LoadHistory(turns)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.loadHistory(turns)
 	if len(turns) > 0 {
 		seed := turns[0]
 		b.seed = &seed

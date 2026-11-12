@@ -115,6 +115,8 @@ func TestParkedClaudeSessionStillStoppingIsWaitedForBeforeReuse(t *testing.T) {
 
 // stuckClaude is the Claude provider whose first stopped request does not
 // end until release closes; it then sends more text and reports success.
+// Its text and result are unbuffered, so ended closes only once the pipeline
+// has taken both.
 type stuckClaude struct {
 	*brain.Brain
 	release, ended chan struct{}
@@ -126,7 +128,7 @@ func (b *stuckClaude) ThinkStream(ctx context.Context, input string, opts brain.
 	if err != nil {
 		return nil, err
 	}
-	out, done := make(chan string, 1), make(chan brain.StreamResult, 1)
+	out, done := make(chan string), make(chan brain.StreamResult)
 	go func() {
 		for chunk := range stream.Chunks {
 			out <- chunk
@@ -165,7 +167,11 @@ func TestAbandonedClaudeRequestIsNeitherRecordedNorSeenLate(t *testing.T) {
 
 	close(b.release)
 	<-b.ended
-	time.Sleep(300 * time.Millisecond)
+	// Retiring the provider joins its request once the pipeline is done with it.
+	c.p.RetireBrain(b)
+	if err := c.p.CloseBrains(); err != nil {
+		t.Fatal(err)
+	}
 	if after := c.selector.Transcript(); !reflect.DeepEqual(after, transcript) {
 		t.Fatalf("the abandoned request changed the transcript: %+v", after)
 	}

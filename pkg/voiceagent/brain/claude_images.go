@@ -28,12 +28,13 @@ func (b *Brain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) error 
 // requestImages returns the blocks that follow a request's prompt: a label and
 // an image for each image it carries, or none. Only the new turn's images,
 // attachments, can fail a request. A resumed session already holds earlier
-// images; a fresh one is also sent, as far as they fit, those of the user
-// lines in held, the newest first, and a label for each one left out. Only
-// lines this provider recorded itself keep their attachments: the host strips
-// them from every line it loads into a persona on Claude or sends it as
-// catch-up, so another persona's images never reach Claude.
-func (b *Brain) requestImages(held []Turn, attachments []chatmedia.Ref) ([]claude.ContentBlock, error) {
+// images; a fresh one is also sent, as far as they fit, those of earlier, the
+// attachments of the user lines held, the newest first, and a label for each
+// one left out. Only lines this provider recorded itself keep their
+// attachments: the host strips them from every line it loads into a persona
+// on Claude or sends it as catch-up, so another persona's images never reach
+// Claude.
+func requestImages(earlier []chatmedia.Ref, resuming bool, attachments []chatmedia.Ref) ([]claude.ContentBlock, error) {
 	if len(attachments) > chatmedia.MaxAttachments {
 		return nil, errors.New("at most four images may be attached")
 	}
@@ -49,25 +50,30 @@ func (b *Brain) requestImages(held []Turn, attachments []chatmedia.Ref) ([]claud
 	for _, ref := range attachments {
 		seen[ref.ID] = true
 	}
-	if b.sessionID != "" {
+	if resuming {
 		return fresh, nil
 	}
-	return append(replayImages(held, seen, maxRequestImageBytes-used, maxRequestImages-len(fresh)/2), fresh...), nil
+	return append(replayImages(earlier, seen, maxRequestImageBytes-used, maxRequestImages-len(fresh)/2), fresh...), nil
 }
 
-// replayImages is the best-effort replay of the images of the user lines in
-// held into a fresh session, in their order. Walking from the newest, it keeps
-// images while they fit within budget bytes and room images; from the first
-// that does not, older ones are left out. An image that no longer loads is
-// left out too. Each image left out is named by a label saying it is no longer
-// attached, so its line still makes sense. An image in seen is not repeated.
-func replayImages(held []Turn, seen map[string]bool, budget, room int) []claude.ContentBlock {
+// userAttachments is the attachments of the user lines in held, in order.
+func userAttachments(held []Turn) []chatmedia.Ref {
 	var refs []chatmedia.Ref
 	for _, t := range held {
 		if t.Role == "user" {
 			refs = append(refs, t.Attachments...)
 		}
 	}
+	return refs
+}
+
+// replayImages is the best-effort replay of earlier images into a fresh
+// session, in their order. Walking from the newest, it keeps
+// images while they fit within budget bytes and room images; from the first
+// that does not, older ones are left out. An image that no longer loads is
+// left out too. Each image left out is named by a label saying it is no longer
+// attached, so its line still makes sense. An image in seen is not repeated.
+func replayImages(refs []chatmedia.Ref, seen map[string]bool, budget, room int) []claude.ContentBlock {
 	data := make([][]byte, len(refs))
 	repeat := make([]bool, len(refs))
 	full := false

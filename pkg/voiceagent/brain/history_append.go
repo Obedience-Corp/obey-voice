@@ -31,6 +31,8 @@ func (b *Brain) AppendAssistantResponseWithIdentity(text string, identity TurnId
 		return fmt.Errorf("brain: empty assistant response")
 	}
 	turn := attributedHostTurn(text, identity)
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.history = append(b.history, turn)
 	b.hostContext = appendHostText(b.hostContext, hostTurnText(turn))
 	if b.cfg != nil && b.cfg.MaxHistory > 0 {
@@ -49,6 +51,8 @@ func (g *GrokBrain) AppendAssistantResponseWithIdentity(text string, identity Tu
 		return fmt.Errorf("brain: empty assistant response")
 	}
 	turn := attributedHostTurn(text, identity)
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.history = append(g.history, turn)
 	g.hostContext = appendHostText(g.hostContext, hostTurnText(turn))
 	if g.cfg != nil && g.cfg.MaxHistory > 0 {
@@ -67,6 +71,8 @@ func (c *CursorBrain) AppendAssistantResponseWithIdentity(text string, identity 
 		return fmt.Errorf("brain: empty assistant response")
 	}
 	turn := attributedHostTurn(text, identity)
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.history = append(c.history, turn)
 	c.hostContext = appendHostText(c.hostContext, hostTurnText(turn))
 	if c.cfg != nil && c.cfg.MaxHistory > 0 {
