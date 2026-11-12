@@ -24,15 +24,23 @@ type heldRequests struct {
 	succeed bool
 	n       int
 	threads []string
+	prompts []string
 }
 
-func (h *heldRequests) take() (chan struct{}, bool, int) {
+func (h *heldRequests) take(prompt string) (chan struct{}, bool, int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	hold := h.hold
 	h.hold = nil
 	h.n++
+	h.prompts = append(h.prompts, prompt)
 	return hold, h.succeed, h.n
+}
+
+func (h *heldRequests) lastPrompt() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.prompts[len(h.prompts)-1]
 }
 
 func (h *heldRequests) resumed() []string {
@@ -50,7 +58,7 @@ func (f stallCodex) run(ctx context.Context, r codexRequest, emit func(string) e
 	f.mu.Lock()
 	f.threads = append(f.threads, r.ThreadID)
 	f.mu.Unlock()
-	hold, succeed, n := f.take()
+	hold, succeed, n := f.take(r.Prompt)
 	thread := fmt.Sprintf("thread-%d", n)
 	if hold == nil {
 		return codexResult{ThreadID: thread}, emit("Noted.")
@@ -70,8 +78,8 @@ func (f stallMuse) RunPromptCtx(context.Context, string, *muse.RunOptions) (*mus
 	return &muse.Result{Terminal: "completed", Text: harnessSpawn}, nil
 }
 
-func (f stallMuse) StreamPrompt(context.Context, string, *muse.RunOptions) (<-chan muse.Event, <-chan error) {
-	hold, succeed, _ := f.take()
+func (f stallMuse) StreamPrompt(_ context.Context, prompt string, _ *muse.RunOptions) (<-chan muse.Event, <-chan error) {
+	hold, succeed, _ := f.take(prompt)
 	events, errs := make(chan muse.Event, 4), make(chan error, 1)
 	go func() {
 		defer close(errs)
@@ -98,7 +106,7 @@ func stallObey(h *heldRequests) obeyRunFunc {
 		if strings.Contains(prompt, "latest_user_request") {
 			return &obey.Result{Text: harnessSpawn}, nil
 		}
-		hold, succeed, _ := h.take()
+		hold, succeed, _ := h.take(prompt)
 		if hold == nil {
 			return &obey.Result{Text: "Noted."}, nil
 		}
@@ -249,11 +257,21 @@ func TestLateEndOfARequestLeavesAReplacedConversationAlone(t *testing.T) {
 	}
 }
 
-// A stopped request is recorded as the turn read it in place of the provider's
-// own record, but never in place of a line recorded after it, such as an idle
-// job result.
+var jobResult = Turn{Role: "assistant", Content: "Job result: the report is ready.", PersonaID: "mira", ResponseID: "job-1"}
+
+func recordJobResult(t *testing.T, b cliHistoryBrain) {
+	t.Helper()
+	if err := b.AppendAssistantResponseWithIdentity(jobResult.Content, TurnIdentity{PersonaID: jobResult.PersonaID, ResponseID: jobResult.ResponseID}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A stopped request is recorded as the turn read it in place of the
+// provider's own record, or after the lines recorded since it began when the
+// provider kept none. A line recorded after it, such as an idle job result,
+// is never removed.
 func TestStoppedRequestKeepsALineRecordedAfterIt(t *testing.T) {
-	stoppedLines := append(slices.Clone(priorTurns), *stoppedSayMore.Line, *stoppedSayMore.Reply)
+	line, partial := *stoppedSayMore.Line, *stoppedSayMore.Reply
 	for provider, newBrain := range stallCLIBrains(t) {
 		for _, completed := range []bool{false, true} {
 			for _, job := range []bool{false, true} {
@@ -265,18 +283,102 @@ func TestStoppedRequestKeepsALineRecordedAfterIt(t *testing.T) {
 						stop()
 					}
 					release()
-					want := stoppedLines
+					want := append(slices.Clone(priorTurns), line, partial)
 					if job {
-						if err := b.AppendAssistantResponseWithIdentity("The report is ready.", TurnIdentity{PersonaID: "mira", ResponseID: "job-1"}); err != nil {
-							t.Fatal(err)
+						recordJobResult(t, b)
+						want = append(slices.Clone(priorTurns), jobResult, line, partial)
+						if completed {
+							want = append(slices.Clone(priorTurns), line, partial, jobResult)
 						}
-						want = b.History()
 					}
 					b.RecordStoppedRequest(stoppedSayMore)
 					requireTurns(t, "history", b.History(), want)
 					requireTurns(t, "model view", b.ContextHistory(), want)
 				})
 			}
+		}
+	}
+}
+
+// A job result recorded while a request runs is kept when the request is
+// then stopped, before the stopped line as the provider records it, and the
+// next request is sent it once.
+func TestStoppedRequestKeepsAJobResultRecordedWhileItRan(t *testing.T) {
+	line, partial := *stoppedSayMore.Line, *stoppedSayMore.Reply
+	for provider, newBrain := range stallCLIBrains(t) {
+		for _, completed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/completed=%v", provider, completed), func(t *testing.T) {
+				b, h := newBrain()
+				complete(t, b, "Hello.", "r1")
+				stop, release := startHeld(t, b, h, completed)
+				recordJobResult(t, b)
+				if !completed {
+					stop()
+				}
+				release()
+				b.RecordStoppedRequest(stoppedSayMore)
+				hello := []Turn{{Role: "user", Content: "Hello."}, {Role: "assistant", Content: "Noted."}}
+				requireTurns(t, "history", b.History(), append(slices.Clone(hello), jobResult, line, partial))
+				complete(t, b, "Anything new?", "r3")
+				if sent := h.lastPrompt(); strings.Count(sent, "the report is ready.") != 1 || strings.Count(sent, "Say more.") != 1 {
+					t.Fatalf("the next request was sent:\n%s", sent)
+				}
+			})
+		}
+	}
+}
+
+// The host abandoning or recording a Codex request while the request is
+// finishing leaves one of the outcomes either order gives, and no thread to
+// share.
+func TestCodexRequestFinishingWhileTheHostAbandonsOrRecordsIt(t *testing.T) {
+	line, partial := *stoppedSayMore.Line, *stoppedSayMore.Reply
+	for _, host := range []string{"abandon", "record"} {
+		for _, completed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/completed=%v", host, completed), func(t *testing.T) {
+				b, h := stallCLIBrains(t)["codex"]()
+				b.LoadHistory(priorTurns)
+				stop, release := startHeld(t, b, h, completed)
+				if !completed {
+					stop()
+				}
+				start := make(chan struct{})
+				var wg sync.WaitGroup
+				wg.Add(2)
+				go func() {
+					defer wg.Done()
+					<-start
+					release()
+				}()
+				go func() {
+					defer wg.Done()
+					<-start
+					if host == "abandon" {
+						b.AbandonRequest()
+					} else {
+						b.RecordStoppedRequest(stoppedSayMore)
+					}
+				}()
+				close(start)
+				wg.Wait()
+				got := lines(b.History())
+				var allowed [][]string
+				switch {
+				case host == "record":
+					allowed = [][]string{lines(append(slices.Clone(priorTurns), line, partial))}
+				case completed:
+					own := Turn{Role: "assistant", Content: "The vault code is cobalt."}
+					allowed = [][]string{lines(priorTurns), lines(append(slices.Clone(priorTurns), line, own))}
+				default:
+					allowed = [][]string{lines(priorTurns)}
+				}
+				if !slices.ContainsFunc(allowed, func(want []string) bool { return slices.Equal(got, want) }) {
+					t.Fatalf("history = %q, want one of %q", got, allowed)
+				}
+				if thread := b.(*CodexBrain).SessionInfo().ID; thread != "" {
+					t.Fatalf("thread %q survived the stop", thread)
+				}
+			})
 		}
 	}
 }

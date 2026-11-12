@@ -451,7 +451,9 @@ backend has ended it: your line, and the part of the reply you were given,
 marked as unfinished, under the persona's name. Its next request and the
 persona that answers next receive both, and the saved conversation keeps
 them. A stopped reply that the backend still completed keeps only what you
-were given. Stopping waits up to five seconds for the backend to end. A
+were given. A line recorded while the request ran, such as a job result,
+stays, ahead of your line. Stopping waits up to five seconds for the backend
+to end. A
 request that has not ended by then is given up on and not recorded: neither
 your line nor the part of the reply you were given is kept, and your next
 line, a persona switch or a clear go ahead without waiting for it.

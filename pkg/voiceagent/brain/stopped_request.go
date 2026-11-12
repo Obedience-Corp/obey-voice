@@ -68,53 +68,66 @@ func routedRequest(canonical []Turn) *streamedRequest {
 	return &streamedRequest{start: len(canonical)}
 }
 
-// ownRecord reports how many turns at the end of canonical are the record
-// the provider kept of r, or false when canonical no longer ends with that
-// record: the conversation changed after r began.
-func (r *streamedRequest) ownRecord(canonical []Turn) (int, bool) {
-	if r == nil || r.start > len(canonical) {
-		return 0, false
+// ownRecord returns where the record the provider kept of r begins in turns
+// and how many turns it holds, searching turns[from:], or -1 when it kept
+// none there. The provider records a request after any line recorded while
+// it ran.
+func (r *streamedRequest) ownRecord(turns []Turn, from int) (int, int) {
+	if !r.records {
+		return -1, 0
 	}
-	n := len(canonical) - r.start
-	if n == 0 {
-		return 0, true
+	for i := len(turns) - 1; i >= max(from, 0); i-- {
+		if t := turns[i]; t.Role != "assistant" || t.ResponseID != r.responseID {
+			continue
+		}
+		if !r.hasLine {
+			return i, 1
+		}
+		if i > from && turns[i-1].Role == "user" && turns[i-1].Content == r.line {
+			return i - 1, 2
+		}
 	}
-	want := 1
-	if r.hasLine {
-		want = 2
-	}
-	first, reply := canonical[r.start], canonical[len(canonical)-1]
-	if !r.records || n != want || (r.hasLine && (first.Role != "user" || first.Content != r.line)) ||
-		reply.Role != "assistant" || reply.ResponseID != r.responseID {
-		return 0, false
-	}
-	return n, true
+	return -1, 0
 }
 
-// replaceStoppedRequest takes the record the provider kept of r, if any, from
-// the end of canonical and working, and puts the stopped request in its
-// place. It changes nothing and reports false when canonical no longer ends
-// with that record.
+// replaceStoppedRequest puts the stopped request in place of the record the
+// provider kept of r, or after every line recorded since r began when it
+// kept none. Every other line stays where it is. It changes nothing and
+// reports false when the conversation was replaced after r began.
 func replaceStoppedRequest(canonical, working []Turn, r *streamedRequest, s StoppedRequest) ([]Turn, []Turn, bool) {
-	recorded, ok := r.ownRecord(canonical)
-	if !ok {
-		if r != nil {
-			slog.Warn("stopped request not recorded: the conversation changed after it began", "began_at", r.start, "turns", len(canonical))
-		}
+	if r == nil {
 		return canonical, working, false
 	}
-	canonical = canonical[:len(canonical)-recorded]
-	working = working[:len(working)-min(recorded, len(working))]
+	if r.start > len(canonical) {
+		slog.Warn("stopped request not recorded: the conversation changed after it began", "began_at", r.start, "turns", len(canonical))
+		return canonical, working, false
+	}
+	var stopped []Turn
 	for _, t := range []*Turn{s.Line, s.Reply} {
 		if t != nil {
-			canonical = append(canonical, deepCopyTurns([]Turn{*t})...)
-			working = append(working, deepCopyTurns([]Turn{*t})...)
+			stopped = append(stopped, *t)
 		}
 	}
-	return canonical, working, true
+	since := len(canonical) - r.start
+	return spliceStopped(canonical, r, r.start, stopped), spliceStopped(working, r, len(working)-since, stopped), true
+}
+
+// spliceStopped puts stopped in place of r's own record in turns[from:], or
+// at the end of turns.
+func spliceStopped(turns []Turn, r *streamedRequest, from int, stopped []Turn) []Turn {
+	at, n := r.ownRecord(turns, from)
+	if at < 0 {
+		at, n = len(turns), 0
+	}
+	out := make([]Turn, 0, len(turns)-n+len(stopped))
+	out = append(out, turns[:at]...)
+	out = append(out, deepCopyTurns(stopped)...)
+	return append(out, turns[at+n:]...)
 }
 
 func (c *CodexBrain) RecordStoppedRequest(s StoppedRequest) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	r := c.request
 	c.request = nil
 	if r == nil {
@@ -129,13 +142,16 @@ func (c *CodexBrain) RecordStoppedRequest(s StoppedRequest) {
 }
 
 func (c *CodexBrain) AbandonRequest() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.request = nil
 	// The abandoned turn may still be running on the thread.
 	c.dropThread()
 }
 
 // owns reports whether r is still the request whose end may change the
-// conversation; nil is a request outside that, as ThinkFull's.
+// conversation; nil is a request outside that, as ThinkFull's. The caller
+// holds c.mu.
 func (c *CodexBrain) owns(r *streamedRequest) bool { return r == nil || c.request == r }
 
 func (b *MuseSparkBrain) RecordStoppedRequest(s StoppedRequest) {

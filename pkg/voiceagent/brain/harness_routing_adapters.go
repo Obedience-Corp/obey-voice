@@ -30,7 +30,9 @@ func (b *Brain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (St
 
 func (b *CodexBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (StreamResult, error) {
 	// A route answers this request without a streamed request to record it.
+	b.mu.Lock()
 	b.request = routedRequest(b.canonical)
+	b.mu.Unlock()
 	return classifyHarnessRoute(ctx, b.cfg, req, func(ctx context.Context, req BatchRequest) (string, error) {
 		var text strings.Builder
 		_, err := b.client.run(ctx, codexRequest{System: req.SystemPrompt, Prompt: req.Text, Model: b.cfg.CodexModel,
