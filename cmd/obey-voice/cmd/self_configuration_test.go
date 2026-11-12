@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
@@ -56,26 +55,55 @@ func TestSelfConfigurationSkillPersonaWorkflow(t *testing.T) {
 	}
 }
 
-// A flag the skill names that no command accepts sends a worker into an error
-// loop, so every --flag in the shipped skill must exist somewhere in the CLI.
+// A flag the skill names that its command does not accept sends a worker into
+// an error loop. Each backticked command in the shipped skill resolves to its
+// subcommand, and every flag in it, or in the flag-only spans that follow it,
+// must be one that subcommand accepts.
 func TestSelfConfigurationSkillNamesOnlyRealFlags(t *testing.T) {
-	known := map[string]bool{"help": true}
-	var walk func(*cobra.Command)
-	walk = func(c *cobra.Command) {
-		c.Flags().VisitAll(func(f *pflag.Flag) { known[f.Name] = true })
-		c.PersistentFlags().VisitAll(func(f *pflag.Flag) { known[f.Name] = true })
-		for _, sub := range c.Commands() {
-			walk(sub)
+	var current *cobra.Command
+	checked := 0
+	for _, m := range regexp.MustCompile("`([^`]+)`").FindAllStringSubmatch(skills.ApplicationInstructions(), -1) {
+		words := strings.Fields(m[1])
+		cmd, resolved := rootCmd, false
+		if len(words) > 0 && words[0] == "obey-voice" {
+			words, resolved = words[1:], true
+		}
+		for _, word := range words {
+			sub := subcommand(cmd, word)
+			if sub == nil {
+				break
+			}
+			cmd, resolved = sub, true
+		}
+		if resolved {
+			current = cmd
+		}
+		for _, word := range words {
+			if !strings.HasPrefix(word, "--") {
+				continue
+			}
+			name := strings.SplitN(strings.TrimPrefix(word, "--"), "=", 2)[0]
+			if current == nil {
+				t.Errorf("--%s in %q follows no command", name, m[1])
+				continue
+			}
+			if name != "help" && current.Flags().Lookup(name) == nil && current.InheritedFlags().Lookup(name) == nil {
+				t.Errorf("the skill gives `%s` the flag --%s, which it does not accept", current.CommandPath(), name)
+			}
+			checked++
 		}
 	}
-	walk(rootCmd)
-	named := regexp.MustCompile(`--([a-z][a-z0-9-]*)`).FindAllStringSubmatch(skills.ApplicationInstructions(), -1)
-	if len(named) == 0 {
+	if checked == 0 {
 		t.Fatal("the skill names no flags")
 	}
-	for _, m := range named {
-		if !known[m[1]] {
-			t.Errorf("the skill names --%s, which no command accepts", m[1])
+}
+
+// subcommand is cmd's child called name, or nil.
+func subcommand(cmd *cobra.Command, name string) *cobra.Command {
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == name || sub.HasAlias(name) {
+			return sub
 		}
 	}
+	return nil
 }
