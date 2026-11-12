@@ -2,6 +2,7 @@ package personaruntime
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -610,4 +613,208 @@ func TestGrokOrCursorConversationSavedWithoutACursorSendsNothingEarlier(t *testi
 			requireOmits(t, last.Prompt, "K-77", "What was it?")
 		})
 	}
+}
+
+// promptArgLimit is the most a Grok or Cursor request may be: the CLI takes
+// it as one command-line argument.
+const promptArgLimit = 100 << 10
+
+// A long request leaves the catch-up less room in the one argument: unseen
+// lines that fit the catch-up limit by themselves but not beside the request
+// start a fresh session with the newest lines that fit.
+func TestGrokOrCursorLongRequestShrinksTheCatchUpToFitOneArgument(t *testing.T) {
+	for _, provider := range []string{"grok", "cursor"} {
+		t.Run(provider, func(t *testing.T) {
+			c := newSessionConversation(t, provider)
+			c.base.OllamaNumCtx = 1 << 17
+			c.start("ember", nil, nil)
+			c.say("switch to Mira", "What do you think?", "switch to Ember")
+			// Three lines of about 20 KB: about 60 KB unseen, within the
+			// catch-up limit, none long enough to be shortened there.
+			for i := range 3 {
+				c.say("LINE-" + string(rune('A'+i)) + " " + strings.Repeat("teal ", 4000))
+			}
+			c.say("switch to Mira", "PASTE-START "+strings.Repeat("amber ", 12000)+"PASTE-END")
+
+			requests := c.sessionRequests()
+			if len(requests) != 2 {
+				t.Fatalf("%s requests = %d", provider, len(requests))
+			}
+			first, second := requests[0], requests[1]
+			if len(second.Prompt) > promptArgLimit {
+				t.Fatalf("the request is %d bytes, over the %d one argument may carry", len(second.Prompt), promptArgLimit)
+			}
+			if second.Resume != "" || second.Session == first.Session {
+				t.Fatalf("a catch-up that no longer fits beside the request resumed the old session: %+v", second)
+			}
+			transcript := c.selector.Transcript()
+			unseen := len(transcript) - 2
+			records := promptRecords(t, second.Prompt)
+			if len(records) == 0 || len(records) >= unseen {
+				t.Fatalf("replay has %d records of %d", len(records), unseen)
+			}
+			// The newest lines, each shortened to fit the smaller record.
+			for i, want := range recordsOf(transcript[unseen-len(records) : unseen]) {
+				got := records[i]
+				head, _, _ := strings.Cut(got.Content, " [")
+				if got.Role != want.Role || got.Persona != want.Persona || !strings.HasPrefix(want.Content, head) {
+					t.Fatalf("replay record %d = %+v, want %+v", i, got, want)
+				}
+			}
+			requireContains(t, second.Prompt, "earlier conversation records omitted]", "more characters of this line omitted]", "LINE-C", "User: PASTE-START", "PASTE-END")
+			requireOmits(t, second.Prompt, "LINE-A")
+			if cursor := c.selector.ContextSnapshots()["mira"]; cursor.Through != len(transcript) {
+				t.Fatalf("cursor after the replay = %+v for %d turns", cursor, len(transcript))
+			}
+		})
+	}
+}
+
+// A request too large for one argument even with no catch-up fails before the
+// CLI runs, and the session stays for the next request.
+func TestGrokOrCursorRequestTooLargeForOneArgumentFailsBeforeTheCLIRuns(t *testing.T) {
+	for _, provider := range []string{"grok", "cursor"} {
+		t.Run(provider, func(t *testing.T) {
+			c := newSessionConversation(t, provider)
+			c.say("switch to Mira", "What do you think?")
+			before := c.sessionRequests()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			_ = c.p.RunTurnTextMode(ctx, strings.Repeat("amber ", 20000))
+			if got := c.sessionRequests(); len(got) != len(before) {
+				t.Fatalf("the CLI ran for a request too large for one argument: %d requests, had %d", len(got), len(before))
+			}
+			var reported bool
+			for _, e := range c.errorEvents() {
+				reported = reported || strings.Contains(e.Message, "too large to pass to the CLI as one command-line argument")
+			}
+			if !reported {
+				t.Fatalf("errors = %+v", c.errorEvents())
+			}
+
+			c.say("Still there?")
+			if last := c.lastSessionRequest(); last.Resume != before[0].Session || len(last.Prompt) > promptArgLimit {
+				t.Fatalf("the session did not survive the refused request: %+v", last)
+			}
+		})
+	}
+}
+
+// A persona whose session lost its place is told so on an info line, the same
+// on every backend that keeps one. The line is never spoken, recorded in the
+// conversation or sent to a model.
+func TestLostPlaceIsAnInfoLineOnEveryBackend(t *testing.T) {
+	for _, provider := range append([]string{"claude"}, sessionProviders...) {
+		for _, loss := range []string{"missing", "stale"} {
+			t.Run(provider+"/"+loss, func(t *testing.T) {
+				lostPlaceIsAnInfoLine(t, provider, loss)
+			})
+		}
+	}
+}
+
+// lostPlaceIsAnInfoLine has Mira's cursor go missing, or stop matching the
+// conversation, while Mira on provider is answering.
+func lostPlaceIsAnInfoLine(t *testing.T, provider, loss string) {
+	c := newSessionConversation(t, provider)
+	var mu sync.Mutex
+	var elsewhere []string
+	c.p.Events.SubscribeAll(func(e events.Event) {
+		if _, info := e.(events.Info); !info && strings.Contains(fmt.Sprintf("%+v", e), "lost its place") {
+			mu.Lock()
+			elsewhere = append(elsewhere, fmt.Sprintf("%T", e))
+			mu.Unlock()
+		}
+	})
+	c.say("switch to Mira", "Note that the vault code is cobalt.")
+	session := c.lastSessionRequest().Session
+	c.selector.transcript.mu.Lock()
+	if loss == "missing" {
+		delete(c.selector.transcript.sessions, "mira")
+	} else {
+		stale := c.selector.transcript.sessions["mira"]
+		stale.PrefixHash = "stale"
+		c.selector.transcript.sessions["mira"] = stale
+	}
+	c.selector.transcript.mu.Unlock()
+	c.say("The door is teal.", "switch to Ember", "What color is the car?", "switch to Mira", "And you?")
+
+	c.mu.Lock()
+	var lost []string
+	for _, n := range c.notices {
+		if strings.Contains(n.message, "lost its place") {
+			lost = append(lost, n.message)
+		}
+	}
+	c.mu.Unlock()
+	if want := "Mira lost its place in the conversation; its session receives only what is said from now on."; !slices.Equal(lost, []string{want}) {
+		t.Fatalf("info lines = %q, want %q once", lost, want)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(elsewhere) > 0 {
+		t.Fatalf("the notice also went out as %v", elsewhere)
+	}
+	for _, turn := range c.selector.Transcript() {
+		requireOmits(t, turn.Content, "lost its place")
+	}
+	for _, req := range c.sessionRequests() {
+		requireOmits(t, req.Prompt, "lost its place")
+	}
+	for _, messages := range c.ollamaRequests() {
+		for _, m := range messages {
+			requireOmits(t, m.Content, "lost its place")
+		}
+	}
+
+	last := c.lastSessionRequest()
+	requireContains(t, last.Prompt, "User: And you?")
+	requireOmits(t, last.Prompt, "The door is teal.", "Note that the vault code")
+	if provider == "codex" {
+		// Codex holds the share itself: it starts over where Mira is
+		// addressed again, in a new thread.
+		if last.Resume != "" {
+			t.Fatalf("a thread that lost its place was resumed: %+v", last)
+		}
+		requireOmits(t, last.Prompt, "What color is the car?")
+		return
+	}
+	// The session keeps catching up from where it lost its place.
+	if last.Resume != session {
+		t.Fatalf("Mira's session was not kept: resumed %q, want %q", last.Resume, session)
+	}
+	requireContains(t, last.Prompt, "What color is the car?")
+}
+
+// A line from a named speaker, addressed to Mira with an @ mention and
+// carrying an image, survives Mira's Codex thread being parked: the view it
+// comes back to extends the one the thread holds, so the thread is resumed.
+func TestCodexThreadSurvivesARoundTripOfARealisticLine(t *testing.T) {
+	c := newSessionConversation(t, "codex")
+	config.SetConfigDirForTest(t, t.TempDir())
+	c.p.CurrentSpeaker = func() string { return "speaker-2" }
+	c.say("switch to Mira")
+	ref := c.attachImage("diagram.png", 7)
+	c.sayWith([]chatmedia.Ref{ref}, "@Mira what is in this diagram?")
+	c.say("switch to Ember", "switch to Mira", "Anything to add?")
+
+	var line *brain.Turn
+	for _, turn := range c.selector.Transcript() {
+		if turn.Content == "@Mira what is in this diagram?" {
+			line = &turn
+		}
+	}
+	if line == nil || len(line.Attachments) != 1 || line.Speaker != "speaker-2" || line.RoutedInput != "what is in this diagram?" {
+		t.Fatalf("the line is not as realistic as intended: %+v", line)
+	}
+	requests := c.sessionRequests()
+	if len(requests) != 2 {
+		t.Fatalf("codex requests = %+v", requests)
+	}
+	if requests[1].Resume == "" || requests[1].Resume != requests[0].Session {
+		t.Fatalf("Mira's thread was not resumed after the round trip: %+v", requests[1])
+	}
+	requireContains(t, requests[1].Prompt, `"content":"Ember here.","persona":"Ember"`, "speaker-2: Anything to add?")
+	requireOmits(t, requests[1].Prompt, "what is in this diagram?", ref.ID)
 }

@@ -401,9 +401,16 @@ resets the session, or when the unseen lines do not fit, sends more input tokens
 and costs more than before. After a compaction the fresh session starts from the
 summary instead. A prompt of 100 KiB or more reaches the Claude CLI on stdin
 rather than as one command-line argument. The Grok and Cursor CLIs take the
-prompt only as an argument: the conversation record stays within 64 KiB, but a
-line you type or paste is sent whole, and Linux refuses one argument of 128 KiB
-or more.
+whole request as one argument, so Obey Voice keeps it within 100 KiB: Linux
+refuses a single argument of 128 KiB or more, and macOS limits all arguments
+and the environment together to 1 MiB. The conversation record gets what the
+rest of the request leaves, up to 64 KiB, so a long line you type or paste
+leaves less room for it. Unseen lines that no longer fit start a fresh session
+with the newest lines that do, shortened to half that room; the recent lines a
+fresh session gets without a conversation record are held to that room the same
+way. A request that does not fit even without the record is refused before the
+CLI runs, with an error saying it is too large, and a session it would have
+resumed is kept for the next request.
 
 At most four sessions stay parked, whatever their backends, a Codex thread
 included (see below); the least recently used one is closed first. A parked
@@ -411,6 +418,10 @@ session is also closed when its persona's prompt, model, provider or other
 settings change, when the conversation is cleared, and when Obey Voice exits.
 After resuming a saved conversation, a persona on Claude, Grok or Cursor starts
 a new session that receives the lines since that point, within the same limit.
+If Obey Voice can no longer tell which lines a persona's session or Codex thread
+holds, an info line says that the persona lost its place in the conversation;
+its session then receives only what is said from that point. The line is shown,
+not spoken, and no model is sent it.
 With
 group participation on, a persona on Claude can be addressed directly, but a
 discussion among several personas still requires every member to be on Ollama.
@@ -430,8 +441,11 @@ persona is addressed again the thread is resumed and sent, as quoted records,
 only the lines it has not been sent, which are what was said while it was away
 and lines Obey Voice recorded under its name, such as an acknowledgement. It
 replays the whole share when it starts a new thread: after a restart or a
-resume, after a stopped or failed request, when its tools or prompt change, and
-when lines it missed fell out of `max_history` before it was addressed again.
+resume, after a stopped or failed request, when its tools or prompt change,
+when a line was recorded while its request ran, when the view it comes back to
+no longer begins with the lines its thread holds, and when lines it missed fell
+out of `max_history` before it was addressed again. When a line recorded
+during a request or a changed view drops the thread, the log says which.
 A request you stop, or one that fails, stays in the conversation once the
 backend has ended it: your line, and the part of the reply you were given,
 marked as unfinished, under the persona's name. Its next request and the
@@ -441,8 +455,9 @@ were given. Stopping waits up to five seconds for the backend to end. A
 request that has not ended by then is given up on and not recorded: neither
 your line nor the part of the reply you were given is kept, and your next
 line, a persona switch or a clear go ahead without waiting for it.
-Unlike Claude, Grok and Cursor, Codex is sent its lines whole: none is shortened,
-and its replay is bounded by `max_history` rather than 64 KiB, as it always was.
+Unlike Claude, Grok and Cursor, Codex is sent its lines whole: none is
+shortened, and its replay is bounded by `max_history` rather than 64 KiB, as it
+always was. A request whose text passes 64 KiB is logged with its size.
 The records are your lines, other personas' spoken lines, and the persona's own
 lines and replies. Other personas' tool calls, tool ids and tool
 output, and the names and images of files attached to any line the persona did

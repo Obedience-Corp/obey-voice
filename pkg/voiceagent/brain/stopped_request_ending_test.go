@@ -41,9 +41,9 @@ func (h *heldRequests) resumed() []string {
 	return slices.Clone(h.threads)
 }
 
-type heldCodex struct{ *heldRequests }
+type stallCodex struct{ *heldRequests }
 
-func (f heldCodex) run(ctx context.Context, r codexRequest, emit func(string) error, _ StreamOptions) (codexResult, error) {
+func (f stallCodex) run(ctx context.Context, r codexRequest, emit func(string) error, _ StreamOptions) (codexResult, error) {
 	if r.Ephemeral {
 		return codexResult{}, emit(harnessSpawn)
 	}
@@ -64,13 +64,13 @@ func (f heldCodex) run(ctx context.Context, r codexRequest, emit func(string) er
 	return codexResult{ThreadID: thread}, nil
 }
 
-type heldMuse struct{ *heldRequests }
+type stallMuse struct{ *heldRequests }
 
-func (f heldMuse) RunPromptCtx(context.Context, string, *muse.RunOptions) (*muse.Result, error) {
+func (f stallMuse) RunPromptCtx(context.Context, string, *muse.RunOptions) (*muse.Result, error) {
 	return &muse.Result{Terminal: "completed", Text: harnessSpawn}, nil
 }
 
-func (f heldMuse) StreamPrompt(context.Context, string, *muse.RunOptions) (<-chan muse.Event, <-chan error) {
+func (f stallMuse) StreamPrompt(context.Context, string, *muse.RunOptions) (<-chan muse.Event, <-chan error) {
 	hold, succeed, _ := f.take()
 	events, errs := make(chan muse.Event, 4), make(chan error, 1)
 	go func() {
@@ -93,7 +93,7 @@ func (f heldMuse) StreamPrompt(context.Context, string, *muse.RunOptions) (<-cha
 	return events, errs
 }
 
-func heldObey(h *heldRequests) obeyRunFunc {
+func stallObey(h *heldRequests) obeyRunFunc {
 	return func(_ context.Context, prompt string, _ *obey.RunOptions, emit func(obey.Event) error) (*obey.Result, error) {
 		if strings.Contains(prompt, "latest_user_request") {
 			return &obey.Result{Text: harnessSpawn}, nil
@@ -122,22 +122,22 @@ type cliHistoryBrain interface {
 	LiveRouteClassifier
 }
 
-func heldCLIBrains(t *testing.T) map[string]func() (cliHistoryBrain, *heldRequests) {
+func stallCLIBrains(t *testing.T) map[string]func() (cliHistoryBrain, *heldRequests) {
 	cfg := func() *config.Config {
 		return &config.Config{AgentName: "Mira", ActivePersona: "mira", MaxHistory: 20, PromptsDir: t.TempDir(), ObeyToolPolicy: "daemon"}
 	}
 	return map[string]func() (cliHistoryBrain, *heldRequests){
 		"codex": func() (cliHistoryBrain, *heldRequests) {
 			h := &heldRequests{}
-			return &CodexBrain{client: heldCodex{h}, cfg: cfg(), systemPrompt: "persona", turnInstruction: "turn"}, h
+			return &CodexBrain{client: stallCodex{h}, cfg: cfg(), systemPrompt: "persona", turnInstruction: "turn"}, h
 		},
 		"muse-spark": func() (cliHistoryBrain, *heldRequests) {
 			h := &heldRequests{}
-			return &MuseSparkBrain{client: heldMuse{h}, cfg: cfg(), systemPrompt: "persona", turnInstruction: "turn"}, h
+			return &MuseSparkBrain{client: stallMuse{h}, cfg: cfg(), systemPrompt: "persona", turnInstruction: "turn"}, h
 		},
 		"obey": func() (cliHistoryBrain, *heldRequests) {
 			h := &heldRequests{}
-			return &ObeyBrain{client: heldObey(h), cfg: cfg(), systemPrompt: "persona", turnInstruction: "turn"}, h
+			return &ObeyBrain{client: stallObey(h), cfg: cfg(), systemPrompt: "persona", turnInstruction: "turn"}, h
 		},
 	}
 }
@@ -226,7 +226,7 @@ func TestLateEndOfARequestLeavesAReplacedConversationAlone(t *testing.T) {
 		"import": {func(b cliHistoryBrain) { _ = b.ImportContinuity(ContinuitySnapshot{Canonical: otherTurns}) }, otherTurns, otherTurns},
 		"reseed": {func(b cliHistoryBrain) { b.ReseedContinuity(otherTurns[1:]) }, priorTurns, otherTurns[1:]},
 	}
-	for provider, newBrain := range heldCLIBrains(t) {
+	for provider, newBrain := range stallCLIBrains(t) {
 		for name, reset := range resets {
 			for _, stopped := range []bool{true, false} {
 				t.Run(fmt.Sprintf("%s/%s/stopped=%v", provider, name, stopped), func(t *testing.T) {
@@ -254,7 +254,7 @@ func TestLateEndOfARequestLeavesAReplacedConversationAlone(t *testing.T) {
 // job result.
 func TestStoppedRequestKeepsALineRecordedAfterIt(t *testing.T) {
 	stoppedLines := append(slices.Clone(priorTurns), *stoppedSayMore.Line, *stoppedSayMore.Reply)
-	for provider, newBrain := range heldCLIBrains(t) {
+	for provider, newBrain := range stallCLIBrains(t) {
 		for _, completed := range []bool{false, true} {
 			for _, job := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/completed=%v/job=%v", provider, completed, job), func(t *testing.T) {
@@ -284,7 +284,7 @@ func TestStoppedRequestKeepsALineRecordedAfterIt(t *testing.T) {
 // A request a route answered before the provider saw it gets its line back
 // when the turn did not follow the route, after the exchange before it.
 func TestUnfollowedRouteKeepsTheExchangeBeforeIt(t *testing.T) {
-	for provider, newBrain := range heldCLIBrains(t) {
+	for provider, newBrain := range stallCLIBrains(t) {
 		t.Run(provider, func(t *testing.T) {
 			b, _ := newBrain()
 			complete(t, b, "Hello.", "r1")
@@ -301,7 +301,7 @@ func TestUnfollowedRouteKeepsTheExchangeBeforeIt(t *testing.T) {
 // A request the host abandoned records nothing when it ends, even if it
 // completes.
 func TestAbandonedRequestRecordsNothingWhenItEnds(t *testing.T) {
-	for provider, newBrain := range heldCLIBrains(t) {
+	for provider, newBrain := range stallCLIBrains(t) {
 		t.Run(provider, func(t *testing.T) {
 			b, h := newBrain()
 			b.LoadHistory(priorTurns)
@@ -317,7 +317,7 @@ func TestAbandonedRequestRecordsNothingWhenItEnds(t *testing.T) {
 // The next request after an abandoned Codex request starts a thread of its
 // own, which the abandoned request does not drop when it ends.
 func TestAbandonedCodexRequestKeepsItsThreadToItself(t *testing.T) {
-	b, h := heldCLIBrains(t)["codex"]()
+	b, h := stallCLIBrains(t)["codex"]()
 	complete(t, b, "Hello.", "r1")
 	stop, release := startHeld(t, b, h, false)
 	stop()

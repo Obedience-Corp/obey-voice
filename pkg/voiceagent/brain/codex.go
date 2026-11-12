@@ -3,8 +3,10 @@ package brain
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
@@ -16,6 +18,11 @@ import (
 // CodexBrain owns one conversation. Like other providers, its host serializes
 // history changes with turns; Fresh creates independent worker state.
 type CodexBrain struct {
+	// mu guards the thread and the conversation: sessionID, sessionTools,
+	// unsent, canonical, working, snapshot and request. A request holds it
+	// only while it is built and recorded, so a line can be recorded while
+	// it runs.
+	mu sync.Mutex
 	groupContext
 	client                                                  codexRunner
 	cfg                                                     *config.Config
@@ -33,6 +40,11 @@ type CodexBrain struct {
 	// last turn. Its next request carries them.
 	unsent int
 }
+
+// codexLargeRequestBytes is the request text past which a Codex request is
+// logged with its size: its conversation record is sent whole, with no byte
+// bound, so a request that fails for its size can be told apart.
+const codexLargeRequestBytes = maxCatchUpBytes
 
 func init() {
 	register(config.BrainProviderSpec{Name: "codex", Description: "Codex CLI", CLIBinary: "codex"}, func(cfg *config.Config) (Provider, error) { return NewCodex(cfg) }, func(cfg *config.Config) (BatchProvider, error) { return newCodexBatch(cfg) })
@@ -69,7 +81,7 @@ func (c *CodexBrain) refreshPrompts(warn func(string)) {
 		if p, _, err := c.personaReloader.resolve(c.cfg); err == nil {
 			next := c.assembleSystem(p)
 			if next != c.systemPrompt {
-				c.dropThread()
+				c.abandonThread()
 			}
 			c.personaPrompt = p
 			c.systemPrompt = next
@@ -87,8 +99,10 @@ func (c *CodexBrain) refreshPrompts(warn func(string)) {
 }
 func (c *CodexBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	c.refreshPrompts(opts.OnPromptWarn)
+	c.mu.Lock()
 	req := newStreamedRequest(c.canonical, input, opts)
 	c.request = req
+	c.mu.Unlock()
 	out := make(chan string, 8)
 	done := make(chan StreamResult, 1)
 	target := c
@@ -118,14 +132,21 @@ func (c *CodexBrain) ThinkFull(ctx context.Context, input string, opts StreamOpt
 // when it ends only while it is still c.request.
 func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions, own *streamedRequest, emit func(string) error) (string, error) {
 	tools := liveCLITools(opts)
+	c.mu.Lock()
 	if tools != c.sessionTools {
 		c.dropThread()
 	}
 	images, err := c.imageInputs(opts)
 	if err != nil {
+		c.mu.Unlock()
 		return "", err
 	}
 	req := codexRequest{Images: images, ThreadID: c.sessionID, Prompt: c.buildPrompt(input, opts), System: c.systemPrompt, Model: c.cfg.CodexModel, Effort: c.cfg.CodexReasoningEffort, Cwd: config.WorkDirFrom(c.cfg), Tools: tools, Ephemeral: opts.TransientHistory}
+	recorded := len(c.canonical)
+	c.mu.Unlock()
+	if n := len(req.Prompt); n > codexLargeRequestBytes {
+		slog.Warn("codex request is large", "bytes", n, "threshold", codexLargeRequestBytes, "resumed", req.ThreadID != "")
+	}
 	var raw strings.Builder
 	strip := newLabelStripper(c.cfg.AgentName)
 	result, err := c.client.run(ctx, req, func(text string) error {
@@ -141,33 +162,35 @@ func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions
 	if opts.OnUsage != nil && result.InputTokens != nil && result.OutputTokens != nil {
 		opts.OnUsage(*result.InputTokens, *result.OutputTokens)
 	}
-	drop := func() {
-		if c.owns(own) {
-			c.dropThread()
-		}
-	}
 	if err != nil {
-		drop()
+		c.dropOwnedThread(own)
 		return "", fmt.Errorf("codex: %w", err)
 	}
 	if err = ctx.Err(); err != nil {
-		drop()
+		c.dropOwnedThread(own)
 		return "", err
 	}
 	if s := strip.Flush(); s != "" {
 		if err = emit(s); err != nil {
-			drop()
+			c.dropOwnedThread(own)
 			return "", err
 		}
 	}
 	response := cleanForVoice(stripReplyConventions(c.cfg.AgentName, raw.String()))
 	if strings.TrimSpace(response) == "" {
-		drop()
+		c.dropOwnedThread(own)
 		return "", fmt.Errorf("codex completed without assistant text")
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// A request the host abandoned, or whose conversation was replaced while
+	// it ran, records nothing.
 	if !c.owns(own) {
 		return response, nil
 	}
+	// Lines recorded while the request ran come before its own, and the
+	// thread was never sent them.
+	missed := len(c.canonical) - recorded
 	// The thread now holds everything this request carried.
 	c.unsent = 0
 	if !opts.AgentContinuation {
@@ -188,6 +211,10 @@ func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions
 	c.appendTurn(reply)
 	c.sessionID = result.ThreadID
 	c.sessionTools = tools
+	if missed != 0 {
+		slog.Info("codex thread dropped", "thread_id", result.ThreadID, "reason", "lines were recorded while its request ran", "lines", missed)
+		c.dropThread()
+	}
 	return response, nil
 }
 func (c *CodexBrain) buildPrompt(input string, opts StreamOptions) string {

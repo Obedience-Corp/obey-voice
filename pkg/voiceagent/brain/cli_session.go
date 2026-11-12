@@ -1,10 +1,42 @@
 package brain
 
 import (
+	"errors"
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
+
+// maxPromptArgBytes is the largest request passed to a CLI as one
+// command-line argument. Linux refuses any single argument of MAX_ARG_STRLEN
+// (131072 bytes, its terminating NUL included), whatever the total. macOS has
+// no per-argument cap, but ARG_MAX (1048576 bytes, getconf ARG_MAX) bounds the
+// arguments and the environment together. This stays under the first and
+// leaves most of the second to the other arguments and the environment.
+const maxPromptArgBytes = 100 << 10
+
+var errPromptArgTooLarge = errors.New("the request is too large to pass to the CLI as one command-line argument")
+
+// argCatchUpBudget is how much conversation record a request passed as one
+// command-line argument can carry: what the rest of the request leaves, at
+// most maxCatchUpBytes. render renders the whole request with its record held
+// to a budget. The result is negative when the rest alone does not fit.
+func argCatchUpBudget(render func(budget int) string) int {
+	return min(maxCatchUpBytes, maxPromptArgBytes-len(render(0)))
+}
+
+// argPrompt renders a request passed to a CLI as one command-line argument,
+// its conversation record held to what fits beside the rest. It fails, so
+// nothing is run, when the request does not fit even without the record.
+func argPrompt(provider string, render func(budget int) string) (string, error) {
+	prompt := render(max(argCatchUpBudget(render), 0))
+	if len(prompt) > maxPromptArgBytes {
+		return "", fmt.Errorf("%s: %w (%d KiB; at most %d KiB fits)", provider, errPromptArgTooLarge, (len(prompt)+1023)>>10, maxPromptArgBytes>>10)
+	}
+	return prompt, nil
+}
 
 // cliSessionPrompt is what a provider driving a CLI session (Claude, Grok,
 // Cursor) renders its next request from.
@@ -25,6 +57,9 @@ type cliSessionPrompt struct {
 	group           *groupContext
 	turnInstruction string
 	budget          int
+	// boundRecent holds a fresh session's recent lines to budget too, for a
+	// CLI that takes the request as one argument.
+	boundRecent bool
 }
 
 // render builds the request. When the host supplies the conversation
@@ -54,11 +89,17 @@ func (p cliSessionPrompt) render(opts StreamOptions) string {
 		if request != nil {
 			recent = recent[:len(recent)-1]
 		}
-		if len(recent) > 0 {
-			parts = append(parts, "Recent conversation:")
-			for _, t := range recent {
-				parts = append(parts, promptUserLine(t, agentName, p.names))
-			}
+		lines := make([]string, 0, len(recent))
+		for _, t := range recent {
+			lines = append(lines, promptUserLine(t, agentName, p.names))
+		}
+		const header = "Recent conversation:"
+		if p.boundRecent {
+			lines = boundedLines(lines, p.budget-len(header)-2)
+		}
+		if len(lines) > 0 {
+			parts = append(parts, header)
+			parts = append(parts, lines...)
 			parts = append(parts, "")
 		}
 	}
@@ -95,4 +136,36 @@ func (p cliSessionPrompt) render(opts StreamOptions) string {
 		parts = append(parts, "", p.turnInstruction)
 	}
 	return strings.Join(parts, "\n")
+}
+
+// boundedLines keeps the newest lines that fit budget bytes, a line longer
+// than half of it shortened with a note of what was left out.
+func boundedLines(lines []string, budget int) []string {
+	var kept []string
+	size := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := shortenedLine(lines[i], budget/2)
+		if line == "" || size+len(line)+1 > budget {
+			break
+		}
+		size += len(line) + 1
+		kept = append(kept, line)
+	}
+	slices.Reverse(kept)
+	return kept
+}
+
+// shortenedLine is line cut to at most limit bytes with a note of how much
+// was left out, or "" when not even the note fits.
+func shortenedLine(line string, limit int) string {
+	if len(line) <= limit {
+		return line
+	}
+	runes := []rune(line)
+	for keep := len(runes) * limit / len(line); keep > 0; keep = keep * 3 / 4 {
+		if short := string(runes[:keep]) + fmt.Sprintf(" [%d more characters of this line omitted]", len(runes)-keep); len(short) <= limit {
+			return short
+		}
+	}
+	return ""
 }

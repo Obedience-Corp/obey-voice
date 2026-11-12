@@ -59,6 +59,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	var turns []brain.Turn
 	var stagedContexts brain.PersonaContexts
 	var targetCursor *brain.PersonaContext // the selected persona's cursor when its provider keeps a session or a hosted share
+	lostPlace := false                     // the selected persona's session lost its place in the conversation
 	var err, workerErr, durabilityErr error
 	unchanged, installed, rebind, keepLive := false, false, false, false
 	// reused marks a parked provider, which stays parked if selection fails;
@@ -168,11 +169,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if unchanged {
 				return nil
 			}
+			lostPlace = false
 			if keepLive {
 				nextBrain, turns, stagedContexts = oldBrain, s.sharedTurns(), s.contexts.Clone()
 				if brain.KeepsPersonaSession(nextBrain) {
-					cursor := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, false, false)
-					targetCursor = &cursor
+					cursor, lost := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, false, false)
+					targetCursor, lostPlace = &cursor, lost
 				}
 				if s.opts.Voices != nil && (s.opts.Native == nil || !s.opts.Native.Silent) {
 					if err := s.opts.VoiceAssets(ctx, cfg); err != nil {
@@ -241,10 +243,12 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			} else {
 				if parked := s.parkedFor(binding.PersonaID, next.BindingHash, scope.ConversationEpoch); parked != nil {
 					// A session no longer aligned with the transcript cannot be caught up.
-					if _, ok := s.transcript.session(binding.PersonaID, s.sharedTurns()); ok {
+					shared := s.sharedTurns()
+					if _, ok := s.transcript.session(binding.PersonaID, shared); ok {
 						nextBrain, reused = parked, true
 					} else {
 						s.retireParked(func(p parkedBrain) bool { return p.provider == parked })
+						lostPlace = len(shared) > 0
 					}
 				}
 				if nextBrain == nil {
@@ -287,8 +291,8 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			// every turn but is given only its persona's share to send.
 			hostedShare := brain.HostedSharedHistory(nextBrain)
 			if keepsSession || hostedShare {
-				cursor := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, reason == "agent-handoff", hostedShare)
-				targetCursor = &cursor
+				cursor, lost := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, reason == "agent-handoff", hostedShare)
+				targetCursor, lostPlace = &cursor, lostPlace || lost
 				delete(stagedContexts, binding.PersonaID)
 			}
 			var targetView brain.ContinuitySnapshot
@@ -479,6 +483,9 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			}
 			if oldInputCleanup != nil {
 				oldInputCleanup()
+			}
+			if lostPlace {
+				s.lostPlace(binding.PersonaID)
 			}
 			if p.Events != nil {
 				p.Events.Emit(next)

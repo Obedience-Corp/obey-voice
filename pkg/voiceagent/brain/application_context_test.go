@@ -50,10 +50,10 @@ func TestApplicationContextIsRequestSpecificAcrossProviders(t *testing.T) {
 					return b.buildPrompt(StreamOptions{OmitTurnInstruction: true})
 				case providerCursor:
 					b := &CursorBrain{cfg: cfg, history: turns, sessionID: session}
-					return b.buildPrompt(StreamOptions{OmitTurnInstruction: true})
+					return b.buildPrompt(StreamOptions{OmitTurnInstruction: true}, maxCatchUpBytes)
 				case providerGrok:
 					b := &GrokBrain{cfg: cfg, history: turns, sessionID: session}
-					return b.buildPrompt(StreamOptions{OmitTurnInstruction: true})
+					return b.buildPrompt(StreamOptions{OmitTurnInstruction: true}, maxCatchUpBytes)
 				case "codex":
 					b := &CodexBrain{cfg: cfg, canonical: turns, sessionID: session}
 					return b.buildPrompt(input, StreamOptions{})
