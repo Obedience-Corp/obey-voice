@@ -11,7 +11,7 @@ import (
 func TestAgentTurnFromAHostedBackendIsMarked(t *testing.T) {
 	for _, hosted := range []bool{true, false} {
 		item := chatItem{kind: chatItemAgent, name: "Mira", hosted: hosted, spoken: "Hello."}
-		if got := strings.Contains(ansi.Strip(item.render(false)), "Mira [hosted]"); got != hosted {
+		if got := strings.Contains(ansi.Strip(item.render(false, 0)), "Mira [hosted]"); got != hosted {
 			t.Errorf("hosted = %v: marker shown = %v", hosted, got)
 		}
 	}

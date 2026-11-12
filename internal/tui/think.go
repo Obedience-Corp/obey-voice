@@ -4,6 +4,9 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
@@ -36,6 +39,10 @@ type chatItem struct {
 	thinkLabel bool
 	spoken     string
 	sys        string
+	// hang is a notice's plain text, wrapped at render time so every line
+	// keeps the two-column indent; sys holds the unwrapped fallback.
+	hang      string
+	hangStyle lipgloss.Style
 	// notice preserves unstyled local command output for native clients.
 	notice string
 	// workResultID marks a canonical background result projection. These
@@ -44,8 +51,12 @@ type chatItem struct {
 	workResultID string
 }
 
-func (it chatItem) render(showThink bool) string {
+// render paints the item for a viewport width columns wide.
+func (it chatItem) render(showThink bool, width int) string {
 	if it.kind != chatItemAgent {
+		if it.hang != "" && width > noticeIndent {
+			return renderHanging(it.hangStyle, it.hang, width)
+		}
 		return it.sys
 	}
 	show := showThink && (it.think != "" || it.thinkLabel)
@@ -57,6 +68,27 @@ func (it chatItem) render(showThink bool) string {
 		name += " [hosted]"
 	}
 	return renderAgentBubble(name, it.think, it.spoken, show)
+}
+
+// noticeIndent is the left margin of transcript notices.
+const noticeIndent = 2
+
+// renderHanging wraps text to fit width with every line, not just the first,
+// indented by noticeIndent.
+func renderHanging(style lipgloss.Style, text string, width int) string {
+	pad := strings.Repeat(" ", noticeIndent)
+	lines := strings.Split(ansi.Wrap(text, width-noticeIndent, ""), "\n")
+	for i, line := range lines {
+		lines[i] = style.Render(pad + line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// appendNotice adds a notice line that keeps its indent when it wraps.
+func (m *conversationModel) appendNotice(style lipgloss.Style, text string) {
+	m.items = append(m.items, chatItem{kind: chatItemSys, sys: style.Render(strings.Repeat(" ", noticeIndent) + text), hang: text, hangStyle: style})
+	m.refreshContent()
+	m.applyFollow()
 }
 
 func (m *conversationModel) appendAgentTurn(item chatItem) {

@@ -177,7 +177,7 @@ func (m *conversationModel) refreshContent() {
 	}
 	parts := make([]string, 0, len(m.items))
 	for _, it := range m.items {
-		if s := it.render(m.showThink); s != "" {
+		if s := it.render(m.showThink, m.viewport.Width); s != "" {
 			if len(it.attachments) > 0 {
 				previewRows := max(10, min(24, m.viewport.Height/(2*len(it.attachments))))
 				s += "\n" + m.renderMedia(it.attachments, max(1, m.viewport.Width-4), previewRows)
