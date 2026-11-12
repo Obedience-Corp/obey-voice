@@ -179,6 +179,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		defer s.transitionMu.Unlock()
 		s.retireParked(retireAll)
 	}
+	s.transcript.lost = s.lostPlace
 	s.restored = restoredConversation{personaID: opts.Initial.PersonaID, provider: opts.SessionProvider}
 	s.notices.reset(opts.Pipeline.ConversationScope().ConversationEpoch, opts.HostedNotified, opts.HostedNotifiedWhole)
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
@@ -202,7 +203,10 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	}
 	if live := opts.Pipeline.Brain; brain.KeepsPersonaSession(live) {
 		turns := s.transcript.Turns()
-		cursor := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, false)
+		cursor, lost := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, false)
+		if lost {
+			s.lostPlace(opts.Initial.PersonaID)
+		}
 		delete(s.contexts, opts.Initial.PersonaID)
 		s.transcript.setLive(opts.Initial.PersonaID, &cursor)
 		// The host loaded the whole conversation into a provider that has no
@@ -212,7 +216,10 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		// The host loaded the whole conversation, which the provider keeps;
 		// it sends only its persona's share.
 		turns := live.History()
-		cursor := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, true)
+		cursor, lost := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, true)
+		if lost {
+			s.lostPlace(opts.Initial.PersonaID)
+		}
 		delete(s.contexts, opts.Initial.PersonaID)
 		view := shareView(cursor, turns)
 		if opts.Native != nil {

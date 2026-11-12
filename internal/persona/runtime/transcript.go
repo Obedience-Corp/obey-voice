@@ -24,8 +24,13 @@ type transcript struct {
 	turns    []brain.Turn
 	sessions brain.PersonaContexts
 	live     string // the selected persona when its provider keeps a session
+	// liveProvider is the backend of live's cursor.
+	liveProvider string
 	// cleared runs after a clear, outside the lock.
 	cleared func()
+	// lost tells the user, outside the lock, that a persona's session lost
+	// its place in the conversation.
+	lost func(personaID string)
 }
 
 func newTranscript(current func() string, turns []brain.Turn) *transcript {
@@ -72,21 +77,29 @@ func (t *transcript) Append(epoch string, turns ...brain.Turn) error {
 // then started again at the end of the transcript, so its session receives
 // nothing said before but stays caught up from here on.
 func (t *transcript) CatchUp(personaID string) (brain.SessionCatchUp, int, bool) {
+	catchUp, covered, ok, lost := t.catchUp(personaID)
+	if lost {
+		t.lostPlace(personaID)
+	}
+	return catchUp, covered, ok
+}
+
+func (t *transcript) catchUp(personaID string) (brain.SessionCatchUp, int, bool, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cursor, ok := t.sessions[personaID]
 	if !ok || cursor.Session == nil || !cursor.Matches(t.turns) {
 		if personaID == "" || personaID != t.live {
-			return brain.SessionCatchUp{}, 0, false
-		}
-		if len(t.turns) > 0 {
-			fmt.Fprintf(os.Stderr, "obey-voice: persona %q lost its place in the conversation; its session receives only what is said from now on\n", personaID)
+			return brain.SessionCatchUp{}, 0, false, false
 		}
 		if t.sessions == nil {
 			t.sessions = make(brain.PersonaContexts)
 		}
-		t.sessions[personaID] = brain.SessionContext(t.turns, brain.SessionCursor{From: len(t.turns), Provider: "claude"}, len(t.turns))
-		return brain.SessionCatchUp{}, len(t.turns), true
+		// liveProvider is never empty while live is not: setLive sets it
+		// with live through cursorProvider, which never returns "", and
+		// setLive(nil) and restoreSessions clear both.
+		t.sessions[personaID] = brain.SessionContext(t.turns, brain.SessionCursor{From: len(t.turns), Provider: t.liveProvider}, len(t.turns))
+		return brain.SessionCatchUp{}, len(t.turns), true, len(t.turns) > 0
 	}
 	var catchUp brain.SessionCatchUp
 	for i := cursor.Session.From; i < len(t.turns); i++ {
@@ -99,7 +112,26 @@ func (t *transcript) CatchUp(personaID string) (brain.SessionCatchUp, int, bool)
 		}
 		catchUp.Turns = append(catchUp.Turns, turn)
 	}
-	return catchUp, len(t.turns), true
+	return catchUp, len(t.turns), true, false
+}
+
+// lostPlace reports that personaID's session lost its place in the
+// conversation, through lost when the host set it.
+func (t *transcript) lostPlace(personaID string) {
+	if t.lost != nil {
+		t.lost(personaID)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "obey-voice: persona %q lost its place in the conversation; its session receives only what is said from now on\n", personaID)
+}
+
+// heldCursor reports whether personaID has a cursor at all, matching the
+// transcript or not.
+func (t *transcript) heldCursor(personaID string) (brain.PersonaContext, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cursor, ok := t.sessions[personaID]
+	return cursor, ok && cursor.Session != nil
 }
 
 // AppendSeen records a completed request of personaID whose catch-up covered
@@ -140,13 +172,13 @@ func (t *transcript) setLive(personaID string, cursor *brain.PersonaContext) {
 	defer t.mu.Unlock()
 	if cursor == nil {
 		delete(t.sessions, personaID)
-		t.live = ""
+		t.live, t.liveProvider = "", ""
 		return
 	}
 	if t.sessions == nil {
 		t.sessions = make(brain.PersonaContexts)
 	}
-	t.sessions[personaID], t.live = *cursor, personaID
+	t.sessions[personaID], t.live, t.liveProvider = *cursor, personaID, cursorProvider(*cursor)
 }
 
 // LiveCatchUp is CatchUp for the selected persona.
@@ -165,7 +197,7 @@ func (t *transcript) LiveCatchUp() (string, brain.SessionCatchUp, int, bool) {
 func (t *transcript) restoreSessions(contexts brain.PersonaContexts) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.sessions, t.live = make(brain.PersonaContexts), ""
+	t.sessions, t.live, t.liveProvider = make(brain.PersonaContexts), "", ""
 	for id, state := range contexts.Clone() {
 		if state.Session != nil {
 			t.sessions[id] = state

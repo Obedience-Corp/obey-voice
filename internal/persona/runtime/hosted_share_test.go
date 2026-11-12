@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -155,12 +156,14 @@ func TestHostedSharedHistorySendsOnlyTheShareWithoutOtherPersonasToolTraffic(t *
 				requireContains(t, prompts[0], "switch to Mira", "Mira here.", "What do you think?")
 				// What was said while Mira was away reaches her on her return.
 				requireContains(t, prompts[1], "Check my notes.", awayEmber, "Read the vault scan.", "Let me look.", "Your notes say hi.", "What did Ember find?")
-				for _, p := range prompts {
+				for i, p := range prompts {
 					requireOmits(t, p, "vault_reader", "call-SECRET-ID", "diary.md", "TOOL OUTPUT SECRET", "vault-scan.png", ref.ID)
-					if whole {
-						requireContains(t, p, preInviteUser, preInviteEmber)
-					} else {
+					switch {
+					case !whole:
 						requireOmits(t, p, "PRIVATE-4711", "PRE-INVITE")
+					// Codex resumes the thread its first request sent them to.
+					case i == 0 || provider != "codex":
+						requireContains(t, p, preInviteUser, preInviteEmber)
 					}
 				}
 				log := c.hostedLog()
@@ -398,7 +401,7 @@ func TestJobStartedOnClaudeIsDeliveredToItsPersonaMovedToCodex(t *testing.T) {
 }
 
 func TestJobStartedOnOllamaFollowsItsPersonaToAHostedBackend(t *testing.T) {
-	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+	for _, provider := range append([]string{"claude", "grok", "cursor"}, hostedShareProviders...) {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "ember", provider, "")
 			c.work = true
@@ -445,7 +448,7 @@ func TestJobStartedOnOllamaFollowsItsPersonaToAHostedBackend(t *testing.T) {
 }
 
 func TestJobStatusGivesAHostedPersonaOnlyACountOfJobsItDidNotStart(t *testing.T) {
-	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+	for _, provider := range append([]string{"claude", "grok", "cursor"}, hostedShareProviders...) {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "ember", provider, "")
 			binding, err := c.catalog.ResolveBinding(c.base, "ember")
@@ -478,7 +481,7 @@ func TestJobStatusGivesAHostedPersonaOnlyACountOfJobsItDidNotStart(t *testing.T)
 }
 
 func TestHostedPersonaSelectedButNeverAddressedIsSharedByTheSettingInForceWhenAddressed(t *testing.T) {
-	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+	for _, provider := range append([]string{"claude", "grok", "cursor"}, hostedShareProviders...) {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "ember", provider, "whole_conversation")
 			c.setEmberReply(preInviteEmber)
@@ -528,6 +531,12 @@ func TestHostedShareThatHasBeenSentSomethingKeepsItsStartWhenTheSettingChanges(t
 				c.base = changed
 				c.say("switch to Mira", "Back to you.")
 				last := c.lastHostedPrompt()
+				if provider == "codex" {
+					// Codex resumes its thread, which holds what it was sent before.
+					requireContains(t, last, "Over to you.", "Back to you.")
+					requireOmits(t, last, "What do you think?")
+					last = strings.Join(c.hostedPrompts(), "\n")
+				}
 				requireContains(t, last, "What do you think?", "Over to you.", "Back to you.")
 				if tc.from == "whole_conversation" {
 					requireContains(t, last, preInviteUser, preInviteEmber)
@@ -608,7 +617,14 @@ func TestPersonaOnTheSameHostedBackendIsSentOnlyItsOwnShare(t *testing.T) {
 			requireOmits(t, novaPrompt, "PRIVATE-4711", `"persona":"Mira"`)
 
 			c.say("switch to Mira", "Still with me?")
-			requireContains(t, c.lastHostedPrompt(), "You are Mira.", preInviteUser, "What do you know?", `"persona":"Nova"`, "Still with me?")
+			last := c.lastHostedPrompt()
+			requireContains(t, last, "You are Mira.", "What do you know?", `"persona":"Nova"`, "Still with me?")
+			if provider == "codex" {
+				// Mira's resumed thread holds what her first request sent it.
+				requireOmits(t, last, preInviteUser)
+				last = c.hostedPrompts()[0]
+			}
+			requireContains(t, last, preInviteUser)
 			if transcript := c.selector.Transcript(); len(transcript) != 10 || transcript[0].Content != preInviteUser {
 				t.Fatalf("the canonical record lost lines: %+v", transcript)
 			}
@@ -638,7 +654,10 @@ func TestCodexPersonaKeepsTheImagesAttachedForIt(t *testing.T) {
 	requireContains(t, c.lastHostedPrompt(), attached, "What is in this diagram?", "And now?")
 
 	c.say("switch to Ember", "Hello Ember.", "switch to Mira", "Back to you.")
-	requireContains(t, c.lastHostedPrompt(), attached, "Hello Ember.", "Back to you.")
+	// Mira's resumed thread already holds the image.
+	resumed := c.lastHostedPrompt()
+	requireContains(t, resumed, "Hello Ember.", "Back to you.")
+	requireOmits(t, resumed, attached)
 }
 
 func TestShareViewSendsNothingFromACursorThatNoLongerMatches(t *testing.T) {
@@ -670,7 +689,7 @@ func TestLoadHistoryUsesOnlyACursorOfTheLiveBackend(t *testing.T) {
 		{Role: "user", Content: preInviteUser},
 		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
 	}
-	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+	for _, provider := range append([]string{"claude", "grok", "cursor"}, hostedShareProviders...) {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "mira", provider, "")
 			other := "claude"
@@ -689,7 +708,7 @@ func TestLoadHistoryUsesOnlyACursorOfTheLiveBackend(t *testing.T) {
 			if len(sent) != 0 {
 				t.Fatalf("a cursor from %s opened the share on %s: %+v", other, provider, sent)
 			}
-			if provider == "claude" {
+			if !slices.Contains(hostedShareProviders, provider) {
 				return
 			}
 			label := providerLabelFor[provider]

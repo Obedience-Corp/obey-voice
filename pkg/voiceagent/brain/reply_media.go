@@ -75,6 +75,8 @@ func (o *OllamaBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
 	return nil
 }
 func (c *CodexBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return setMediaViews(c.canonical, c.working, text, refs)
 }
 func (b *ObeyBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {

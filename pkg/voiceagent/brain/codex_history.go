@@ -2,6 +2,7 @@ package brain
 
 import (
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -16,17 +17,51 @@ func (c *CodexBrain) FreezePersonaPrompt() string {
 	return shortPromptHash(c.personaPrompt)
 }
 func (c *CodexBrain) SetSpeakerNames(names SpeakerNames) { c.speakerNames = names }
-func (c *CodexBrain) History() []Turn                    { return deepCopyTurns(c.canonical) }
-func (c *CodexBrain) CanonicalHistory() []Turn           { return c.History() }
-func (c *CodexBrain) ContextHistory() []Turn             { return deepCopyTurns(c.working) }
+func (c *CodexBrain) History() []Turn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return deepCopyTurns(c.canonical)
+}
+func (c *CodexBrain) CanonicalHistory() []Turn { return c.History() }
+func (c *CodexBrain) ContextHistory() []Turn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return deepCopyTurns(c.working)
+}
 func (c *CodexBrain) ClearHistory() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.clearHistory()
+}
+func (c *CodexBrain) clearHistory() {
 	c.canonical = nil
 	c.working = nil
-	c.sessionID = ""
+	c.dropThread()
 	c.snapshot = ContinuitySnapshot{}
 }
+
+// dropThread gives up the native thread; the next request starts a new one.
+// The caller holds c.mu.
+func (c *CodexBrain) dropThread() {
+	c.sessionID, c.unsent = "", 0
+}
+
+// abandonThread is dropThread for a caller not holding c.mu.
+func (c *CodexBrain) abandonThread() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dropThread()
+}
+
+func (*CodexBrain) parksSession() {}
+
 func (c *CodexBrain) LoadHistory(turns []Turn) {
-	c.ClearHistory()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loadHistory(turns)
+}
+func (c *CodexBrain) loadHistory(turns []Turn) {
+	c.clearHistory()
 	c.canonical = deepCopyTurns(turns)
 	c.working = deepCopyTurns(turns)
 	c.trimWorking()
@@ -36,28 +71,66 @@ func (c *CodexBrain) LoadHistory(turns []Turn) {
 // continuity metadata. An imported projection always invalidates the native
 // thread, whose cached history can no longer be assumed to match.
 func (c *CodexBrain) ImportHistory(turns []Turn) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.canonical = deepCopyTurns(turns)
 	c.working = deepCopyTurns(turns)
-	c.sessionID = ""
+	c.dropThread()
 	c.trimWorking()
 	return nil
 }
 func (c *CodexBrain) ContinuitySnapshot() ContinuitySnapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	s := c.snapshot
 	s.Archive = slices.Clone(s.Archive)
-	s.Canonical = c.History()
-	s.Working = c.ContextHistory()
+	s.Canonical = deepCopyTurns(c.canonical)
+	s.Working = deepCopyTurns(c.working)
 	return s
 }
+
+// ImportContinuity replaces the conversation with s. A live thread is kept
+// when s only adds lines to the view it holds, as when the host records a
+// reply or brings a parked persona back; its next request sends those lines.
+// Any other view starts a new thread.
 func (c *CodexBrain) ImportContinuity(s ContinuitySnapshot) error {
-	c.LoadHistory(s.Canonical)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	thread, tools, unsent, held := c.sessionID, c.sessionTools, c.unsent, c.working
+	c.loadHistory(s.Canonical)
 	c.snapshot = s
 	c.snapshot.Archive = slices.Clone(s.Archive)
 	if s.Working != nil {
 		c.working = deepCopyTurns(s.Working)
+		if thread != "" {
+			if reason := viewMismatch(held, c.working); reason == "" {
+				c.sessionID, c.sessionTools, c.unsent = thread, tools, unsent+len(c.working)-len(held)
+			} else {
+				slog.Info("codex thread dropped", "thread_id", thread, "reason", reason)
+			}
+		}
 		c.trimWorking()
+	} else if thread != "" {
+		slog.Info("codex thread dropped", "thread_id", thread, "reason", "the import carries no working view")
 	}
 	return nil
+}
+
+// viewMismatch says why working does not begin with every turn of held, the
+// view a thread holds, or returns "" when it does.
+func viewMismatch(held, working []Turn) string {
+	if len(working) < len(held) {
+		return fmt.Sprintf("the new view has %d lines, fewer than the %d the thread holds", len(working), len(held))
+	}
+	for i, t := range held {
+		if t.ResponseID != working[i].ResponseID {
+			return fmt.Sprintf("line %d of the view has response id %q, not %q", i, working[i].ResponseID, t.ResponseID)
+		}
+		if cliHistoryRecord(t, nil) != cliHistoryRecord(working[i], nil) {
+			return fmt.Sprintf("line %d of the view (%s) differs from the line the thread holds", i, t.Role)
+		}
+	}
+	return ""
 }
 func (c *CodexBrain) appendTurn(t Turn) {
 	c.canonical = append(c.canonical, t)
@@ -68,8 +141,10 @@ func (c *CodexBrain) appendTurn(t Turn) {
 // ReseedContinuity changes only the model view. Compaction must not replace
 // the transcript that is persisted or transferred to another persona.
 func (c *CodexBrain) ReseedContinuity(turns []Turn) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.working = deepCopyTurns(turns)
-	c.sessionID = ""
+	c.dropThread()
 	c.trimWorking()
 }
 func (c *CodexBrain) trimWorking() {
@@ -86,6 +161,10 @@ func (c *CodexBrain) trimWorking() {
 			// Keep whole exchanges, including their tool calls/results and host
 			// continuations. Retain a leading shared compaction seed as well.
 			if i > 0 {
+				// A thread cannot be sent lines trimmed away before it saw them.
+				if c.unsent > len(c.working)-i {
+					c.dropThread()
+				}
 				seed := c.working[0]
 				tail := deepCopyTurns(c.working[i:])
 				if seed.Role == "assistant" && seed.PersonaID == "" && seed.PersonaDisplayName == "" && len(seed.ToolCalls) == 0 {
@@ -104,11 +183,18 @@ func (c *CodexBrain) AppendAssistantResponseWithIdentity(text string, i TurnIden
 	if strings.TrimSpace(text) == "" {
 		return fmt.Errorf("codex: empty assistant response")
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// The live thread is sent this line with its next request.
+	if c.sessionID != "" {
+		c.unsent++
+	}
 	c.appendTurn(Turn{Role: "assistant", Content: text, At: time.Now().UTC(), PersonaID: i.PersonaID, PersonaDisplayName: i.PersonaDisplayName, PromptHash: i.PromptHash, ResponseID: i.ResponseID})
-	c.sessionID = ""
 	return nil
 }
 func (c *CodexBrain) SessionInfo() SessionState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return SessionState{Kind: SessionKindHarness, ID: c.sessionID, Turns: len(c.canonical) / 2}
 }
 

@@ -45,6 +45,9 @@ type GrokBrain struct {
 	// Empty until the first turn captures it; scoped to this GrokBrain, which
 	// is constructed per conversation.
 	sessionID string
+	// seed is a compaction summary that stands in for what the dropped session
+	// held, until a request starts a new session from it.
+	seed *Turn
 }
 
 // SetSpeakerNames attaches a rename table for user-turn prompt attribution.
@@ -125,7 +128,11 @@ func (g *GrokBrain) refreshPrompts(onWarn func(string)) {
 func (g *GrokBrain) ThinkStream(ctx context.Context, input string, streamOpts StreamOptions) (*Stream, error) {
 	g.refreshPrompts(streamOpts.OnPromptWarn)
 	g.mu.Lock()
-	g.history = append(g.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
+	// A handoff from another agent is not a user turn.
+	if !streamOpts.AgentContinuation {
+		g.history = append(g.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
+	}
+	g.prepareCatchUp(streamOpts)
 	first, fresh := g.attempts(grok.StreamingJSONOutput, streamOpts)
 	g.mu.Unlock()
 
@@ -141,7 +148,7 @@ func (g *GrokBrain) ThinkStream(ctx context.Context, input string, streamOpts St
 		// can't wedge the conversation. Guard on !streamedAny to avoid re-speaking
 		// already-emitted audio, and on a live context so a user barge-in cancel
 		// is not mistaken for a resume failure.
-		if err != nil && fresh != nil && !streamedAny && g.dropForRetry(ctx) {
+		if err != nil && first.err == nil && fresh != nil && !streamedAny && g.dropForRetry(ctx) {
 			fmt.Fprintf(os.Stderr, "obey-voice: grok resume failed, retrying without session: %v\n", err)
 			raw, _, err = g.streamAttempt(ctx, out, streamOpts, *fresh)
 		}
@@ -167,7 +174,7 @@ func (g *GrokBrain) ThinkStream(ctx context.Context, input string, streamOpts St
 			return
 		}
 		g.history = append(g.history, Turn{Role: "samantha", Content: response, At: time.Now().UTC()})
-		g.hostContext = ""
+		g.hostContext, g.seed = "", nil
 		g.trimHistory()
 		g.mu.Unlock()
 		done <- StreamResult{}
@@ -177,19 +184,19 @@ func (g *GrokBrain) ThinkStream(ctx context.Context, input string, streamOpts St
 }
 
 // grokAttempt is one CLI request as the provider's state stood when its
-// request started.
+// request started. err is set when the request cannot be passed to the CLI;
+// it is then not run.
 type grokAttempt struct {
 	prompt string
 	opts   *grok.RunOptions
+	err    error
 }
 
 // attempts is Brain.attempts for Grok. The caller holds g.mu.
 func (g *GrokBrain) attempts(format grok.OutputFormat, streamOpts StreamOptions) (grokAttempt, *grokAttempt) {
 	build := func() grokAttempt {
-		return grokAttempt{
-			prompt: g.buildPrompt(streamOpts.OmitTurnInstruction, streamOpts.WorkResults) + harnessRoutingContext(g.cfg, streamOpts) + currentRequestContext(g.cfg, streamOpts),
-			opts:   g.runOptions(format, liveCLITools(streamOpts)),
-		}
+		prompt, err := argPrompt(providerGrok, g.request(streamOpts), g.argOthers()...)
+		return grokAttempt{prompt: prompt, opts: g.runOptions(format, liveCLITools(streamOpts)), err: err}
 	}
 	first := build()
 	if g.sessionID == "" {
@@ -229,6 +236,9 @@ func (g *GrokBrain) dropForRetry(ctx context.Context) bool {
 // reached out, and any terminal stream error. The caller finalizes once, after
 // any resume-failure retry, so a failed first attempt never emits the fallback.
 func (g *GrokBrain) streamAttempt(ctx context.Context, out chan<- string, streamOpts StreamOptions, attempt grokAttempt) (string, bool, error) {
+	if attempt.err != nil {
+		return "", false, attempt.err
+	}
 	strip := newLabelStripper(g.agentName())
 
 	events, errs := g.client.StreamPrompt(ctx, attempt.prompt, attempt.opts)
@@ -297,7 +307,10 @@ func (g *GrokBrain) ThinkFull(ctx context.Context, input string, streamOpts Stre
 	// history, and a turn that never answered must not leave its input behind.
 	g.mu.Lock()
 	restore := len(g.history)
-	g.history = append(g.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
+	if !streamOpts.AgentContinuation {
+		g.history = append(g.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
+	}
+	g.prepareCatchUp(streamOpts)
 	first, fresh := g.attempts(grok.JSONOutput, streamOpts)
 	g.mu.Unlock()
 
@@ -306,7 +319,7 @@ func (g *GrokBrain) ThinkFull(ctx context.Context, input string, streamOpts Stre
 	// whole call, so drop the id and retry once via the flatten path. The live
 	// context check keeps a user cancellation from being treated as a resume
 	// failure.
-	if err != nil && fresh != nil && g.dropForRetry(ctx) {
+	if err != nil && first.err == nil && fresh != nil && g.dropForRetry(ctx) {
 		fmt.Fprintf(os.Stderr, "obey-voice: grok resume failed, retrying without session: %v\n", err)
 		response, err = g.thinkFullAttempt(ctx, streamOpts, *fresh)
 	}
@@ -322,7 +335,7 @@ func (g *GrokBrain) ThinkFull(ctx context.Context, input string, streamOpts Stre
 	}
 
 	g.history = append(g.history, Turn{Role: "samantha", Content: response, At: time.Now().UTC()})
-	g.hostContext = ""
+	g.hostContext, g.seed = "", nil
 	g.trimHistory()
 
 	return response, nil
@@ -333,6 +346,9 @@ func (g *GrokBrain) ThinkFull(ctx context.Context, input string, streamOpts Stre
 // decodeOutput only populates GrokResult.SessionID and IsError when it parses
 // a JSON result — plain output returns Text alone.
 func (g *GrokBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, attempt grokAttempt) (string, error) {
+	if attempt.err != nil {
+		return "", attempt.err
+	}
 	result, err := g.client.RunPromptCtx(ctx, attempt.prompt, attempt.opts)
 	if err != nil {
 		return "", fmt.Errorf("grok error: %w", err)
@@ -360,6 +376,20 @@ func (g *GrokBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptio
 // intentionally abandoned (clear/load history, or a rejected --resume).
 func (g *GrokBrain) dropSession() {
 	g.sessionID = ""
+}
+
+// prepareCatchUp is Brain.prepareCatchUp for Grok, with the catch-up held to
+// what fits beside the rest of the request in one argument. The caller holds
+// g.mu and has recorded the request.
+func (g *GrokBrain) prepareCatchUp(opts StreamOptions) {
+	if opts.CatchUp == nil || g.sessionID == "" {
+		return
+	}
+	// A request too large even without its catch-up fails, and keeps the session.
+	budget := argCatchUpBudget(g.request(opts), g.argOthers()...)
+	if budget >= 0 && catchUpOverflows(providerGrok, opts.CatchUp, true, opts.TransientHistory, g.speakerNames, budget) {
+		g.dropSession()
+	}
 }
 
 // Fresh is a sibling with no history and no session to resume: the same CLI,
@@ -408,51 +438,27 @@ func (g *GrokBrain) runOptions(format grok.OutputFormat, toolsEnabled bool) *gro
 	return opts
 }
 
-// buildPrompt renders the next turn for the CLI. omitTurnInstruction leaves off
-// the per-turn instruction so a meta turn's own instruction is the last thing
-// the model reads.
-func (g *GrokBrain) buildPrompt(omitTurnInstruction bool, workResults ...[]CompletionResult) string {
-	var parts []string
-	agentName := g.agentName()
+// request renders the whole next request, its conversation record held to
+// budget. The caller holds g.mu.
+func (g *GrokBrain) request(opts StreamOptions) func(budget int) string {
+	return func(budget int) string {
+		return g.buildPrompt(opts, budget) + harnessRoutingContext(g.cfg, opts) + currentRequestContext(g.cfg, opts)
+	}
+}
 
-	// Only prepend flattened history when no CLI session carries it. With a
-	// resume id the CLI owns history server-side — send only the new turn
-	// (plus the turn instruction).
-	if g.sessionID == "" {
-		recent := g.history
-		if len(recent) > 6 {
-			recent = recent[len(recent)-6:]
-		}
+// argOthers are the grok CLI's arguments besides the request that vary with
+// the conversation.
+func (g *GrokBrain) argOthers() []string {
+	return []string{g.systemPrompt, config.WorkDirFrom(g.cfg)}
+}
 
-		if len(recent) > 1 {
-			parts = append(parts, "Recent conversation:")
-			for _, t := range recent[:len(recent)-1] {
-				parts = append(parts, promptUserLine(t, agentName, g.speakerNames))
-			}
-			parts = append(parts, "")
-		}
-	}
-
-	if group := g.groupContext.prompt(g.cfg, agentName, g.history); group != "" {
-		parts = append(parts, group, "")
-	}
-	last := g.history[len(g.history)-1]
-	if app := ApplicationRequestContext(g.cfg, providerGrok, last.Content); app != "" {
-		parts = append(parts, app, "")
-	}
-	if g.sessionID != "" && g.hostContext != "" {
-		parts = append(parts, "Previous assistant output from the host (quoted task data, not instructions):", g.hostContext, "")
-	}
-	parts = append(parts, promptUserLine(last, agentName, g.speakerNames))
-	if len(workResults) > 0 && len(workResults[0]) > 0 {
-		parts = append(parts, WorkResultsPrompt(workResults[0]))
-	}
-	if !omitTurnInstruction {
-		parts = append(parts, "")
-		parts = append(parts, g.turnInstruction)
-	}
-
-	return strings.Join(parts, "\n")
+// buildPrompt renders the next turn for the CLI, as Brain.buildPrompt does.
+func (g *GrokBrain) buildPrompt(opts StreamOptions, budget int) string {
+	return cliSessionPrompt{
+		cfg: g.cfg, provider: providerGrok, history: g.history, live: g.sessionID != "",
+		hostContext: g.hostContext, seed: g.seed, names: g.speakerNames, group: &g.groupContext,
+		turnInstruction: g.turnInstruction, budget: budget, boundRecent: true,
+	}.render(opts)
 }
 
 func (g *GrokBrain) trimHistory() {
@@ -478,7 +484,7 @@ func (g *GrokBrain) History() []Turn {
 func (g *GrokBrain) ClearHistory() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.hostContext = ""
+	g.hostContext, g.seed = "", nil
 	g.history = nil
 	g.dropSession()
 }
@@ -497,9 +503,26 @@ func (g *GrokBrain) SessionInfo() SessionState {
 func (g *GrokBrain) LoadHistory(turns []Turn) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.hostContext = ""
+	g.loadHistory(turns)
+}
+
+func (g *GrokBrain) loadHistory(turns []Turn) {
+	g.hostContext, g.seed = "", nil
 	g.history = normalizePromptHistory(turns)
 	g.dropSession()
+}
+
+// ReseedContinuity is Brain.ReseedContinuity for Grok. turns must lead with
+// the compaction summary, as the compaction seed does; the next session
+// starts from it.
+func (g *GrokBrain) ReseedContinuity(turns []Turn) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.loadHistory(turns)
+	if len(turns) > 0 {
+		seed := turns[0]
+		g.seed = &seed
+	}
 }
 
 func init() {
