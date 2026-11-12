@@ -4,20 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
-	"sync"
 	"sync/atomic"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 var storageSeq atomic.Int64
 
 // storageState is the Storage section's off-thread work: measuring the models
-// folder and moving it. The App shares one storageState with every Settings
-// screen it opens, so a move outlives the screen that started it.
+// folder, checking a move and running it. The App shares one storageState
+// with every Settings screen it opens, so a move outlives the screen that
+// started it.
 type storageState struct {
 	usage     string
 	measuring bool
@@ -26,14 +30,22 @@ type storageState struct {
 	// job is a move whose worker has not reported back. It is cleared only
 	// by that report, so Move stays off until the worker has really ended.
 	job *storageMove
-	// confirmTo is the destination of a move waiting for y.
-	confirmTo string
-	// lifetime and wg let quitting wait for a move's cleanup.
-	lifetime context.Context
-	wg       *sync.WaitGroup
+	// checking is the plan in flight; confirm is a checked move waiting for y.
+	checking int64
+	confirm  *config.MovePlan
 	measure  func(context.Context, string) (int64, int, error)
+	plan     func(context.Context, *config.Config, string, config.MoveOptions) (config.MovePlan, error)
 	runMove  func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error)
+	personas func(*config.Config) ([]config.PersonaAssets, error)
 }
+
+// Worker states: a move is claimed by its worker or abandoned by a program
+// that ended before the worker ran, never both.
+const (
+	movePending int32 = iota
+	moveRunning
+	moveAbandoned
+)
 
 type storageMove struct {
 	seq    int64
@@ -41,11 +53,21 @@ type storageMove struct {
 	cancel context.CancelFunc
 	// pump ends when the worker returns, not on Cancel, so the phases a
 	// cancelled move still goes through keep reaching the screen.
-	pump       context.Context
-	events     *eventBridge
-	dest       string
-	phase      string
+	pump     context.Context
+	finished chan struct{}
+	state    atomic.Int32
+	hangup   chan os.Signal
+	events   *eventBridge
+	dest     string
+	// phase is set by the worker itself, so a dropped progress message can
+	// never leave the screen behind what the move has done.
+	phase      atomic.Value
 	cancelling bool
+}
+
+func (j *storageMove) currentPhase() string {
+	phase, _ := j.phase.Load().(string)
+	return phase
 }
 
 type storageUsageMsg struct {
@@ -65,6 +87,9 @@ type storageMoveDoneMsg struct {
 	result config.MoveResult
 	err    error
 }
+
+// storageHangupMsg is the terminal closing while a move runs.
+type storageHangupMsg struct{ seq int64 }
 
 func (s *storageState) moving() bool { return s != nil && s.job != nil }
 
@@ -93,11 +118,7 @@ func (s *storageState) stop() {
 	}
 	s.stopMeasure()
 	s.cancelMove()
-	s.confirmTo = ""
-}
-
-func (m settingsModel) storageConfirming() bool {
-	return m.storage != nil && m.storage.confirmTo != ""
+	s.checking, s.confirm = 0, nil
 }
 
 func (m settingsModel) storageRows() []settingRow {
@@ -130,7 +151,7 @@ func (m settingsModel) storageRows() []settingRow {
 			help: "Counts the files in the models folder.",
 			run:  func(m *settingsModel) tea.Cmd { return m.startStorageUsage() }},
 		{key: "storage_move", name: "Move models to another folder…", kind: rowAction, verb: "choose a folder", disabled: moveReason != "", reason: moveReason,
-			help: "Moves every model to an empty or new folder, such as one on a larger drive, and uses it from now on. You confirm before it starts. Cancel works until the new folder is saved; the old folder is removed only after every file is on disk in the new one.",
+			help: "Moves every model to an empty or new folder, such as one on a larger drive, and uses it from now on. It is checked first and you confirm before it starts. Cancel works until the new folder is saved; the old folder is removed only after every file in it has been read and matched.",
 			run: func(m *settingsModel) tea.Cmd {
 				return m.beginEdit(editStorageMove, "Move models to (full path)", "")
 			}},
@@ -142,7 +163,7 @@ func (m settingsModel) storageRows() []settingRow {
 		switch {
 		case s.job.cancelling:
 			row.name, row.disabled, row.reason = "Cancelling move…", true, "Waiting for the move to stop"
-		case config.MovePhaseCommitted(s.job.phase):
+		case config.MovePhaseCommitted(s.job.currentPhase()):
 			row.disabled, row.reason = true, "The new folder is saved; the move is finishing"
 		}
 		rows = append(rows, row)
@@ -180,48 +201,16 @@ func (m *settingsModel) startStorageUsage() tea.Cmd {
 	}
 }
 
-// armStorageMove asks for confirmation before a move to dest.
-func (m *settingsModel) armStorageMove(dest string) {
-	dest = strings.TrimSpace(dest)
-	switch {
-	case dest == "":
-		m.message = "Cancelled"
-	case m.storage.moving():
-		m.message = "A move is still finishing"
-	case m.storageMoveBlocked() != "":
-		m.message = m.storageMoveBlocked()
-	default:
-		m.storage.confirmTo = dest
-		m.message = ""
+// movePersonas lists every persona's models, so models only a persona uses
+// are not taken for someone else's files. A failure only means the old folder
+// may be kept.
+func (s *storageState) movePersonas(cfg *config.Config) []config.PersonaAssets {
+	list := s.personas
+	if list == nil {
+		list = persona.AssetSources
 	}
-}
-
-// updateStorageMoveConfirm answers the armed move. Only y starts it.
-func (m settingsModel) updateStorageMoveConfirm(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
-	dest := m.storage.confirmTo
-	m.storage.confirmTo = ""
-	if msg.String() != "y" && msg.String() != "Y" {
-		m.message = "Kept the models in " + config.ModelsDirFrom(m.cfg)
-		return m, nil
-	}
-	return m, m.startStorageMove(dest)
-}
-
-func (m settingsModel) confirmStorageMoveLines() []string {
-	body := []string{
-		normalStyle.Render("Move every model?"),
-		"",
-		dimStyle.Render("From  " + config.ModelsDirFrom(m.cfg)),
-		dimStyle.Render("To    " + m.storage.confirmTo),
-		"",
-		dimStyle.Render("The files are copied (or renamed on the same drive), then the new folder"),
-		dimStyle.Render("is saved, and only then is the old folder removed. Cancel works until"),
-		dimStyle.Render("the save. Leaving Settings or quitting cancels the move too."),
-		"",
-		normalStyle.Render("Press ") + errorStyle.Render("y") + normalStyle.Render(" to move · any other key keeps them where they are"),
-	}
-	box := formBoxStyled(errorStyle.Render("Confirm move"), body, m.settingsBoxWidth(), errorStyle)
-	return append([]string{""}, box...)
+	personas, _ := list(cfg)
+	return personas
 }
 
 func (m *settingsModel) startStorageMove(dest string) tea.Cmd {
@@ -241,18 +230,30 @@ func (m *settingsModel) startStorageMove(dest string) tea.Cmd {
 	m.storage.stopMeasure()
 	ctx, cancel := context.WithCancel(context.Background())
 	pump, pumpDone := context.WithCancel(context.Background())
-	job := &storageMove{seq: storageSeq.Add(1), ctx: ctx, cancel: cancel, pump: pump, events: newEventBridge(16), dest: dest}
+	job := &storageMove{seq: storageSeq.Add(1), ctx: ctx, cancel: cancel, pump: pump, finished: make(chan struct{}),
+		hangup: make(chan os.Signal, 1), events: newEventBridge(16), dest: dest}
+	// A closed terminal sends SIGHUP; caught, it quits the program the normal
+	// way, and the move's cleanup runs instead of the process dying mid-copy.
+	signal.Notify(job.hangup, syscall.SIGHUP)
 	m.storage.job = job
-	cfg, move := m.cfg, m.storage.runMove
+	cfg, move := m.cfg.Clone(), m.storage.runMove
 	if move == nil {
 		move = config.MoveModels
 	}
+	storage := m.storage
 	m.message = "Moving models…"
 	run := func() tea.Msg {
+		defer close(job.finished)
 		defer pumpDone()
+		defer signal.Stop(job.hangup)
 		defer cancel()
+		if !job.state.CompareAndSwap(movePending, moveRunning) {
+			return storageMoveDoneMsg{seq: job.seq, err: context.Canceled}
+		}
+		personas := storage.movePersonas(cfg)
 		lastPhase, lastPct := "", int64(-1)
-		result, err := move(ctx, cfg.Clone(), dest, config.MoveOptions{Progress: func(p config.MoveProgress) {
+		result, err := move(ctx, cfg, dest, config.MoveOptions{Personas: personas, Progress: func(p config.MoveProgress) {
+			job.phase.Store(p.Phase)
 			pct := int64(0)
 			if p.Total > 0 {
 				pct = p.Done * 100 / p.Total
@@ -265,7 +266,53 @@ func (m *settingsModel) startStorageMove(dest string) tea.Cmd {
 		}})
 		return storageMoveDoneMsg{seq: job.seq, result: result, err: err}
 	}
-	return tea.Batch(job.events.waitContext(pump), trackedCommand(m.storage.lifetime, m.storage.wg, run))
+	hangup := func() tea.Msg {
+		select {
+		case <-job.hangup:
+			return storageHangupMsg{seq: job.seq}
+		case <-pump.Done():
+			return nil
+		}
+	}
+	return tea.Batch(job.events.waitContext(pump), hangup, run)
+}
+
+// finishStorageMove runs when the program has ended, by any route: a quit
+// key, a signal Bubble Tea turned into a quit, or a closed terminal. It
+// cancels a move still running and waits for its cleanup, with no time limit,
+// before the rest of teardown arms its force-quit. Ctrl-C ends the wait.
+func finishStorageMove(s *storageState, say func(string)) {
+	if s == nil {
+		return
+	}
+	job := s.job
+	s.stop()
+	if job == nil || job.state.CompareAndSwap(movePending, moveAbandoned) {
+		return
+	}
+	select {
+	case <-job.finished:
+		return
+	default:
+	}
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(interrupt)
+	if config.MovePhaseCommitted(job.currentPhase()) {
+		say("Finishing the models move: the new folder is saved and the old copy is being checked and removed. Ctrl-C quits now and leaves it behind.")
+	} else {
+		say("Stopping the models move and removing what it copied. Ctrl-C quits now and leaves that copy behind.")
+	}
+	for {
+		select {
+		case <-job.finished:
+			return
+		case sig := <-interrupt:
+			if sig == os.Interrupt {
+				return
+			}
+		}
+	}
 }
 
 func (m *settingsModel) cancelStorageMove() {
@@ -274,7 +321,7 @@ func (m *settingsModel) cancelStorageMove() {
 		return
 	}
 	m.storage.cancelMove()
-	if config.MovePhaseCommitted(job.phase) {
+	if config.MovePhaseCommitted(job.currentPhase()) {
 		m.message = "The new folder is already saved, so the move will finish; removing the old copy…"
 		return
 	}
@@ -298,19 +345,20 @@ func (m *settingsModel) applyStorage(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		s.usage = storageUsage(msg.bytes, msg.files)
+	case storagePlanMsg:
+		m.applyStoragePlan(msg)
 	case storageMoveProgressMsg:
 		job := s.job
 		if job == nil || msg.seq != job.seq {
 			return nil
 		}
 		p := msg.progress
-		job.phase = p.Phase
 		switch {
-		case job.cancelling && config.MovePhaseCommitted(p.Phase):
+		case job.cancelling && config.MovePhaseCommitted(job.currentPhase()):
 			m.message = "The new folder is already saved, so the move will finish; removing the old copy…"
 		case job.cancelling:
-		case p.Phase == config.MovePhaseCopy && p.Total > 0:
-			m.message = fmt.Sprintf("Moving models: %s of %s (%d%%)", config.FormatBytes(p.Done), config.FormatBytes(p.Total), p.Done*100/p.Total)
+		case p.Total > 0:
+			m.message = fmt.Sprintf("Moving models: %s: %s of %s (%d%%)", p.Phase, config.FormatBytes(p.Done), config.FormatBytes(p.Total), p.Done*100/p.Total)
 		default:
 			m.message = "Moving models: " + p.Phase + "…"
 		}
@@ -360,15 +408,26 @@ const modelsMoveBusy = "The models are being moved; wait for the move to finish 
 // onStorage delivers the Storage section's results whatever screen is showing:
 // a move that finished after Settings was left still changed models_dir.
 func (a App) onStorage(msg tea.Msg) (tea.Model, tea.Cmd) {
+	storage := a.settings.storage
+	if storage == nil {
+		return a, nil
+	}
+	if hangup, ok := msg.(storageHangupMsg); ok {
+		if storage.job != nil && storage.job.seq == hangup.seq {
+			return a.onQuit(quitMsg{})
+		}
+		return a, nil
+	}
+	done, isDone := msg.(storageMoveDoneMsg)
+	current := isDone && storage.job != nil && storage.job.seq == done.seq
 	cmd := a.settings.applyStorage(msg)
-	done, ok := msg.(storageMoveDoneMsg)
-	if !ok {
+	if !isDone {
 		return a, cmd
 	}
 	if done.err == nil {
 		done.result.ApplyTo(a.cfg)
 	}
-	if a.screen != screenSettings && a.settings.message != "" {
+	if current && a.screen != screenSettings && a.settings.message != "" {
 		a.launcher = a.launcher.withBanner(a.settings.message, done.err != nil && !errors.Is(done.err, context.Canceled))
 	}
 	return a, cmd

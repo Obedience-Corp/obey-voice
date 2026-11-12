@@ -609,7 +609,7 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		m.applyVoiceCatalog(msg)
 	case decisionSetupProgressMsg, decisionSetupDoneMsg:
 		return m, m.applyDecisionSetup(msg)
-	case storageUsageMsg, storageMoveProgressMsg, storageMoveDoneMsg:
+	case storageUsageMsg, storageMoveProgressMsg, storageMoveDoneMsg, storagePlanMsg:
 		return m, m.applyStorage(msg)
 	case speechSetupProgressMsg, speechSetupDoneMsg:
 		cmd := m.applySpeechSetup(msg)

@@ -77,7 +77,6 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	app.runCtx = ctx
 	app.runCancel = cancel
 	app.wg = &sync.WaitGroup{}
-	app.settings.storage.lifetime, app.settings.storage.wg = ctx, app.wg
 	app.progress = newEventBridge(16)
 	app.slot = newConversationSlot()
 	app.meetingSlot = newMeetingSlot()
@@ -123,6 +122,9 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	if !ok {
 		final = app
 	}
+	// Before anything else, and before the force-quit below is armed: a move
+	// still running is cancelled and its cleanup waited for.
+	finishStorageMove(final.settings.storage, storageWaitSay)
 	// Detach before any persistence/native teardown can block after the UI
 	// exits; draining itself runs later with the shared helper deadline.
 	final.conversation.stopCapture()

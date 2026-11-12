@@ -336,7 +336,6 @@ func (a App) onQuit(msg quitMsg) (tea.Model, tea.Cmd) {
 		a.library.cancelPrepare()
 	}
 	a.settings.closePreview()
-	a.settings.storage.stop()
 	a.personas.preview.close()
 	a.personas.cancelAudioSetup()
 	a.settings.cancelEnroll()

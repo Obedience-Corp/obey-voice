@@ -98,8 +98,8 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 		}
 		if kind == editStorageMove {
 			m.cancelEdit()
-			m.armStorageMove(value)
-			return m, nil
+			cmd := m.armStorageMove(value)
+			return m, cmd
 		}
 		if kind == editSpeakerEnrollName {
 			return m.commitSpeakerEnrollName(value)

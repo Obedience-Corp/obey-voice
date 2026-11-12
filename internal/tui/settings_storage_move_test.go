@@ -2,9 +2,9 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -13,12 +13,16 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
+func noPersonas(*config.Config) ([]config.PersonaAssets, error) { return nil, nil }
+
 // heldMove is a fake move the test steps through: it reports the phases it is
-// given, then waits for the test to say how it ended.
+// given, then waits for the test to say how it ended. With stopOnCancel it
+// ends as soon as it is cancelled, as a real move before its save does.
 type heldMove struct {
-	phases chan config.MoveProgress
-	finish chan error
-	ctx    chan context.Context
+	phases       chan config.MoveProgress
+	finish       chan error
+	ctx          chan context.Context
+	stopOnCancel bool
 }
 
 func newHeldMove() *heldMove {
@@ -27,10 +31,16 @@ func newHeldMove() *heldMove {
 
 func (h *heldMove) run(ctx context.Context, _ *config.Config, dest string, opts config.MoveOptions) (config.MoveResult, error) {
 	h.ctx <- ctx
+	cancelled := ctx.Done()
+	if !h.stopOnCancel {
+		cancelled = nil
+	}
 	for {
 		select {
 		case p := <-h.phases:
 			opts.Progress(p)
+		case <-cancelled:
+			return config.MoveResult{}, ctx.Err()
 		case err := <-h.finish:
 			if err != nil {
 				return config.MoveResult{}, err
@@ -41,22 +51,22 @@ func (h *heldMove) run(ctx context.Context, _ *config.Config, dest string, opts 
 }
 
 // startHeld starts a move to dest and runs its worker in the background,
-// returning the event pump and the worker's eventual message.
-func startHeld(t *testing.T, m *settingsModel, h *heldMove, dest string) (pump tea.Cmd, done <-chan tea.Msg) {
+// returning the event pump, the hang-up watcher and the worker's message.
+func startHeld(t *testing.T, m *settingsModel, h *heldMove, dest string) (pump, hangup tea.Cmd, done <-chan tea.Msg) {
 	t.Helper()
-	m.storage.runMove = h.run
+	m.storage.runMove, m.storage.personas = h.run, noPersonas
 	batch, ok := m.startStorageMove(dest)().(tea.BatchMsg)
-	if !ok || len(batch) != 2 {
+	if !ok || len(batch) != 3 {
 		t.Fatalf("start returned %T", batch)
 	}
 	out := make(chan tea.Msg, 1)
-	go func() { out <- batch[1]() }()
+	go func() { out <- batch[2]() }()
 	select {
 	case <-h.ctx:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the move worker never started")
 	}
-	return batch[0], out
+	return batch[0], batch[1], out
 }
 
 func recv(t *testing.T, ch <-chan tea.Msg) tea.Msg {
@@ -70,20 +80,40 @@ func recv(t *testing.T, ch <-chan tea.Msg) tea.Msg {
 	}
 }
 
-func TestStorageMoveAsksBeforeItStarts(t *testing.T) {
+func TestStorageMoveIsCheckedAndConfirmedBeforeItStarts(t *testing.T) {
 	m := newSettings(&config.Config{ModelsDir: "/old"}, nil)
+	m.storage.personas = noPersonas
 	m.storage.runMove = func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error) {
 		t.Fatal("moved without a yes")
 		return config.MoveResult{}, nil
 	}
-	m.section, m.width, m.height = sectionStorage, 100, 30
-	m.armStorageMove(" /fast ")
-	if view := m.View(); !strings.Contains(view, "Confirm move") || !strings.Contains(view, "/fast") || !strings.Contains(view, "/old") {
-		t.Fatalf("no confirmation naming both folders:\n%s", view)
+	m.storage.plan = func(_ context.Context, _ *config.Config, dest string, _ config.MoveOptions) (config.MovePlan, error) {
+		return config.MovePlan{From: "/old", To: dest, Measured: true, Bytes: 21 << 30, Files: 412,
+			Unrecognized: []config.MoveEntry{{Name: "lmstudio", Bytes: 3 << 30}}}, nil
+	}
+	m.section, m.width, m.height = sectionStorage, 120, 40
+	check := m.armStorageMove(" /fast ")
+	if m.storageConfirming() || m.message != "Checking the move…" {
+		t.Fatalf("confirmed before the check: %q", m.message)
+	}
+	m, _ = m.Update(check())
+	view := m.View()
+	for _, want := range []string{"Confirm move", "Move 21.0 GiB in 412 files?", "/old", "/fast", "lmstudio", "3.0 GiB", "old folder is then kept"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("the confirmation is missing %q:\n%s", want, view)
+		}
 	}
 	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	if cmd != nil || m.storage.moving() || !strings.Contains(m.message, "Kept the models in /old") {
 		t.Fatalf("a no started something: moving=%v message=%q", m.storage.moving(), m.message)
+	}
+
+	m.storage.plan = func(context.Context, *config.Config, string, config.MoveOptions) (config.MovePlan, error) {
+		return config.MovePlan{Refusals: []string{"/fast already has files in it"}}, nil
+	}
+	m, _ = m.Update(m.armStorageMove("/fast")())
+	if m.storageConfirming() || !strings.Contains(m.message, "can't be moved: /fast already has files") {
+		t.Fatalf("a refused move was offered: %q", m.message)
 	}
 }
 
@@ -93,7 +123,7 @@ func TestStorageCancelKeepsMoveOffUntilTheWorkerEnds(t *testing.T) {
 	cfg := &config.Config{ModelsDir: "/old"}
 	m := newSettings(cfg, nil)
 	h := newHeldMove()
-	_, done := startHeld(t, &m, h, "/fast")
+	_, _, done := startHeld(t, &m, h, "/fast")
 
 	storageRow(t, m, "storage_cancel").run(&m)
 	if m.message != "Cancelling the move…" {
@@ -122,7 +152,7 @@ func TestStorageCancelAfterTheSaveSaysTheMoveWillFinish(t *testing.T) {
 	cfg := &config.Config{ModelsDir: "/old"}
 	m := newSettings(cfg, nil)
 	h := newHeldMove()
-	pump, done := startHeld(t, &m, h, "/fast")
+	pump, _, done := startHeld(t, &m, h, "/fast")
 	h.phases <- config.MoveProgress{Phase: config.MovePhaseSave}
 	m, _ = m.Update(pump())
 
@@ -146,7 +176,7 @@ func TestStorageCancelThatArrivesTooLateShowsTheMoveFinishing(t *testing.T) {
 	cfg := &config.Config{ModelsDir: "/old"}
 	m := newSettings(cfg, nil)
 	h := newHeldMove()
-	pump, done := startHeld(t, &m, h, "/fast")
+	pump, _, done := startHeld(t, &m, h, "/fast")
 	m.cancelStorageMove()
 	if m.message != "Cancelling the move…" {
 		t.Fatalf("cancel message = %q", m.message)
@@ -165,12 +195,38 @@ func TestStorageCancelThatArrivesTooLateShowsTheMoveFinishing(t *testing.T) {
 	}
 }
 
+// Progress messages can be dropped when the screen falls behind. Whether
+// Cancel can still undo the move must come from the worker, not from them.
+func TestTheMoveScreenFollowsTheWorkerWhenAProgressMessageIsLost(t *testing.T) {
+	m := newSettings(&config.Config{ModelsDir: "/old"}, nil)
+	h := newHeldMove()
+	_, _, done := startHeld(t, &m, h, "/fast")
+	h.phases <- config.MoveProgress{Phase: config.MovePhaseSave}
+	deadline := time.Now().Add(5 * time.Second)
+	for m.storage.job.currentPhase() != config.MovePhaseSave {
+		if time.Now().After(deadline) {
+			t.Fatal("the worker never reported the save")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// The progress message is never delivered.
+	if row := storageRow(t, m, "storage_cancel"); !row.disabled {
+		t.Fatal("Cancel is offered after the save because a message was lost")
+	}
+	m.cancelStorageMove()
+	if !strings.Contains(m.message, "already saved") {
+		t.Fatalf("cancel message = %q", m.message)
+	}
+	h.finish <- nil
+	recv(t, done)
+}
+
 // Picking a speaker used to stop every preview and, with them, a running move.
 func TestChangingTheSpeakerDoesNotCancelAMove(t *testing.T) {
 	m := newSettings(&config.Config{ModelsDir: "/old"}, nil)
 	m.saveConfig = func(string, any) error { return nil }
 	h := newHeldMove()
-	_, done := startHeld(t, &m, h, "/fast")
+	_, _, done := startHeld(t, &m, h, "/fast")
 	ctx := m.storage.job.ctx
 	m.selectOutputDevice("USB speakers")
 	if ctx.Err() != nil || !m.storage.moving() {
@@ -199,14 +255,18 @@ func storageTestApp(t *testing.T) App {
 func TestAppAppliesAMoveThatFinishesAfterSettingsWasLeft(t *testing.T) {
 	app := storageTestApp(t)
 	h := newHeldMove()
-	_, done := startHeld(t, &app.settings, h, "/fast")
+	_, _, done := startHeld(t, &app.settings, h, "/fast")
+	ctx := app.settings.storage.job.ctx
 	model, _ := app.onSwitchScreen(switchScreenMsg(screenLauncher))
 	app = model.(App)
+	if ctx.Err() == nil {
+		t.Fatal("leaving Settings did not cancel the move")
+	}
 	if !app.settings.storage.moving() {
 		t.Fatal("leaving Settings forgot the running move")
 	}
 
-	// Re-entering Settings shows the same move, still running.
+	// Re-entering Settings shows the same move, still finishing.
 	model, _ = app.onSwitchScreen(switchScreenMsg(screenSettings))
 	app = model.(App)
 	if row := storageRow(t, app.settings, "storage_move"); !row.disabled {
@@ -215,6 +275,7 @@ func TestAppAppliesAMoveThatFinishesAfterSettingsWasLeft(t *testing.T) {
 	model, _ = app.onSwitchScreen(switchScreenMsg(screenLauncher))
 	app = model.(App)
 
+	// The save had already happened, so the move finishes.
 	h.finish <- nil
 	model, _ = app.Update(recv(t, done))
 	app = model.(App)
@@ -230,7 +291,7 @@ func TestAppAppliesAMoveThatFinishesAfterSettingsWasLeft(t *testing.T) {
 func TestLeavingSettingsWithEscCancelsTheMove(t *testing.T) {
 	app := storageTestApp(t)
 	h := newHeldMove()
-	_, done := startHeld(t, &app.settings, h, "/fast")
+	_, _, done := startHeld(t, &app.settings, h, "/fast")
 	ctx := app.settings.storage.job.ctx
 	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
@@ -248,11 +309,24 @@ func TestLeavingSettingsWithEscCancelsTheMove(t *testing.T) {
 	}
 }
 
+// A failed move that is not the current one used to put the last progress
+// line on the launcher as an error.
+func TestAStaleMoveResultLeavesNoBanner(t *testing.T) {
+	app := storageTestApp(t)
+	model, _ := app.onSwitchScreen(switchScreenMsg(screenLauncher))
+	app = model.(App)
+	app.settings.message = "Moving models: copying: 1.0 GiB of 4.0 GiB (25%)"
+	model, _ = app.Update(storageMoveDoneMsg{seq: -1, err: errors.New("disk full")})
+	if banner := model.(App).launcher.banner; banner != "" {
+		t.Fatalf("launcher banner = %q", banner)
+	}
+}
+
 // Nothing that reads models may start while they are being moved.
 func TestAppHoldsConversationsAndMeetingsWhileModelsMove(t *testing.T) {
 	app := storageTestApp(t)
 	h := newHeldMove()
-	_, done := startHeld(t, &app.settings, h, "/fast")
+	_, _, done := startHeld(t, &app.settings, h, "/fast")
 	model, _ := app.onSwitchScreen(switchScreenMsg(screenLauncher))
 	app = model.(App)
 
@@ -267,26 +341,85 @@ func TestAppHoldsConversationsAndMeetingsWhileModelsMove(t *testing.T) {
 	_, _ = app.Update(recv(t, done))
 }
 
-// Quitting cancels the move and the program's teardown waits for its cleanup.
-func TestQuitWaitsForTheMoveWorker(t *testing.T) {
-	m := newSettings(&config.Config{ModelsDir: "/old"}, nil)
-	var wg sync.WaitGroup
-	m.storage.lifetime, m.storage.wg = context.Background(), &wg
-	h := newHeldMove()
-	_, done := startHeld(t, &m, h, "/fast")
-	m.storage.stop()
-	waited := make(chan struct{})
-	go func() { wg.Wait(); close(waited) }()
-	select {
-	case <-waited:
-		t.Fatal("teardown would not wait for the move worker")
-	case <-time.After(50 * time.Millisecond):
+// However the program ends, a running move is cancelled and its cleanup is
+// waited for before teardown goes on.
+func TestEndingTheProgramCancelsTheMoveAndWaitsForIt(t *testing.T) {
+	t.Setenv("MODELS_DIR", "")
+	origSay := storageWaitSay
+	storageWaitSay = func(string) {}
+	t.Cleanup(func() { storageWaitSay = origSay })
+	for name, end := range map[string]func(App) App{
+		// Bubble Tea's SIGTERM and non-terminal SIGINT end the program
+		// without the App's quit handler.
+		"by signal": func(app App) App { return app },
+		"by quit key": func(app App) App {
+			model, _ := app.Update(quitMsg{})
+			return model.(App)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			config.SetConfigDirForTest(t, t.TempDir())
+			h := newHeldMove()
+			h.stopOnCancel = true
+			var moveCtx context.Context
+			var workerDone <-chan tea.Msg
+			finished := make(chan struct{})
+			go func() {
+				defer close(finished)
+				_ = runPrograms(&config.Config{ModelsDir: "/old"}, nil, nil, false, func(app App) (tea.Model, error) {
+					_, _, workerDone = startHeld(t, &app.settings, h, "/fast")
+					moveCtx = app.settings.storage.job.ctx
+					return end(app), nil
+				})
+			}()
+			select {
+			case <-finished:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the program never finished")
+			}
+			if moveCtx.Err() == nil {
+				t.Fatal("the move was still running when the program had ended")
+			}
+			select {
+			case msg := <-workerDone:
+				if done, ok := msg.(storageMoveDoneMsg); !ok || !errors.Is(done.err, context.Canceled) {
+					t.Fatalf("worker ended with %+v", msg)
+				}
+			default:
+				t.Fatal("teardown went on before the move's worker had ended")
+			}
+		})
 	}
-	h.finish <- context.Canceled
-	recv(t, done)
+}
+
+// A move whose worker never started, because the program ended first, must
+// not hold up teardown.
+func TestEndingTheProgramBeforeTheMoveStartsDoesNotWait(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	origSay := storageWaitSay
+	storageWaitSay = func(string) {}
+	t.Cleanup(func() { storageWaitSay = origSay })
+	finished := make(chan struct{})
+	ran := false
+	go func() {
+		defer close(finished)
+		_ = runPrograms(&config.Config{ModelsDir: "/old"}, nil, nil, false, func(app App) (tea.Model, error) {
+			app.settings.storage.personas = noPersonas
+			app.settings.storage.runMove = func(context.Context, *config.Config, string, config.MoveOptions) (config.MoveResult, error) {
+				ran = true
+				return config.MoveResult{}, nil
+			}
+			batch := app.settings.startStorageMove("/fast")().(tea.BatchMsg)
+			t.Cleanup(func() { batch[2]() })
+			return app, nil
+		})
+	}()
 	select {
-	case <-waited:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the worker never released teardown")
+	case <-finished:
+	case <-time.After(10 * time.Second):
+		t.Fatal("teardown waited for a move that never started")
+	}
+	if ran {
+		t.Fatal("an abandoned move ran")
 	}
 }
