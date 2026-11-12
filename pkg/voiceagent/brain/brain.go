@@ -251,6 +251,25 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 	}
 }
 
+// claudeFailure wraps a failed CLI run with the last line it printed on
+// stderr. The SDK keeps stderr out of its message, which for an unknown
+// --model says only "Input validation failed".
+func claudeFailure(what string, err error) error {
+	var cliErr *claude.ClaudeError
+	if errors.As(err, &cliErr) {
+		if stderr, ok := cliErr.Details["stderr"].(string); ok {
+			lines := strings.Split(strings.TrimSpace(stderr), "\n")
+			if line := strings.TrimSpace(lines[len(lines)-1]); line != "" {
+				if len(line) > 240 {
+					line = line[:240] + "…"
+				}
+				return fmt.Errorf("%s: %w: %s", what, err, line)
+			}
+		}
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
 // claudeModel is the --model value for cfg; empty and "default" leave the
 // choice to the CLI.
 func claudeModel(cfg *config.Config) string {
@@ -609,7 +628,7 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 	for err := range errs {
 		if err != nil {
 			if streamErr == nil {
-				streamErr = fmt.Errorf("claude stream: %w", err)
+				streamErr = claudeFailure("claude stream", err)
 			}
 		}
 	}
@@ -742,7 +761,7 @@ func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, 
 		result, err = b.client.RunPromptCtx(ctx, prompt, opts)
 	}
 	if err != nil {
-		err = fmt.Errorf("claude error: %w", err)
+		err = claudeFailure("claude error", err)
 		if refused := imageRefusal(images, err); refused != nil {
 			return "", refused
 		}

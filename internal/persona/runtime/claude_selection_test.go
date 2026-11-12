@@ -154,6 +154,10 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	if req.Input == "stream-json" {
 		decodeContentInput(&req)
 	}
+	if bad := os.Getenv("OBEY_CLAUDE_FIXTURE_REJECT_MODEL"); bad != "" && req.Model == bad {
+		fmt.Fprintf(os.Stderr, "Error: invalid model: %s\n", bad)
+		os.Exit(1)
+	}
 	data, _ := os.ReadFile(log)
 	n := bytes.Count(data, []byte("\n")) + 1
 	// Distinct sessions let a test tell a resumed session from a new one.

@@ -448,6 +448,16 @@ func TestClaudeBatchAsksForTheConfiguredModel(t *testing.T) {
 	}
 }
 
+func TestClaudeBatchFailureNamesWhatTheCLIPrinted(t *testing.T) {
+	cliErr := claude.ParseError("Loading config\nError: invalid model: soonet\n", 1)
+	c := &claudeBatch{runner: &fakeClaudeRunner{err: cliErr}, model: "soonet"}
+	_, err := c.Transform(t.Context(), BatchRequest{Text: "hello"})
+	var got *claude.ClaudeError
+	if err == nil || !strings.HasSuffix(err.Error(), ": Error: invalid model: soonet") || !errors.As(err, &got) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 type fakeClaudeRunner struct {
 	result    *claude.ClaudeResult
 	err       error

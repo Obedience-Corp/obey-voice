@@ -1,6 +1,7 @@
 package personaruntime
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
@@ -129,5 +130,28 @@ func TestParkedClaudeSessionSurvivesAnEquivalentModelSpelling(t *testing.T) {
 	c.say("switch to Mira", "Still there?")
 	if last := lastClaudeRequest(t, c.log); c.p.Brain != mira || last.Resume != session || last.Model != "" {
 		t.Fatalf("an equivalent model spelling retired the parked session: %+v", last)
+	}
+}
+
+func TestRejectedClaudeModelIsReportedToTheUser(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_REJECT_MODEL", "soonet")
+	c := newMixedConversation(t, 20, "ember")
+	writeClaudePersona(t, c, "mira", "Mira", "soonet")
+	c.say("switch to Mira")
+	before := len(c.responses())
+	if err := c.p.RunTurnTextMode(t.Context(), "What do you think?"); err != nil {
+		t.Fatal(err)
+	}
+	var reported bool
+	for _, e := range c.errorEvents() {
+		reported = reported || (e.Stage == "brain" && strings.Contains(e.Message, "invalid model: soonet"))
+	}
+	if !reported {
+		t.Fatalf("the rejected model was not reported: %+v", c.errorEvents())
+	}
+	for _, r := range c.responses()[before:] {
+		if strings.TrimSpace(r.Response) != "" {
+			t.Fatalf("a rejected model still produced a reply: %q", r.Response)
+		}
 	}
 }

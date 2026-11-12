@@ -286,7 +286,7 @@ func (c *claudeBatch) Transform(ctx context.Context, req BatchRequest) (BatchRes
 
 	result, err := c.runner.RunPromptCtx(ctx, batchPromptBody(req), opts)
 	if err != nil {
-		return BatchResult{}, fmt.Errorf("claude batch: %w", err)
+		return BatchResult{}, claudeFailure("claude batch", err)
 	}
 
 	text := strings.TrimSpace(result.Result)
