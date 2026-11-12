@@ -82,7 +82,7 @@ var modelsMoveCmd = &cobra.Command{
 	Long: `Move every model to another folder and use it from now on.
 
 On the same drive the folder is renamed, and until the new folder is saved a
-link at the old path leads to it. On another drive the files are copied and
+link at the old path leads to it (where the drive can hold links). On another drive the files are copied and
 flushed to disk, then models_dir is saved together with any other setting that
 named a file inside the old folder. Only then is the old folder set aside (as
 <folder>.obey-voice-old-<time>) and every file in it read and compared with

@@ -163,8 +163,14 @@ func MoveModels(ctx context.Context, cfg *Config, dest string, opts MoveOptions)
 	}
 	// The sizes reported are the user's models, not the lock taken below.
 	bytes, files := plan.Bytes, plan.Files
-	release, refusals := takeMoveLocks(plan.Source)
-	defer release()
+	source := plan.Source
+	locks, refusals := takeMoveLocks(source)
+	// The models end up in the old folder unless the move succeeds.
+	where := source
+	defer func() {
+		locks.release()
+		locks.removeMade(where)
+	}()
 	if len(refusals) > 0 {
 		return MoveResult{}, &MoveRefusedError{Reasons: refusals}
 	}
@@ -180,6 +186,7 @@ func MoveModels(ctx context.Context, cfg *Config, dest string, opts MoveOptions)
 	if err := m.run(); err != nil {
 		return MoveResult{}, err
 	}
+	where = plan.Dest
 	return m.result, nil
 }
 
@@ -316,7 +323,7 @@ func (m *mover) copyAndCommit() error {
 // from config.yaml as read under its lock, and flushes it before anything old
 // is deleted.
 func (m *mover) save() error {
-	pairs, err := moveHooks.writeConfig(modelPathPairs(m.plan.Source, m.plan.To))
+	pairs, err := moveHooks.writeConfig(modelPathPairs(m.plan.From, m.plan.Source, m.plan.To))
 	if err != nil {
 		return &moveSaveError{msg: describeSaveError(err), err: err}
 	}

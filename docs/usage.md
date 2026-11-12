@@ -139,7 +139,8 @@ exist yet. If it is a link, the files land in the folder it points to and the
 link is kept.
 
 **How it moves.** On the same drive the folder is renamed; until the new
-folder is saved, a link at the old path leads to it. An empty destination you
+folder is saved, a link at the old path leads to it (on drives that can hold
+links; exFAT and FAT32 cannot). An empty destination you
 made yourself is replaced by the moved folder, so its own permissions are not
 kept. On another drive the files are copied and flushed to disk, then
 `models_dir` is saved together with any other setting that named a file in
@@ -185,10 +186,13 @@ Windows) nothing is lost, but something may be left behind:
   to that folder names the folder holding the partial copy; delete what is
   inside it.
 - after a same-drive rename, before the save: a link at the old path leading
-  to the new folder, and everything keeps working through it. Only a kill in
-  the instant between the rename and the link leaves `models_dir` naming a
-  folder that is gone; the models are then in the destination, and
-  `obey-voice config set models_dir <destination>` points at them.
+  to the new folder, and everything keeps working through it. Without that
+  link (a kill in the instant between the rename and the link, or a drive
+  that cannot hold links, where the gap lasts until the save), `models_dir`
+  names a folder that is gone: the models are in the destination, and
+  `obey-voice config set models_dir <destination>` points at them. Until
+  then, anything that downloads missing models would fetch them again into
+  the old path.
 - after the save: the old folder, set aside as `<folder>.obey-voice-old-<time>`
   and perhaps partly deleted, or on the same drive a link at the old path. The
   new folder is complete and in use.

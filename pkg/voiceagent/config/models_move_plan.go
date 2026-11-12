@@ -129,7 +129,7 @@ func planModelsMove(ctx context.Context, cfg *Config, to string, opts MoveOption
 
 	// The remaining checks are independent; report every one that applies.
 	plan.Refusals = append(plan.Refusals, environmentRefusals(source)...)
-	pairs, err := setKeyFileValuesFrom(modelPathPairs(source, plan.To), true)
+	pairs, err := setKeyFileValuesFrom(modelPathPairs(plan.From, source, plan.To), true)
 	if err != nil {
 		plan.Refusals = append(plan.Refusals, describeSaveError(err))
 	}
@@ -287,7 +287,11 @@ func environmentRefusals(source string) []string {
 // setting naming a file inside the old folder, pointed at the same file in
 // the new one. A setting config.yaml does not hold is judged by its default.
 // Settings set in the environment are refused beforehand, not rewritten.
-func modelPathPairs(source, to string) func(func(string) (string, bool)) []keyValue {
+//
+// After a same-drive rename the old folder no longer exists, so a value is
+// also matched by its spelling against the old folder's two spellings, as
+// given and with links resolved.
+func modelPathPairs(from, source, to string) func(func(string) (string, bool)) []keyValue {
 	return func(fileValue func(string) (string, bool)) []keyValue {
 		var rewrites []keyValue
 		for _, spec := range Schema() {
@@ -301,13 +305,37 @@ func modelPathPairs(source, to string) func(func(string) (string, bool)) []keyVa
 			if !ok {
 				value, _ = spec.Default.(string)
 			}
-			if rel, inside := insideFolder(source, expandHomePath(strings.TrimSpace(value))); inside {
+			if rel, inside := insideOldFolder(from, source, expandHomePath(strings.TrimSpace(value))); inside {
 				rewrites = append(rewrites, keyValue{Key: spec.Key, Value: filepath.Join(to, rel)})
 			}
 		}
 		sort.Slice(rewrites, func(i, j int) bool { return rewrites[i].Key < rewrites[j].Key })
 		return append([]keyValue{{Key: "models_dir", Value: to}}, rewrites...)
 	}
+}
+
+// insideOldFolder is insideFolder for the folder being moved, which may
+// already have been renamed away.
+func insideOldFolder(from, source, path string) (string, bool) {
+	if rel, ok := insideFolder(source, path); ok {
+		return rel, true
+	}
+	if !filepath.IsAbs(path) {
+		return "", false
+	}
+	path = filepath.Clean(path)
+	for _, spelled := range []string{path, resolveExisting(path)} {
+		for _, old := range []string{from, source} {
+			if spelled == old {
+				return ".", true
+			}
+			if within(spelled, old) {
+				rel, err := filepath.Rel(old, spelled)
+				return rel, err == nil
+			}
+		}
+	}
+	return "", false
 }
 
 // insideFolder reports where path lies inside dir ("." when it is dir).

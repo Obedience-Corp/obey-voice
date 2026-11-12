@@ -257,10 +257,16 @@ func TestMoveModelsKeepsAnOldFolderWithUnrecognisedFiles(t *testing.T) {
 	}
 }
 
-// A healthy install, with files the installers and the move write, is
-// recognised in full, so its old folder can be removed.
+// A healthy install with the default settings, plus files the installers
+// write, is recognised in full, so its old folder can be removed. A model
+// nothing uses any more is not.
 func TestMoveModelsRecognisesWhatTheAppWrites(t *testing.T) {
-	cfg, source, _ := moveFixture(t)
+	_, source, _ := moveFixture(t)
+	cfg, err := LoadRaw()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ModelsDir = source
 	for _, name := range []string{".archive-kokoro.tar.bz2.part", ".extract-123", ".samantha-asset-kokoro.json", ".DS_Store"} {
 		writeMoveFile(t, filepath.Join(source, name), "x")
 	}
@@ -269,7 +275,7 @@ func TestMoveModelsRecognisesWhatTheAppWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var want []string
+	installed := 0
 	for _, a := range manifest.Assets {
 		paths, _ := a.ownedPaths(source)
 		for _, p := range paths {
@@ -278,11 +284,11 @@ func TestMoveModelsRecognisesWhatTheAppWrites(t *testing.T) {
 			} else {
 				writeMoveFile(t, p, "m")
 			}
-			want = append(want, p)
+			installed++
 		}
 	}
-	if len(want) == 0 {
-		t.Fatal("the default manifest names no assets")
+	if installed < 3 {
+		t.Fatalf("the default manifest names only %d asset paths", installed)
 	}
 	writeMoveFile(t, filepath.Join(source, "old-tier-nobody-uses", "model.onnx"), "unused")
 	plan, err := PlanModelsMove(context.Background(), cfg, filepath.Join(t.TempDir(), "fast"), MoveOptions{})
@@ -294,7 +300,7 @@ func TestMoveModelsRecognisesWhatTheAppWrites(t *testing.T) {
 		names = append(names, e.Name)
 	}
 	if strings.Join(names, ",") != "old-tier-nobody-uses" {
-		t.Fatalf("unrecognized = %v, want only the unused tier (installed %d asset paths)", names, len(want))
+		t.Fatalf("unrecognized = %v, want only the unused tier (installed %d asset paths)", names, installed)
 	}
 }
 
@@ -412,4 +418,60 @@ func TestMoveModelsRetryNamesWhereThePartialCopyIs(t *testing.T) {
 	if _, err := os.Lstat(link); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// A drive that cannot hold links (exFAT, FAT32) gets no link at the old
+// path. The settings must still be repointed, though the old path is gone by
+// the time they are saved.
+func TestMoveModelsRepointsOnADriveWithoutLinks(t *testing.T) {
+	cfg, source, root := moveFixture(t)
+	dest := filepath.Join(root, "fast", "models")
+	moveHooks.symlink = func(string, string) error { return errors.New("operation not supported") }
+	result, err := MoveModels(context.Background(), cfg, dest, MoveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Copied {
+		t.Fatal("expected a same-drive rename")
+	}
+	assertMoved(t, cfg, source, dest, result)
+}
+
+// The installer lock a move takes is created if missing, and taken away
+// again: a folder the user never had a decider folder in gets none.
+func TestMoveModelsLeavesNoLockFileBehind(t *testing.T) {
+	t.Run("moved", func(t *testing.T) {
+		cfg, _, root := moveFixture(t)
+		dest := filepath.Join(root, "fast", "models")
+		if _, err := MoveModels(context.Background(), cfg, dest, copyOpts(t, nil)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Lstat(filepath.Join(dest, "decider")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("the move left its lock folder in the new folder: %v", err)
+		}
+	})
+	t.Run("cancelled", func(t *testing.T) {
+		cfg, source, root := moveFixture(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		opts := copyOpts(t, nil)
+		moveHooks.afterCopy = func(context.Context, string) { cancel() }
+		if _, err := MoveModels(ctx, cfg, filepath.Join(root, "fast", "models"), opts); !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v", err)
+		}
+		if _, err := os.Lstat(filepath.Join(source, "decider")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("the move left its lock folder in the old folder: %v", err)
+		}
+	})
+	t.Run("an existing lock is kept", func(t *testing.T) {
+		cfg, _, root := moveFixture(t)
+		cfgSource := cfg.ModelsDir
+		writeMoveFile(t, filepath.Join(cfgSource, "decider", "native-install.lock"), "")
+		dest := filepath.Join(root, "fast", "models")
+		if _, err := MoveModels(context.Background(), cfg, dest, copyOpts(t, nil)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Lstat(filepath.Join(dest, "decider", "native-install.lock")); err != nil {
+			t.Fatalf("the user's own install lock was removed: %v", err)
+		}
+	})
 }
