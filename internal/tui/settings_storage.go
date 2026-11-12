@@ -287,7 +287,11 @@ func finishStorageMove(s *storageState, say func(string)) {
 	}
 	job := s.job
 	s.stop()
-	if job == nil || job.state.CompareAndSwap(movePending, moveAbandoned) {
+	if job == nil {
+		return
+	}
+	if job.state.CompareAndSwap(movePending, moveAbandoned) {
+		signal.Stop(job.hangup)
 		return
 	}
 	select {
