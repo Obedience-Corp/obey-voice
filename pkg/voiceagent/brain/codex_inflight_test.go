@@ -114,8 +114,8 @@ func captureLogs(t *testing.T) *capturedLogs {
 }
 
 func (l *capturedLogs) Enabled(context.Context, slog.Level) bool { return true }
-func (l *capturedLogs) WithAttrs([]slog.Attr) slog.Handler        { return l }
-func (l *capturedLogs) WithGroup(string) slog.Handler             { return l }
+func (l *capturedLogs) WithAttrs([]slog.Attr) slog.Handler       { return l }
+func (l *capturedLogs) WithGroup(string) slog.Handler            { return l }
 func (l *capturedLogs) Handle(_ context.Context, r slog.Record) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
