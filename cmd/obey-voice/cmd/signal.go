@@ -65,3 +65,34 @@ func signalContext() (context.Context, context.CancelFunc) {
 
 	return ctx, cancel
 }
+
+// interruptContext is signalContext under parent, for work whose cleanup must
+// not be cut short by the force-quit timer: only a second signal exits 130.
+// The returned stop unregisters the handler.
+func interruptContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	sigCh := make(chan os.Signal, 2)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
+	go func() {
+		defer signal.Stop(sigCh)
+		select {
+		case <-sigCh:
+			cancel()
+		case <-done:
+			return
+		}
+		select {
+		case <-sigCh:
+			os.Exit(130)
+		case <-done:
+		}
+	}()
+	var once sync.Once
+	return ctx, func() {
+		once.Do(func() {
+			close(done)
+			cancel()
+		})
+	}
+}
