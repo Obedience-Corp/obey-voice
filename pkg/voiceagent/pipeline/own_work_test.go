@@ -317,7 +317,9 @@ func TestOwnWorkDoesNotNeedAConfiguredWorker(t *testing.T) {
 		t.Fatalf("result = %+v", done)
 	}
 	b := &harnessFixtureBrain{routedProjectionBrain: &routedProjectionBrain{fakeBrain: &fakeBrain{chunks: []string{"Sure."}}}}
-	b.classify = func(context.Context, brain.LiveRouteRequest) (brain.StreamResult, error) { return brain.StreamResult{}, nil }
+	b.classify = func(context.Context, brain.LiveRouteRequest) (brain.StreamResult, error) {
+		return brain.StreamResult{}, nil
+	}
 	h.p.Brain = b
 	if _, err := h.p.startBrainStream(t.Context(), "how are you", brain.StreamOptions{ToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsRouteOnly}); err != nil {
 		t.Fatal(err)
@@ -399,5 +401,36 @@ func TestExperimentalWorkKeepsAHostedPersonasWorkOnTheLocalWorker(t *testing.T) 
 	h.a.ReplaceWorker(h.configured, local, nil)
 	if got, own := h.a.ownWork(); !own || got.VoiceWorkerProvider != "ollama" || got.VoiceWorkerModel != "persona:14b" {
 		t.Fatalf("an Ollama persona's own work under the experimental inbox = %v %+v", own, got)
+	}
+}
+
+func TestOwnWorkOnASharedHistoryBackendGetsOnlyThePersonasShare(t *testing.T) {
+	live := museSparkBrain(t)
+	share := []brain.Turn{{Role: "user", Content: "Mira, plan the trip."}, {Role: "assistant", Content: "Planning it.", PersonaID: "mira", PersonaDisplayName: "Mira"}}
+	canonical := append([]brain.Turn{
+		{Role: "user", Content: "Ember, my PIN is PRIVATE-4711."},
+		{Role: "assistant", Content: "Checking.", PersonaID: "ember", PersonaDisplayName: "Ember", ToolCalls: []brain.TurnToolCall{{ID: "c1", Name: "read_file", Arguments: `{"path":"TOOLCALLSECRET"}`}}},
+		{Role: "tool", ToolName: "read_file", ToolCallID: "c1", Content: "TOOLRESULTSECRET"},
+	}, share...)
+	if err := live.ImportContinuity(brain.ContinuitySnapshot{Canonical: canonical, Working: share}); err != nil {
+		t.Fatal(err)
+	}
+	h := newOwnHarness(t, &config.Config{ActivePersona: "mira", BrainProvider: "muse-spark", MuseSparkModel: "spark", VoiceToolsEnabled: true}, nil)
+	h.p.Brain = live
+	h.spawn("Book it.", "")
+	h.awaitFinished(t)
+	if got := h.builtConfigs(); len(got) != 1 || got[0].VoiceWorkerProvider != "muse-spark" || got[0].VoiceWorkerModel != "spark" {
+		t.Fatalf("own backend = %+v", got)
+	}
+	h.own.mu.Lock()
+	brief := h.own.briefs[0]
+	h.own.mu.Unlock()
+	if !strings.Contains(brief, "Mira, plan the trip.") {
+		t.Fatalf("brief lacks the share:\n%s", brief)
+	}
+	for _, secret := range []string{"PRIVATE-4711", "TOOLCALLSECRET", "TOOLRESULTSECRET", "Checking."} {
+		if strings.Contains(brief, secret) {
+			t.Fatalf("brief carries %q:\n%s", secret, brief)
+		}
 	}
 }
