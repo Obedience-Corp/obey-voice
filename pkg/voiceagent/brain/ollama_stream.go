@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -39,7 +40,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			return nil, fmt.Errorf("failed input is no longer retryable; send a new request")
 		}
 		retrySkills = o.inputRetry.skillContext
-		opts.ToolsEnabled, opts.RouterToolsPolicy = o.inputRetry.toolsEnabled, o.inputRetry.routerPolicy
+		opts.ToolsEnabled, opts.RouterToolsPolicy, opts.RouteJSON = o.inputRetry.toolsEnabled, o.inputRetry.routerPolicy, o.inputRetry.routeJSON
 	}
 	o.inputRetry = nil
 	skillCtx := retrySkills
@@ -102,6 +103,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		hadTools := false
 		routedChat := false
 		routeRetried := false
+		jsonChat := false
 		recoveryAttempts := 0
 		var continuation string
 		repetitionRetry := false
@@ -121,6 +123,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil, opts)
+			if jsonChat {
+				// The JSON route request ended at this same point, so the
+				// reply re-reads only this line.
+				appendToNewestUser(messages, "\n"+chatRouteAnswerInstruction)
+			}
 			if imageResultRetry {
 				messages[0].Content += "\n\n" + systemPrompt(o.cfg, "image-result-repair", nil)
 			}
@@ -222,6 +229,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// Post-chat answers to image requests also wait for claim validation.
 			// Ordinary chat and worker responses retain incremental streaming.
 			routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
+			// json_route decides on the reply's own messages without tools. A
+			// retry after a rejected decision is the existing recovery call.
+			jsonRouting := routing && opts.RouteJSON && !imageResultRetry && jsonRouteEligible(tools, messages)
 			checkImageResult := routing || imageResultRetry || (routedChat && imageResultNoun.MatchString(input))
 			var routeText []string
 			emitText := func(text string) error {
@@ -237,11 +247,14 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			chat := o.chat
 			if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && !imageResultRetry {
 				chat = o.chatRouteRecovery
+			} else if jsonRouting {
+				chat = o.chatJSONRoute
 			}
 			requestCtx, cancelRequest := ctx, context.CancelFunc(func() {})
 			if finalAnswer {
 				requestCtx, cancelRequest = rounds.answerContext(ctx)
 			}
+			roundStarted := time.Now()
 			err := chat(requestCtx, req, func(resp api.ChatResponse) error {
 				if resp.Done {
 					prefillTokens, genTokens = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
@@ -296,8 +309,19 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return nil
 			})
 			cancelRequest()
+			var routeRejected error
+			if jsonRouting && errors.Is(err, errRouteRejected) {
+				routeRejected, err = err, nil
+			}
 			if err == nil && routing && !responseComplete {
 				err = fmt.Errorf("routing response ended before completion")
+			}
+			if jsonRouting && ctx.Err() == nil {
+				failure := routeRejected
+				if failure == nil {
+					failure = err
+				}
+				sess.reportRoute(toolCalls, failure, time.Since(roundStarted))
 			}
 			heldSpeak, heldThink := split.FlushSplit()
 			if heldThink != "" {
@@ -449,7 +473,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				hadTools = true
 				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
 					tier, reason := routeMetadata(toolCalls)
-					if sess.onStart != nil || sess.onEnd != nil {
+					if !jsonRouting && (sess.onStart != nil || sess.onEnd != nil) {
 						decision := sess.describe("route", kind, "")
 						begun := time.Now()
 						if sess.onStart != nil {
@@ -481,6 +505,12 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					// so it needs no further routing decision. Image requests
 					// still wait for claim validation before speech.
 					routedChat = true
+					if jsonRouting {
+						// The reply reuses this round's messages; the private
+						// decision stays out of history.
+						jsonChat = true
+						continue
+					}
 					skillCtx += "\n" + chatRouteAnswerInstruction
 				}
 				// Add the assistant's tool-calling message to history.

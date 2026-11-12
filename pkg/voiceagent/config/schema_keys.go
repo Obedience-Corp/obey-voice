@@ -522,9 +522,9 @@ func toolKeys() []KeySpec {
 			Help: "Lets her read files and run commands on this Mac for you. Off makes tool-capable models look broken.",
 		},
 		{
-			Key: "voice_router_tools", Type: TypeEnum, Default: "route_only", Enum: []string{"route_only", "legacy"},
+			Key: "voice_router_tools", Type: TypeEnum, Default: "route_only", Enum: []string{"route_only", "json_route", "legacy"},
 			Group: GroupTools, Title: "Live router tools",
-			Help: "route_only exposes only the route tool on the microphone brain; legacy keeps the full tool list for comparison.",
+			Help: "route_only exposes only the route tool on the microphone brain; json_route (experimental, Ollama) asks for the same route as JSON without tools so routing and the reply share one prompt prefix; legacy keeps the full tool list for comparison.",
 		},
 		{
 			Key: "voice_work_narration", Type: TypeEnum, Default: "status_only", Enum: []string{"status_only", "milestones"},

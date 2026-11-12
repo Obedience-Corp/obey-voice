@@ -46,9 +46,7 @@ func (o *OllamaBrain) chatRouteRecovery(ctx context.Context, original *api.ChatR
 		req.Options = map[string]any{}
 	}
 	req.Options["temperature"] = 0
-	if limit, ok := req.Options["num_predict"].(int); !ok || limit <= 0 || limit > 256 {
-		req.Options["num_predict"] = 256
-	}
+	capNumPredict(req.Options, routeDecisionTokens)
 	req.Messages = []api.Message{{Role: "system", Content: systemPrompt(o.cfg, "route-recovery", nil) + "\n" + route.Description}}
 	for _, msg := range original.Messages {
 		if msg.Role != "system" {
@@ -74,9 +72,7 @@ func (o *OllamaBrain) chatRouteRecovery(ctx context.Context, original *api.ChatR
 	}
 	args, decodeErr := decodeRouteRecovery(response, route.Parameters)
 	if decodeErr != nil {
-		decodeErr = fmt.Errorf("%w (done=%t, reason=%q, generated_tokens=%d, reply_bytes=%d, json_complete=%t, thinking_bytes=%d, tool_calls=%d)",
-			decodeErr, response.Done, response.DoneReason, response.EvalCount,
-			len(response.Message.Content), json.Valid([]byte(response.Message.Content)), len(response.Message.Thinking), len(response.Message.ToolCalls))
+		decodeErr = fmt.Errorf("%w %s", decodeErr, routeDecisionDiagnostics(response))
 	}
 	// Forward usage/completion metadata even for a rejected decision, but never
 	// expose the private JSON (or a server's unexpected prose) as speech.
@@ -97,6 +93,54 @@ func (o *OllamaBrain) chatRouteRecovery(ctx context.Context, original *api.ChatR
 		return fmt.Errorf("recover missing route: %w", decodeErr)
 	}
 	return nil
+}
+
+// routeDecisionTokens caps a private route decision with thinking off.
+const routeDecisionTokens = 256
+
+// capNumPredict sets num_predict to limit unless the request already carries a
+// smaller positive limit, in any numeric form a caller may have used.
+func capNumPredict(options map[string]any, limit int) {
+	var n float64
+	switch v := options["num_predict"].(type) {
+	case int:
+		n = float64(v)
+	case int32:
+		n = float64(v)
+	case int64:
+		n = float64(v)
+	case uint:
+		n = float64(v)
+	case uint32:
+		n = float64(v)
+	case uint64:
+		n = float64(v)
+	case float32:
+		n = float64(v)
+	case float64:
+		n = v
+	case json.Number:
+		f, err := v.Float64()
+		if err != nil {
+			options["num_predict"] = limit
+			return
+		}
+		n = f
+	default:
+		options["num_predict"] = limit
+		return
+	}
+	if !(n >= 1 && n <= float64(limit)) {
+		options["num_predict"] = limit
+	}
+}
+
+// routeDecisionDiagnostics describes a rejected route reply without repeating
+// its text.
+func routeDecisionDiagnostics(response api.ChatResponse) string {
+	return fmt.Sprintf("(done=%t, reason=%q, generated_tokens=%d, reply_bytes=%d, json_complete=%t, thinking_bytes=%d, tool_calls=%d)",
+		response.Done, response.DoneReason, response.EvalCount,
+		len(response.Message.Content), json.Valid([]byte(response.Message.Content)), len(response.Message.Thinking), len(response.Message.ToolCalls))
 }
 
 func decodeRouteRecovery(response api.ChatResponse, schema api.ToolFunctionParameters) (args api.ToolCallFunctionArguments, resultErr error) {

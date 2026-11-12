@@ -21,6 +21,21 @@ const (
 	RouterToolsLegacy RouterToolsPolicy = "legacy"
 )
 
+// JSONRouteSetting is the voice_router_tools value that keeps the route_only
+// policy but has a live Ollama brain ask for the route as JSON, without tools,
+// so the routing request and the reply share one prompt prefix. It is a
+// setting, not a policy.
+const JSONRouteSetting string = "json_route"
+
+// JSONRouteEnabled reports whether a voice_router_tools value selects json_route.
+func JSONRouteEnabled(raw string) bool {
+	return strings.ToLower(strings.TrimSpace(raw)) == JSONRouteSetting
+}
+
+func onlyRouteTool(tools api.Tools) bool {
+	return len(tools) == 1 && tools[0].Function.Name == "route"
+}
+
 const missingRouteInstruction = "Select the route before answering. Call route with kind=spawn for actions, finding or attaching files, and external lookups; kind=chat for conversation; kind=narrate for reading aloud. Do not substitute a promise or claimed result for the tool call."
 
 const chatRouteAnswerInstruction = "Routing is complete for this turn: chat. Now answer the user directly in character. Do not call route again or describe your reasoning or routing decision."
@@ -31,7 +46,7 @@ var unknownRouterToolsOnce sync.Once
 // Unknown values fail closed to route_only and log once.
 func NormalizeRouterToolsPolicy(raw string) RouterToolsPolicy {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", string(RouterToolsRouteOnly):
+	case "", string(RouterToolsRouteOnly), JSONRouteSetting:
 		return RouterToolsRouteOnly
 	case string(RouterToolsLegacy):
 		return RouterToolsLegacy
