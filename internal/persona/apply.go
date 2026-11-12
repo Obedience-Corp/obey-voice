@@ -263,6 +263,7 @@ func UpdateStack(id string, brain Brain, tts TTS) (*Profile, error) {
 		WorkerTiers: workerTiers.Clone(),
 		Provider:    strings.TrimSpace(brain.Provider),
 		Model:       strings.TrimSpace(brain.Model),
+		Work:        strings.ToLower(strings.TrimSpace(brain.Work)),
 		Worker: Worker{
 			Provider:   strings.TrimSpace(brain.Worker.Provider),
 			Model:      strings.TrimSpace(brain.Worker.Model),

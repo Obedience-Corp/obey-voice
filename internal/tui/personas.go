@@ -79,6 +79,9 @@ type personasModel struct {
 	workerModel       string
 	workerTiers       *config.WorkerTierOverrides
 	workerOllamaHost  string
+	// work is who runs this persona's background work: "" (its backend's
+	// default), "own" or "worker".
+	work string
 	// Model row picker: discovered models per provider + async scan state.
 	// See personas_models.go; brainModelInput stays the selected value.
 	brainModels personaModelPicker

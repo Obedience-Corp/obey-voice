@@ -155,7 +155,7 @@ func TestWorkerModelHandoffUsesPinnedModelInStatusAndFrozenAdmission(t *testing.
 	}{
 		{
 			name:     "inherited claude",
-			cfg:      config.Config{BrainProvider: "claude", VoiceWorkerModel: "claude-sonnet"},
+			cfg:      config.Config{BrainProvider: "claude", PersonaWork: config.WorkWorker, VoiceWorkerModel: "claude-sonnet"},
 			provider: "claude",
 			model:    "claude-sonnet",
 		},

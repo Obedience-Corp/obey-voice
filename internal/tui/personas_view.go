@@ -237,6 +237,9 @@ func (m personasModel) stackLines() []string {
 	}
 	workerProvider := stackWorkerProviders()[m.workerProviderIdx]
 	workerRow := row(formRowWorkerProvider, "Worker", "‹ "+workerProvider+" ›")
+	if m.effectiveWork() == config.WorkOwn {
+		workerRow += dimStyle.Render("  (unused while this persona does its own work)")
+	}
 	if workerProvider == stackDefaultLabel && m.cfg != nil && !config.WorkerSelected(m.cfg) && (m.cfg.VoiceWorkers == nil || m.cfg.VoiceWorkers.Mode != config.WorkerModeTiered) {
 		// "(default)" is only honest when Settings actually holds a choice.
 		workerRow += dimStyle.Render("  (Settings has no worker yet — inherits " + config.VoiceWorkerProviderOf(m.cfg) + ")")
@@ -253,6 +256,7 @@ func (m personasModel) stackLines() []string {
 	lines := []string{
 		brainRow,
 		row(formRowBrainModel, "Brain model", m.stackModelRowValue()),
+		row(formRowWork, "Work", m.workRowValue()),
 		workerRow,
 		workerModelRow,
 		row(formRowTTSProvider, "TTS", "‹ "+ttsProvider+" ›"),
@@ -263,7 +267,7 @@ func (m personasModel) stackLines() []string {
 	if detail := strings.TrimSpace(m.voiceDetail()); detail != "" {
 		// Under the Voice row: what the catalog says about the pick, or why
 		// the catalog is short. Width-bounded so a description never wraps.
-		lines = insertAfter(lines, 5, "  "+dimStyle.Render(ansi.Truncate(detail, max(m.formInnerWidth()-4, 10), "…")))
+		lines = insertAfter(lines, formRowVoice-formRowBrainProvider, "  "+dimStyle.Render(ansi.Truncate(detail, max(m.formInnerWidth()-4, 10), "…")))
 	}
 	return lines
 }

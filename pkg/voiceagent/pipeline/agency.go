@@ -36,7 +36,9 @@ type Agency struct {
 	worker      brain.Provider
 	cfg         *config.Config
 	planFactory func(context.Context, *config.Config, *config.WorkerPlan) (brain.Provider, error)
-	narrator    *Narrator
+	// ownFactory builds the persona's own backend for work it does itself.
+	ownFactory func(context.Context, *config.Config) (brain.Provider, error)
+	narrator   *Narrator
 	// work folds a job's tool calls into rows: what "what's happening" answers
 	// with, and what milestone narration speaks one line of.
 	work *workfold.Tracker
@@ -80,6 +82,7 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		worker:         worker,
 		cfg:            cloneConfig(cfg),
 		planFactory:    brain.NewPlannedWorker,
+		ownFactory:     newOwnWorker,
 		work:           workfold.New(),
 		workerThreads:  make(map[string][]brain.Turn),
 		workerOrigins:  make(map[string]workerOrigin),
@@ -171,20 +174,39 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		task = "background task"
 	}
 	experimental := a.workEnabled()
-	worker, jobCfg, plan, workerErr := a.admitWorker(d.Tier)
-	if workerErr != nil {
-		a.emitRouteDecision(d, "rejected", "", workerErr.Error())
-		a.pipeline.emit(events.Error{Stage: "job", Message: workerErr.Error()})
-		return
+	// A persona doing its own work runs on its own backend; tiers and the
+	// configured worker apply only to work handed to the worker.
+	jobCfg, own := a.ownWork()
+	var worker brain.Provider
+	var plan *config.WorkerPlan
+	if !own {
+		var workerErr error
+		worker, jobCfg, plan, workerErr = a.admitWorker(d.Tier)
+		if workerErr != nil {
+			a.emitRouteDecision(d, "rejected", "", workerErr.Error())
+			a.pipeline.emit(events.Error{Stage: "job", Message: workerErr.Error()})
+			return
+		}
 	}
 	if experimental && plan == nil && providerName(jobCfg) != "ollama" {
 		a.emitRouteDecision(d, "rejected", "", "Experimental work requires a local worker; paid and unknown providers are disabled.")
 		a.pipeline.emit(events.Error{Stage: "job", Message: "Experimental work requires a local worker; paid and unknown providers are disabled."})
 		return
 	}
+	// The job sends the persona's share to its hosted backend; the user is
+	// told first, as before any other request to it.
+	if own && brain.IsHosted(providerName(jobCfg)) {
+		if err := a.pipeline.announceHosted(ctx, metrics); err != nil {
+			a.emitRouteDecision(d, "rejected", "", err.Error())
+			return
+		}
+	}
 	jobID := ""
 	var key work.JobKey
 	admission := frozenWorkerConfig(jobCfg, plan)
+	if own {
+		admission["work"] = config.WorkOwn
+	}
 	if c, scope := a.workAuthority(); c != nil {
 		jobID = newWorkID()
 		var err error
@@ -200,8 +222,11 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	}
 	brief := spawnBrief(history, d.Transcript, briefPersonaID(metrics, jobCfg))
 	run := a.workerRun(brief, worker, jobCfg)
-	if plan != nil {
+	switch {
+	case plan != nil:
 		run = a.plannedWorkerRun(brief, jobCfg, plan)
+	case own:
+		run = a.ownWorkRun(brief, jobCfg)
 	}
 	refs := chatmedia.Input(ctx)
 	if len(refs) > 0 {

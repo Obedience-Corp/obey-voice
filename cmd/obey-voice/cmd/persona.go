@@ -232,6 +232,9 @@ func printPersonaShow(cmd *cobra.Command, r *personaResultJSON) {
 		fmt.Fprintf(out, "  brain.provider  %s\n", p.Brain.Provider)
 		fmt.Fprintf(out, "  brain.model     %s\n", p.Brain.Model)
 	}
+	if p.Brain.Work != "" {
+		fmt.Fprintf(out, "  brain.work      %s\n", p.Brain.Work)
+	}
 	fmt.Fprintf(out, "  tts.provider    %s\n", p.TTS.Provider)
 	fmt.Fprintf(out, "  tts.voice       %s\n", p.TTS.Voice)
 	if p.TTS.Tier != "" {

@@ -94,6 +94,7 @@ type CatalogIssue struct {
 //	brain:
 //	  provider: ollama          # or claude, grok; empty = app default
 //	  model: qwen2.5:14b        # provider-specific model id; empty = app default
+//	  work: own                 # own or worker; empty = own off Ollama, worker on it
 //	  worker:                   # the model that runs spawned background jobs
 //	    provider: ollama        # or claude, grok; empty = app default
 //	    model: qwen3:8b         # empty = that provider's usual default
@@ -104,7 +105,10 @@ type Brain struct {
 	WorkerTiers *config.WorkerTierOverrides `yaml:"worker_tiers,omitempty" json:"worker_tiers,omitempty"`
 	Provider    string                      `yaml:"provider,omitempty" json:"provider"`
 	Model       string                      `yaml:"model,omitempty" json:"model"`
-	Worker      Worker                      `yaml:"worker,omitempty" json:"worker"`
+	// Work is who runs the persona's background work: "own" on its own
+	// backend and model, "worker" on the configured worker.
+	Work   string `yaml:"work,omitempty" json:"work"`
+	Worker Worker `yaml:"worker,omitempty" json:"worker"`
 }
 
 // Worker is the persona's async job brain. It is a peer of the live brain,
@@ -174,6 +178,9 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("persona profile %q: %w", p.ID, err)
 	}
 	if err := p.Brain.WorkerTiers.Validate(); err != nil {
+		return fmt.Errorf("persona %q: %w", p.ID, err)
+	}
+	if err := config.ValidateWork(p.Brain.Work); err != nil {
 		return fmt.Errorf("persona %q: %w", p.ID, err)
 	}
 	if err := p.Audio.Validate(); err != nil {
@@ -444,6 +451,7 @@ func applyBrain(cfg *config.Config, b Brain) {
 		config.ApplyOllamaDefaults(cfg)
 	}
 	cfg.PersonaWorkerTiers = b.WorkerTiers.Clone()
+	cfg.PersonaWork = strings.ToLower(strings.TrimSpace(b.Work))
 	applyWorker(cfg, b.Worker)
 	if model := strings.TrimSpace(b.Model); model != "" {
 		config.SetBrainModel(cfg, cfg.BrainProvider, model)

@@ -69,11 +69,14 @@ func (p *Pipeline) startBrainStream(ctx context.Context, input string, opts brai
 	}
 	cfg := p.Agency.currentConfig()
 	available := cfg != nil && !cfg.VoiceWorkersDisabled
-	if tiers := opts.WorkerTiers; tiers != nil {
-		available = available && (tiers.Simple || tiers.Medium || tiers.Complex)
-	} else {
-		_, workerErr := p.Agency.workerProvider()
-		available = available && workerErr == nil
+	// A persona doing its own work needs no configured worker or tier.
+	if _, own := p.Agency.ownWork(); !own {
+		if tiers := opts.WorkerTiers; tiers != nil {
+			available = available && (tiers.Simple || tiers.Medium || tiers.Complex)
+		} else {
+			_, workerErr := p.Agency.workerProvider()
+			available = available && workerErr == nil
+		}
 	}
 	opts.HarnessRouting = &brain.HarnessRouting{WorkersAvailable: available, ContextLimited: contextLimited}
 	return p.Brain.ThinkStream(ctx, input, opts)
