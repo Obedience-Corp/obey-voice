@@ -25,17 +25,11 @@ import (
 // CLI's output shape with a reply that carries a speaker label.
 func installCLIFixture(t *testing.T, provider string) string {
 	t.Helper()
-	binary, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
+	binary := fixtureBinary(t)
 	name := map[string]string{"grok": "grok", "cursor": "cursor-agent"}[provider]
-	dir := t.TempDir()
 	script := "#!/bin/sh\nexec '" + binary + "' -test.run='^TestCLITranscriptFixtureProcess$' -- \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	log := filepath.Join(dir, "requests.log")
+	dir := fixtureScriptDir(t, name, map[string]string{name: script})
+	log := filepath.Join(t.TempDir(), "requests.log")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("OBEY_CLI_FIXTURE", provider)
 	t.Setenv("OBEY_CLI_FIXTURE_LOG", log)

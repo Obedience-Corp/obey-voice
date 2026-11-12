@@ -91,6 +91,18 @@ const (
 // can shorten it.
 var providerStopTimeout = providerSettleTimeout
 
+// SetProviderStopTimeoutForTest replaces providerStopTimeout for the duration
+// of t, so tests in other packages need not wait it out.
+func SetProviderStopTimeoutForTest(t interface {
+	Helper()
+	Cleanup(func())
+}, d time.Duration) {
+	t.Helper()
+	saved := providerStopTimeout
+	providerStopTimeout = d
+	t.Cleanup(func() { providerStopTimeout = saved })
+}
+
 const providerStoppingInfo = "Waiting for the last reply to finish stopping before answering."
 
 // serialProvider is a provider that cannot take a request while an earlier

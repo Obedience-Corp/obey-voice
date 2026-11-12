@@ -11,14 +11,15 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 // stoppingClaude is the Claude provider reporting a stopped request on its
-// own schedule: success at once, or its result only after a delay.
+// own schedule: success at once, or its result only once release closes.
 type stoppingClaude struct {
 	*brain.Brain
 	succeed          bool
-	delay            time.Duration
+	release          chan struct{}
 	active, overlaps atomic.Int32
 }
 
@@ -45,7 +46,7 @@ func (b *stoppingClaude) ThinkStream(ctx context.Context, input string, opts bra
 				return
 			}
 			result = <-stream.Done
-			time.Sleep(b.delay)
+			<-b.release
 		}
 		b.active.Add(-1)
 		done <- result
@@ -88,7 +89,10 @@ func TestParkedClaudeSessionStillStoppingIsWaitedForBeforeReuse(t *testing.T) {
 	nova.Brain.Provider, nova.Brain.Model = "claude", ""
 	writeTestProfile(t, c.catalog.Dir, nova)
 	writeTestPrompt(t, c.base.PromptsDir, "nova", "You are {agent_name}.")
-	mira := &stoppingClaude{Brain: c.p.Brain.(*brain.Brain), delay: 1500 * time.Millisecond}
+	mira := &stoppingClaude{Brain: c.p.Brain.(*brain.Brain), release: make(chan struct{})}
+	var released sync.Once
+	release := func() { released.Do(func() { close(mira.release) }) }
+	t.Cleanup(release)
 	c.p.Brain = mira
 	c.say("Note that the vault code is cobalt.")
 	interruptStall(t, c)
@@ -104,6 +108,12 @@ func TestParkedClaudeSessionStillStoppingIsWaitedForBeforeReuse(t *testing.T) {
 	if c.p.Brain != mira {
 		t.Fatal("returning to Mira did not reuse its parked provider")
 	}
+	if n := mira.active.Load(); n != 1 {
+		t.Fatalf("Mira's stopped request is no longer ending (%d active)", n)
+	}
+	// It ends only after the next turn has started, so that turn has to wait.
+	timer := time.AfterFunc(200*time.Millisecond, release)
+	defer timer.Stop()
 	c.say("Go on.")
 	if n := mira.overlaps.Load(); n != 0 {
 		t.Fatalf("Mira's provider was used while its stopped request was still ending (%d overlaps)", n)
@@ -151,6 +161,7 @@ func (b *stuckClaude) ThinkStream(ctx context.Context, input string, opts brain.
 }
 
 func TestAbandonedClaudeRequestIsNeitherRecordedNorSeenLate(t *testing.T) {
+	pipeline.SetProviderStopTimeoutForTest(t, 100*time.Millisecond)
 	c := newClaudeConversation(t, 20)
 	b := &stuckClaude{Brain: c.p.Brain.(*brain.Brain), release: make(chan struct{}), ended: make(chan struct{})}
 	c.p.Brain = b

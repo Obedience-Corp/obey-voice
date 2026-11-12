@@ -13,17 +13,11 @@ import (
 // No login, network, audio hardware, or user configuration is used.
 func installCodexSelectorFixture(t *testing.T) string {
 	t.Helper()
-	binary, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
+	binary := fixtureBinary(t)
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 	script := "#!/bin/sh\nexec " + quote(binary) + " -test.run='^TestCodexSelectorAppServer$'\n"
-	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
-	log := filepath.Join(dir, "requests.jsonl")
+	dir := fixtureScriptDir(t, "codex", map[string]string{"codex": script})
+	log := filepath.Join(t.TempDir(), "requests.jsonl")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("OBEY_CODEX_SELECTOR_LOG", log)
 	return log
