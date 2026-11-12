@@ -397,7 +397,7 @@ func run() error {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	b, err := brain.NewOllama(&config.Config{BrainProvider: "ollama", OllamaHost: server.URL, OllamaModel: *model, OllamaNumCtx: 32768, OllamaNumBatch: 128, OllamaKeepAlive: "20m", Persona: "samantha", AgentName: "Samantha", WorkDir: tmp, PromptsDir: tmp})
+	b, err := brain.NewOllama(benchConfig(server.URL, *model, tmp, router))
 	if err != nil {
 		return err
 	}
@@ -455,6 +455,14 @@ func run() error {
 		}
 	}
 	return nil
+}
+
+// benchConfig is the speaking brain's config. The router comparison turns voice
+// tools on so the system prompt carries the live route guidance a real turn
+// has; the decision comparison keeps the prompt its recorded runs used.
+func benchConfig(host, model, dir string, router bool) *config.Config {
+	return &config.Config{BrainProvider: "ollama", OllamaHost: host, OllamaModel: model, OllamaNumCtx: 32768, OllamaNumBatch: 128,
+		OllamaKeepAlive: "20m", Persona: "samantha", AgentName: "Samantha", WorkDir: dir, PromptsDir: dir, VoiceToolsEnabled: router}
 }
 
 func runRouter(ctx context.Context, b *brain.OllamaBrain, rec *chatRecorder, cases []replayCase, warm replayCase, startRep, reps int, emit func(any) error) error {

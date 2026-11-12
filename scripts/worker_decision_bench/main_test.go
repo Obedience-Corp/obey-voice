@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -134,19 +136,27 @@ func TestSpeakingReplayCannotExecuteWorkerTool(t *testing.T) {
 // This checks the recording against a fake server, not routing quality.
 func TestRouterComparisonRecordsEachRequest(t *testing.T) {
 	dir := t.TempDir()
+	var mu sync.Mutex
+	var systems []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
 			fmt.Fprint(w, `{"models":[{"name":"fixture"}]}`)
 			return
 		}
 		var request struct {
-			Tools  []json.RawMessage `json:"tools"`
-			Format json.RawMessage   `json:"format"`
+			Tools    []json.RawMessage `json:"tools"`
+			Format   json.RawMessage   `json:"format"`
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 			return
 		}
+		mu.Lock()
+		systems = append(systems, request.Messages[0].Content)
+		mu.Unlock()
 		message := map[string]any{"role": "assistant", "content": "A compiler translates code."}
 		switch {
 		case len(request.Tools) > 0:
@@ -162,7 +172,8 @@ func TestRouterComparisonRecordsEachRequest(t *testing.T) {
 	var rec chatRecorder
 	proxy := localProxy(base, &calls, &rec)
 	defer proxy.Close()
-	b, err := brain.NewOllama(&config.Config{OllamaHost: proxy.URL, OllamaModel: "fixture", Persona: "samantha", WorkDir: dir, PromptsDir: dir, MaxHistory: 20})
+	cfg := benchConfig(proxy.URL, "fixture", dir, true)
+	b, err := brain.NewOllama(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,6 +195,15 @@ func TestRouterComparisonRecordsEachRequest(t *testing.T) {
 	}
 	if calls.Load() != 4 {
 		t.Fatalf("calls=%d", calls.Load())
+	}
+	// Both modes must see the live route guidance a real turn's prompt carries.
+	surface := strings.TrimSpace(brain.ToolSurfaceContext(cfg))
+	mu.Lock()
+	defer mu.Unlock()
+	for i, system := range systems {
+		if surface == "" || !strings.Contains(system, surface) {
+			t.Fatalf("request %d system prompt lacks the live route guidance", i)
+		}
 	}
 	for rep := range 2 {
 		if a, b := pairedModes(routerModes, 0, rep), pairedModes(routerModes, 0, rep+1); a[0] == b[0] {

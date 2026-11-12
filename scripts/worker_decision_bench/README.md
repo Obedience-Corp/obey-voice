@@ -66,6 +66,9 @@ Each sample lists its Ollama requests under `requests`, in order. `kind` is
 retry) or `plain` (the reply). Each carries Ollama's `prompt_eval_count`,
 `prompt_eval_ms`, `eval_count` and `total_ms` from the final response line.
 Compare `correct` for routing accuracy and the `plain` request's
-`prompt_eval_ms` for prompt-cache reuse. `prompt_eval_count` includes cached
-tokens on Ollama's llama.cpp server backend, so it does not show reuse.
+`prompt_eval_ms` for prompt-cache reuse. `prompt_eval_count` can include cached
+tokens (the llama.cpp server backend counts them in the Ollama source this
+repository builds against; the MLX runner is unchecked), so it may not show
+reuse. The speaking brain runs with voice tools on, so its system prompt carries
+the same live route guidance as a real turn in both modes.
 `-admission-only` does not apply to this comparison.

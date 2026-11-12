@@ -133,13 +133,13 @@ func spokenHistory(turns []Turn) []string {
 	return out
 }
 
-func newPromptedOllama(t *testing.T, srv *httptest.Server, think string) *OllamaBrain {
+func newPromptedOllama(t *testing.T, srv *httptest.Server, think, activePersona string) *OllamaBrain {
 	t.Helper()
 	home := t.TempDir()
 	t.Cleanup(skills.SetUserHomeDirForTest(func() (string, error) { return home, nil }))
 	o, err := NewOllama(&config.Config{OllamaHost: srv.URL, OllamaModel: "chat-model", OllamaNumCtx: 8192, OllamaNumBatch: 128,
-		OllamaThink: think, Persona: "samantha", AgentName: "Samantha", UserDisplayName: "Lance", WorkDir: t.TempDir(),
-		PromptsDir: t.TempDir(), MaxHistory: 20, VoiceToolsEnabled: true, VoiceRouterTools: JSONRouteSetting})
+		OllamaThink: think, Persona: "samantha", ActivePersona: activePersona, AgentName: "Samantha", UserDisplayName: "Lance",
+		WorkDir: t.TempDir(), PromptsDir: t.TempDir(), MaxHistory: 20, VoiceToolsEnabled: true, VoiceRouterTools: JSONRouteSetting})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,13 +159,23 @@ func jsonOf(t *testing.T, v any) string {
 // prefix. Everything Ollama renders ahead of the newest user text must be
 // byte-identical: no tools in either request, the same system message and
 // history, the same model, thinking setting and runner options. Only the
-// final message differs, after the text both requests share.
+// final message differs, after the text both requests share. A persona turn
+// carries skill context and the current-request reminder after the user's
+// words; the shared text must include them.
 func TestJSONRouteSharesThePromptPrefixWithTheReply(t *testing.T) {
-	for _, think := range []string{"false", "true"} {
-		t.Run("think="+think, func(t *testing.T) {
+	for _, tc := range []struct {
+		name, think, persona string
+		facts                []WorkerFact
+	}{
+		{"think off", "false", "", nil},
+		{"think on", "true", "", nil},
+		{"persona turn with active work", "false", "samantha", []WorkerFact{{ID: "job-1", Tier: config.WorkerTierSimple, State: "running"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			think := tc.think
 			fake := &jsonRouteFake{decide: fixedDecision(`{"kind":"chat"}`), answer: "Fair enough, Lance."}
-			o := newPromptedOllama(t, fake.server(t), think)
-			opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly, RouteJSON: true}
+			o := newPromptedOllama(t, fake.server(t), think, tc.persona)
+			opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly, RouteJSON: true, WorkerFacts: tc.facts}
 			for _, input := range []string{"Hi there, how was your day?", "Tell me something about cats.", "What did I ask first?"} {
 				before := len(fake.sent())
 				turn := runRoutedTurn(t, o, input, opts)
@@ -222,6 +232,10 @@ func TestJSONRouteSharesThePromptPrefixWithTheReply(t *testing.T) {
 					!strings.Contains(base, input) || jsonOf(t, routeLast.Images) != jsonOf(t, replyLast.Images) {
 					t.Fatalf("final messages diverge before the shared text:\nroute=%q\nreply=%q", routeLast.Content, replyLast.Content)
 				}
+				if reminder := currentRequestReminder(o.cfg, opts); tc.persona != "" &&
+					(reminder == "" || !strings.HasSuffix(base, reminder) || !strings.Contains(base, "<active_work>")) {
+					t.Fatalf("shared text should end with the skill context and reminder: %q", base)
+				}
 				t.Logf("shared: %d messages, %d content bytes (system %d); reply re-reads %d bytes; route request adds %d bytes",
 					last, shared+len(base), len(reply.Messages[0].Content), len(replyLast.Content)-len(base), len(routeLast.Content)-len(base))
 			}
@@ -236,7 +250,7 @@ func TestJSONRouteSharesThePromptPrefixWithTheReply(t *testing.T) {
 // user message. The two requests share at most the system text.
 func TestRouteOnlyRoundsDifferAheadOfTheHistory(t *testing.T) {
 	fake := &jsonRouteFake{native: map[string]string{"kind": "chat"}, answer: "Fair enough, Lance."}
-	o := newPromptedOllama(t, fake.server(t), "false")
+	o := newPromptedOllama(t, fake.server(t), "false", "")
 	opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly}
 	runRoutedTurn(t, o, "Hi there, how was your day?", opts)
 	before := len(fake.sent())

@@ -640,8 +640,8 @@ Say hello to the user.
 
 With voice tools on, a live Ollama turn first decides whether the request is
 conversation (`chat`), work for a worker (`spawn`) or reading aloud (`narrate`).
-Other brains decide the same question with a private classifier, and this
-setting does not change them.
+Other brains decide the same question with a private classifier; for them
+`json_route` behaves exactly like `route_only`.
 
 | Value | What a live Ollama turn does |
 | --- | --- |
@@ -689,8 +689,10 @@ for the case format. Compare per mode:
 - **Routing accuracy**: the share of samples with `correct: true`, and any `error`.
 - **The reply's prompt read**: in each sample's `requests`, the `plain` entry is
   the reply. Compare its `prompt_eval_ms` between modes. Do not rely on
-  `prompt_eval_count`: on Ollama's llama.cpp server backend it includes tokens
-  served from the cache, so it barely moves when the prefix is reused.
+  `prompt_eval_count`: it can include tokens served from the cache (in the
+  Ollama source this repository builds against, the llama.cpp server backend
+  reports cached plus newly read tokens; the MLX runner is unchecked), so it
+  may barely move when the prefix is reused.
 - **Latency**: `first_text_ms` and `elapsed_ms`.
 
 Keep `route_only` unless routing accuracy holds on the models you use.
