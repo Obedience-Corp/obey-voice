@@ -24,6 +24,9 @@ type ProviderInfo struct {
 	// WorkerModels contains verified completion+tools models from the worker's
 	// Ollama endpoint. Nil means unavailable; an empty slice means none qualify.
 	WorkerModels []string
+	// ModelsPending marks a provider whose model list was left out of a
+	// startup scan and is read on demand with DiscoverProvider.
+	ModelsPending bool
 }
 
 // ForWorkers preserves other providers' catalogs and restricts Ollama choices
@@ -45,6 +48,24 @@ const defaultProbeTimeout = 3 * time.Second
 // DiscoverProviders probes the system for available brain providers.
 func DiscoverProviders(cfg *config.Config) []ProviderInfo {
 	return DiscoverProvidersContext(context.Background(), cfg)
+}
+
+// DiscoverProvidersStartup is the scan the TUI runs on launch. It skips the
+// Claude CLI's model listing, which starts the CLI and costs up to a second;
+// the provider is reported with ModelsPending set, and DiscoverProvider reads
+// the list when a screen needs it.
+func DiscoverProvidersStartup(cfg *config.Config) []ProviderInfo {
+	ctx := context.Background()
+	specs := brain.Providers()
+	out := make([]ProviderInfo, 0, len(specs))
+	for _, spec := range specs {
+		if spec.Name == "claude" {
+			out = append(out, claudeWithoutModels(cfg))
+			continue
+		}
+		out = append(out, probeProvider(ctx, cfg, spec.Name))
+	}
+	return out
 }
 
 // DiscoverProvidersContext is DiscoverProviders with caller-owned cancellation:
@@ -97,10 +118,22 @@ func probeProvider(ctx context.Context, cfg *config.Config, name string) Provide
 // cannot answer (too old, signed out, too slow) leaves "default" and the saved
 // model. Nothing is cached: what "default" resolves to can change.
 func discoverClaude(parent context.Context, cfg *config.Config) ProviderInfo {
+	return claudeProviderInfo(parent, cfg, true)
+}
+
+// claudeWithoutModels reports Claude's availability and the saved model without
+// starting the CLI.
+func claudeWithoutModels(cfg *config.Config) ProviderInfo {
+	info := claudeProviderInfo(context.Background(), cfg, false)
+	info.ModelsPending = info.Available
+	return info
+}
+
+func claudeProviderInfo(parent context.Context, cfg *config.Config, list bool) ProviderInfo {
 	info := ProviderInfo{Name: "claude", Models: []string{"default"}}
 	if _, err := exec.LookPath("claude"); err == nil {
 		info.Available = true
-		if parent.Err() == nil {
+		if list && parent.Err() == nil {
 			ctx, cancel := context.WithTimeout(parent, probeTimeout)
 			reported, err := brain.ClaudeModels(ctx, cfg)
 			cancel()
