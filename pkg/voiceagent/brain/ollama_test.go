@@ -19,6 +19,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 func drainStream(t *testing.T, stream *Stream) (chunks, thinking string) {
@@ -1922,5 +1923,51 @@ func TestLoadHistoryKeepsCompactSummary(t *testing.T) {
 	})
 	if len(o.history) != 2 || o.history[0].Content != "Earlier we discussed the build." {
 		t.Fatalf("history = %+v, want compact summary kept", o.history)
+	}
+}
+
+func TestThinkStreamLiveRouterRouteOutcomeCarriesElapsed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"route","arguments":{"kind":"spawn"}}}]},"done":true}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	var started ToolCall
+	var ended []ToolResult
+	stream, err := o.ThinkStream(t.Context(), "create a file", StreamOptions{
+		ToolsEnabled:      true,
+		RouterToolsPolicy: RouterToolsRouteOnly,
+		OnToolStart: func(call ToolCall) {
+			started = call
+			time.Sleep(5 * time.Millisecond)
+		},
+		OnToolEnd: func(r ToolResult) { ended = append(ended, r) },
+	})
+	if err != nil {
+		t.Fatalf("ThinkStream() error = %v", err)
+	}
+	_, _ = drainStream(t, stream)
+	if res := <-stream.Done; res.Err != nil || res.Route != "spawn" {
+		t.Fatalf("result = %+v", res)
+	}
+	if len(ended) != 1 {
+		t.Fatalf("OnToolEnd calls = %d, want 1", len(ended))
+	}
+	got := ended[0]
+	if got.ToolCall.Name != started.Name || got.Preview != "spawn" {
+		t.Fatalf("result = %+v, started = %+v", got, started)
+	}
+	if got.Outcome == nil || got.Outcome.Status != events.ToolOutcomeSucceeded || got.Outcome.OutputPreview != "spawn" {
+		t.Fatalf("outcome = %+v", got.Outcome)
+	}
+	if got.Elapsed < 5*time.Millisecond || got.Outcome.Elapsed != got.Elapsed {
+		t.Fatalf("Elapsed = %v, Outcome.Elapsed = %v, want equal and covering the start callback", got.Elapsed, got.Outcome.Elapsed)
 	}
 }

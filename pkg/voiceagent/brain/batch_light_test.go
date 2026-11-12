@@ -71,3 +71,24 @@ func TestNewOllamaBatchLight(t *testing.T) {
 		})
 	}
 }
+
+func TestNewOllamaBatchLightWarnsOnInvalidKeepAlive(t *testing.T) {
+	var buf strings.Builder
+	prev := keepAliveWarnOut
+	keepAliveWarnOut = &buf
+	keepAliveWarned.Clear()
+	t.Cleanup(func() { keepAliveWarnOut = prev; keepAliveWarned.Clear() })
+
+	var bodies []map[string]any
+	srv := lightStub(t, []string{"small:latest"}, "cleaned", &bodies)
+	bp, err := NewOllamaBatchLight(&config.Config{OllamaHost: srv.URL, OllamaModel: "small", OllamaKeepAlive: "forever"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bp.Transform(context.Background(), BatchRequest{SystemPrompt: "sys", Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `invalid ollama_keep_alive "forever"`) {
+		t.Fatalf("no warning for the light batch path: %q", buf.String())
+	}
+}
