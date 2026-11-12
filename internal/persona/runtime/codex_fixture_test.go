@@ -13,10 +13,7 @@ import (
 // No login, network, audio hardware, or user configuration is used.
 func installCodexSelectorFixture(t *testing.T) string {
 	t.Helper()
-	binary, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
+	binary := fixtureBinary(t)
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 	script := "#!/bin/sh\nexec " + quote(binary) + " -test.run='^TestCodexSelectorAppServer$'\n"
 	dir := fixtureScriptDir(t, "codex", map[string]string{"codex": script})

@@ -44,10 +44,7 @@ const (
 // json shape with a reply that carries the speaker label Claude sometimes adds.
 func installClaudeFixture(t *testing.T) string {
 	t.Helper()
-	binary, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
+	binary := fixtureBinary(t)
 	script := "#!/bin/sh\nexec '" + binary + "' -test.run='^TestClaudeSelectorFixtureProcess$' -- \"$@\"\n"
 	dir := fixtureScriptDir(t, "claude", map[string]string{"claude": script})
 	log := filepath.Join(t.TempDir(), "claude.jsonl")

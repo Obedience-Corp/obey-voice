@@ -31,10 +31,7 @@ const (
 // re-run this test binary, record the prompt they receive, and return a fixed reply.
 func installMixedProviderBinaries(t *testing.T) string {
 	t.Helper()
-	binary, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
+	binary := fixtureBinary(t)
 	scripts := map[string]string{}
 	for _, name := range []string{"muse", "obey"} {
 		scripts[name] = "#!/bin/sh\nOBEY_MIXED_FIXTURE=" + name + " exec '" + binary + "' -test.run='^TestMixedProviderFixtureProcess$' -- \"$@\"\n"
