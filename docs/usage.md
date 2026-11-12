@@ -190,7 +190,8 @@ Windows) nothing is lost, but something may be left behind:
   folder that is gone; the models are then in the destination, and
   `obey-voice config set models_dir <destination>` points at them.
 - after the save: the old folder, set aside as `<folder>.obey-voice-old-<time>`
-  and perhaps partly deleted. The new folder is complete and in use.
+  and perhaps partly deleted, or on the same drive a link at the old path. The
+  new folder is complete and in use.
 
 **The move is refused, and nothing is changed, when:**
 
