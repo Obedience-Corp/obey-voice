@@ -146,9 +146,10 @@ kept. On another drive the files are copied and flushed to disk, then
 the old folder. Only then is the old folder set aside, as
 `<folder>.obey-voice-old-<time>` next to where it was, and every file in it is
 read again and compared, by content, with what was copied. Anything that
-changed is copied again. This check reads the whole old folder once more:
-seconds on an internal SSD, about a minute for 20 GB on a USB SSD, several
-minutes on a hard disk. The set-aside folder is deleted only if a second look
+changed is copied again. This check reads the whole old folder once more, so
+it takes about as long as reading that much from the old drive (hashing runs
+at about 3 GB/s on an Apple silicon Mac, faster than most drives read). The
+set-aside folder is deleted only if a second look
 finds nothing still changing. Copies keep each file's permissions and
 modification time, not extended attributes or ACLs.
 
