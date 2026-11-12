@@ -38,6 +38,8 @@ Each JSON case has this shape:
 }
 ```
 
+A case without `want_work` expects chat; a `chat` route has an empty `route`.
+
 Fixtures deliberately have no persona changes. An unexpected address result
 ends that observation and cannot authorize a fast route. Exact control phrases,
 live host policy changes, interruption, real worker admission and audio require
@@ -49,3 +51,60 @@ prompt/cache changes. Both modes still call the real addressee resolver; no
 proposal is adopted and no speaking model request is issued. Its manifest
 explicitly marks that narrower scope. Use `-start-rep N` with a fresh output file
 to extend a retained comparison; do not overwrite or silently merge raw runs.
+
+## Router comparison
+
+`just bench worker-decision -compare router -cases /path/to/cases.json -out /path/to/new.jsonl -model <model>`
+runs each case once with the live `route` tool (`route_only`) and once with the
+tools-free JSON route (`json_route`), using the same case file. It makes no
+addressee or decision-model call and needs no decision endpoint, so every
+recorded request belongs to the turn. The order of the two modes alternates per
+case and pass, as above.
+
+Each sample lists its Ollama requests under `requests`, in order. `kind` is
+`tools` (the route tool was offered), `schema` (a JSON route or the recovery
+retry) or `plain` (the reply). Two `schema` requests in a `json_route` sample
+mean the first decision was rejected and the recovery call ran. Each carries
+Ollama's `prompt_eval_count`, `prompt_eval_ms`, `eval_count` and `total_ms`
+from the final response line. Compare `correct` for routing accuracy and the
+`plain` request's `prompt_eval_ms` for prompt-cache reuse. `prompt_eval_count`
+can include cached tokens (the llama.cpp server backend counts them in the
+Ollama source this repository builds against; the MLX runner is unchecked), so
+it may not show reuse. The speaking brain runs with voice tools on, so its
+system prompt carries the same live route guidance as a real turn in both modes.
+`-admission-only` does not apply to this comparison.
+
+`-think true` (or another `ollama_think` value) runs the speaking model with
+thinking on, and the manifest records it. Without it thinking is off. The first
+run on real models must include at least one model with `-think true`:
+`json_route` keeps the turn's thinking setting on its schema-constrained route
+request, and nothing has shown how a thinking model behaves there (see
+"`json_route` with thinking models" in `docs/configuration.md`).
+
+### Run order and its bias
+
+Each sample records `order`: `first` or `second` within its case's pair. The
+run ends with a `router_summary` line, printed too, that gives each mode's
+means at each position: elapsed time over samples without an error, and first
+text and the reply's `prompt_eval_ms` over the samples that spoke a reply.
+`balanced` is false when `-reps` is odd.
+
+The two modes run back to back on one case with the same system prompt,
+history and user message, and nothing clears Ollama's cache between them. The
+second mode's first request can therefore reuse the prefix the first mode just
+read, so `second` samples start warmer than `first` samples. With three or
+more cases the first mode starts after a different case or the warmup, sharing
+at most the system prompt. With one or two, the rotation starts a pass on the
+case the previous pass ended with, so a `first` sample can follow the same case.
+Alternating the order cancels this in the overall means only with an even
+`-reps`, and only on average. Compare modes at the same position, `first`
+against `first`, rather than overall means. Even then neither position matches
+a real conversation, where the previous turn already read the same history.
+The reply's `prompt_eval_ms` is the least affected figure, since the request
+before it is the same mode's route request, but it is not immune.
+
+The Ollama API in the source this repository builds against has no call that
+clears the prompt cache short of unloading the model.
+Unloading between modes would make every first request pay a model load and an
+empty cache, which no voice turn does, so the bench does not do it. The warmup
+runs `route_only` only.

@@ -257,21 +257,20 @@ func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
 	}
 }
 
+// Every registered provider shares a conversation by one of the verified
+// projections; any other is refused rather than silently replaced.
 func TestSelectorRefusesUnverifiedProvider(t *testing.T) {
-	for _, provider := range []string{"grok", "cursor"} {
-		t.Run(provider, func(t *testing.T) {
-			scout := testProfile("scout", "Scout", "scout")
-			scout.Brain.Provider = provider
-			f := newSelectorTestFixture(t, testProfile("ember", "Ember", "ember"), scout)
-			defer f.close(t)
-			_, err := f.selector.Select(t.Context(), "scout", "explicit")
-			want := `persona "scout": provider "` + provider + `" has no verified shared history projection`
-			if err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("err = %v, want %q", err, want)
-			}
-			if got := f.selector.Snapshot().PersonaID; got != "ember" {
-				t.Fatalf("selection moved to %q", got)
-			}
-		})
+	const provider = "fixture-unverified"
+	scout := testProfile("scout", "Scout", "scout")
+	scout.Brain.Provider = provider
+	f := newSelectorTestFixture(t, testProfile("ember", "Ember", "ember"), scout)
+	defer f.close(t)
+	_, err := f.selector.Select(t.Context(), "scout", "explicit")
+	want := `persona "scout": provider "` + provider + `" has no verified shared history projection`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if got := f.selector.Snapshot().PersonaID; got != "ember" {
+		t.Fatalf("selection moved to %q", got)
 	}
 }

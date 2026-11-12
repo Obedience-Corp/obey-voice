@@ -226,7 +226,7 @@ func brainKeys() []KeySpec {
 	return []KeySpec{
 		{Key: "group_participation_enabled", Type: TypeBool, Default: false, Group: GroupBrain, Title: "Group participation (experimental)", Help: "Allow contextual group invitations on local Ollama. Requires a model that reliably distinguishes invitations from mentions. Applies to the next conversation."},
 		{Key: "group_participation_mode", Type: TypeEnum, Default: "invited", Enum: []string{"off", "invited", "open"}, Group: GroupBrain, Title: "Agent participation", Help: "Invited allows group discussion when asked. Open additionally allows one useful contribution after an ordinary reply. Applies to new conversations; /participation changes the current conversation."},
-		{Key: "hosted_persona_sharing", Type: TypeEnum, Default: "from_invite", Enum: []string{"from_invite", "whole_conversation"}, Group: GroupBrain, Title: "Hosted persona sharing", Help: "What a persona on Claude, Codex, Muse Spark or Obey receives of a conversation shared with other personas; a persona on Grok or Cursor only holds a conversation started on it. from_invite sends only what is said from when the persona is first addressed, plus the task and result of each background job it started earlier, on any backend. whole_conversation sends the spoken lines from the start; tool calls, tool output and attachment names are never sent. Read when a persona is first addressed; a running conversation applies a change only after settings reload, and only to personas first addressed afterwards."},
+		{Key: "hosted_persona_sharing", Type: TypeEnum, Default: "from_invite", Enum: []string{"from_invite", "whole_conversation"}, Group: GroupBrain, Title: "Hosted persona sharing", Help: "What a persona on a hosted backend (Claude, Codex, Cursor, Grok, Muse Spark or Obey) receives of a conversation shared with other personas. from_invite sends only what is said from when the persona is first addressed, plus the task and result of each background job it started earlier, on any backend. whole_conversation sends the spoken lines from the start; tool calls, tool output and attachment names are never sent. Read when a persona is first addressed; a running conversation applies a change only after settings reload, and only to personas first addressed afterwards."},
 		{
 			Key: "brain_provider", Type: TypeEnum, Default: "ollama", Enum: brainProviderEnum(),
 			Group: GroupBrain, Title: "Model provider",
@@ -522,9 +522,9 @@ func toolKeys() []KeySpec {
 			Help: "Lets her read files and run commands on this Mac for you. Off makes tool-capable models look broken.",
 		},
 		{
-			Key: "voice_router_tools", Type: TypeEnum, Default: "route_only", Enum: []string{"route_only", "legacy"},
+			Key: "voice_router_tools", Type: TypeEnum, Default: "route_only", Enum: []string{"route_only", "json_route", "legacy"},
 			Group: GroupTools, Title: "Live router tools",
-			Help: "route_only exposes only the route tool on the microphone brain; legacy keeps the full tool list for comparison.",
+			Help: "route_only exposes only the route tool on the microphone brain; json_route (experimental, Ollama) asks for the same route as JSON without tools so routing and the reply share one prompt prefix; legacy keeps the full tool list for comparison.",
 		},
 		{
 			Key: "voice_work_narration", Type: TypeEnum, Default: "status_only", Enum: []string{"status_only", "milestones"},

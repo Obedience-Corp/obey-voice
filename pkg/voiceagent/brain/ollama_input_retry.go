@@ -29,6 +29,7 @@ type ollamaInputRetry struct {
 	skillContext string
 	toolsEnabled bool
 	routerPolicy RouterToolsPolicy
+	routeJSON    bool
 }
 
 func (o *OllamaBrain) retryHistoryHash() [32]byte {
@@ -53,5 +54,5 @@ func (o *OllamaBrain) retainFailedInput(ctx context.Context, input string, opts 
 		return
 	}
 	o.inputRetry = &ollamaInputRetry{InputRetry: InputRetry{Input: input, Envelope: events.ResponseFromContext(ctx), BindingRevision: opts.InputBindingRevision},
-		history: o.retryHistoryHash(), prompt: o.fullSystemPrompt, skillContext: skillContext, toolsEnabled: opts.ToolsEnabled, routerPolicy: opts.RouterToolsPolicy}
+		history: o.retryHistoryHash(), prompt: o.fullSystemPrompt, skillContext: skillContext, toolsEnabled: opts.ToolsEnabled, routerPolicy: opts.RouterToolsPolicy, routeJSON: opts.RouteJSON}
 }

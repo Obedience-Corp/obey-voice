@@ -158,8 +158,8 @@ func (s *Selector) RestoreNotices(told, whole []string) {
 
 // noticeScope says what the provider is about to receive, from the persona's
 // share of the conversation rather than from the setting alone, and whether
-// that is the whole conversation. A provider that can only hold a conversation
-// started on it receives all of it.
+// that is the whole conversation. A provider without a verified share is
+// assumed to receive all of it.
 func (s *Selector) noticeScope(personaID, provider, label string) (string, bool) {
 	if !slices.Contains(sessionCatchUpProviders, provider) && !slices.Contains(sharedHistoryProviders, provider) {
 		return fmt.Sprintf("This conversation is sent to %s.", label), true

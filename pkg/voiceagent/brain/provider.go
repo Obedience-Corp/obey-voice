@@ -92,6 +92,10 @@ type StreamOptions struct {
 	// ToolsEnabled is true. Empty keeps the full worker list; the microphone
 	// path passes route_only explicitly.
 	RouterToolsPolicy RouterToolsPolicy
+	// RouteJSON has a route_only Ollama turn decide its route with a tools-free
+	// JSON request on the reply's own messages (voice_router_tools: json_route).
+	// Other providers ignore it.
+	RouteJSON bool
 }
 
 func (o StreamOptions) workerBudget() *WorkerBudget {
@@ -250,7 +254,19 @@ func KeepsPersonaSession(p Provider) bool {
 	return ok
 }
 
-func (*Brain) keepsPersonaSession() {}
+func (*Brain) keepsPersonaSession()       {}
+func (*GrokBrain) keepsPersonaSession()   {}
+func (*CursorBrain) keepsPersonaSession() {}
+
+// ParksSession reports whether the host parks a provider while another
+// persona speaks, instead of retiring it, and takes it up again when that
+// persona is addressed: a provider keeping its own session, or one keeping
+// the shared history in a native session that resumes with only the lines it
+// has not been sent.
+func ParksSession(p Provider) bool {
+	_, ok := p.(interface{ parksSession() })
+	return ok || KeepsPersonaSession(p)
+}
 
 // ContextHistoryProvider exposes the bounded model view for compaction only.
 // Its projected text is never an authority for persisted speaker identity.

@@ -544,29 +544,36 @@ func normalizeTTSProvider(provider string) string {
 	return strings.ToLower(strings.TrimSpace(provider))
 }
 
-// PersistTTS writes the profile's TTS selection into the live config file so
-// persona use and settings stay aligned.
-func PersistTTS(p *Profile) error {
+// ttsWrites lists the config keys that carry the profile's TTS selection.
+func ttsWrites(p *Profile) []config.KeyWrite {
 	if p == nil {
 		return nil
 	}
-	if provider := strings.TrimSpace(p.TTS.Provider); provider != "" {
-		if err := config.SetAndSave("tts_provider", provider); err != nil {
-			return err
-		}
+	var writes []config.KeyWrite
+	provider := strings.TrimSpace(p.TTS.Provider)
+	if provider != "" {
+		writes = append(writes, config.KeyWrite{Key: "tts_provider", Value: provider})
 	}
 	voice := strings.TrimSpace(p.TTS.Voice)
 	if voice == "" {
-		return nil
+		return writes
 	}
-	// Need effective provider after optional profile provider.
-	provider := strings.TrimSpace(p.TTS.Provider)
 	if provider == "" {
 		if v, ok := config.Get("tts_provider").(string); ok {
 			provider = v
 		}
 	}
-	return config.SetAndSave(config.TTSVoiceKeyFor(provider), voice)
+	return append(writes, config.KeyWrite{Key: config.TTSVoiceKeyFor(provider), Value: voice})
+}
+
+// PersistTTS writes the profile's TTS selection into the live config file so
+// persona use and settings stay aligned.
+func PersistTTS(p *Profile) error {
+	writes := ttsWrites(p)
+	if len(writes) == 0 {
+		return nil
+	}
+	return config.SetKeyFileValues(writes)
 }
 
 // ActiveID returns the configured active persona id, defaulting to DefaultID.

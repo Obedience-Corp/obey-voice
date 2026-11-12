@@ -74,6 +74,9 @@ type turnMetrics struct {
 	bargeIn      time.Time
 	speechStop   bool
 	speechCancel context.CancelFunc
+	stopSource   StopSource
+	stopAt       time.Time
+	stopCount    int
 	interrupted  bool
 	degraded     bool
 	// toolLeakLines counts lines the voice gate stripped from speech this
@@ -110,6 +113,9 @@ type turnMetrics struct {
 	// thinkLeak counts think tags that still reached filterThink after the
 	// brain split. Must stay 0 on the product path.
 	thinkLeak int
+	// onAudible runs when a standalone line's audio starts, before
+	// SpeakingStarted.
+	onAudible func()
 }
 
 // Speech has its own lifetime: typing stops output while the model continues
@@ -126,13 +132,33 @@ func (m *turnMetrics) speechContext(ctx context.Context) (context.Context, conte
 	return ctx, cancel
 }
 
-func (m *turnMetrics) stopSpeech() {
+func (m *turnMetrics) stopSpeech(source StopSource) {
 	m.bargeInMu.Lock()
+	if m.stopCount == 0 {
+		m.stopSource, m.stopAt = source, time.Now()
+	}
+	m.stopCount++
 	m.speechStop = true
 	cancel := m.speechCancel
 	m.bargeInMu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+}
+
+// speechStopRecord runs on the turn goroutine, which owns playbackStart.
+func (m *turnMetrics) speechStopRecord() *events.SpeechStop {
+	m.bargeInMu.Lock()
+	defer m.bargeInMu.Unlock()
+	if m.stopCount == 0 {
+		return nil
+	}
+	return &events.SpeechStop{
+		Source:      m.stopSource.Name,
+		Count:       m.stopCount,
+		BeforeAudio: m.playbackStart.IsZero() || m.stopAt.Before(m.playbackStart),
+		KeyRunes:    m.stopSource.KeyRunes,
+		KeyPaste:    m.stopSource.KeyPaste,
 	}
 }
 
@@ -191,6 +217,7 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		MedianSegmentChars:      medianSegmentChars(m.segments),
 		ShortBoundaries:         shortSegmentBoundaries(m.segments),
 		Segments:                segmentMetrics(m.segments),
+		SpeechStop:              m.speechStopRecord(),
 	}
 }
 

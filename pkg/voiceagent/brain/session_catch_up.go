@@ -5,6 +5,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // SessionCatchUp is the part of the host transcript that a provider keeping
@@ -16,9 +18,10 @@ type SessionCatchUp struct {
 }
 
 // maxCatchUpBytes bounds the conversation record one request carries: half
-// the harness request context bound. It does not bound the request or its
-// results; a prompt past maxInlinePromptBytes is piped on stdin, so no
-// prompt becomes one argument over the 128 KiB Linux allows.
+// the harness request context bound. It does not bound the rest of the
+// request. Claude takes a prompt past maxInlinePromptBytes on stdin; Grok and
+// Cursor take theirs as one argument, so their record also gets no more than
+// the rest of the request leaves on a command line (argPrompt).
 const maxCatchUpBytes = harnessRouteContextBytes / 2
 
 // catchUpBudget also keeps a replay under half the session fuse when one is
@@ -33,45 +36,51 @@ func (b *Brain) catchUpBudget() int {
 }
 
 // prepareCatchUp starts a fresh session when the turns the live session has
-// not seen do not fit one request, each long line already shortened. The
-// request then carries a bounded replay. A summary request keeps the live
-// session, which holds what the summary must cover.
+// not seen do not fit one request.
 func (b *Brain) prepareCatchUp(c *SessionCatchUp, summary bool) {
-	if c == nil || b.sessionID == "" || summary {
-		return
+	if catchUpOverflows(providerClaude, c, b.sessionID != "", summary, b.speakerNames, b.catchUpBudget()) {
+		b.dropSession()
 	}
-	budget := b.catchUpBudget()
-	if c.Seen >= 0 && c.Seen <= len(c.Turns) {
-		if _, fits := catchUpRecords(c.Turns[c.Seen:], b.speakerNames, budget, budget/2); fits {
-			return
-		}
-	}
-	fmt.Fprintf(os.Stderr, "obey-voice: claude catch-up does not fit one request; starting a fresh session from a bounded replay\n")
-	b.dropSession()
 }
 
-// catchUpPrompt renders what this request carries as conversation record: the
-// unseen turns into a live session, a compaction summary and the turns after
-// it, or a bounded replay into a fresh session. Turns left out are counted in
-// a marker, and a shortened line says so in its own record.
-func (b *Brain) catchUpPrompt(c *SessionCatchUp) string {
-	budget := b.catchUpBudget()
+// catchUpOverflows reports whether the turns a live session has not seen do
+// not fit one request, each long line already shortened, so the request has to
+// start a fresh session and carry a bounded replay. A summary request keeps the
+// live session, which holds what the summary must cover.
+func catchUpOverflows(provider string, c *SessionCatchUp, live, summary bool, names SpeakerNames, budget int) bool {
+	if c == nil || !live || summary {
+		return false
+	}
+	if c.Seen >= 0 && c.Seen <= len(c.Turns) {
+		if _, fits := catchUpRecords(c.Turns[c.Seen:], names, budget, budget/2); fits {
+			return false
+		}
+	}
+	fmt.Fprintf(os.Stderr, "obey-voice: %s catch-up does not fit one request; starting a fresh session from a bounded replay\n", provider)
+	return true
+}
+
+// renderCatchUp renders what a request carries as conversation record: the
+// unseen turns into a live session, a compaction summary (seed) and the turns
+// after it, or a bounded replay into a fresh session. Turns left out are
+// counted in a marker, and a shortened line says so in its own record.
+func renderCatchUp(cfg *config.Config, c *SessionCatchUp, live bool, seed *Turn, names SpeakerNames, budget int) string {
 	lineBudget := budget / 2
 	turns := c.Turns
 	var summary []string
-	if seen := c.Seen >= 0 && c.Seen <= len(turns); seen && b.sessionID != "" {
+	if seen := c.Seen >= 0 && c.Seen <= len(turns); seen && live {
 		turns = turns[c.Seen:]
-	} else if seen && b.seed != nil {
+	} else if seen && seed != nil {
 		turns = turns[c.Seen:]
-		summary = []string{boundedRecord(*b.seed, b.speakerNames, lineBudget)}
+		summary = []string{boundedRecord(*seed, names, lineBudget)}
 		budget -= len(summary[0]) + 1
 	}
-	records, _ := catchUpRecords(turns, b.speakerNames, budget, lineBudget)
+	records, _ := catchUpRecords(turns, names, budget, lineBudget)
 	omitted := len(turns) - len(records)
 	if len(summary) == 0 && len(records) == 0 && omitted == 0 {
 		return ""
 	}
-	parts := append([]string{systemPrompt(b.cfg, "daemon-history", nil)}, summary...)
+	parts := append([]string{systemPrompt(cfg, "daemon-history", nil)}, summary...)
 	if omitted > 0 {
 		parts = append(parts, fmt.Sprintf("[%d earlier conversation records omitted]", omitted))
 	}

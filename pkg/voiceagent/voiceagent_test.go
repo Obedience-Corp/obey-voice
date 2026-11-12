@@ -153,6 +153,38 @@ func TestNewIgnoresWorkerErrWhenWorkerIsSet(t *testing.T) {
 	t.Fatal("injected worker was not used; WorkerErr should have been ignored")
 }
 
+// json_route reaches the pipeline as the route_only policy plus the JSON flag.
+func TestNewWiresTheRouterSetting(t *testing.T) {
+	for _, tc := range []struct {
+		setting string
+		policy  brain.RouterToolsPolicy
+		json    bool
+	}{
+		{"", brain.RouterToolsRouteOnly, false},
+		{"route_only", brain.RouterToolsRouteOnly, false},
+		{"json_route", brain.RouterToolsRouteOnly, true},
+		{"legacy", brain.RouterToolsLegacy, false},
+	} {
+		t.Run(tc.setting, func(t *testing.T) {
+			agent, cleanup, err := New(context.Background(), Options{
+				Config:   &config.Config{AgentName: "Test", VoiceToolsEnabled: true, VoiceRouterTools: tc.setting},
+				Events:   events.NewBus(),
+				Brain:    &stubBrain{},
+				Worker:   &recordingInjectedWorker{reply: "ok"},
+				TextOnly: true,
+				Silent:   true,
+			})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			defer cleanup()
+			if agent.RouterToolsPolicy != tc.policy || agent.RouteJSON != tc.json {
+				t.Fatalf("policy=%q json=%v, want %q %v", agent.RouterToolsPolicy, agent.RouteJSON, tc.policy, tc.json)
+			}
+		})
+	}
+}
+
 func TestNewAcceptsFullyInjectedProviders(t *testing.T) {
 	bus := events.NewBus()
 	fakeBrain := &stubBrain{}

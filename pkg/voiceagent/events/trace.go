@@ -74,6 +74,8 @@ func TraceOf(event Event) *TraceContext {
 		return e.Trace
 	case JobFinished:
 		return e.Trace
+	case JobResultDelivered:
+		return e.Trace
 	case JobQueued:
 		return e.Trace
 	case JobStarted:
@@ -165,6 +167,9 @@ func AttributeTrace(event Event, trace TraceContext) Event {
 		e.Trace = &trace
 		return e
 	case JobFinished:
+		e.Trace = &trace
+		return e
+	case JobResultDelivered:
 		e.Trace = &trace
 		return e
 	case JobQueued:
@@ -270,6 +275,8 @@ func SourceWorkScope(event Event) (runtime, session, epoch string, ok bool) {
 	switch e := event.(type) {
 	case JobFinished:
 		scope = e.Scope
+	case JobResultDelivered:
+		scope = e.Scope
 	case WorkStateChanged:
 		scope = e.Snapshot.Scope
 	case WorkDelivery:
@@ -300,6 +307,8 @@ func SourceJobID(event Event) string {
 	case JobStarted:
 		return e.ID
 	case JobFinished:
+		return e.ID
+	case JobResultDelivered:
 		return e.ID
 	case JobFailed:
 		return e.ID

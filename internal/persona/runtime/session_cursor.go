@@ -1,11 +1,14 @@
 package personaruntime
 
 import (
+	"fmt"
+	"os"
 	"slices"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // sessionShareStart is where a provider keeping its own session begins to
@@ -70,16 +73,36 @@ func answeredBy(personaID string) func(brain.Turn) bool {
 // belongs to a persona selected but never addressed, so it starts again where
 // it is; so does one from another backend. A provider keeping the shared
 // history on a hosted backend (hostedShare) holds its share from the moment
-// it is selected, so for it only an answer shows it was addressed.
-func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn, handoff, hostedShare bool) brain.PersonaContext {
+// it is selected, so for it only an answer shows it was addressed. It also
+// reports whether the persona lost its place: it held part of turns on
+// provider, but its cursor no longer matches them.
+func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn, handoff, hostedShare bool) (brain.PersonaContext, bool) {
 	if cursor, ok := s.transcript.session(personaID, turns); ok && cursorProvider(cursor) == provider {
 		from := cursor.Session.From
 		if (!hostedShare && cursor.Through > from) || slices.ContainsFunc(turns[from:], answeredBy(personaID)) {
-			return cursor
+			return cursor, false
 		}
 	}
+	held, ok := s.transcript.heldCursor(personaID)
+	lost := ok && cursorProvider(held) == provider && held.Through > held.Session.From && !held.Matches(turns) && len(turns) > 0
 	from := sessionShareStart(turns, handoff, s.restored.inheritedConversation(personaID, provider, turns), s.sharesWholeConversation())
-	return brain.SessionContext(turns, brain.SessionCursor{From: from, Provider: provider}, from)
+	return brain.SessionContext(turns, brain.SessionCursor{From: from, Provider: provider}, from), lost
+}
+
+// lostPlace tells the user that personaID's session lost its place in the
+// conversation. It is an info line: never spoken, never recorded in the
+// conversation and never sent to a model.
+func (s *Selector) lostPlace(personaID string) {
+	name := personaID
+	if profile, err := s.opts.Catalog.Load(personaID); err == nil && strings.TrimSpace(profile.DisplayName) != "" {
+		name = profile.DisplayName
+	}
+	message := fmt.Sprintf("%s lost its place in the conversation; its session receives only what is said from now on.", name)
+	if p := s.opts.Pipeline; p != nil && p.Events != nil {
+		p.Events.Emit(events.Info{Message: message})
+		return
+	}
+	fmt.Fprintln(os.Stderr, "obey-voice: "+message)
 }
 
 // withSessions returns contexts with every persona's session cursor added for

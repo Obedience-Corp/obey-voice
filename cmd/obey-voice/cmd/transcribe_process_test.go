@@ -18,6 +18,19 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/transcription/protocol"
 )
 
+// transcribeBinaryDir holds the built CLI. No test owns it, so TestMain removes
+// it; without that every run of this package left a 45 MB folder in the temp
+// directory.
+var transcribeBinaryDir string
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if transcribeBinaryDir != "" {
+		_ = os.RemoveAll(transcribeBinaryDir)
+	}
+	os.Exit(code)
+}
+
 // buildTranscribeBinary builds the real CLI once per test binary. Everything
 // the process-level scenarios assert (stdout is only JSONL, diagnostics are on
 // stderr, the exit status) is a property of the process, not of a function.
@@ -26,6 +39,7 @@ var buildTranscribeBinary = sync.OnceValues(func() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	transcribeBinaryDir = dir
 	out := filepath.Join(dir, "obey-voice")
 	cmd := exec.Command("go", "build", "-o", out, "github.com/Obedience-Corp/obey-voice/cmd/obey-voice")
 	cmd.Stderr = os.Stderr

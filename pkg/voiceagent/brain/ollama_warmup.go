@@ -117,5 +117,10 @@ func (o *OllamaBrain) warmupTools(delegation *delegation.Runtime) api.Tools {
 	if delegation != nil && delegation.Enabled() {
 		sess.delegation = delegation
 	}
-	return sess.tools()
+	tools := sess.tools()
+	// json_route turns send no tools, so neither does their warmup.
+	if JSONRouteEnabled(o.cfg.VoiceRouterTools) && onlyRouteTool(tools) {
+		return nil
+	}
+	return tools
 }

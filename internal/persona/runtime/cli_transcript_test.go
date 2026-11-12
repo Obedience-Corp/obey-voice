@@ -2,8 +2,10 @@ package personaruntime
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,20 +22,29 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
 
-// installCLIFixture puts a fake grok or cursor-agent executable on PATH. It
-// re-runs this test binary, logs each request's arguments, and answers in the
-// CLI's output shape with a reply that carries a speaker label.
-func installCLIFixture(t *testing.T, provider string) string {
+// installCLIFixture puts fake grok and cursor-agent executables on PATH. They
+// re-run this test binary, log each request, and answer in the CLI's output
+// shape with a reply that carries a speaker label. Both log to the same file.
+func installCLIFixture(t *testing.T) string {
 	t.Helper()
 	binary := fixtureBinary(t)
-	name := map[string]string{"grok": "grok", "cursor": "cursor-agent"}[provider]
-	script := "#!/bin/sh\nexec '" + binary + "' -test.run='^TestCLITranscriptFixtureProcess$' -- \"$@\"\n"
-	dir := fixtureScriptDir(t, name, map[string]string{name: script})
-	log := filepath.Join(t.TempDir(), "requests.log")
+	scripts := map[string]string{}
+	for provider, name := range map[string]string{"grok": "grok", "cursor": "cursor-agent"} {
+		scripts[name] = "#!/bin/sh\nOBEY_CLI_FIXTURE=" + provider + " exec '" + binary + "' -test.run='^TestCLITranscriptFixtureProcess$' -- \"$@\"\n"
+	}
+	dir := fixtureScriptDir(t, "cli", scripts)
+	log := filepath.Join(t.TempDir(), "requests.jsonl")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("OBEY_CLI_FIXTURE", provider)
 	t.Setenv("OBEY_CLI_FIXTURE_LOG", log)
 	return log
+}
+
+// cliRequest is one grok or cursor-agent fixture invocation: the prompt, the
+// session it resumed and the one it answered in, and the persona its system
+// prompt introduces, when the request carries one.
+type cliRequest struct {
+	Provider, Prompt, Format, Resume, Session, Persona string
+	PID                                                int
 }
 
 func TestCLITranscriptFixtureProcess(t *testing.T) {
@@ -48,25 +59,66 @@ func TestCLITranscriptFixtureProcess(t *testing.T) {
 			break
 		}
 	}
-	request := strings.Join(args, " ")
+	req := cliRequest{Provider: provider, PID: os.Getpid()}
+	for i := 0; i < len(args); i++ {
+		switch {
+		case provider == "cursor" && args[i] == "--":
+			req.Prompt, i = strings.Join(args[i+1:], " "), len(args)
+		case i+1 >= len(args):
+		case provider == "grok" && args[i] == "-p":
+			req.Prompt, i = args[i+1], i+1
+		case args[i] == "--resume":
+			req.Resume, i = args[i+1], i+1
+		case args[i] == "--output-format":
+			req.Format, i = args[i+1], i+1
+		case args[i] == "--system-prompt-override":
+			if m := fixturePersonaName.FindStringSubmatch(args[i+1]); m != nil {
+				req.Persona = m[1]
+			}
+			i++
+		}
+	}
+	// Only the current request triggers a scripted reply; a conversation
+	// record line may quote an earlier request.
+	var current strings.Builder
+	for line := range strings.Lines(req.Prompt) {
+		if !strings.HasPrefix(line, "{") {
+			current.WriteString(line)
+		}
+	}
+	if m := fixturePersonaName.FindStringSubmatch(current.String()); m != nil && req.Persona == "" {
+		req.Persona = m[1]
+	}
+	data, _ := os.ReadFile(log)
+	n := bytes.Count(data, []byte("\n")) + 1
+	req.Session = provider + "-fixture"
+	if os.Getenv("OBEY_CLI_FIXTURE_SESSIONS") == "distinct" {
+		req.Session = req.Resume
+		if req.Session == "" {
+			req.Session = fmt.Sprintf("%s-session-%d", provider, n)
+		}
+	}
 	f, err := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o600)
 	if err != nil {
 		os.Exit(2)
 	}
-	line, _ := json.Marshal(request)
+	line, _ := json.Marshal(req)
 	_, _ = f.Write(append(line, '\n'))
 	_ = f.Close()
-	data, _ := os.ReadFile(log)
-	n := bytes.Count(data, []byte("\n"))
-	stall := strings.Contains(request, claudeStall)
-	text := fmt.Sprintf("Mira: Mira reply %d.", n)
+	name := cmp.Or(req.Persona, "Mira")
+	stall := strings.Contains(current.String(), claudeStall)
+	text := fmt.Sprintf("%s: %s reply %d.", name, name, n)
 	if stall {
-		text = "Mira: " + claudePartial
+		text = name + ": " + claudePartial
 	}
 	out := json.NewEncoder(os.Stdout)
 	switch provider {
 	case "grok":
-		_ = out.Encode(map[string]any{"type": "text", "data": text, "sessionId": "grok-fixture"})
+		if req.Format == "json" {
+			_ = out.Encode(map[string]any{"text": text, "sessionId": req.Session})
+			break
+		}
+		_ = out.Encode(map[string]any{"type": "text", "data": text, "sessionId": req.Session})
 		if stall {
 			time.Sleep(time.Minute)
 		}
@@ -74,16 +126,36 @@ func TestCLITranscriptFixtureProcess(t *testing.T) {
 		if stall {
 			time.Sleep(time.Minute)
 		}
-		_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": text, "session_id": "cursor-fixture"})
+		_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": text, "session_id": req.Session})
 	}
 	os.Exit(0)
+}
+
+func readCLIRequests(t *testing.T, log string) []cliRequest {
+	t.Helper()
+	data, err := os.ReadFile(log)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []cliRequest
+	for line := range strings.Lines(string(data)) {
+		var req cliRequest
+		if err := json.Unmarshal([]byte(line), &req); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, req)
+	}
+	return out
 }
 
 // newCLIConversation is a conversation that starts on Mira, a persona on
 // provider, with Ember on a fake Ollama server as the other participant.
 func newCLIConversation(t *testing.T, provider string) *claudeConversation {
 	t.Helper()
-	c := &claudeConversation{t: t, log: installCLIFixture(t, provider)}
+	c := &claudeConversation{t: t, log: installCLIFixture(t)}
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

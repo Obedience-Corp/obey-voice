@@ -28,7 +28,7 @@ func (p *Pipeline) BackgroundReady() <-chan struct{} {
 	return nil
 }
 func (p *Pipeline) BackgroundPending() bool {
-	if p.hasWorkerReplies() {
+	if p.hasWorkerReplies() || p.heldResultWaiting() {
 		return true
 	}
 	if c := p.WorkCoordinator(); c != nil {
@@ -48,7 +48,8 @@ func (p *Pipeline) BackgroundPending() bool {
 	return false
 }
 
-// RunBackgroundTurn first commits legacy replies at the host's idle boundary.
+// RunBackgroundTurn first speaks held legacy answers and commits delivered
+// replies at the host's idle boundary.
 // Other background work uses the ordinary model, speech queue and turn events,
 // without emitting a fictional UserInput or granting a new tool-calling turn.
 func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
@@ -57,6 +58,12 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 	}
 	if err := p.awaitProvider(ctx); err != nil {
 		return err
+	}
+	if p.heldResultWaiting() {
+		p.Agency.tryFlushPending()
+		if !p.hasWorkerReplies() {
+			return nil
+		}
 	}
 	if p.hasWorkerReplies() {
 		return p.commitWorkerReplies()

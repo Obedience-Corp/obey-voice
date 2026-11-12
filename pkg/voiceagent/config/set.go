@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -294,12 +295,20 @@ func verifyPatched(patched []byte, segments []string, value any) (any, error) {
 func backupAndReplace(path string, patched []byte, existed bool, key string) (string, error) {
 	var backupPath string
 	if existed {
-		var err error
-		backupPath, err = backupFile(path)
+		current, err := os.ReadFile(path)
 		if err != nil {
-			return "", writeFailed(key, "backing up config", err)
+			return "", writeFailed(key, "reading config", err)
 		}
-		pruneBackups(path, keptBackups)
+		if bytes.Equal(current, patched) {
+			return "", nil
+		}
+		if backupWanted(path, current) {
+			backupPath, err = backupFile(path)
+			if err != nil {
+				return "", writeFailed(key, "backing up config", err)
+			}
+			pruneBackups(path, keptBackups)
+		}
 	}
 	if err := writeFileAtomic(path, patched); err != nil {
 		return "", writeFailed(key, "replacing config", err)

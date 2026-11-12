@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime/debug"
@@ -36,6 +37,9 @@ func TestMain(m *testing.M) {
 	// The real scan starts whatever provider CLIs are installed, the claude CLI
 	// among them. A test that needs it opts in with useRealDiscovery.
 	discoverProviders = func(*config.Config) []discovery.ProviderInfo { return nil }
+	discoverObeyRoute = func(_ context.Context, cfg *config.Config, _ bool) discovery.ObeyRoute {
+		return discovery.ObeyRoute{Socket: cfg.ObeySocket, Provider: cfg.ObeyProvider, Model: cfg.ObeyModel, ToolPolicy: cfg.ObeyToolPolicy, Problem: "obey catalog is stubbed in tests"}
+	}
 	code := m.Run()
 	if realClipboardHit.Load() {
 		realClipboardMu.Lock()
@@ -54,6 +58,6 @@ func TestMain(m *testing.M) {
 func useRealDiscovery(t *testing.T) {
 	t.Helper()
 	stub := discoverProviders
-	discoverProviders = discovery.DiscoverProviders
+	discoverProviders = discovery.DiscoverProvidersStartup
 	t.Cleanup(func() { discoverProviders = stub })
 }

@@ -128,7 +128,7 @@ func TestHistoryAppenderQueuesCLIContextWithoutDroppingSession(t *testing.T) {
 	if g.sessionID != "remote-session" || g.hostContext == "" || len(g.history) != 1 {
 		t.Fatalf("appender lost session/context: %+v", g)
 	}
-	if !strings.Contains(g.buildPrompt(false), "A result arrived.") {
+	if !strings.Contains(g.buildPrompt(StreamOptions{}, maxCatchUpBytes), "A result arrived.") {
 		t.Fatal("queued context missing from resumed prompt")
 	}
 }

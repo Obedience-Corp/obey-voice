@@ -28,6 +28,7 @@ func TestEventTypeExposesWireNames(t *testing.T) {
 		{ResponseSpeakableStarted{}, "response_speakable_started"},
 		{JobStarted{}, "job_started"},
 		{JobFinished{}, "job_finished"},
+		{JobResultDelivered{}, "job_result_delivered"},
 		{JobFailed{}, "job_failed"},
 	}
 	for _, tt := range tests {

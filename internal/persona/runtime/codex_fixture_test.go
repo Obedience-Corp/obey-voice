@@ -3,10 +3,13 @@ package personaruntime
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Real CodexBrain/selector/pipeline, with only the external app-server replaced.
@@ -40,7 +43,8 @@ func TestCodexSelectorAppServer(t *testing.T) {
 	}
 	notice := func(method string, params any) { send(map[string]any{"method": method, "params": params}) }
 	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 4096), 1024*1024)
+	scanner.Buffer(make([]byte, 4096), 4*1024*1024)
+	thread := "fixture-thread"
 	for scanner.Scan() {
 		if _, err := file.Write(append(scanner.Bytes(), '\n')); err != nil {
 			os.Exit(2)
@@ -60,13 +64,85 @@ func TestCodexSelectorAppServer(t *testing.T) {
 		case "config/read":
 			reply(map[string]any{"config": map[string]any{}})
 		case "thread/start", "thread/resume":
-			reply(map[string]any{"thread": map[string]string{"id": "fixture-thread"}, "sandbox": map[string]string{"type": "readOnly"}, "approvalPolicy": "never", "cwd": m.Params["cwd"]})
+			// Distinct threads let a test tell a resumed thread from a new one.
+			if os.Getenv("OBEY_CODEX_FIXTURE_THREADS") == "distinct" {
+				if id, ok := m.Params["threadId"].(string); ok && m.Method == "thread/resume" {
+					thread = id
+				} else {
+					thread = fmt.Sprintf("codex-thread-%d", os.Getpid())
+				}
+			}
+			reply(map[string]any{"thread": map[string]string{"id": thread}, "sandbox": map[string]string{"type": "readOnly"}, "approvalPolicy": "never", "cwd": m.Params["cwd"]})
 		case "turn/start":
 			reply(map[string]any{"turn": map[string]string{"id": "fixture-turn", "status": "inProgress"}})
-			notice("item/agentMessage/delta", map[string]string{"threadId": "fixture-thread", "turnId": "fixture-turn", "delta": "I remember cobalt."})
-			notice("turn/completed", map[string]any{"threadId": "fixture-thread", "turn": map[string]string{"id": "fixture-turn", "status": "completed"}})
+			if codexFixtureStalls(m.Params) {
+				notice("item/agentMessage/delta", map[string]string{"threadId": thread, "turnId": "fixture-turn", "delta": claudePartial})
+				time.Sleep(time.Minute)
+				os.Exit(0)
+			}
+			notice("item/agentMessage/delta", map[string]string{"threadId": thread, "turnId": "fixture-turn", "delta": "I remember cobalt."})
+			notice("turn/completed", map[string]any{"threadId": thread, "turn": map[string]string{"id": "fixture-turn", "status": "completed"}})
 		}
 	}
 	_ = file.Close()
 	os.Exit(0)
+}
+
+// codexFixtureStalls reports whether the request itself, not a conversation
+// record quoting an earlier one, asks the fixture to stall.
+func codexFixtureStalls(params map[string]any) bool {
+	inputs, _ := params["input"].([]any)
+	for _, in := range inputs {
+		item, _ := in.(map[string]any)
+		text, _ := item["text"].(string)
+		for line := range strings.Lines(text) {
+			if !strings.HasPrefix(line, "{") && strings.Contains(line, claudeStall) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// codexTurn is one turn the Codex fixture was sent: its prompt, its thread,
+// and whether that thread was resumed rather than started.
+type codexTurn struct {
+	Prompt, Thread string
+	Resumed        bool
+}
+
+func readCodexTurns(t *testing.T, log string) []codexTurn {
+	t.Helper()
+	data, err := os.ReadFile(log)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []codexTurn
+	resumed := false
+	for line := range strings.Lines(string(data)) {
+		var m struct {
+			Method string
+			Params struct {
+				ThreadID string
+				Input    []struct{ Text string }
+			}
+		}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatal(err)
+		}
+		switch m.Method {
+		case "thread/start", "thread/resume":
+			resumed = m.Method == "thread/resume"
+		case "turn/start":
+			var text strings.Builder
+			for _, in := range m.Params.Input {
+				text.WriteString(in.Text + "\n")
+			}
+			out = append(out, codexTurn{Prompt: text.String(), Thread: m.Params.ThreadID, Resumed: resumed})
+		}
+	}
+	return out
 }

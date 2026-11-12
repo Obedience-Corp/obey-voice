@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -21,6 +22,11 @@ const (
 	// forever — one per write, for the life of the install.
 	keptBackups = 5
 )
+
+// backupCoalesce is the window in which a later save adds no backup of its
+// own. The backup taken at the start of a burst holds the state from before
+// it, and a backup per save would let one burst rotate every older backup away.
+var backupCoalesce = 10 * time.Second
 
 var errLockGuardBusy = errors.New("config lock guard is held")
 
@@ -89,4 +95,24 @@ func pruneBackups(path string, keep int) {
 	for _, stale := range matches[:len(matches)-keep] {
 		_ = os.Remove(stale)
 	}
+}
+
+// backupWanted reports whether replacing current should leave a new backup:
+// not when the newest backup already holds the same bytes, and not when it was
+// taken inside the coalescing window.
+func backupWanted(path string, current []byte) bool {
+	matches, err := filepath.Glob(path + ".bak.*")
+	if err != nil || len(matches) == 0 {
+		return true
+	}
+	sort.Strings(matches)
+	newest := matches[len(matches)-1]
+	if data, err := os.ReadFile(newest); err == nil && bytes.Equal(data, current) {
+		return false
+	}
+	stamp := strings.TrimPrefix(newest, path+".bak.")
+	if taken, err := time.Parse("20060102T150405.000000000Z", stamp); err == nil && time.Since(taken) < backupCoalesce {
+		return false
+	}
+	return true
 }

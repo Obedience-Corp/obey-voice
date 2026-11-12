@@ -636,6 +636,104 @@ description: Greet the user warmly.
 Say hello to the user.
 ```
 
+## Live routing (`voice_router_tools`)
+
+With voice tools on, a live Ollama turn first decides whether the request is
+conversation (`chat`), work for a worker (`spawn`) or reading aloud (`narrate`).
+Other brains decide the same question with a private classifier; for them
+`json_route` behaves exactly like `route_only`.
+
+| Value | What a live Ollama turn does |
+| --- | --- |
+| `route_only` (default) | Offers only the `route` tool. A chat decision is followed by a tools-free reply. |
+| `json_route` (experimental) | Asks for the same route as a JSON object, with no tools, on the reply's own messages. |
+| `legacy` | Offers the full worker tool list, for comparison. |
+
+`json_route` is about prompt-cache reuse. Under `route_only` the route request
+carries the route tool schema and the reply does not. Ollama renders tool schemas
+into the prompt next to the system text, so the reply reads the conversation
+history again. Under `json_route` both requests carry the same system message,
+history and newest user message, no tools, and the same model, thinking setting
+and runner options. The route request puts its instruction after the newest user
+message and constrains the answer with the route schema; the reply adds only a
+one-line "routing is complete, answer now" instruction at that same point. Whether
+Ollama actually reuses the cached prefix depends on the model's chat template
+and runner, and has not been measured on real models yet.
+
+Everything else matches `route_only`:
+
+- `spawn` and `narrate` dispatch exactly as with the route tool, including the
+  worker effort tier when tiered workers are on.
+- The decision is private. Neither the JSON nor the exchange is spoken or kept in
+  history. The turn shows it as a `route` tool event with the outcome and how
+  long the decision took.
+- A reply that is not a valid route object counts as a missing route: one retry
+  through the existing recovery request, then the turn fails with the existing
+  `recover missing route` error and nothing is dispatched. It is never treated as
+  chat. Each rejected attempt shows as a failed `route` event.
+- The route request is bounded by `persona_routing_timeout`.
+- When background tasks (`delegation_enabled`) add tools to the turn, or the
+  request does not end with the user's message, the turn uses the route tool as
+  under `route_only`.
+- With `voice_tools_enabled: false` and no tiered workers there is no route step
+  in any mode. Decision shortcuts and skill selection run before routing and
+  are unchanged.
+
+### `json_route` with thinking models: unverified
+
+The route request keeps the turn's `ollama_think` setting, so it renders the
+same prompt as the reply. Nobody has run `json_route` against a real model with
+thinking on; the tests use a fake Ollama server.
+
+- The route request constrains the answer with the route schema (`format`). If
+  Ollama applies that grammar from the first generated token, the model cannot
+  write its reasoning first and may return empty or invalid content. Every turn
+  would then be rejected and pay a second request: the existing recovery call,
+  which turns thinking off.
+- In the Ollama source this repository builds against (v0.32.3), a model with
+  the thinking capability and a thinking parser first generates with no
+  grammar. At the first answer token Ollama stops and runs a second, constrained
+  generation over the prompt plus the reasoning. This is a reading of that
+  source, not of the server you run. If that first generation writes no
+  reasoning, the second never starts and the answer is not constrained by the
+  schema at all; only the route validation checks it. A model whose thinking
+  Ollama does not parse may be constrained from the first token. Ollama's
+  native chat path passes `format` and `think` to the runner together; that
+  path was not read.
+- Ollama counts reasoning against `num_predict`, and in that source each of the
+  two generations gets the full limit. With thinking on, the route request is
+  capped at 1024 tokens instead of the 256 used with thinking off, so a short
+  deliberation fits. Longer reasoning is cut off, the decision is rejected and
+  the turn moves on to the recovery call. A smaller limit already on the request
+  is kept. `persona_routing_timeout` (120 seconds by default) bounds the whole
+  request.
+
+Run the comparison below with a thinking model before relying on `json_route`
+with `ollama_think` on.
+
+### Comparing `route_only` and `json_route`
+
+`just bench worker-decision -compare router -cases cases.json -out new.jsonl -model <model>`
+replays labelled requests under both values against a local Ollama, alternating
+which runs first. Add `-think true` to run the speaking model with thinking on.
+See [the bench README](../scripts/worker_decision_bench/README.md) for the case
+format, the run order and its remaining bias. Compare per mode:
+
+- **Routing accuracy**: the share of samples with `correct: true`, and any `error`.
+- **The reply's prompt read**: in each sample's `requests`, the `plain` entry is
+  the reply. Compare its `prompt_eval_ms` between modes. Do not rely on
+  `prompt_eval_count`: it can include tokens served from the cache (in the
+  Ollama source this repository builds against, the llama.cpp server backend
+  reports cached plus newly read tokens; the MLX runner is unchecked), so it
+  may barely move when the prefix is reused.
+- **Latency**: `first_text_ms` and `elapsed_ms`.
+
+The run ends with a `router_summary` line of these means for each mode and run
+position. The mode that runs second on a case can reuse the prompt the first
+one just read, so compare modes at the same position.
+
+Keep `route_only` unless routing accuracy holds on the models you use.
+
 ## STT schema migration
 
 The preferred STT schema is `stt_provider` + `stt_mode` (e.g. `stt_provider: sherpa` with `stt_mode: streaming`). The legacy compound aliases (`sherpa-streaming`, `sherpa-offline`) still work with `stt_mode` unset and are never rewritten; combining a compound alias with a conflicting `stt_mode` is a config error.
@@ -710,8 +808,8 @@ changing global defaults. See [Group participation](personas.md#group-participat
 ### Hosted persona sharing
 
 `hosted_persona_sharing` (environment `HOSTED_PERSONA_SHARING`) chooses what a
-persona on Claude receives when it joins a conversation shared with other
-personas: `from_invite` (default) sends only what is said from the point
+persona on a hosted backend receives when it joins a conversation shared with
+other personas: `from_invite` (default) sends only what is said from the point
 the persona is first addressed on that backend, plus the task and result of
 each background job it started earlier, on any backend; `whole_conversation`
 sends the spoken lines from the start. Tool calls, tool output and attachment names of
@@ -720,10 +818,10 @@ first addressed after the change and does not widen a session that has already
 started. A running conversation picks the change up only when its settings
 reload; it has no Settings row, so set it with
 `obey-voice config set hosted_persona_sharing whole_conversation`. It governs
-personas on Claude, Codex, Muse Spark and Obey; a persona on Grok or Cursor only
-holds a conversation that started on it. Only `whole_conversation` widens what
-is sent; any other value, including an unrecognised one from the environment or
-a hand-edited file, sends from the invitation. See
+personas on Claude, Codex, Cursor, Grok, Muse Spark and Obey. Only
+`whole_conversation` widens what is sent; any other value, including an
+unrecognised one from the environment or a hand-edited file, sends from the
+invitation. See
 [Hosted backends](personas.md#hosted-backends) for what each receives and for
 how hosted personas are marked.
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 var errPlaybackInterrupted = errors.New("playback interrupted")
@@ -99,6 +100,11 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 	p.handlePlaybackLifecycle(sentence, usedFallback, observation, playback, metrics)
 }
 
+// canSpeak reports whether speakStandalone would synthesize with primary now.
+func (p *Pipeline) canSpeak(primary tts.Provider) bool {
+	return !p.OutputMuted() && p.Player != nil && primary != nil && primary.Available()
+}
+
 // speakStandalone synthesizes one short utterance outside the streaming path.
 // turn may be nil for idle job summaries.
 func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, metrics *turnMetrics, sentence string) error {
@@ -108,7 +114,7 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 		*metrics.routedSpeech = append(*metrics.routedSpeech, sentence)
 	}
 	primary, _ := p.responseTTS(ctx)
-	if sentence == "" || p.OutputMuted() || p.Player == nil || primary == nil || !primary.Available() {
+	if sentence == "" || !p.canSpeak(primary) {
 		return nil
 	}
 	if turn != nil {

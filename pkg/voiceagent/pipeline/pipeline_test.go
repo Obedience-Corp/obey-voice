@@ -799,6 +799,9 @@ type fakePlayer struct {
 	// reported finished — the turn loop's pending count as the player sees it.
 	outstanding    int
 	maxOutstanding int
+	// hold, when set, keeps each playback running until it is closed instead of
+	// until playDuration elapses.
+	hold chan struct{}
 }
 
 type playbackRequest struct {
@@ -887,6 +890,17 @@ func (p *fakePlayer) MaxOutstanding() int {
 	return p.maxOutstanding
 }
 
+// HoldPlayback makes playbacks that start after this call run until the
+// returned release is called.
+func (p *fakePlayer) HoldPlayback() (release func()) {
+	hold := make(chan struct{})
+	p.mu.Lock()
+	p.hold = hold
+	p.mu.Unlock()
+	var once sync.Once
+	return func() { once.Do(func() { close(hold) }) }
+}
+
 func (p *fakePlayer) StopCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -917,6 +931,15 @@ func (p *fakePlayer) loop() {
 		}
 
 		timer := time.NewTimer(p.playDuration)
+		p.mu.Lock()
+		hold := p.hold
+		p.mu.Unlock()
+		var held <-chan struct{}
+		finished := timer.C
+		if hold != nil {
+			timer.Stop()
+			finished, held = nil, hold
+		}
 		result := audio.PlaybackResult{AudioSeconds: p.audioSeconds}
 		select {
 		case <-p.quit:
@@ -929,7 +952,8 @@ func (p *fakePlayer) loop() {
 		case <-req.stop:
 			timer.Stop()
 			result.Interrupted = true
-		case <-timer.C:
+		case <-finished:
+		case <-held:
 		}
 
 		p.playing.Store(false)

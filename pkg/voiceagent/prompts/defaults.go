@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 //go:embed defaults/*.yaml
@@ -60,18 +61,57 @@ func Shipped() ([]*Document, error) {
 	return docs, nil
 }
 
-// shippedNamed returns the embedded document for an exact kind/name pair.
+type shippedKey struct {
+	kind Kind
+	name string
+}
+
+var (
+	shippedIndexOnce sync.Once
+	shippedIndex     map[shippedKey]string
+)
+
+// shippedFiles maps each embedded document's kind and name to its file, read
+// once: the embedded set never changes while the process runs.
+func shippedFiles() map[shippedKey]string {
+	shippedIndexOnce.Do(func() {
+		shippedIndex = map[shippedKey]string{}
+		docs, err := Shipped()
+		if err != nil {
+			return
+		}
+		entries, _ := defaultsFS.ReadDir("defaults")
+		files := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
+				files = append(files, e.Name())
+			}
+		}
+		for i, doc := range docs {
+			if i < len(files) {
+				shippedIndex[shippedKey{doc.Prompt.Kind, doc.Prompt.Name}] = files[i]
+			}
+		}
+	})
+	return shippedIndex
+}
+
+// shippedNamed returns a fresh copy of the embedded document for an exact
+// kind/name pair, parsing only that document.
 func shippedNamed(kind Kind, name string) (*Document, bool) {
-	docs, err := Shipped()
+	file, ok := shippedFiles()[shippedKey{kind, name}]
+	if !ok {
+		return nil, false
+	}
+	data, err := defaultsFS.ReadFile("defaults/" + file)
 	if err != nil {
 		return nil, false
 	}
-	for _, doc := range docs {
-		if doc.Prompt.Kind == kind && doc.Prompt.Name == name {
-			return doc, true
-		}
+	doc, err := Load(data)
+	if err != nil {
+		return nil, false
 	}
-	return nil, false
+	return doc, true
 }
 
 // Starter returns the embedded starter document for a kind — a minimal

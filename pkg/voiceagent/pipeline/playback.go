@@ -241,6 +241,9 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 		if !metrics.ttfa.IsZero() {
 			started.Elapsed = metrics.elapsedFromEOU(metrics.ttfa)
 		}
+		if metrics.onAudible != nil {
+			metrics.onAudible()
+		}
 		p.emitResponse(metrics, started)
 	} else {
 		result := *terminal

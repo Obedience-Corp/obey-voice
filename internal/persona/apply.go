@@ -203,16 +203,12 @@ func Use(cfg *config.Config, id string) error {
 	if err := RequireEnabled(p); err != nil {
 		return err
 	}
-	if err := config.SetAndSave("active_persona", id); err != nil {
-		return fmt.Errorf("saving active_persona: %w", err)
-	}
-	// Keep app config keys in sync so Settings / doctor / older tools match.
-	_ = config.SetAndSave("agent_name", p.DisplayName)
+	writes := append([]config.KeyWrite{{Key: "active_persona", Value: id}, {Key: "agent_name", Value: p.DisplayName}}, ttsWrites(p)...)
 	if ref := strings.TrimSpace(p.Prompts.Persona); ref != "" {
-		_ = config.SetAndSave("persona", ref)
+		writes = append(writes, config.KeyWrite{Key: "persona", Value: ref})
 	}
-	if err := PersistTTS(p); err != nil {
-		return fmt.Errorf("saving persona tts: %w", err)
+	if err := config.SetKeyFileValues(writes); err != nil {
+		return fmt.Errorf("saving persona selection: %w", err)
 	}
 	Apply(cfg, p)
 	return nil

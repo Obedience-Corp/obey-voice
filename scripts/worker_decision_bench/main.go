@@ -1,14 +1,17 @@
 // Command worker_decision_bench compares real Ollama routing with an optional
-// local decision overlapped with addressee resolution. No worker is constructed.
+// local decision overlapped with addressee resolution, or the route tool with
+// the tools-free JSON route. No worker is constructed.
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +20,8 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -52,7 +57,88 @@ type sample struct {
 	ElapsedMS     float64               `json:"elapsed_ms"`
 	Text          string                `json:"text,omitempty"`
 	Error         string                `json:"error,omitempty"`
+	Requests      []chatMetrics         `json:"requests,omitempty"`
+	Order         string                `json:"order,omitempty"`
 }
+
+// chatMetrics is one /api/chat request: its shape (tools offered, schema
+// format, or neither) and Ollama's timing from the final response line.
+type chatMetrics struct {
+	Kind            string  `json:"kind"`
+	PromptEvalCount int     `json:"prompt_eval_count"`
+	PromptEvalMS    float64 `json:"prompt_eval_ms"`
+	EvalCount       int     `json:"eval_count"`
+	TotalMS         float64 `json:"total_ms"`
+}
+
+// chatRecorder keeps every proxied chat request's metrics in arrival order.
+type chatRecorder struct {
+	mu   sync.Mutex
+	seen []chatMetrics
+}
+
+func (r *chatRecorder) len() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.seen)
+}
+
+func (r *chatRecorder) since(n int) []chatMetrics {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.seen[n:])
+}
+
+func (r *chatRecorder) add(kind string, response []byte) {
+	m := chatMetrics{Kind: kind}
+	for line := range strings.SplitSeq(string(response), "\n") {
+		var final struct {
+			Done               bool  `json:"done"`
+			PromptEvalCount    int   `json:"prompt_eval_count"`
+			PromptEvalDuration int64 `json:"prompt_eval_duration"`
+			EvalCount          int   `json:"eval_count"`
+			TotalDuration      int64 `json:"total_duration"`
+		}
+		if json.Unmarshal([]byte(line), &final) == nil && final.Done {
+			m.PromptEvalCount, m.EvalCount = final.PromptEvalCount, final.EvalCount
+			m.PromptEvalMS, m.TotalMS = ms(time.Duration(final.PromptEvalDuration)), ms(time.Duration(final.TotalDuration))
+		}
+	}
+	r.mu.Lock()
+	r.seen = append(r.seen, m)
+	r.mu.Unlock()
+}
+
+func requestKind(body []byte) string {
+	var req struct {
+		Tools  []json.RawMessage `json:"tools"`
+		Format json.RawMessage   `json:"format"`
+	}
+	_ = json.Unmarshal(body, &req)
+	switch {
+	case len(req.Tools) > 0:
+		return "tools"
+	case len(req.Format) > 0 && string(req.Format) != "null":
+		return "schema"
+	default:
+		return "plain"
+	}
+}
+
+// teeWriter copies a proxied response for chatRecorder, up to a bound.
+type teeWriter struct {
+	http.ResponseWriter
+	buf bytes.Buffer
+}
+
+func (w *teeWriter) Write(p []byte) (int, error) {
+	if w.buf.Len() < 8<<20 {
+		w.buf.Write(p)
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *teeWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 
@@ -63,8 +149,8 @@ func tiers(in decision.WorkInput) *brain.WorkerTierAvailability {
 // Drain both channels: thinking is not speech, and leaving it unread can stall
 // a real stream. The route-only, tiered tool session intercepts worker tools;
 // delegation is disabled. There is no Agency, worker factory or job queue here.
-func speak(ctx context.Context, b *brain.OllamaBrain, in decision.WorkInput, s *sample, start time.Time) error {
-	stream, err := b.ThinkStream(ctx, in.Text, brain.StreamOptions{VoiceMode: true, ToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsRouteOnly, WorkerTiers: tiers(in)})
+func speak(ctx context.Context, b *brain.OllamaBrain, in decision.WorkInput, s *sample, start time.Time, routeJSON bool) error {
+	stream, err := b.ThinkStream(ctx, in.Text, brain.StreamOptions{VoiceMode: true, ToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsRouteOnly, RouteJSON: routeJSON, WorkerTiers: tiers(in)})
 	if err != nil {
 		return err
 	}
@@ -135,7 +221,7 @@ func replay(ctx context.Context, b *brain.OllamaBrain, p decision.WorkPolicy, ca
 			s.Route, s.Tier = "spawn", string(result.Proposal.Tier)
 		} else if !admissionOnly {
 			beforeSpeak := calls.Load()
-			err = speak(ctx, b, c.Input, &s, start)
+			err = speak(ctx, b, c.Input, &s, start, false)
 			s.SpeakingCalls = calls.Load() - beforeSpeak
 		}
 	}
@@ -152,19 +238,122 @@ func replay(ctx context.Context, b *brain.OllamaBrain, p decision.WorkPolicy, ca
 	return s
 }
 
+// replayRouter measures one turn routed by the route tool (route_only) or by
+// the tools-free JSON request (json_route). No addressee or decision call is
+// made, so every recorded request belongs to the turn. order is the turn's
+// position in its case's pair.
+func replayRouter(ctx context.Context, b *brain.OllamaBrain, rec *chatRecorder, c replayCase, mode, order string, rep int) sample {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	var history []brain.Turn
+	for _, m := range c.Input.Conversation {
+		history = append(history, brain.Turn{Role: m.Role, Content: m.Text})
+	}
+	b.LoadHistory(history)
+	s := sample{ID: c.ID, Rep: rep, Mode: mode, Order: order}
+	before := rec.len()
+	start := time.Now()
+	err := speak(ctx, b, c.Input, &s, start, mode == "json_route")
+	s.ElapsedMS = ms(time.Since(start))
+	s.Requests = rec.since(before)
+	s.ModelCalls = int64(len(s.Requests))
+	s.SpeakingCalls = s.ModelCalls
+	if err != nil {
+		s.Error = err.Error()
+	}
+	gotWork := s.Route == "spawn" || s.Route == "narrate"
+	s.Correct = err == nil && gotWork == c.WantWork && (!gotWork || s.Tier == string(c.WantTier))
+	return s
+}
+
 func admittedHere(address brain.Addressee) bool {
 	return address.Kind == "none" || (address.Kind == "address" && address.Name == "Samantha" && !address.Bare)
 }
 
+var (
+	decisionModes = []string{"baseline", "overlap"}
+	routerModes   = []string{"route_only", "json_route"}
+	pairOrders    = []string{"first", "second"}
+)
+
+// routerMeans summarises one mode at one position in its pairs. Means cover
+// samples without an error; first text and the reply's prompt read are
+// averaged only where the turn produced them, a spoken chat reply.
+type routerMeans struct {
+	Mode                string  `json:"mode"`
+	Order               string  `json:"order"`
+	Samples             int     `json:"samples"`
+	Correct             int     `json:"correct"`
+	Errors              int     `json:"errors"`
+	MeanElapsedMS       float64 `json:"mean_elapsed_ms"`
+	FirstTextSamples    int     `json:"first_text_samples"`
+	MeanFirstTextMS     float64 `json:"mean_first_text_ms"`
+	ReplySamples        int     `json:"reply_samples"`
+	MeanReplyPromptEval float64 `json:"mean_reply_prompt_eval_ms"`
+}
+
+func summarizeRouter(samples []sample) []routerMeans {
+	var out []routerMeans
+	for _, mode := range routerModes {
+		for _, order := range pairOrders {
+			m := routerMeans{Mode: mode, Order: order}
+			var elapsed, firstText, reply float64
+			measured := 0
+			for _, s := range samples {
+				if s.Mode != mode || s.Order != order {
+					continue
+				}
+				m.Samples++
+				if s.Correct {
+					m.Correct++
+				}
+				if s.Error != "" {
+					m.Errors++
+					continue
+				}
+				measured++
+				elapsed += s.ElapsedMS
+				if s.FirstTextMS > 0 {
+					m.FirstTextSamples++
+					firstText += s.FirstTextMS
+				}
+				for i := len(s.Requests) - 1; i >= 0; i-- {
+					if s.Requests[i].Kind == "plain" {
+						m.ReplySamples++
+						reply += s.Requests[i].PromptEvalMS
+						break
+					}
+				}
+			}
+			m.MeanElapsedMS = mean(elapsed, measured)
+			m.MeanFirstTextMS = mean(firstText, m.FirstTextSamples)
+			m.MeanReplyPromptEval = mean(reply, m.ReplySamples)
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func mean(sum float64, n int) float64 {
+	if n == 0 {
+		return 0
+	}
+	return sum / float64(n)
+}
+
 func comparisonModes(caseIndex, rep int) []string {
-	modes := []string{"baseline", "overlap"}
+	return pairedModes(decisionModes, caseIndex, rep)
+}
+
+func pairedModes(pair []string, caseIndex, rep int) []string {
+	modes := slices.Clone(pair)
 	if (caseIndex+rep)%2 == 1 {
 		slices.Reverse(modes)
 	}
 	return modes
 }
 
-func localProxy(base *url.URL, calls *atomic.Int64) *httptest.Server {
+func localProxy(base *url.URL, calls *atomic.Int64, rec *chatRecorder) *httptest.Server {
 	proxy := httputil.NewSingleHostReverseProxy(base)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
@@ -182,6 +371,18 @@ func localProxy(base *url.URL, calls *atomic.Int64) *httptest.Server {
 		}
 		if r.URL.Path == "/api/chat" {
 			calls.Add(1)
+			if rec != nil {
+				body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+				if err != nil {
+					http.Error(w, "read request", http.StatusBadRequest)
+					return
+				}
+				r.Body, r.ContentLength = io.NopCloser(bytes.NewReader(body)), int64(len(body))
+				tee := &teeWriter{ResponseWriter: w}
+				proxy.ServeHTTP(tee, r)
+				rec.add(requestKind(body), tee.buf.Bytes())
+				return
+			}
 		}
 		proxy.ServeHTTP(w, r)
 	}))
@@ -197,9 +398,21 @@ func run() error {
 	startRep := flag.Int("start-rep", 0, "first pass index when extending a retained comparison")
 	budget := flag.Duration("budget", 750*time.Millisecond, "decision inference budget; never a route wait")
 	admissionOnly := flag.Bool("admission-only", false, "isolate addressee contention; no speaking calls or route adoption")
+	compare := flag.String("compare", "decision", "decision: baseline vs decision overlap; router: route_only vs json_route, with no decision model or addressee call")
+	think := flag.String("think", "", "router comparison only: ollama_think for the speaking model (e.g. true); empty leaves thinking off")
 	flag.Parse()
 	if *casePath == "" || *out == "" || *reps < 1 || *startRep < 0 || *budget <= 0 {
 		return errors.New("cases, out and positive reps/budget required")
+	}
+	if *compare != "decision" && *compare != "router" {
+		return errors.New("compare must be decision or router")
+	}
+	router := *compare == "router"
+	if router && *admissionOnly {
+		return errors.New("admission-only applies to the decision comparison")
+	}
+	if *think != "" && (!router || !brain.ThinkLevelAccepted(*think)) {
+		return errors.New("think applies to the router comparison and must be an ollama_think value")
 	}
 	base, err := url.Parse(*host)
 	if err != nil || base.Scheme != "http" || base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") || !net.ParseIP(base.Hostname()).IsLoopback() {
@@ -223,11 +436,14 @@ func run() error {
 		}
 		ids[c.ID] = true
 	}
-	evaluator, err := decision.NewSystemOne(decision.SystemOneConfig{Provider: "local", Endpoint: *endpoint})
-	if err != nil {
-		return err
+	var policy decision.WorkPolicy
+	if !router {
+		evaluator, err := decision.NewSystemOne(decision.SystemOneConfig{Provider: "local", Endpoint: *endpoint})
+		if err != nil {
+			return err
+		}
+		policy = decision.WorkPolicy{Evaluator: evaluator}
 	}
-	policy := decision.WorkPolicy{Evaluator: evaluator}
 	f, err := os.OpenFile(*out, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -245,14 +461,15 @@ func run() error {
 	// Count actual /api/chat requests, including retries, rather than treating
 	// a ThinkStream invocation or usage callback as proof of one model call.
 	var calls atomic.Int64
-	server := localProxy(base, &calls)
+	var rec chatRecorder
+	server := localProxy(base, &calls, &rec)
 	defer server.Close()
 	tmp, err := os.MkdirTemp("", "worker-decision-bench-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	b, err := brain.NewOllama(&config.Config{BrainProvider: "ollama", OllamaHost: server.URL, OllamaModel: *model, OllamaNumCtx: 32768, OllamaNumBatch: 128, OllamaKeepAlive: "20m", Persona: "samantha", AgentName: "Samantha", WorkDir: tmp, PromptsDir: tmp})
+	b, err := brain.NewOllama(benchConfig(server.URL, *model, tmp, router, *think))
 	if err != nil {
 		return err
 	}
@@ -262,10 +479,16 @@ func run() error {
 	if *admissionOnly {
 		scope = "admission only; no speaking calls, route adoption or audio"
 	}
-	if err = emit(map[string]any{"type": "manifest", "created_at": time.Now().UTC(), "cases_sha256": fmt.Sprintf("%x", sha256.Sum256(raw)), "questions_sha256": fmt.Sprintf("%x", sha256.Sum256(questions)), "persona_hash": hash, "model": *model, "endpoint": *endpoint, "reps": *reps, "start_rep": *startRep, "cases": len(cases), "budget_ms": budget.Milliseconds(), "num_ctx": 32768, "num_batch": 128, "dispatch": "route_only; no Agency or workers", "scope": scope}); err != nil {
+	if router {
+		scope = "route/text only; route_only vs json_route; no admission, decision model or audio"
+	}
+	if err = emit(map[string]any{"type": "manifest", "created_at": time.Now().UTC(), "cases_sha256": fmt.Sprintf("%x", sha256.Sum256(raw)), "questions_sha256": fmt.Sprintf("%x", sha256.Sum256(questions)), "persona_hash": hash, "model": *model, "endpoint": *endpoint, "reps": *reps, "start_rep": *startRep, "cases": len(cases), "budget_ms": budget.Milliseconds(), "num_ctx": 32768, "num_batch": 128, "dispatch": "route_only; no Agency or workers", "compare": *compare, "think": *think, "scope": scope}); err != nil {
 		return err
 	}
 	warm := replayCase{ID: "warmup", Input: decision.WorkInput{Text: "What is a compiler?", EnabledTiers: []decision.Tier{decision.Simple, decision.Medium, decision.Complex}}}
+	if router {
+		return runRouter(ctx, b, &rec, cases, warm, *startRep, *reps, emit)
+	}
 	wctx, wcancel := context.WithTimeout(ctx, 15*time.Second)
 	ws := time.Now()
 	wp, we := policy.Decide(wctx, warm.Input)
@@ -302,6 +525,56 @@ func run() error {
 				fmt.Printf("%s rep=%d %s %.1fms calls=%d accepted=%v correct=%v error=%s\n", c.ID, rep, mode, s.ElapsedMS, s.ModelCalls, s.Proposal.Accepted, s.Correct, s.Error)
 			}
 		}
+	}
+	return nil
+}
+
+// benchConfig is the speaking brain's config. The router comparison turns voice
+// tools on so the system prompt carries the live route guidance a real turn
+// has; the decision comparison keeps the prompt its recorded runs used. think
+// is ollama_think; empty leaves thinking off.
+func benchConfig(host, model, dir string, router bool, think string) *config.Config {
+	return &config.Config{BrainProvider: "ollama", OllamaHost: host, OllamaModel: model, OllamaNumCtx: 32768, OllamaNumBatch: 128,
+		OllamaKeepAlive: "20m", OllamaThink: think, Persona: "samantha", AgentName: "Samantha", WorkDir: dir, PromptsDir: dir, VoiceToolsEnabled: router}
+}
+
+func runRouter(ctx context.Context, b *brain.OllamaBrain, rec *chatRecorder, cases []replayCase, warm replayCase, startRep, reps int, emit func(any) error) error {
+	wsample := replayRouter(ctx, b, rec, warm, "route_only", "", -1)
+	if err := emit(wsample); err != nil {
+		return err
+	}
+	if wsample.Error != "" {
+		return errors.New(wsample.Error)
+	}
+	var samples []sample
+	for rep := startRep; rep < startRep+reps; rep++ {
+		for i := range cases {
+			caseIndex := (i + rep) % len(cases)
+			c := cases[caseIndex]
+			for pos, mode := range pairedModes(routerModes, caseIndex, rep) {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				s := replayRouter(ctx, b, rec, c, mode, pairOrders[pos], rep)
+				samples = append(samples, s)
+				if err := emit(s); err != nil {
+					return err
+				}
+				fmt.Printf("%s rep=%d %s (%s) %.1fms calls=%d correct=%v error=%s\n", c.ID, rep, mode, s.Order, s.ElapsedMS, s.ModelCalls, s.Correct, s.Error)
+			}
+		}
+	}
+	groups := summarizeRouter(samples)
+	balanced := reps%2 == 0
+	if err := emit(map[string]any{"type": "router_summary", "balanced": balanced, "groups": groups}); err != nil {
+		return err
+	}
+	for _, g := range groups {
+		fmt.Printf("%s %s: n=%d correct=%d errors=%d elapsed=%.1fms first_text=%.1fms (n=%d) reply_prompt_eval=%.1fms (n=%d)\n",
+			g.Mode, g.Order, g.Samples, g.Correct, g.Errors, g.MeanElapsedMS, g.MeanFirstTextMS, g.FirstTextSamples, g.MeanReplyPromptEval, g.ReplySamples)
+	}
+	if !balanced {
+		fmt.Println("odd -reps: each case ran one mode first more often; compare modes at the same position")
 	}
 	return nil
 }

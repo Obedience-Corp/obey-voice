@@ -5,10 +5,18 @@ import (
 	"strings"
 )
 
-// keyValue is one key of a multi-key write.
-type keyValue struct {
+// KeyWrite is one key of a multi-key write.
+type KeyWrite struct {
 	Key   string
 	Value any
+}
+
+// SetKeyFileValues writes several already-typed values as one save: one lock,
+// one read, one backup and one replace, so a front end changing related keys
+// does not rewrite config.yaml once per key.
+func SetKeyFileValues(pairs []KeyWrite) error {
+	_, err := setKeyFileValuesFrom(func(func(string) (string, bool)) []KeyWrite { return pairs }, false)
+	return err
 }
 
 // setKeyFileValuesFrom writes several keys in one locked read-modify-write
@@ -17,7 +25,7 @@ type keyValue struct {
 // text value in config.yaml (false when the file does not set it) and returns
 // what to write. With dryRun it only checks that the edit would apply and
 // writes nothing.
-func setKeyFileValuesFrom(build func(fileValue func(key string) (string, bool)) []keyValue, dryRun bool) ([]keyValue, error) {
+func setKeyFileValuesFrom(build func(fileValue func(key string) (string, bool)) []KeyWrite, dryRun bool) ([]KeyWrite, error) {
 	fileWriteMu.Lock()
 	defer fileWriteMu.Unlock()
 	path := ConfigFile()

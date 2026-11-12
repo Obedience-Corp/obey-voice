@@ -1149,7 +1149,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Hosted persona sharing",
-      "help": "What a persona on Claude, Codex, Muse Spark or Obey receives of a conversation shared with other personas; a persona on Grok or Cursor only holds a conversation started on it. from_invite sends only what is said from when the persona is first addressed, plus the task and result of each background job it started earlier, on any backend. whole_conversation sends the spoken lines from the start; tool calls, tool output and attachment names are never sent. Read when a persona is first addressed; a running conversation applies a change only after settings reload, and only to personas first addressed afterwards.",
+      "help": "What a persona on a hosted backend (Claude, Codex, Cursor, Grok, Muse Spark or Obey) receives of a conversation shared with other personas. from_invite sends only what is said from when the persona is first addressed, plus the task and result of each background job it started earlier, on any backend. whole_conversation sends the spoken lines from the start; tool calls, tool output and attachment names are never sent. Read when a persona is first addressed; a running conversation applies a change only after settings reload, and only to personas first addressed afterwards.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
@@ -1895,12 +1895,13 @@
       "default": "route_only",
       "enum": [
         "route_only",
+        "json_route",
         "legacy"
       ],
       "allows_empty": false,
       "group": "tools",
       "title": "Live router tools",
-      "help": "route_only exposes only the route tool on the microphone brain; legacy keeps the full tool list for comparison.",
+      "help": "route_only exposes only the route tool on the microphone brain; json_route (experimental, Ollama) asks for the same route as JSON without tools so routing and the reply share one prompt prefix; legacy keeps the full tool list for comparison.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
