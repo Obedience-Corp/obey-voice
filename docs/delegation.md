@@ -111,11 +111,14 @@ A spawned job runs on one of two backends, chosen per persona by its
 - `worker`: the configured worker does it: the persona's `brain.worker`,
   else `voice_worker_provider` and `voice_worker_model`, or a tier.
 
-Left empty, a persona on Claude, Codex, Cursor, Grok, Muse Spark or Obey does
-its own work, and a persona on Ollama hands it to the worker, which is how
-every persona worked before the setting existed. A persona on Claude set to
-`worker` behaves exactly as before. Choosing, per task, between the two is not
-offered.
+Left empty, a persona hands its work to the worker when it is on Ollama or
+when its profile names a worker of its own (`brain.worker` with a provider,
+model or host), which is how every persona worked before the setting existed.
+Any other persona on Claude, Codex, Cursor, Grok, Muse Spark or Obey does its
+own work. A worker chosen only in Settings (`voice_worker_provider`) does not
+change that default. A persona set to `worker` behaves exactly as before.
+`obey-voice doctor` lists every persona with who does its work and why.
+Choosing, per task, between the two is not offered.
 
 Only who runs the job changes. Whether a turn is a job at all is decided as
 before, and the persona still acknowledges it with "I'll work on that and
@@ -145,15 +148,42 @@ uses the model's advertised window, as a worker would.
 The limits are the worker's: `voice_worker_job_budget`, the concurrency limit
 (`voice_worker_max_concurrent`, or the tiered policy's), cancelling by voice,
 **Stop task** and **Stop all** in `/workers`, and **Allow background workers**
-all apply to own jobs. Worker tiers apply only to work handed to the worker: a
-persona set to `own` runs a tiered or decision-model spawn on its own backend,
-with full tools, as a tiered worker would. The tier's runtime limit and
-request allowances, the paid-worker switch and `worker-usage.sqlite`
-accounting do not cover it; the persona's backend is already the one you chose
-for it to talk on. Its only time limit, in tiered mode too, is
-`voice_worker_job_budget`, which is unlimited by default. The experimental `voice_work_enabled` inbox runs local
-workers only, so there a persona on a hosted backend hands its work to the
-worker as before, and only a persona on Ollama can do its own.
+all apply to own jobs. Outside tiered mode an own job's only time limit is
+`voice_worker_job_budget`, which is unlimited by default.
+
+In tiered mode an own job is held to the tier its spawn was routed to, with
+the persona's `worker_tiers` overrides applied, as a worker job is; only the
+backend and model differ:
+
+- The tier's `runtime_seconds` stops it, or `voice_worker_job_budget` when
+  that is shorter.
+- On Ollama, the tier's `model_requests`, `tool_calls`, `transport_retries`
+  and `output_tokens` are counted and enforced, as for a local tier worker.
+- On Claude, Codex, Cursor, Grok, Muse Spark and Obey the backend runs its own
+  tools and requests, which the host cannot count, so, as for a tier worker on
+  those backends, only the runtime limit is enforced.
+- Under the `strict` charge policy an own job on Ollama is held to the strict
+  tool allowlist. An own job on any other backend is refused with a message
+  that says so, since the backend cannot be held to that allowlist, and
+  `obey-voice doctor` flags the persona.
+- A spawn routed to no tier is refused, as it is for a worker.
+
+The tier's assignment, billing, `enabled` flag and `allow_uncapped` describe
+the worker it names and do not apply to an own job. Neither do the paid-worker
+switch (`paid_enabled`) and the `worker-usage.sqlite` ledger, which cover paid
+tier workers only. An own job reports its usage as any worker does, in
+`worker.usage` events, with request and tool counts on Ollama in tiered mode
+and whatever token or cost figures the backend returns.
+
+The experimental `voice_work_enabled` inbox runs local workers only, so there
+a persona on a hosted backend hands its work to the worker as before, and
+only a persona on Ollama can do its own.
+
+A long story ("tell me a long story") is written by the persona's own backend
+when it does its own work, with tools as `voice_tools_enabled` says, so it
+needs no configured worker. In tiered mode, and for a persona that hands its
+work to the worker, the configured worker writes it, as before. The story
+prompt carries none of the conversation, so it gives no hosted notice.
 
 The job's brief is the one every job gets (see
 [Hosted backends](personas.md#hosted-backends)): a persona on Claude, Codex,
@@ -162,7 +192,9 @@ When the job is the first thing sent to a hosted backend in the conversation,
 the hosted notice is shown before it starts. A change to `brain.work` reaches
 a conversation the next time that persona is selected: a new conversation, or
 when it is addressed again after another persona answered. It does not
-restart the persona's session.
+restart the persona's session. Who does a turn's work is decided once, when
+the turn is taken, so what the router is told and who runs the job agree even
+if the persona is edited or switched while the turn runs.
 
 ## What the worker is doing
 

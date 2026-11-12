@@ -184,9 +184,10 @@ func TestWorkSettingSurvivesSaveReloadApplyAndUnrelatedStackEdits(t *testing.T) 
 		if cfg.PersonaWork != want {
 			t.Fatalf("bound work = %q, want %q", cfg.PersonaWork, want)
 		}
+		// The profile names its own worker, so an empty setting is worker.
 		wantEffective := want
 		if want == "" {
-			wantEffective = config.WorkOwn
+			wantEffective = config.WorkWorker
 		}
 		if got := config.WorkOf(cfg); got != wantEffective {
 			t.Fatalf("effective work = %q, want %q", got, wantEffective)
@@ -195,5 +196,33 @@ func TestWorkSettingSurvivesSaveReloadApplyAndUnrelatedStackEdits(t *testing.T) 
 	bad := &Profile{Schema: Schema, ID: "mira", DisplayName: "Mira", Prompts: PromptRefs{Persona: "mira"}, Brain: Brain{Work: "decide"}}
 	if err := bad.Validate(); err == nil {
 		t.Fatal("an unknown work value validated")
+	}
+}
+
+// Naming a worker in the persona's profile makes worker its default; a
+// worker chosen only in Settings does not.
+func TestAPersonaThatNamesItsWorkerDefaultsToWorker(t *testing.T) {
+	global := func() *config.Config {
+		return &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "global:8b", PersonaNamesWorker: true}
+	}
+	for _, tc := range []struct {
+		name   string
+		worker Worker
+		work   string
+		want   string
+	}{
+		{"no worker of its own", Worker{}, "", config.WorkOwn},
+		{"a worker provider", Worker{Provider: "codex"}, "", config.WorkWorker},
+		{"only a worker model", Worker{Model: "qwen3:8b"}, "", config.WorkWorker},
+		{"only a worker host", Worker{OllamaHost: "http://box:11434"}, "", config.WorkWorker},
+		{"a worker but set to own", Worker{Provider: "codex"}, config.WorkOwn, config.WorkOwn},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := global()
+			Apply(cfg, &Profile{Schema: Schema, ID: "mira", DisplayName: "Mira", Brain: Brain{Provider: "claude", Work: tc.work, Worker: tc.worker}})
+			if got := config.WorkOf(cfg); got != tc.want {
+				t.Fatalf("work = %q (%s), want %q", got, config.WorkReason(cfg), tc.want)
+			}
+		})
 	}
 }

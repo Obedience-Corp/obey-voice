@@ -150,13 +150,13 @@ func (m *personasModel) cycleWork(delta int) {
 }
 
 // defaultWork is who runs the work when the persona does not say: it follows
-// the brain row, or Settings' brain under "(default)".
+// the brain row, or Settings' brain under "(default)", and the Worker rows.
 func (m personasModel) defaultWork() string {
 	provider := providerAt(stackBrainProviders(), m.brainProviderIdx)
 	if provider == "" && m.cfg != nil {
 		provider = m.cfg.BrainProvider
 	}
-	return config.DefaultWork(provider)
+	return config.DefaultWork(provider, m.formWorker().Named())
 }
 
 // effectiveWork is who will run the work with the form as it stands.

@@ -17,11 +17,12 @@ import (
 // recordingWorker answers every job with reply and keeps what it was given.
 // A non-nil release holds each job until it closes or the job is stopped.
 type recordingWorker struct {
-	reply   string
-	release <-chan struct{}
-	mu      sync.Mutex
-	briefs  []string
-	opts    []brain.StreamOptions
+	reply     string
+	release   <-chan struct{}
+	mu        sync.Mutex
+	briefs    []string
+	opts      []brain.StreamOptions
+	deadlines []time.Time
 }
 
 func (w *recordingWorker) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
@@ -29,10 +30,16 @@ func (w *recordingWorker) ThinkStream(context.Context, string, brain.StreamOptio
 }
 
 func (w *recordingWorker) ThinkFull(ctx context.Context, brief string, opts brain.StreamOptions) (string, error) {
+	deadline, _ := brain.WorkerDeadline(ctx)
 	w.mu.Lock()
 	w.briefs = append(w.briefs, brief)
 	w.opts = append(w.opts, opts)
+	w.deadlines = append(w.deadlines, deadline)
 	w.mu.Unlock()
+	if opts.OnWorkerUsage != nil {
+		in, out := 120, 40
+		opts.OnWorkerUsage(brain.WorkerUsage{InputTokens: &in, OutputTokens: &out})
+	}
 	if w.release != nil {
 		select {
 		case <-w.release:
@@ -69,6 +76,9 @@ type ownHarness struct {
 	failed     chan events.JobFailed
 	aborted    chan events.JobAborted
 	info       chan string
+	errs       chan string
+	usage      chan events.WorkerUsageRecorded
+	routes     chan events.RouteDecided
 }
 
 func newOwnHarness(t *testing.T, cfg *config.Config, workerErr error, opts ...job.Option) *ownHarness {
@@ -80,6 +90,9 @@ func newOwnHarness(t *testing.T, cfg *config.Config, workerErr error, opts ...jo
 		failed:     make(chan events.JobFailed, 4),
 		aborted:    make(chan events.JobAborted, 4),
 		info:       make(chan string, 16),
+		errs:       make(chan string, 16),
+		usage:      make(chan events.WorkerUsageRecorded, 4),
+		routes:     make(chan events.RouteDecided, 4),
 	}
 	h.p = &Pipeline{Events: events.NewBus(), Brain: &lifecycleWorker{reply: "live"}}
 	h.p.SetOutputMuted(true)
@@ -87,6 +100,9 @@ func newOwnHarness(t *testing.T, cfg *config.Config, workerErr error, opts ...jo
 	events.Subscribe(h.p.Events, func(e events.JobFailed) { h.failed <- e })
 	events.Subscribe(h.p.Events, func(e events.JobAborted) { h.aborted <- e })
 	events.Subscribe(h.p.Events, func(e events.Info) { h.info <- e.Message })
+	events.Subscribe(h.p.Events, func(e events.Error) { h.errs <- e.Message })
+	events.Subscribe(h.p.Events, func(e events.WorkerUsageRecorded) { h.usage <- e })
+	events.Subscribe(h.p.Events, func(e events.RouteDecided) { h.routes <- e })
 	h.jobs = job.NewTable(context.Background(), opts...)
 	t.Cleanup(h.jobs.Close)
 	var configured brain.Provider
@@ -225,34 +241,195 @@ func TestPersonaOnOllamaChoosesBetweenTheWorkerAndItsOwnModel(t *testing.T) {
 	})
 }
 
-func TestOwnWorkIgnoresWorkerTiers(t *testing.T) {
-	tiered := func(work string) *config.Config {
-		cfg := tierTestConfig()
-		cfg.ActivePersona, cfg.BrainProvider, cfg.ClaudeModel, cfg.PersonaWork = "mira", "claude", "sonnet", work
-		return cfg
-	}
-	h := newOwnHarness(t, tiered(""), nil, job.WithBudget(time.Hour))
-	h.spawn("refactor the parser", config.WorkerTierSimple)
-	h.awaitFinished(t)
-	if h.planned != 0 || h.configured.calls() != 0 {
-		t.Fatalf("tier plan built %d, configured ran %d", h.planned, h.configured.calls())
-	}
-	got := h.builtConfigs()[0]
-	if tieredWorkers(got) || !got.VoiceToolsEnabled || got.VoiceWorkerProvider != "claude" || got.VoiceWorkerModel != "sonnet" {
-		t.Fatalf("own job config: tiers %v tools %v worker %s/%s", got.VoiceWorkers, got.VoiceToolsEnabled, got.VoiceWorkerProvider, got.VoiceWorkerModel)
-	}
-	h.own.mu.Lock()
-	tools := h.own.opts[0].ToolsEnabled
-	h.own.mu.Unlock()
-	if !tools {
-		t.Fatal("an own job in tiered mode ran without tools")
-	}
+// tieredPersona is Mira on provider in tiered mode, with the simple tier
+// assigned to a local worker and the medium tier left unassigned.
+func tieredPersona(provider, work string, tools bool) *config.Config {
+	cfg := tierTestConfig()
+	cfg.ActivePersona, cfg.AgentName, cfg.BrainProvider, cfg.PersonaWork, cfg.VoiceToolsEnabled = "mira", "Mira", provider, work, tools
+	cfg.ClaudeModel, cfg.OllamaModel = "sonnet", "persona:14b"
+	cfg.VoiceWorkers.Tiers.Simple.Limits = config.WorkerLimits{RuntimeSeconds: 45, ModelRequests: 3, ToolCalls: 4, TransportRetries: 0}
+	cfg.VoiceWorkers.Tiers.Medium.Limits.RuntimeSeconds = 90
+	return cfg
+}
 
-	w := newOwnHarness(t, tiered(config.WorkWorker), nil)
-	w.spawn("refactor the parser", config.WorkerTierSimple)
-	w.awaitFinished(t)
-	if w.planned != 1 || len(w.builtConfigs()) != 0 {
-		t.Fatalf("worker route: tier plan built %d, own built %d", w.planned, len(w.builtConfigs()))
+func strictPolicy(cfg *config.Config) *config.Config {
+	daily := int64(1_000_000)
+	cfg.VoiceWorkers.Policy.ChargePolicy, cfg.VoiceWorkers.Policy.DailyChargeMicroUSD = "strict", &daily
+	return cfg
+}
+
+func (h *ownHarness) ownCall(t *testing.T) (brain.StreamOptions, time.Time) {
+	t.Helper()
+	h.own.mu.Lock()
+	defer h.own.mu.Unlock()
+	if len(h.own.opts) != 1 {
+		t.Fatalf("own backend ran %d job(s), want 1", len(h.own.opts))
+	}
+	return h.own.opts[0], h.own.deadlines[0]
+}
+
+func (h *ownHarness) awaitRejected(t *testing.T, want string) {
+	t.Helper()
+	select {
+	case msg := <-h.errs:
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error = %q, want %q", msg, want)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no error was reported")
+	}
+	select {
+	case r := <-h.routes:
+		if r.State != "rejected" || !strings.Contains(r.Message, want) {
+			t.Fatalf("route = %+v", r)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no route decision")
+	}
+	if n := len(h.jobs.Status()); n != 0 || len(h.builtConfigs()) != 0 || h.configured.calls() != 0 || h.planned != 0 {
+		t.Fatalf("a refused job ran: jobs %d own %d configured %d planned %d", n, len(h.builtConfigs()), h.configured.calls(), h.planned)
+	}
+}
+
+func TestOwnWorkInTieredModeIsHeldToTheRoutedTier(t *testing.T) {
+	t.Run("tools off stays off", func(t *testing.T) {
+		h := newOwnHarness(t, tieredPersona("claude", "", false), nil, job.WithBudget(time.Hour))
+		h.spawn("refactor the parser", config.WorkerTierSimple)
+		h.awaitFinished(t)
+		opts, _ := h.ownCall(t)
+		got := h.builtConfigs()[0]
+		if opts.ToolsEnabled || got.VoiceToolsEnabled || tieredWorkers(got) || got.VoiceWorkerProvider != "claude" || got.VoiceWorkerModel != "sonnet" || h.planned != 0 || h.configured.calls() != 0 {
+			t.Fatalf("own job: tools %v (config %v) tiered %v worker %s/%s planned %d configured %d",
+				opts.ToolsEnabled, got.VoiceToolsEnabled, tieredWorkers(got), got.VoiceWorkerProvider, got.VoiceWorkerModel, h.planned, h.configured.calls())
+		}
+		h.a.mu.Lock()
+		admission := h.a.workerOrigins[h.jobs.Status()[0].ID].admission
+		h.a.mu.Unlock()
+		if admission["tools"] != "false" || admission["worker_tier"] != "simple" || admission["work"] != config.WorkOwn {
+			t.Fatalf("admission = %v", admission)
+		}
+	})
+	t.Run("tools on", func(t *testing.T) {
+		h := newOwnHarness(t, tieredPersona("claude", "", true), nil, job.WithBudget(time.Hour))
+		h.spawn("refactor the parser", config.WorkerTierSimple)
+		h.awaitFinished(t)
+		if opts, _ := h.ownCall(t); !opts.ToolsEnabled || opts.WorkerBudget != nil {
+			t.Fatalf("own job on claude: tools %v budget %v, want tools and the runtime limit only", opts.ToolsEnabled, opts.WorkerBudget)
+		}
+	})
+	t.Run("the routed tier's runtime, not longer than the job budget", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			tier  config.WorkerTierName
+			table time.Duration
+			want  time.Duration
+		}{
+			{"simple", config.WorkerTierSimple, time.Hour, 45 * time.Second},
+			{"an unassigned tier keeps its limits", config.WorkerTierMedium, time.Hour, 90 * time.Second},
+			{"a shorter job budget wins", config.WorkerTierSimple, 20 * time.Second, 20 * time.Second},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				h := newOwnHarness(t, tieredPersona("claude", "", true), nil, job.WithBudget(tc.table))
+				start := time.Now()
+				h.spawn("refactor the parser", tc.tier)
+				h.awaitFinished(t)
+				_, deadline := h.ownCall(t)
+				if got := deadline.Sub(start); got > tc.want+time.Second || got < tc.want-time.Second {
+					t.Fatalf("own job deadline in %s, want %s", got, tc.want)
+				}
+			})
+		}
+	})
+	t.Run("a local own job gets the tier's allowances and the strict allowlist", func(t *testing.T) {
+		h := newOwnHarness(t, strictPolicy(tieredPersona("ollama", config.WorkOwn, true)), nil, job.WithBudget(time.Hour))
+		h.spawn("tidy the notes", config.WorkerTierSimple)
+		h.awaitFinished(t)
+		opts, _ := h.ownCall(t)
+		if opts.WorkerBudget == nil {
+			t.Fatal("a local own job ran without the tier's budget")
+		}
+		limits := opts.WorkerBudget.Snapshot().Limits
+		if !limits.StrictTools || limits.MaxRequests != 3 || limits.MaxToolCalls != 4 || limits.MaxRetries != 0 || limits.MaxRuntime != 45*time.Second {
+			t.Fatalf("budget limits = %+v", limits)
+		}
+		if err := opts.WorkerBudget.AllowTool("run_command"); err == nil {
+			t.Fatal("the strict allowlist let run_command through")
+		}
+		if err := opts.WorkerBudget.AllowTool("read_file"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("a hosted own job is refused under the strict policy", func(t *testing.T) {
+		for _, tools := range []bool{true, false} {
+			h := newOwnHarness(t, strictPolicy(tieredPersona("claude", "", tools)), nil)
+			h.spawn("refactor the parser", config.WorkerTierSimple)
+			h.awaitRejected(t, "Mira cannot do its own work under the strict worker policy: claude")
+		}
+	})
+	t.Run("a job routed to no tier is refused", func(t *testing.T) {
+		h := newOwnHarness(t, tieredPersona("claude", "", true), nil)
+		h.spawn("refactor the parser", "")
+		h.awaitRejected(t, "routed to no known tier")
+	})
+	t.Run("work handed to the worker still uses the tier's assignment", func(t *testing.T) {
+		w := newOwnHarness(t, tieredPersona("claude", config.WorkWorker, true), nil)
+		w.spawn("refactor the parser", config.WorkerTierSimple)
+		w.awaitFinished(t)
+		if w.planned != 1 || len(w.builtConfigs()) != 0 {
+			t.Fatalf("worker route: tier plan built %d, own built %d", w.planned, len(w.builtConfigs()))
+		}
+	})
+}
+
+func TestOwnWorkUnderTheStrictPolicyIsNotAdvertisedOnAHostedBackend(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  *config.Config
+		want bool
+	}{
+		{"advisory", tieredPersona("claude", "", true), true},
+		{"strict", strictPolicy(tieredPersona("claude", "", true)), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newOwnHarness(t, tc.cfg, nil)
+			b := &harnessFixtureBrain{routedProjectionBrain: &routedProjectionBrain{fakeBrain: &fakeBrain{chunks: []string{"Sure."}}}}
+			b.classify = func(context.Context, brain.LiveRouteRequest) (brain.StreamResult, error) {
+				return brain.StreamResult{}, nil
+			}
+			h.p.Brain = b
+			if _, err := h.p.startBrainStream(t.Context(), "refactor the parser", brain.StreamOptions{ToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsRouteOnly}); err != nil {
+				t.Fatal(err)
+			}
+			if routing := b.chat[0].HarnessRouting; routing == nil || routing.WorkersAvailable != tc.want {
+				t.Fatalf("harness routing = %+v, want work available %v", routing, tc.want)
+			}
+		})
+	}
+}
+
+func TestOwnWorkReportsItsUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		cfg      *config.Config
+		tier     config.WorkerTierName
+		counters bool
+	}{
+		{"hosted", claudePersona(), "", false},
+		{"local in tiered mode", tieredPersona("ollama", config.WorkOwn, true), config.WorkerTierSimple, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newOwnHarness(t, tc.cfg, nil, job.WithBudget(time.Hour))
+			h.spawn("tidy the notes", tc.tier)
+			h.awaitFinished(t)
+			select {
+			case u := <-h.usage:
+				if u.JobID != h.jobs.Status()[0].ID || u.InputTokens == nil || *u.InputTokens != 120 || u.OutputTokens == nil || *u.OutputTokens != 40 || (u.Requests != nil) != tc.counters {
+					t.Fatalf("usage = %+v", u)
+				}
+			default:
+				t.Fatal("the own job recorded no usage")
+			}
+		})
 	}
 }
 
@@ -276,9 +453,7 @@ func TestOwnWorkObeysTheJobBudgetAndCancel(t *testing.T) {
 		}
 	})
 	t.Run("budget in tiered mode", func(t *testing.T) {
-		cfg := tierTestConfig()
-		cfg.ActivePersona, cfg.BrainProvider = "mira", "claude"
-		h := newOwnHarness(t, cfg, nil, job.WithBudget(60*time.Millisecond))
+		h := newOwnHarness(t, tieredPersona("claude", "", true), nil, job.WithBudget(60*time.Millisecond))
 		release := make(chan struct{})
 		defer close(release)
 		h.own.release = release
@@ -413,14 +588,14 @@ func TestExperimentalWorkKeepsAHostedPersonasWorkOnTheLocalWorker(t *testing.T) 
 		t.Error("the experimental inbox ran a hosted persona's own backend")
 		return nil, errors.New("refused")
 	}
-	if _, own := h.a.ownWork(); own {
+	if h.a.resolveWork().own != nil {
 		t.Fatal("experimental work chose the hosted backend")
 	}
 	local := claudePersona()
 	local.BrainProvider, local.OllamaModel, local.PersonaWork = "ollama", "persona:14b", config.WorkOwn
 	h.a.ReplaceWorker(h.configured, local, nil)
-	if got, own := h.a.ownWork(); !own || got.VoiceWorkerProvider != "ollama" || got.VoiceWorkerModel != "persona:14b" {
-		t.Fatalf("an Ollama persona's own work under the experimental inbox = %v %+v", own, got)
+	if got := h.a.resolveWork().own; got == nil || got.VoiceWorkerProvider != "ollama" || got.VoiceWorkerModel != "persona:14b" {
+		t.Fatalf("an Ollama persona's own work under the experimental inbox = %+v", got)
 	}
 }
 
@@ -508,5 +683,153 @@ func TestOwnWorkResultIsSpokenInThePersonasVoiceAtTheNextPause(t *testing.T) {
 	}
 	if configured.calls() != 0 {
 		t.Fatal("the configured worker ran the persona's job")
+	}
+}
+
+// harnessEditBrain routes the turn to work after the router was told whether
+// work is available, and runs edit in between.
+type harnessEditBrain struct {
+	*harnessFixtureBrain
+	edit func(brain.StreamOptions)
+}
+
+func (b *harnessEditBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	b.edit(opts)
+	return b.harnessFixtureBrain.ThinkStream(ctx, input, opts)
+}
+
+// A turn spawns on the work decision it was admitted with, so a persona
+// edited after the router was told and before the spawn does not flip who
+// runs the job.
+func TestATurnSpawnsOnTheWorkDecisionItWasAdmittedWith(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		admitted, edited string
+		own              bool
+	}{
+		{"own, then edited to worker", config.WorkOwn, config.WorkWorker, true},
+		{"worker, then edited to own", config.WorkWorker, config.WorkOwn, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := claudePersona()
+			cfg.PersonaWork = tc.admitted
+			h := newOwnHarness(t, cfg, nil)
+			edited := claudePersona()
+			edited.PersonaWork = tc.edited
+			var advertised *brain.HarnessRouting
+			b := &harnessEditBrain{harnessFixtureBrain: &harnessFixtureBrain{routedProjectionBrain: &routedProjectionBrain{fakeBrain: &fakeBrain{route: "spawn"}}}}
+			b.classify = func(context.Context, brain.LiveRouteRequest) (brain.StreamResult, error) {
+				return brain.StreamResult{}, nil
+			}
+			b.edit = func(opts brain.StreamOptions) {
+				advertised = opts.HarnessRouting
+				h.a.ReplaceWorker(h.configured, edited, nil)
+			}
+			h.p.Brain = b
+			h.p.VoiceToolsEnabled = true
+			if err := h.p.RunTurnTextMode(t.Context(), "refactor the parser"); err != nil {
+				t.Fatal(err)
+			}
+			done := h.awaitFinished(t)
+			if advertised == nil || !advertised.WorkersAvailable {
+				t.Fatalf("router was told %+v", advertised)
+			}
+			if h.a.resolveWork().own != nil == tc.own {
+				t.Fatal("the edit did not reach the agency")
+			}
+			ownRan, configuredRan := len(h.builtConfigs()) == 1, h.configured.calls() == 1
+			if ownRan != tc.own || configuredRan == tc.own {
+				t.Fatalf("own ran %v, configured ran %v, result %q; want the admitted decision (own %v)", ownRan, configuredRan, done.Summary, tc.own)
+			}
+		})
+	}
+}
+
+func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
+	setup := func(t *testing.T, work string) (*Agency, *recordingWorker, *progressiveFakeTTS, *[]events.Error, *sync.Mutex) {
+		cfg := claudePersona()
+		cfg.PersonaWork, cfg.WorkDir = work, t.TempDir()
+		provider := &progressiveFakeTTS{}
+		player := newFakePlayer(time.Millisecond)
+		t.Cleanup(func() { _ = player.Close() })
+		jobs := job.NewTable(t.Context())
+		t.Cleanup(jobs.Close)
+		p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
+		var mu sync.Mutex
+		var errs []events.Error
+		events.Subscribe(p.Events, func(e events.Error) { mu.Lock(); errs = append(errs, e); mu.Unlock() })
+		a := NewAgency(p, jobs, nil, cfg, errors.New("ollama worker model is missing"))
+		own := &recordingWorker{reply: "Chapter One. Once upon a time on Mira's own model.\n\nChapter Two. The end."}
+		a.ownFactory = func(context.Context, *config.Config) (brain.Provider, error) { return own, nil }
+		a.Wire()
+		metrics := newTurnMetrics()
+		a.HandleRoute(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "tell me a long story", Source: "test"})
+		return a, own, provider, &errs, &mu
+	}
+	t.Run("own: the persona's backend writes it", func(t *testing.T) {
+		_, own, provider, errs, mu := setup(t, "")
+		deadline := time.After(5 * time.Second)
+		for !strings.Contains(strings.Join(provider.Calls(), " "), "Once upon a time on Mira's own model") {
+			select {
+			case <-deadline:
+				mu.Lock()
+				defer mu.Unlock()
+				t.Fatalf("narration never started: speech %v errors %+v", provider.Calls(), *errs)
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(*errs) != 0 {
+			t.Fatalf("errors = %+v", *errs)
+		}
+		own.mu.Lock()
+		defer own.mu.Unlock()
+		if len(own.opts) != 1 || !own.opts[0].ToolsEnabled || !own.opts[0].OmitTurnInstruction || own.briefs[0] != storyWriterPrompt {
+			t.Fatalf("story job on the own backend = %d call(s), %+v", len(own.opts), own.opts)
+		}
+	})
+	t.Run("worker: the missing worker is reported", func(t *testing.T) {
+		_, own, _, errs, mu := setup(t, config.WorkWorker)
+		deadline := time.After(5 * time.Second)
+		for {
+			mu.Lock()
+			n := len(*errs)
+			mu.Unlock()
+			if n > 0 {
+				break
+			}
+			select {
+			case <-deadline:
+				t.Fatal("no error for a story with no worker to write it")
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if e := (*errs)[0]; e.Stage != "narrate" || !strings.Contains(e.Message, "ollama worker model is missing") || own.calls() != 0 {
+			t.Fatalf("error = %+v, own calls %d", e, own.calls())
+		}
+	})
+}
+
+func TestOllamaPersonaDoesItsOwnWorkWithNoConfiguredWorker(t *testing.T) {
+	cfg := &config.Config{ActivePersona: "ember", BrainProvider: "ollama", OllamaModel: "persona:14b", PersonaWork: config.WorkOwn, VoiceToolsEnabled: true, WorkDir: t.TempDir()}
+	h := newOwnHarness(t, cfg, errors.New("unsupported voice_worker_provider \"bogus\""))
+	h.p.Brain = &fakeBrain{route: "spawn"}
+	h.p.VoiceToolsEnabled = true
+	var route RouteDecision
+	h.p.OnRoute = func(d RouteDecision) { route = d }
+	if err := h.p.RunTurnTextMode(t.Context(), "tidy the notes"); err != nil {
+		t.Fatal(err)
+	}
+	if done := h.awaitFinished(t); done.Summary != "I did it myself." {
+		t.Fatalf("result = %+v", done)
+	}
+	if route.Kind != RouteSpawn || route.Source != "router" {
+		t.Fatalf("route = %+v, want the model's spawn", route)
+	}
+	if got := h.builtConfigs(); len(got) != 1 || got[0].VoiceWorkerProvider != "ollama" || got[0].VoiceWorkerModel != "persona:14b" {
+		t.Fatalf("own backend = %+v", got)
 	}
 }

@@ -28,10 +28,13 @@ brain:
       enabled: false
 ```
 
-These overrides apply only to work the persona hands to a worker. A persona
-whose `brain.work` is `own` (the default on every backend but Ollama) does its
-background work on its own backend and model, and no tier is used; see
-[Who does the work](delegation.md#who-does-the-work).
+A tier's assignment applies only to work the persona hands to a worker. A
+persona whose `brain.work` is `own` does its background work on its own
+backend and model; the tier its spawn is routed to, with these overrides
+applied, still sets that job's limits (see
+[Who does the work](delegation.md#who-does-the-work)). Setting
+`worker_tiers` does not by itself make `worker` the persona's default; naming
+a `brain.worker` does.
 
 Omitted tiers and fields inherit Settings. `enabled: false` explicitly disables a
 tier. Assignment and limits replace their entire groups: supply a complete group

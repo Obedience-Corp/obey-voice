@@ -48,7 +48,7 @@ with.`,
 	cmd.Flags().Bool("allow-flatten", false, "Replace a structured prompt document with a flat body (destructive)")
 	cmd.Flags().String("brain-provider", "", "Brain provider for this persona (empty clears to the app default)")
 	cmd.Flags().String("brain-model", "", "Brain model for this persona (empty clears to the app default)")
-	cmd.Flags().String("work", "", "Who runs this persona's background work: own (its own backend and model) or worker (the configured worker); empty takes the default, own off Ollama and worker on it")
+	cmd.Flags().String("work", "", "Who runs this persona's background work: own (its own backend and model) or worker (the configured worker); empty takes the default: worker on Ollama or when the persona names its own worker, own otherwise")
 	cmd.Flags().String("tts-provider", "", "TTS provider for this persona (empty clears to the app default)")
 	cmd.Flags().String("voice", "", "Voice id for the effective TTS provider (empty clears to the app default)")
 	cmd.Flags().String("tier", "", "Qwen3-TTS model tier: 0.6b or 1.7b (empty inherits the app default)")

@@ -276,3 +276,38 @@ func TestPersonaFormWorkRowListsChoicesInlineAndPersists(t *testing.T) {
 		t.Fatalf("bound work = %q", config.WorkOf(effective))
 	}
 }
+
+// The Work row's default follows the Worker rows: a persona that names its
+// own worker hands its work to it unless set to own.
+func TestPersonaFormWorkDefaultFollowsTheWorkerRows(t *testing.T) {
+	cfg := &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "global-worker"}
+	m := newPersonas(cfg)
+	m.width, m.height = 120, 40
+	m.beginCreate()
+	m.brainProviderIdx = providerIndex(stackBrainProviders(), "claude")
+	lines := func() (work, worker string) {
+		t.Helper()
+		for _, line := range strings.Split(stripANSI(m.View()), "\n") {
+			switch {
+			case strings.Contains(line, "Work ") && !strings.Contains(line, "Worker"):
+				work = line
+			case strings.Contains(line, "Worker ") && !strings.Contains(line, "Worker model"):
+				worker = line
+			}
+		}
+		return work, worker
+	}
+	work, worker := lines()
+	if !strings.Contains(work, "✓ (default) own") || !strings.Contains(worker, "unused") {
+		t.Fatalf("with no worker of its own: Work %q, Worker %q", work, worker)
+	}
+	m.workerProviderIdx = providerIndex(stackWorkerProviders(), "codex")
+	work, worker = lines()
+	if !strings.Contains(work, "✓ (default) worker") || strings.Contains(worker, "unused") {
+		t.Fatalf("with a worker of its own: Work %q, Worker %q", work, worker)
+	}
+	m.work = config.WorkOwn
+	if work, worker = lines(); !strings.Contains(work, "✓ own") || !strings.Contains(worker, "unused") {
+		t.Fatalf("set to own: Work %q, Worker %q", work, worker)
+	}
+}

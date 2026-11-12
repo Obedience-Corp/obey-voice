@@ -94,7 +94,7 @@ type CatalogIssue struct {
 //	brain:
 //	  provider: ollama          # or claude, grok; empty = app default
 //	  model: qwen2.5:14b        # provider-specific model id; empty = app default
-//	  work: own                 # own or worker; empty = own off Ollama, worker on it
+//	  work: own                 # own or worker; empty = worker on Ollama or with a worker below, else own
 //	  worker:                   # the model that runs spawned background jobs
 //	    provider: ollama        # or claude, grok; empty = app default
 //	    model: qwen3:8b         # empty = that provider's usual default
@@ -118,6 +118,11 @@ type Worker struct {
 	Provider   string `yaml:"provider,omitempty" json:"provider"`
 	Model      string `yaml:"model,omitempty" json:"model"`
 	OllamaHost string `yaml:"ollama_host,omitempty" json:"ollama_host"`
+}
+
+// Named reports whether the profile names a worker of its own.
+func (w Worker) Named() bool {
+	return strings.TrimSpace(w.Provider) != "" || strings.TrimSpace(w.Model) != "" || strings.TrimSpace(w.OllamaHost) != ""
 }
 
 // TTS holds per-persona speech settings. Each persona may choose any supported
@@ -452,6 +457,7 @@ func applyBrain(cfg *config.Config, b Brain) {
 	}
 	cfg.PersonaWorkerTiers = b.WorkerTiers.Clone()
 	cfg.PersonaWork = strings.ToLower(strings.TrimSpace(b.Work))
+	cfg.PersonaNamesWorker = b.Worker.Named()
 	applyWorker(cfg, b.Worker)
 	if model := strings.TrimSpace(b.Model); model != "" {
 		config.SetBrainModel(cfg, cfg.BrainProvider, model)

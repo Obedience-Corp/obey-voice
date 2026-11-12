@@ -123,13 +123,16 @@ remain available.
 The **Work** row (`brain.work`) decides whether the worker is used at all.
 `own` has the persona do its background work itself, on its own backend and
 model, in a session separate from the one it talks in; `worker` hands it to
-the Worker rows above. The row shows all three choices on one line and checks
-the current one: `(default)`, which follows the brain (own on Claude, Codex,
-Cursor, Grok, Muse Spark and Obey, worker on Ollama), `own` and `worker`. From
+the Worker rows. The row shows all three choices on one line and checks the
+current one: `(default)`, `own` and `worker`. `(default)` is `worker` on
+Ollama or when the Worker rows name a worker for this persona, and `own`
+otherwise; the row shows which as you change the Brain and Worker rows. From
 the shell, `obey-voice persona edit <id> --work own`, `--work worker`, or
 `--work ""` for the default. While a persona does its own work, its Worker
-rows are not used. See [Who does the work](delegation.md#who-does-the-work)
-for permissions, limits and tiers.
+rows are not used and say so. `obey-voice doctor` lists who does each
+persona's work and why. See
+[Who does the work](delegation.md#who-does-the-work) for permissions, limits
+and tiers.
 
 ### Shipped personas
 

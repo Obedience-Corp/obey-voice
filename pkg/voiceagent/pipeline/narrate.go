@@ -154,7 +154,7 @@ func (n *Narrator) retryFlushPending() {
 
 func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
 	if isLongStoryPhrase(d.Transcript) {
-		n.startStoryJob(ctx, turn, metrics)
+		n.startStoryJob(ctx)
 		return
 	}
 
@@ -171,10 +171,19 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 	n.tryStartNarration(ctx, source)
 }
 
-func (n *Narrator) startStoryJob(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
+// startStoryJob writes the story on the persona's own backend when it does
+// its own work, and on the configured worker otherwise. In tiered mode the
+// configured worker writes it, as before: a story is often asked for without
+// a tier. The story prompt carries none of the conversation, so a hosted
+// backend gives no notice for it.
+func (n *Narrator) startStoryJob(ctx context.Context) {
+	own := n.agency.turnWork(ctx).own
+	if tieredWorkers(n.agency.currentConfig()) {
+		own = nil
+	}
 	id, err := n.agency.jobs.Start(ctx, job.Spec{
 		Task: "write a long story",
-		Run:  n.storyWriterRun(),
+		Run:  n.storyWriterRun(own),
 	})
 	if err != nil {
 		n.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
@@ -185,17 +194,26 @@ func (n *Narrator) startStoryJob(ctx context.Context, turn *turnConductor, metri
 	n.mu.Unlock()
 }
 
-func (n *Narrator) storyWriterRun() func(context.Context) (string, error) {
+func (n *Narrator) storyWriterRun(own *config.Config) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
-		worker, err := n.agency.workerProvider()
-		if err != nil {
-			return "", err
+		opts := brain.WorkerStreamOptions(n.cfg == nil || n.cfg.VoiceToolsEnabled)
+		var worker brain.Provider
+		if own != nil {
+			opts.ToolsEnabled = own.VoiceToolsEnabled
+			built, err := n.agency.buildOwnWorker(ctx, own)
+			if err != nil {
+				return "", err
+			}
+			defer func() { _ = brain.CloseProvider(built) }()
+			worker = built
+		} else {
+			configured, err := n.agency.workerProvider()
+			if err != nil {
+				return "", err
+			}
+			worker = configured
 		}
-		tools := true
-		if n.cfg != nil {
-			tools = n.cfg.VoiceToolsEnabled
-		}
-		raw, err := worker.ThinkFull(ctx, storyWriterPrompt, brain.WorkerStreamOptions(tools))
+		raw, err := worker.ThinkFull(ctx, storyWriterPrompt, opts)
 		if err != nil {
 			return "", err
 		}

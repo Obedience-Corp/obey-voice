@@ -668,8 +668,9 @@ When Workers Settings are in **tiered** mode, the saved
 `runtime_seconds` are the effective scheduling and runtime limits. The legacy
 `voice_worker_max_concurrent` and `voice_worker_job_budget` keys remain
 available for legacy mode only, except that `voice_worker_job_budget` also caps
-work a persona does itself, which no tier covers; enabling tiered mode does
-not silently migrate or reinterpret those explicit singleton values.
+work a persona does itself when it is shorter than the routed tier's
+`runtime_seconds`; enabling tiered mode does not silently migrate or
+reinterpret those explicit singleton values.
 
 Existing saved `queued_workers: 1` remains an explicit one-job queue bound.
 Increase it in Workers Settings if desired; loading an older policy does not
@@ -678,13 +679,17 @@ silently replace that saved value with a newer default.
 Who runs a persona's background work is a persona setting, not a config key:
 `brain.work` in its `persona.yaml` (`own` or `worker`), set with
 `obey-voice persona edit <id> --work own` or the **Work** row of the persona
-form. Empty takes the default: a persona on Claude, Codex, Cursor, Grok,
-Muse Spark or Obey does its own work on its own backend and model; a persona
-on Ollama hands it to the `voice_worker_*` worker, as before. The
-`voice_worker_*` keys and the tiers in `voice_workers` apply only to work
-handed to the worker; `voice_worker_job_budget`, the concurrency limit
-(`voice_worker_max_concurrent`, or the tiered policy's) and
-`voice_workers_disabled` apply to both. See
+form. Empty takes the default: a persona on Ollama, or one whose profile
+names a worker of its own (`brain.worker`), hands it to the worker, as
+before; any other persona on Claude, Codex, Cursor, Grok, Muse Spark or Obey
+does its own work on its own backend and model. A worker chosen only with
+`voice_worker_provider` does not change that default. The `voice_worker_*`
+keys and the tier assignments in `voice_workers` apply only to work handed to
+the worker. `voice_worker_job_budget`, the concurrency limit
+(`voice_worker_max_concurrent`, or the tiered policy's),
+`voice_workers_disabled`, `voice_tools_enabled` and, in tiered mode, the
+routed tier's limits and the charge policy apply to both. `obey-voice doctor`
+lists who does each persona's work. See
 [Who does the work](delegation.md#who-does-the-work).
 
 ### Experimental group participation

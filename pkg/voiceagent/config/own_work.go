@@ -27,10 +27,11 @@ func ValidateWork(value string) error {
 }
 
 // DefaultWork is who does the work of a persona on provider when its
-// profile does not say: the persona itself on any backend but Ollama, and
-// the configured worker on Ollama.
-func DefaultWork(provider string) string {
-	if brainProviderName(provider) == "ollama" {
+// profile does not say: the configured worker on Ollama or when the profile
+// names its own worker, and the persona itself otherwise. A worker chosen
+// only in Settings does not change it.
+func DefaultWork(provider string, namesWorker bool) string {
+	if namesWorker || brainProviderName(provider) == "ollama" {
 		return WorkWorker
 	}
 	return WorkOwn
@@ -44,14 +45,29 @@ func WorkOf(cfg *Config) string {
 	if value := strings.ToLower(strings.TrimSpace(cfg.PersonaWork)); value == WorkOwn || value == WorkWorker {
 		return value
 	}
-	return DefaultWork(cfg.BrainProvider)
+	return DefaultWork(cfg.BrainProvider, cfg.PersonaNamesWorker)
+}
+
+// WorkReason says why WorkOf chose what it did, for doctor and the persona
+// form.
+func WorkReason(cfg *Config) string {
+	if cfg == nil {
+		return "no persona is bound"
+	}
+	if value := strings.ToLower(strings.TrimSpace(cfg.PersonaWork)); value == WorkOwn || value == WorkWorker {
+		return "brain.work is " + value
+	}
+	if cfg.PersonaNamesWorker {
+		return "default: its brain.worker is set"
+	}
+	return "default on " + brainProviderName(cfg.BrainProvider)
 }
 
 // OwnWorkConfig is the job configuration for work the persona does itself:
 // cfg with the persona's own backend, model and host in place of the
-// configured worker. Worker tiers apply only to the configured worker, so an
-// own job runs as a legacy worker under the same policy, with the tools a
-// tiered worker would get.
+// configured worker. voice_tools_enabled is kept as set. Worker tiers do not
+// choose its backend, so it is admitted as a legacy worker; OwnWorkTier holds
+// it to the routed tier.
 func OwnWorkConfig(cfg *Config) *Config {
 	if cfg == nil {
 		return nil
@@ -64,12 +80,45 @@ func OwnWorkConfig(cfg *Config) *Config {
 	own.VoiceWorkerOllamaHost = ""
 	// The persona's own context window, not the worker's.
 	own.VoiceWorkerNumCtx = cfg.OllamaNumCtx
-	if own.VoiceWorkers != nil && own.VoiceWorkers.Mode == WorkerModeTiered {
-		own.VoiceToolsEnabled = true
+	if own.VoiceWorkers != nil {
 		own.VoiceWorkers.Mode = WorkerModeLegacy
 	}
 	own.DelegationEnabled = false
 	return own
+}
+
+// OwnTier is what the routed tier holds a persona's own job to in tiered
+// mode: the tier's limits and the installation's charge policy. The tier's
+// assignment, billing and enabled flag describe the worker's backend and do
+// not apply.
+type OwnTier struct {
+	Tier   WorkerTierName
+	Limits WorkerLimits
+	Strict bool
+}
+
+// OwnWorkTier resolves the routed tier for an own job of the bound persona,
+// with the persona's worker_tiers overrides applied. It is nil outside tiered
+// mode, and an error when the route named no known tier.
+func OwnWorkTier(cfg *Config, name WorkerTierName) (*OwnTier, error) {
+	if cfg == nil || cfg.VoiceWorkers == nil || cfg.VoiceWorkers.Mode != WorkerModeTiered {
+		return nil, nil
+	}
+	workers, err := cfg.EffectiveVoiceWorkers()
+	if err != nil {
+		return nil, err
+	}
+	t := workers.tier(name)
+	if t == nil {
+		return nil, fmt.Errorf("worker tiers are on and this job was routed to no known tier (%q)", name)
+	}
+	return &OwnTier{Tier: name, Limits: cloneTier(*t).Limits, Strict: workers.Policy.ChargePolicy == "strict"}, nil
+}
+
+// OwnWorkStrict reports whether tiered mode holds the bound persona's own
+// jobs to the strict worker policy.
+func OwnWorkStrict(cfg *Config) bool {
+	return cfg != nil && cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == WorkerModeTiered && cfg.VoiceWorkers.Policy.ChargePolicy == "strict"
 }
 
 func brainProviderName(provider string) string {

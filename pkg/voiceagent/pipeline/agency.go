@@ -174,12 +174,25 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		task = "background task"
 	}
 	experimental := a.workEnabled()
-	// A persona doing its own work runs on its own backend; tiers and the
-	// configured worker apply only to work handed to the worker.
-	jobCfg, own := a.ownWork()
+	// A persona doing its own work runs on its own backend, held to the
+	// routed tier's limits in tiered mode; the configured worker and the
+	// tier's assignment apply only to work handed to the worker.
+	decision := a.turnWork(ctx)
+	jobCfg, own := decision.own, decision.own != nil
 	var worker brain.Provider
 	var plan *config.WorkerPlan
-	if !own {
+	var ownTier *config.OwnTier
+	if own {
+		err := decision.refused
+		if err == nil {
+			ownTier, err = config.OwnWorkTier(decision.bound, d.Tier)
+		}
+		if err != nil {
+			a.emitRouteDecision(d, "rejected", "", err.Error())
+			a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
+			return
+		}
+	} else {
 		var workerErr error
 		worker, jobCfg, plan, workerErr = a.admitWorker(d.Tier)
 		if workerErr != nil {
@@ -206,6 +219,9 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	admission := frozenWorkerConfig(jobCfg, plan)
 	if own {
 		admission["work"] = config.WorkOwn
+		if ownTier != nil {
+			admission["worker_tier"] = string(ownTier.Tier)
+		}
 	}
 	if c, scope := a.workAuthority(); c != nil {
 		jobID = newWorkID()
@@ -226,7 +242,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	case plan != nil:
 		run = a.plannedWorkerRun(brief, jobCfg, plan)
 	case own:
-		run = a.ownWorkRun(brief, jobCfg)
+		run = a.ownWorkRun(brief, jobCfg, ownTier)
 	}
 	refs := chatmedia.Input(ctx)
 	if len(refs) > 0 {
@@ -236,6 +252,9 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	var runtimeBudget time.Duration
 	if plan != nil {
 		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
+	}
+	if own {
+		runtimeBudget = a.ownRuntimeBudget(ownTier)
 	}
 	origin := workerOrigin{Scope: a.pipeline.ConversationScope(), Trace: events.TraceFromContext(ctx), admission: admission}
 	if metrics != nil {

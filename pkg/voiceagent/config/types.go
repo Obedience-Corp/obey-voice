@@ -8,6 +8,10 @@ type Config struct {
 	// WorkWorker, or empty for its backend's default. A runtime binding,
 	// persisted only in persona.yaml.
 	PersonaWork string `mapstructure:"-" yaml:"-" json:"-"`
+	// PersonaNamesWorker is set when the persona's profile names its own
+	// worker (brain.worker), which makes worker the default for PersonaWork.
+	// A runtime binding, persisted only in persona.yaml.
+	PersonaNamesWorker bool `mapstructure:"-" yaml:"-" json:"-"`
 	// VoiceWorkers is nil for an installation that has not explicitly migrated
 	// from the singleton worker. A non-nil value is the complete versioned
 	// tier configuration and is authoritative over the legacy fields below.

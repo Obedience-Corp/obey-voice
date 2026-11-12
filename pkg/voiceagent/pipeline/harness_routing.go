@@ -69,8 +69,11 @@ func (p *Pipeline) startBrainStream(ctx context.Context, input string, opts brai
 	}
 	cfg := p.Agency.currentConfig()
 	available := cfg != nil && !cfg.VoiceWorkersDisabled
-	// A persona doing its own work needs no configured worker or tier.
-	if _, own := p.Agency.ownWork(); !own {
+	// A persona doing its own work needs no configured worker or tier
+	// assignment, only a policy it can run under.
+	if work := p.Agency.turnWork(ctx); work.own != nil {
+		available = available && work.refused == nil
+	} else {
 		if tiers := opts.WorkerTiers; tiers != nil {
 			available = available && (tiers.Simple || tiers.Medium || tiers.Complex)
 		} else {

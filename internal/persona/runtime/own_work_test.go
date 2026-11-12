@@ -25,20 +25,25 @@ const (
 )
 
 // fixtureRoute answers a harness routing request: spawn when the latest
-// request names OBEY_CLAUDE_FIXTURE_SPAWN, chat otherwise.
+// request names OBEY_CLAUDE_FIXTURE_SPAWN, chat otherwise. With worker tiers
+// on, the spawn names OBEY_CLAUDE_FIXTURE_TIER.
 func fixtureRoute(payload string) string {
 	var req struct {
 		Latest string `json:"latest_user_request"`
 	}
 	_ = json.Unmarshal([]byte(payload), &req)
 	if marker := os.Getenv("OBEY_CLAUDE_FIXTURE_SPAWN"); marker != "" && strings.Contains(req.Latest, marker) {
+		if tier := os.Getenv("OBEY_CLAUDE_FIXTURE_TIER"); tier != "" {
+			return `{"kind":"spawn","tier":"` + tier + `"}`
+		}
 		return `{"kind":"spawn"}`
 	}
 	return `{"kind":"chat"}`
 }
 
 // holdFixtureJob keeps a background job running until the file named by
-// OBEY_CLAUDE_FIXTURE_HOLD exists.
+// OBEY_CLAUDE_FIXTURE_HOLD exists, which fixtureHold writes when the test
+// ends at the latest.
 func holdFixtureJob() {
 	path := os.Getenv("OBEY_CLAUDE_FIXTURE_HOLD")
 	if path == "" {
@@ -51,6 +56,21 @@ func holdFixtureJob() {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// fixtureHold holds the fake claude's background jobs until the returned
+// release is called or the test ends, whichever comes first.
+func fixtureHold(t *testing.T) (release func()) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "release")
+	t.Setenv("OBEY_CLAUDE_FIXTURE_HOLD", path)
+	release = func() {
+		if err := os.WriteFile(path, nil, 0o600); err != nil && !os.IsExist(err) {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(release)
+	return release
 }
 
 // ownWorkSetup turns on routing and background jobs, with the configured
@@ -98,10 +118,9 @@ func jobRequests(t *testing.T, log string) (jobs, live []claudeRequest) {
 }
 
 func TestPersonaOnClaudeDoesItsOwnWorkWhileTheRoomTalks(t *testing.T) {
-	hold := filepath.Join(t.TempDir(), "release")
+	release := fixtureHold(t)
 	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
 	t.Setenv("OBEY_CLAUDE_FIXTURE_SPAWN", "haiku")
-	t.Setenv("OBEY_CLAUDE_FIXTURE_HOLD", hold)
 	miraDir, _ := filepath.EvalSymlinks(t.TempDir())
 	c := newConversation(t, 50, "ember", "claude", "", ownWorkSetup(t, "", miraDir))
 	finished := make(chan events.JobFinished, 1)
@@ -136,9 +155,7 @@ func TestPersonaOnClaudeDoesItsOwnWorkWhileTheRoomTalks(t *testing.T) {
 		t.Fatalf("job %s is not the one still running", w.ID)
 	}
 
-	if err := os.WriteFile(hold, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	release()
 	var done events.JobFinished
 	select {
 	case done = <-finished:
@@ -265,10 +282,6 @@ func TestPersonaOnOllamaDoesItsOwnWorkOnItsOwnModel(t *testing.T) {
 			if job == nil || job.Model != "fixture:latest" || job.NumCtx != tc.numCtx {
 				t.Fatalf("job request = %+v, want fixture:latest with num_ctx %d", job, tc.numCtx)
 			}
-			admission := c.p.Workers()[0]
-			if admission.Provider != "ollama" {
-				t.Fatalf("job = %+v", admission)
-			}
 		})
 	}
 }
@@ -316,5 +329,83 @@ func TestWorkEditAppliesOnTheNextSelectionWithoutRestartingTheSession(t *testing
 	}
 	if last := live[len(live)-1]; last.Resume != miraSession {
 		t.Fatalf("Mira's session restarted: resume %q, was %q", last.Resume, miraSession)
+	}
+}
+
+// A persona on Ollama set to do its own work needs no configured worker: the
+// model's own route call spawns the job, and it runs on the persona's model.
+func TestPersonaOnOllamaDoesItsOwnWorkWithNoConfiguredWorker(t *testing.T) {
+	t.Setenv("OBEY_OLLAMA_FIXTURE_SPAWN", "tidy the notes")
+	c := newConversation(t, 50, "ember", "claude", "", func(c *claudeConversation) {
+		ownWorkSetup(t, "", t.TempDir())(c)
+		c.base.VoiceWorkerProvider = "bogus"
+		ember := testProfile("ember", "Ember", "ember")
+		ember.Brain = persona.Brain{Provider: "ollama", Work: config.WorkOwn}
+		writeTestProfile(t, c.catalog.Dir, ember)
+	})
+	if _, err := brain.NewWorkerProvider(c.base); err == nil {
+		t.Fatal("the configured worker can be built; the test needs it missing")
+	}
+	finished := make(chan events.JobFinished, 1)
+	events.Subscribe(c.p.Events, func(e events.JobFinished) { finished <- e })
+	var routes []pipeline.RouteDecision
+	c.p.OnRoute = func(d pipeline.RouteDecision) { routes = append(routes, d) }
+	c.say("Please tidy the notes.")
+	select {
+	case done := <-finished:
+		if !strings.HasPrefix(done.Summary, ollamaJobResult+" fixture:latest") || done.Envelope == nil || done.Envelope.PersonaID != "ember" {
+			t.Fatalf("result = %+v", done)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("job did not finish: %+v errors %+v", c.p.Workers(), c.errorEvents())
+	}
+	if len(routes) != 1 || routes[0].Kind != pipeline.RouteSpawn || routes[0].Source != "router" {
+		t.Fatalf("routes = %+v, want the model's spawn", routes)
+	}
+	if w := c.p.Workers(); len(w) != 1 || w[0].Provider != "ollama" || w[0].Model != "fixture:latest" || w[0].PersonaID != "ember" {
+		t.Fatalf("job = %+v", w)
+	}
+	if errs := c.errorEvents(); len(errs) != 0 {
+		t.Fatalf("errors = %+v", errs)
+	}
+}
+
+// In tiered mode with voice_tools_enabled off, a persona on Claude still
+// routes work, and its own job runs the CLI with every tool off.
+func TestPersonaOnClaudeInTieredModeDoesItsOwnWorkWithToolsOff(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SPAWN", "haiku")
+	t.Setenv("OBEY_CLAUDE_FIXTURE_TIER", "simple")
+	miraDir, _ := filepath.EvalSymlinks(t.TempDir())
+	c := newConversation(t, 50, "mira", "claude", "", func(c *claudeConversation) {
+		ownWorkSetup(t, "", miraDir)(c)
+		c.tools, c.base.VoiceToolsEnabled = false, false
+		tiers := config.DefaultVoiceWorkers()
+		tiers.Mode = config.WorkerModeTiered
+		c.base.VoiceWorkers = tiers
+	})
+	finished := make(chan events.JobFinished, 1)
+	events.Subscribe(c.p.Events, func(e events.JobFinished) { finished <- e })
+	c.say("Mira, can you change it to haiku?")
+	select {
+	case done := <-finished:
+		if done.Summary != claudeJobResult {
+			t.Fatalf("result = %+v", done)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("job did not finish: %+v errors %+v", c.p.Workers(), c.errorEvents())
+	}
+	jobs, _ := jobRequests(t, c.log)
+	if len(jobs) != 1 {
+		t.Fatalf("job requests = %d", len(jobs))
+	}
+	job := jobs[0]
+	toolsOff := false
+	for i, arg := range job.Args {
+		if arg == "--tools" && i+1 < len(job.Args) && job.Args[i+1] == "" {
+			toolsOff = true
+		}
+	}
+	if !toolsOff || job.Permission == "bypassPermissions" || !job.NoPersist || job.Model != "haiku" || job.Cwd != miraDir {
+		t.Fatalf("own job ran with tools off %v, permission %q, no-persist %v, model %q, cwd %q; args %q", toolsOff, job.Permission, job.NoPersist, job.Model, job.Cwd, job.Args)
 	}
 }

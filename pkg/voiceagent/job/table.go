@@ -217,6 +217,13 @@ func NewTable(lifetime context.Context, opts ...Option) *Table {
 	return t
 }
 
+// Budget is the table's default cap on one job's runtime; zero means none.
+func (t *Table) Budget() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.budget
+}
+
 // OnDone registers a callback for terminal job states.
 func (t *Table) OnDone(cb DoneCallback) {
 	t.mu.Lock()

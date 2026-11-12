@@ -505,7 +505,7 @@
         "work": {
           "type": "string",
           "enum": ["", "own", "worker"],
-          "description": "Who runs this persona's background work. own: the persona's own backend and model, in a background session of its own. worker: the configured worker below. Empty takes the default: own on every backend but Ollama, worker on Ollama."
+          "description": "Who runs this persona's background work. own: the persona's own backend and model, in a background session of its own. worker: the configured worker below. Empty takes the default: worker on Ollama or when worker below names a provider, model or host, own otherwise."
         },
         "worker": {
           "type": "object",

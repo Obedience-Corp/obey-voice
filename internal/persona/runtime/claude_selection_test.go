@@ -255,6 +255,15 @@ type ollamaMessage struct {
 	ToolCalls     json.RawMessage `json:"tool_calls"`
 }
 
+func lastUserContent(messages []ollamaMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			return messages[i].Content
+		}
+	}
+	return ""
+}
+
 // claudeConversation is a conversation between Mira, a persona on Claude or
 // another hosted provider, and Ember, a persona on a fake Ollama server.
 type claudeConversation struct {
@@ -362,7 +371,11 @@ func newConversation(t *testing.T, maxHistory int, start, provider, sharing stri
 		reply := cmp.Or(c.emberSays, emberReply)
 		c.mu.Unlock()
 		if slices.Contains(call.Tools, "route") {
-			_, _ = w.Write([]byte(`{"model":"fixture:latest","message":{"role":"assistant","tool_calls":[{"function":{"name":"route","arguments":{"kind":"chat"}}}]},"done":true,"done_reason":"stop"}` + "\n"))
+			kind := "chat"
+			if marker := os.Getenv("OBEY_OLLAMA_FIXTURE_SPAWN"); marker != "" && strings.Contains(lastUserContent(req.Messages), marker) {
+				kind = "spawn"
+			}
+			_, _ = w.Write([]byte(`{"model":"fixture:latest","message":{"role":"assistant","tool_calls":[{"function":{"name":"route","arguments":{"kind":"` + kind + `"}}}]},"done":true,"done_reason":"stop"}` + "\n"))
 			return
 		}
 		for _, m := range req.Messages {
