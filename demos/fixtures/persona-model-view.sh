@@ -40,7 +40,7 @@ YAML
 }
 write_persona jarvis Jarvis ollama qwen3:14b bm_george
 write_persona researcher Researcher grok grok-4-1-fast-reasoning af_bella
-write_persona writer Writer claude saved-but-not-routed af_sky
+write_persona writer Writer claude haiku af_sky
 write_persona obey Obey '' '' af_heart
 # Explicitly seed the other shipped slots so the recording's catalog is stable.
 write_persona samantha Samantha '' '' af_sky

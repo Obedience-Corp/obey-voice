@@ -185,8 +185,10 @@ just demo-persona-model-view
 Records the real persona manager with a disposable catalog and Settings file.
 The list compares each persona's effective LLM provider/model and voice; the
 selected detail panel distinguishes persona overrides from inherited Settings.
-Claude explicitly shows `CLI default` because its saved persona model is not
-routed. The walkthrough also opens the existing model editor with `m`.
+The Claude persona shows its saved model, `haiku`, which reaches the Claude CLI
+as `--model`; the checked-in GIF predates that and still shows `CLI default`
+until it is re-recorded. The walkthrough also opens the existing model editor
+with `m`.
 
 The fixture does not use the installed user configuration, credentials, audio,
 or inference. Its Ollama endpoint is deliberately unavailable; the model editor
