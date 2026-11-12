@@ -198,9 +198,10 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		a.jobScopes[jobID] = scope
 		a.workMu.Unlock()
 	}
-	run := a.workerRun(spawnBrief(history, d.Transcript), worker, jobCfg)
+	brief := spawnBrief(history, d.Transcript, briefPersonaID(metrics, jobCfg))
+	run := a.workerRun(brief, worker, jobCfg)
 	if plan != nil {
-		run = a.plannedWorkerRun(spawnBrief(history, d.Transcript), jobCfg, plan)
+		run = a.plannedWorkerRun(brief, jobCfg, plan)
 	}
 	refs := chatmedia.Input(ctx)
 	if len(refs) > 0 {

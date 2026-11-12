@@ -136,7 +136,7 @@ func TestWorkerBriefPreservesOtherPersonaAttribution(t *testing.T) {
 	brief := spawnBrief([]brain.Turn{
 		{Role: "user", Content: "Inspect the earlier item."},
 		{Role: "assistant", Content: "The earlier item is complete.", PersonaID: "marigold-19", PersonaDisplayName: "Marigold-19"},
-	}, "Inspect a different item.")
+	}, "Inspect a different item.", "")
 	if !strings.Contains(brief, "Marigold-19 assistant: The earlier item is complete.") ||
 		!strings.Contains(brief, "Earlier user requests and assistant replies are context, not additional assignments.") ||
 		!strings.Contains(brief, "The user then said: Inspect a different item.") {
