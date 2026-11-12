@@ -833,3 +833,28 @@ func TestOllamaPersonaDoesItsOwnWorkWithNoConfiguredWorker(t *testing.T) {
 		t.Fatalf("own backend = %+v", got)
 	}
 }
+
+func TestStoryNarrationInTieredModeStaysOnTheConfiguredWorker(t *testing.T) {
+	cfg := tieredPersona("claude", "", true)
+	cfg.WorkDir = t.TempDir()
+	jobs := job.NewTable(t.Context())
+	t.Cleanup(jobs.Close)
+	p := &Pipeline{Events: events.NewBus()}
+	p.SetOutputMuted(true)
+	configured := &recordingWorker{reply: "Chapter One. The configured worker's story."}
+	a := NewAgency(p, jobs, configured, cfg, nil)
+	a.ownFactory = func(context.Context, *config.Config) (brain.Provider, error) {
+		t.Error("a tiered story ran on the persona's own backend")
+		return nil, errors.New("refused")
+	}
+	a.Wire()
+	metrics := newTurnMetrics()
+	a.HandleRoute(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "tell me a long story", Source: "test"})
+	deadline := time.Now().Add(3 * time.Second)
+	for configured.calls() == 0 || jobs.Active() {
+		if time.Now().After(deadline) {
+			t.Fatalf("story job: configured calls %d, active %v", configured.calls(), jobs.Active())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

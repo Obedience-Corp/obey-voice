@@ -177,8 +177,9 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 // a tier. The story prompt carries none of the conversation, so a hosted
 // backend gives no notice for it.
 func (n *Narrator) startStoryJob(ctx context.Context) {
-	own := n.agency.turnWork(ctx).own
-	if tieredWorkers(n.agency.currentConfig()) {
+	work := n.agency.turnWork(ctx)
+	own := work.own
+	if own != nil && tieredWorkers(work.bound) {
 		own = nil
 	}
 	id, err := n.agency.jobs.Start(ctx, job.Spec{
