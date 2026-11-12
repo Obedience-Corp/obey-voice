@@ -162,6 +162,9 @@ type Pipeline struct {
 	VoiceToolsEnabled bool
 	// RouterToolsPolicy is the live-brain tool surface (route_only vs legacy).
 	RouterToolsPolicy brain.RouterToolsPolicy
+	// RouteJSON has route_only turns decide with a tools-free JSON request
+	// instead of the route tool (voice_router_tools: json_route).
+	RouteJSON bool
 	// VoiceFailedRouteRepair enables Layer 3 spawn repair for spoken tool promises.
 	VoiceFailedRouteRepair bool
 	// OnRoute is invoked when a turn is classified without speaking a chat reply.

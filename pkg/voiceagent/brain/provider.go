@@ -92,6 +92,10 @@ type StreamOptions struct {
 	// ToolsEnabled is true. Empty keeps the full worker list; the microphone
 	// path passes route_only explicitly.
 	RouterToolsPolicy RouterToolsPolicy
+	// RouteJSON has a route_only Ollama turn decide its route with a tools-free
+	// JSON request on the reply's own messages (voice_router_tools: json_route).
+	// Other providers ignore it.
+	RouteJSON bool
 }
 
 func (o StreamOptions) workerBudget() *WorkerBudget {

@@ -244,6 +244,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		Events:                      opts.Events,
 		VoiceToolsEnabled:           cfg.VoiceToolsEnabled,
 		RouterToolsPolicy:           brain.NormalizeRouterToolsPolicy(cfg.VoiceRouterTools),
+		RouteJSON:                   brain.JSONRouteEnabled(cfg.VoiceRouterTools),
 		VoiceFailedRouteRepair:      cfg.VoiceFailedRouteRepair,
 		BargeInTailGuard:            config.BargeInTailGuardOf(cfg),
 		BargeInSpeakerVerdictMaxAge: config.BargeInSpeakerVerdictMaxAgeOf(cfg),

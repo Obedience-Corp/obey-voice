@@ -1895,12 +1895,13 @@
       "default": "route_only",
       "enum": [
         "route_only",
+        "json_route",
         "legacy"
       ],
       "allows_empty": false,
       "group": "tools",
       "title": "Live router tools",
-      "help": "route_only exposes only the route tool on the microphone brain; legacy keeps the full tool list for comparison.",
+      "help": "route_only exposes only the route tool on the microphone brain; json_route (experimental, Ollama) asks for the same route as JSON without tools so routing and the reply share one prompt prefix; legacy keeps the full tool list for comparison.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
