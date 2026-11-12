@@ -127,21 +127,23 @@ its voice when the conversation is idle, like any job it started. While it
 works you can keep talking to it or to another persona. `/workers` shows the
 persona's own provider and model for the job.
 
-An own job runs with the same permissions as a worker on that backend. With
-`voice_tools_enabled` on:
+An own job runs with the same permissions as a worker on that backend, and
+follows `voice_tools_enabled` in every mode, as a legacy worker does:
 
-| Backend | As its own worker |
-|---|---|
-| Claude | its own tools, `--permission-mode bypassPermissions`, session persistence off, in the persona's directory, `Bash(camp list)` denied while `voice_worker_boundary` is on |
-| Codex | workspace-write sandbox with no network and approvals `never` |
-| Cursor | full agent mode with `--trust`; force and yolo stay off |
-| Grok | its own tools in bypass-permissions mode |
-| Muse Spark | its native tools inside Muse's sandbox, approvals `never` |
-| Obey | the daemon's supervised mode |
-| Ollama | the persona's model on the persona's Ollama host and context window, with the worker tool set and the fence below |
+| Backend | `voice_tools_enabled` on | `voice_tools_enabled` off |
+|---|---|---|
+| Claude | its own tools, `--permission-mode bypassPermissions`, session persistence off, in the persona's directory, `Bash(camp list)` denied while `voice_worker_boundary` is on | `--tools ""` (no built-in tools) in the default permission mode; persistence and the deny list as with tools on |
+| Codex | a new thread in a workspace-write sandbox with no network and approvals `never` | a read-only sandbox with shell, exec, patch, apps, plugins, MCP servers and web search off |
+| Cursor | full agent mode with `--trust`; force and yolo stay off | `--mode ask`, Cursor's read-only ask mode rather than no tools |
+| Grok | its own tools in bypass-permissions mode, in the persona's directory | `--tools ""` |
+| Muse Spark | its native tools inside Muse's sandbox, approvals `never`, no session log | the empty preset with write, shell and web tools disabled |
+| Obey | the daemon's supervised mode | refused under the default `obey_tool_policy: strict`, since Voice cannot enforce tools off; with `daemon`, the daemon's discussion mode, whose tool permissions the daemon decides (see [Obey daemon](obey-daemon.md)) |
+| Ollama | the persona's model on the persona's Ollama host and context window, with the worker tool set and the fence below | no tools |
 
-With `voice_tools_enabled` off, an own job runs with tools off, as a worker
-does. An Ollama persona doing its own work uses its own `ollama_num_ctx`
+Each job starts a new session or thread and never resumes the one the persona
+talks in. Claude's job session is not saved; a Codex job thread is not marked
+ephemeral, as for a Codex worker.
+An Ollama persona doing its own work uses its own `ollama_num_ctx`
 rather than `voice_worker_num_ctx`; when `ollama_num_ctx` is unset, the job
 uses the model's advertised window, as a worker would.
 
