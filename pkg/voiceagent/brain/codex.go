@@ -37,6 +37,11 @@ type CodexBrain struct {
 	unsent int
 }
 
+// codexLargeRequestBytes is the request text past which a Codex request is
+// logged with its size: its conversation record is sent whole, with no byte
+// bound, so a request that fails for its size can be told apart.
+const codexLargeRequestBytes = maxCatchUpBytes
+
 func init() {
 	register(config.BrainProviderSpec{Name: "codex", Description: "Codex CLI", CLIBinary: "codex"}, func(cfg *config.Config) (Provider, error) { return NewCodex(cfg) }, func(cfg *config.Config) (BatchProvider, error) { return newCodexBatch(cfg) })
 }
@@ -128,6 +133,9 @@ func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions
 	req := codexRequest{Images: images, ThreadID: c.sessionID, Prompt: c.buildPrompt(input, opts), System: c.systemPrompt, Model: c.cfg.CodexModel, Effort: c.cfg.CodexReasoningEffort, Cwd: config.WorkDirFrom(c.cfg), Tools: tools, Ephemeral: opts.TransientHistory}
 	recorded := len(c.canonical)
 	c.mu.Unlock()
+	if n := len(req.Prompt); n > codexLargeRequestBytes {
+		slog.Warn("codex request is large", "bytes", n, "threshold", codexLargeRequestBytes, "resumed", req.ThreadID != "")
+	}
 	var raw strings.Builder
 	strip := newLabelStripper(c.cfg.AgentName)
 	result, err := c.client.run(ctx, req, func(text string) error {

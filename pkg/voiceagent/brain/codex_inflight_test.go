@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -94,5 +95,74 @@ func TestCodexJobResultRecordedWhileARequestRunsReachesTheNextRequestOnce(t *tes
 	}
 	if roles := len(c.History()); roles != 7 {
 		t.Fatalf("history = %+v", c.History())
+	}
+}
+
+// capturedLogs collects what is logged through slog while a test runs.
+type capturedLogs struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func captureLogs(t *testing.T) *capturedLogs {
+	t.Helper()
+	logs := &capturedLogs{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(logs))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return logs
+}
+
+func (l *capturedLogs) Enabled(context.Context, slog.Level) bool { return true }
+func (l *capturedLogs) WithAttrs([]slog.Attr) slog.Handler        { return l }
+func (l *capturedLogs) WithGroup(string) slog.Handler             { return l }
+func (l *capturedLogs) Handle(_ context.Context, r slog.Record) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.records = append(l.records, r.Clone())
+	return nil
+}
+
+// find returns the attributes of each record logged with message.
+func (l *capturedLogs) find(message string) []map[string]any {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []map[string]any
+	for _, r := range l.records {
+		if r.Message != message {
+			continue
+		}
+		attrs := map[string]any{"level": r.Level}
+		r.Attrs(func(a slog.Attr) bool {
+			attrs[a.Key] = a.Value.Any()
+			return true
+		})
+		out = append(out, attrs)
+	}
+	return out
+}
+
+func TestCodexLogsARequestOverTheSizeThresholdWithItsSize(t *testing.T) {
+	logs := captureLogs(t)
+	c, f := codexFixture(t)
+	c.cfg.MaxHistory = 20
+	if _, err := c.ThinkFull(t.Context(), "A short line.", StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := logs.find("codex request is large"); len(got) != 0 {
+		t.Fatalf("a short request was logged as large: %+v", got)
+	}
+	for range 3 {
+		if err := c.AppendAssistantResponseWithIdentity(strings.Repeat("teal ", 5000), TurnIdentity{PersonaID: "rex", PersonaDisplayName: "Rex"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := c.ThinkFull(t.Context(), "Catch up.", StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	got := logs.find("codex request is large")
+	size := len(f.requests[len(f.requests)-1].Prompt)
+	if len(got) != 1 || got[0]["bytes"] != int64(size) || got[0]["threshold"] != int64(codexLargeRequestBytes) || got[0]["resumed"] != true || got[0]["level"] != slog.LevelWarn {
+		t.Fatalf("large request log = %+v, want one warning of %d bytes", got, size)
 	}
 }
