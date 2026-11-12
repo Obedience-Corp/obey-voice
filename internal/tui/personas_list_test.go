@@ -26,7 +26,8 @@ func TestPersonaListResolvesEffectiveModels(t *testing.T) {
 		{"provider only", persona.Brain{Provider: "grok"}, "grok", "grok-default", "Persona", "Settings"},
 		{"model only", persona.Brain{Model: "local-custom:14b"}, "ollama", "local-custom:14b", "Settings", "Persona"},
 		{"both", persona.Brain{Provider: "cursor", Model: "chosen-model"}, "cursor", "chosen-model", "Persona", "Persona"},
-		{"claude saved but unused", persona.Brain{Provider: "claude", Model: "unused-model"}, "claude", "CLI default", "Persona", "Claude CLI"},
+		{"claude model", persona.Brain{Provider: "claude", Model: "haiku"}, "claude", "haiku", "Persona", "Persona"},
+		{"claude without a model", persona.Brain{Provider: "claude"}, "claude", "provider default", "Persona", "Settings"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := resolvePersonaListStack(base, &persona.Profile{ID: "test", Brain: tc.brain})
@@ -36,8 +37,8 @@ func TestPersonaListResolvesEffectiveModels(t *testing.T) {
 			if got.voice != "kokoro / af_heart" {
 				t.Fatalf("inherited voice = %q", got.voice)
 			}
-			if tc.brain.Provider == "claude" && !strings.Contains(got.note, "not routed") {
-				t.Fatalf("missing Claude explanation: %+v", got)
+			if got.note != "" {
+				t.Fatalf("unexpected note: %+v", got)
 			}
 		})
 	}

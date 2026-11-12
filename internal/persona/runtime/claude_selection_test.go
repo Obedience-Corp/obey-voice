@@ -62,11 +62,12 @@ func installClaudeFixture(t *testing.T) string {
 // claudeRequest is one fixture invocation: its prompt, flags, the session it
 // answered in, its process id, and the length of its longest argument. A
 // request sent as stream-json content blocks has Input set, its text blocks
-// joined as Prompt, and an entry in Images for each image block.
+// joined as Prompt, and an entry in Images for each image block. Persona is
+// the name its system prompt introduces, when it introduces one.
 type claudeRequest struct {
-	Prompt, Format, Resume, Session, Input string
-	PID, MaxArg                            int
-	Images                                 []fixtureImage `json:",omitempty"`
+	Prompt, Format, Resume, Session, Input, Model, Persona string
+	PID, MaxArg                                            int
+	Images                                                 []fixtureImage `json:",omitempty"`
 }
 
 // fixtureImage is an image block as the fixture received it: its media type
@@ -142,14 +143,32 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 			req.Resume = args[i+1]
 		case "--input-format":
 			req.Input = args[i+1]
+		case "--model":
+			req.Model = args[i+1]
 		case "--system-prompt":
 			if m := fixturePersonaName.FindStringSubmatch(args[i+1]); m != nil {
-				name = m[1]
+				name, req.Persona = m[1], m[1]
 			}
 		}
 	}
 	if req.Input == "stream-json" {
 		decodeContentInput(&req)
+	}
+	// A rejected model fails in one of the shapes the CLI might use: the reason
+	// on stderr, or only in an is_error result with or without a failing exit.
+	if bad := os.Getenv("OBEY_CLAUDE_FIXTURE_REJECT_MODEL"); bad != "" && req.Model == bad {
+		reason := "invalid model: " + bad
+		switch shape := os.Getenv("OBEY_CLAUDE_FIXTURE_REJECT_SHAPE"); shape {
+		case "result", "result-exit0":
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "result", "subtype": "error_during_execution", "is_error": true, "result": reason})
+			if shape == "result" {
+				os.Exit(1)
+			}
+			os.Exit(0)
+		default:
+			fmt.Fprintf(os.Stderr, "Error: %s\n", reason)
+			os.Exit(1)
+		}
 	}
 	data, _ := os.ReadFile(log)
 	n := bytes.Count(data, []byte("\n")) + 1

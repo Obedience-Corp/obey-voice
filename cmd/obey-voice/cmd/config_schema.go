@@ -24,16 +24,18 @@ type configSchemaPayload struct {
 func newConfigSchemaCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "schema",
-		Short: "Describe every configuration key (read-only)",
+		Use:   "schema [key]",
+		Short: "Describe every configuration key, or one (read-only)",
 		Long: "Describe every configuration key: its type, default, accepted values,\n" +
-			"bounds, group, help text, and whether changing it needs an agent restart.\n\n" +
+			"bounds, group, help text, and whether changing it needs an agent restart.\n" +
+			"With a key, only that key is described, in the same payload shape; an\n" +
+			"unknown key fails with the closest known keys.\n\n" +
 			"--json emits one object for machine consumers. The Obey Voice app builds\n" +
 			"its Settings screens from it, so a key added to obey-voice appears there\n" +
 			"with no app change. Never fails on a broken config: the built-in defaults\n" +
 			"are reported with a warning on stderr.",
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
 			// A load failure is not fatal here: LoadRaw only supplies the
 			// config-dependent enums, and a user with a broken config is exactly
 			// the one who needs the schema.
@@ -44,6 +46,18 @@ func newConfigSchemaCmd() *cobra.Command {
 				Groups:        config.Groups(),
 				Keys:          config.SchemaFor(cfg),
 			}
+			if len(args) == 1 {
+				spec, ok := schemaKey(payload.Keys, args[0])
+				if !ok {
+					return failConfig(cmd, asJSON, &config.SetError{
+						Code:       config.CodeUnknownKey,
+						Key:        args[0],
+						Message:    fmt.Sprintf("unknown config key %q", args[0]),
+						DidYouMean: config.SuggestKeys(args[0]),
+					})
+				}
+				payload.Groups, payload.Keys = []string{spec.Group}, []config.KeySpec{spec}
+			}
 			if asJSON {
 				return writeJSON(cmd, payload)
 			}
@@ -53,6 +67,16 @@ func newConfigSchemaCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output machine-readable JSON")
 	return cmd
+}
+
+// schemaKey finds key in keys.
+func schemaKey(keys []config.KeySpec, key string) (config.KeySpec, bool) {
+	for _, spec := range keys {
+		if spec.Key == key {
+			return spec, true
+		}
+	}
+	return config.KeySpec{}, false
 }
 
 func printSchema(cmd *cobra.Command, payload configSchemaPayload) {

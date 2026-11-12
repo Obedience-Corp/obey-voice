@@ -5,6 +5,25 @@ use crate::setup::Operation;
 use eframe::egui;
 use serde_json::json;
 
+/// The settings setup shows beside the provider choice.
+fn brain_fields(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "ollama" => &["ollama_host"],
+        "grok" => &["grok_model"],
+        "claude" => &["claude_model"],
+        "cursor" => &["cursor_model"],
+        "obey" => &[
+            "obey_provider",
+            "obey_model",
+            "obey_camp",
+            "obey_socket",
+            "obey_tool_policy",
+        ],
+        "codex" => &["codex_model", "codex_reasoning_effort"],
+        _ => &[],
+    }
+}
+
 impl VoiceApp {
     pub(super) fn setup_brain(&mut self, ui: &mut egui::Ui) {
         card(ui, |ui| {
@@ -12,7 +31,7 @@ impl VoiceApp {
             ui.label("Ollama runs models on your computer or your own server. Direct CLI providers use their installed CLI and account. Obey connects through its daemon to another provider.");
             ui.label("For a CLI provider, install it and sign in through its terminal command first. The test conversation checks that your account can reply.");
             if !self.settings_persona.is_null() {
-                ui.label("Your active persona can override these defaults. The check and test use that persona, just like a normal conversation.");
+                ui.label("Your default persona for new conversations can override these defaults. The check and test use that persona, just like a normal conversation.");
             }
             if ui.button("Check provider").clicked() {
                 self.setup.provider = None;
@@ -40,21 +59,7 @@ impl VoiceApp {
             self.obey_catalog_ui(ui);
         }
         let model_key = super::super::provider_choices::installed_model_key(&provider);
-        let fields: &[&str] = match provider.as_str() {
-            "ollama" => &["ollama_host"],
-            "grok" => &["grok_model"],
-            "cursor" => &["cursor_model"],
-            "obey" => &[
-                "obey_provider",
-                "obey_model",
-                "obey_camp",
-                "obey_socket",
-                "obey_tool_policy",
-            ],
-            "codex" => &["codex_model", "codex_reasoning_effort"],
-            _ => &[],
-        };
-        self.setup_fields(ui, fields);
+        self.setup_fields(ui, brain_fields(&provider));
         if provider == "ollama" {
             self.ollama_model_picker(ui);
         }
@@ -163,5 +168,16 @@ impl VoiceApp {
                 self.setup_setting_editor(ui, &spec);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::brain_fields;
+
+    #[test]
+    fn claude_setup_offers_its_model() {
+        assert_eq!(brain_fields("claude"), ["claude_model"]);
+        assert!(brain_fields("unknown").is_empty());
     }
 }

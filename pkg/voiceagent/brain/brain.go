@@ -224,14 +224,11 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 		// a nil/empty slice would omit the flag and leave all tools available.
 		tools = []string{""}
 	}
-	// Worker assignments pin the CLI model; live conversations use CLI defaults.
-	var model string
-	if b.cfg != nil && b.cfg.IsWorker {
-		model = strings.TrimSpace(b.cfg.VoiceWorkerModel)
-	}
 	return &claude.RunOptions{
-		Format:         format,
-		Model:          model,
+		Format: format,
+		// A worker's pin reaches claude_model through WorkerBrainConfig, so
+		// live turns, workers, routing and catch-up all read one field.
+		Model:          claudeModel(b.cfg),
 		SystemPrompt:   b.systemPrompt,
 		PermissionMode: mode,
 		Tools:          tools,
@@ -252,6 +249,31 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 		// user's own sessions for that directory.
 		NoSessionPersistence: b.cfg != nil && b.cfg.IsWorker,
 	}
+}
+
+// claudeFailure wraps a failed CLI run with the last line it printed on
+// stderr. The SDK keeps stderr out of its message, which for an unknown
+// --model says only "Input validation failed".
+func claudeFailure(what string, err error) error {
+	var cliErr *claude.ClaudeError
+	if errors.As(err, &cliErr) {
+		if stderr, ok := cliErr.Details["stderr"].(string); ok {
+			lines := strings.Split(strings.TrimSpace(stderr), "\n")
+			if line := strings.TrimSpace(lines[len(lines)-1]); line != "" {
+				if runes := []rune(line); len(runes) > 240 {
+					line = string(runes[:240]) + "…"
+				}
+				return fmt.Errorf("%s: %w: %s", what, err, line)
+			}
+		}
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
+// claudeModel is the --model value for cfg; empty and "default" leave the
+// choice to the CLI.
+func claudeModel(cfg *config.Config) string {
+	return config.BrainModelFor(cfg, providerClaude)
 }
 
 // ThinkStream sends input to Claude and returns a channel of streaming message chunks.
@@ -606,12 +628,17 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 	for err := range errs {
 		if err != nil {
 			if streamErr == nil {
-				streamErr = fmt.Errorf("claude stream: %w", err)
+				streamErr = claudeFailure("claude stream", err)
 			}
 		}
 	}
-	if streamErr == nil {
+	switch {
+	case streamErr == nil:
 		streamErr = resultErr
+	case resultErr != nil:
+		// A CLI that exits non-zero after an is_error result may print nothing
+		// on stderr; the result is then the only text naming the cause.
+		streamErr = fmt.Errorf("%w: %w", streamErr, resultErr)
 	}
 	if refused := imageRefusal(images, resultErr); refused != nil {
 		streamErr = refused
@@ -739,7 +766,7 @@ func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions, 
 		result, err = b.client.RunPromptCtx(ctx, prompt, opts)
 	}
 	if err != nil {
-		err = fmt.Errorf("claude error: %w", err)
+		err = claudeFailure("claude error", err)
 		if refused := imageRefusal(images, err); refused != nil {
 			return "", refused
 		}

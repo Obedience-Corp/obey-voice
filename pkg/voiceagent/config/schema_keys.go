@@ -294,6 +294,12 @@ func brainKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "claude_model", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Claude model",
+			Help:               "The model the Claude CLI is asked for, such as sonnet, opus or haiku. Empty uses the CLI's own default.",
+			PersonaOverridable: true,
+		},
+		{
 			Key: "obey_provider", Type: TypeString, Default: "",
 			Group: GroupBrain, Title: "Daemon provider",
 			Help: "Provider name configured in the Obey daemon. Required when brain_provider is obey.",

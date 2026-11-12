@@ -169,6 +169,9 @@ func modelName(cfg *config.Config) string {
 	case "obey":
 		return cfg.ObeyModel
 	case "claude":
+		if cfg.ClaudeModel != "" {
+			return cfg.ClaudeModel
+		}
 		return "claude"
 	case "grok":
 		if cfg.GrokModel != "" {

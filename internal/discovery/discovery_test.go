@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -23,6 +24,22 @@ func TestDiscoverProvidersIncludesAllBackends(t *testing.T) {
 	for _, spec := range specs {
 		if !found[spec.Name] {
 			t.Errorf("DiscoverProviders() missing %q provider; got %v", spec.Name, found)
+		}
+	}
+}
+
+func TestClaudeDiscoveryListsTheConfiguredModelOnce(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	for model, want := range map[string]string{
+		"":          "default",
+		"haiku":     "default,haiku",
+		" haiku ":   "default,haiku",
+		"default":   "default",
+		" DEFAULT ": "default",
+	} {
+		info := DiscoverProvider(t.Context(), &config.Config{ClaudeModel: model}, "claude")
+		if got := strings.Join(info.Models, ","); got != want {
+			t.Errorf("claude_model %q: models = %s, want %s", model, got, want)
 		}
 	}
 }

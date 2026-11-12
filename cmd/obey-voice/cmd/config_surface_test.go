@@ -92,6 +92,47 @@ func TestConfigSchemaJSONMatchesTheSchema(t *testing.T) {
 	}
 }
 
+func TestConfigSchemaKeyDescribesOnlyThatKey(t *testing.T) {
+	newSurfaceInstall(t, surfaceConfig)
+	full, err := runConfigSubcommand(t, newConfigSchemaCmd, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want config.KeySpec
+	for _, spec := range decodeJSON[configSchemaPayload](t, full).Keys {
+		if spec.Key == "vad_silence_duration" {
+			want = spec
+		}
+	}
+	out, err := runConfigSubcommand(t, newConfigSchemaCmd, "vad_silence_duration", "--json")
+	if err != nil {
+		t.Fatalf("config schema vad_silence_duration --json: %v", err)
+	}
+	payload := decodeJSON[configSchemaPayload](t, out)
+	if len(payload.Keys) != 1 || !reflect.DeepEqual(payload.Keys[0], want) || len(payload.Groups) != 1 || payload.Groups[0] != want.Group {
+		t.Fatalf("payload = %+v, want only %+v", payload, want)
+	}
+	if len(out) > 2048 {
+		t.Fatalf("one key printed %d bytes", len(out))
+	}
+	text, err := runConfigSubcommand(t, newConfigSchemaCmd, "vad_silence_duration")
+	if err != nil || !strings.Contains(text, "vad_silence_duration") || strings.Contains(text, "max_history") {
+		t.Fatalf("text output = %q, err = %v", text, err)
+	}
+}
+
+func TestConfigSchemaUnknownKeySuggestsKeys(t *testing.T) {
+	newSurfaceInstall(t, surfaceConfig)
+	out, err := runConfigSubcommand(t, newConfigSchemaCmd, "vad_silence", "--json")
+	if err == nil || ExitCode(err) != exitOperationFailed {
+		t.Fatalf("err = %v, want exit %d", err, exitOperationFailed)
+	}
+	payload := decodeJSON[configErrorPayload](t, out)
+	if payload.Error.Code != config.CodeUnknownKey || len(payload.Error.DidYouMean) == 0 {
+		t.Fatalf("error = %+v", payload.Error)
+	}
+}
+
 func TestConfigSchemaSurvivesABrokenConfig(t *testing.T) {
 	// A config so broken it cannot be parsed must still yield a schema: the
 	// Settings screen is how a user would fix it.

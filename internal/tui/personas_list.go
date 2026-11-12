@@ -80,12 +80,6 @@ func resolvePersonaListStack(defaults *config.Config, p *persona.Profile) person
 			s.model = "unavailable"
 		}
 	}
-	if strings.EqualFold(s.provider, "claude") {
-		s.model, s.modelSource = "CLI default", "Claude CLI"
-		if strings.TrimSpace(p.Brain.Model) != "" {
-			s.note = "Saved model is not routed by Claude; its CLI chooses the model."
-		}
-	}
 	s.hosted = s.provider != "unavailable" && brain.IsHosted(s.provider)
 	voice := config.TTSVoiceFor(effective, effective.TTSProvider)
 	s.voice = strings.Trim(strings.TrimSpace(effective.TTSProvider)+" / "+strings.TrimSpace(voice), " /")

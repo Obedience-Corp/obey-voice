@@ -60,6 +60,7 @@ var envBindings = map[string]string{
 	"hosted_persona_sharing":      "HOSTED_PERSONA_SHARING",
 	"persona_routing_timeout":     "PERSONA_ROUTING_TIMEOUT",
 	"grok_model":                  "GROK_MODEL",
+	"claude_model":                "CLAUDE_MODEL",
 	"cursor_model":                "CURSOR_MODEL",
 	"muse_spark_model":            "MUSE_SPARK_MODEL",
 	"obey_provider":               "OBEY_PROVIDER",

@@ -199,11 +199,6 @@ func (m personasModel) stackLines() []string {
 	}
 	brainProvider := stackBrainProviders()[m.brainProviderIdx]
 	brainRow := row(formRowBrainProvider, "Brain", "‹ "+brainProvider+" ›")
-	if strings.EqualFold(brainProvider, "claude") && strings.TrimSpace(m.brainModelInput.Value()) != "" {
-		// Claude has no app-level model key yet; be honest that the model
-		// string is recorded on the profile but not routed.
-		brainRow += dimStyle.Render("  (model saved, not routed for claude yet)")
-	}
 	ttsProvider := stackTTSProviders()[m.ttsProviderIdx]
 	voices := m.stackVoiceList()
 	voiceLabel := stackDefaultLabel
@@ -254,9 +249,6 @@ func (m personasModel) stackLines() []string {
 		}
 		workerRow += dimStyle.Render("  (legacy selection; tiered jobs use brain.worker_tiers)")
 		workerModelRow += dimStyle.Render("  (tiered: " + owner + "; edit persona.yaml)")
-	}
-	if strings.EqualFold(m.effectiveStackWorkerProvider(), "claude") && strings.TrimSpace(m.workerModel) != "" {
-		workerModelRow += dimStyle.Render("  (model saved, not routed for claude yet)")
 	}
 	lines := []string{
 		brainRow,

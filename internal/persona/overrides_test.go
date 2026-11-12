@@ -93,13 +93,13 @@ func TestOverriddenKeysMatchesApply(t *testing.T) {
 			want: []string{"active_persona", "ollama_model"},
 		},
 		{
-			name: "claude model is recorded but not routed",
+			name: "claude model routes to claude_model",
 			cfg:  appConfig,
 			profile: &Profile{
 				ID:    "ada",
 				Brain: Brain{Provider: "claude", Model: "sonnet"},
 			},
-			want: []string{"active_persona", "brain_provider"},
+			want: []string{"active_persona", "brain_provider", "claude_model"},
 		},
 		{
 			name: "kokoro voice routes to tts_voice",

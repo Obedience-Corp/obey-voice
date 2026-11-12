@@ -378,7 +378,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			msg = "[" + e.Stage + "] " + e.Message
 		}
 		notice := "Error: " + msg
-		m.appendTranscript(errorStyle.Render("  " + notice))
+		m.appendNotice(errorStyle, notice)
 		m.items[len(m.items)-1].notice = notice
 		m.setVoiceMode(anim.ModeError)
 		m.setStatus(notice, true)
@@ -386,7 +386,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 	case events.Info:
 		m.applyProviderStatus(e.ProviderStatus, e.Trace)
 		m.appendActivity("info", e.Message, 0)
-		m.appendTranscript(dimStyle.Render("  " + e.Message))
+		m.appendNotice(dimStyle, e.Message)
 
 	case events.SpeechDiagnostic:
 		// Diagnostics are routine Activity records. Only an applicable action
@@ -394,7 +394,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		// provider configuration by the pipeline's bounded advice window.
 		m.appendActivity("voice", e.Message, 0)
 		if e.ActionCode != "" && e.Message != "" {
-			m.appendTranscript(dimStyle.Render("  " + e.Message))
+			m.appendNotice(dimStyle, e.Message)
 		}
 
 	case events.VoiceGateStripped:

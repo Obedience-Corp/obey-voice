@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 )
 
@@ -98,14 +99,19 @@ func spawnableHistory(history []brain.Turn) []brain.Turn {
 
 // spawnBrief is the worker's prompt: the recent conversation, the utterance
 // that triggered the spawn marked as the trigger rather than as the task, and
-// the standing instruction not to go looking for work elsewhere.
-func spawnBrief(history []brain.Turn, transcript string) string {
+// the standing instruction not to go looking for work elsewhere. personaID is
+// the speaking persona's own id, so a task about "your model" or "your voice"
+// can name the profile to change; no other persona's id is given.
+func spawnBrief(history []brain.Turn, transcript, personaID string) string {
 	transcript = strings.TrimSpace(transcript)
 	turns := spawnableHistory(history)
 
 	var b strings.Builder
 	b.WriteString("You are running one background task for a voice assistant. ")
 	b.WriteString("The user is talking to the assistant; the assistant routed this task to you.\n")
+	if id := strings.TrimSpace(personaID); id != "" {
+		b.WriteString("The assistant is the Obey Voice persona with id \"" + id + "\", the id `obey-voice persona` commands take.\n")
+	}
 
 	if len(turns) > 0 {
 		b.WriteString("\nThe conversation so far:\n")
@@ -140,6 +146,20 @@ func spawnBrief(history []brain.Turn, transcript string) string {
 	b.WriteString("\nYour final response is spoken directly to the user and saved in the conversation. ")
 	b.WriteString("Return the answer in your own voice, with no instructions for another assistant to rewrite or deliver it.\n")
 	return b.String()
+}
+
+// briefPersonaID is the persona the user is talking to: the admitted
+// response's, or else the one the worker configuration was bound for.
+func briefPersonaID(metrics *turnMetrics, cfg *config.Config) string {
+	if metrics != nil {
+		if id := strings.TrimSpace(metrics.response.PersonaID); id != "" {
+			return id
+		}
+	}
+	if cfg != nil {
+		return strings.TrimSpace(cfg.ActivePersona)
+	}
+	return ""
 }
 
 // spawnLacksTask reports a spawn that would reach the worker carrying nothing:

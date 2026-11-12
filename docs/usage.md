@@ -69,6 +69,7 @@ On the client: open the printed URL → enter the pairing code → **Start** →
 obey-voice config                         # View all config
 obey-voice config tts_voice af_bella      # Set a config value
 obey-voice config schema --json           # Describe every key (types, bounds, help)
+obey-voice config schema tts_voice --json # Describe one key; an unknown key lists close matches
 obey-voice config get --json              # Every effective value with its source
 obey-voice config get tts_voice --json    # One value, its type, and its source
 obey-voice config set tts_voice af_bella --json   # Change one key, surgically

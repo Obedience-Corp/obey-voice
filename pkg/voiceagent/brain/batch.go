@@ -264,9 +264,7 @@ func newClaudeBatch(cfg *config.Config) (*claudeBatch, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The claude CLI selects the model itself and never reports it, so batch
-	// records the stable "default" identity via modelIDOrDefault.
-	return &claudeBatch{runner: b.client}, nil
+	return &claudeBatch{runner: b.client, model: claudeModel(cfg)}, nil
 }
 
 func (c *claudeBatch) Transform(ctx context.Context, req BatchRequest) (BatchResult, error) {
@@ -283,11 +281,12 @@ func (c *claudeBatch) Transform(ctx context.Context, req BatchRequest) (BatchRes
 		// (headless print mode never auto-runs tools) rather than
 		// bypassPermissions, and wires no tools.
 		PermissionMode: claude.PermissionModeDefault,
+		Model:          c.model,
 	}
 
 	result, err := c.runner.RunPromptCtx(ctx, batchPromptBody(req), opts)
 	if err != nil {
-		return BatchResult{}, fmt.Errorf("claude batch: %w", err)
+		return BatchResult{}, claudeFailure("claude batch", err)
 	}
 
 	text := strings.TrimSpace(result.Result)
