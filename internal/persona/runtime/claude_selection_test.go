@@ -285,6 +285,8 @@ func newConversation(t *testing.T, maxHistory int, start, provider, sharing stri
 		c.log = installClaudeFixture(t)
 	case "codex":
 		c.log = installCodexSelectorFixture(t)
+	case "grok", "cursor":
+		c.log = installCLIFixture(t)
 	default:
 		c.log = installMixedProviderBinaries(t)
 	}
@@ -921,10 +923,16 @@ func TestOneWayProviderRefusesImplicitSwitchItCouldNotReturnFrom(t *testing.T) {
 		t.Fatalf("a persona on Claude can take the conversation and give it back: %v", err)
 	}
 	rex := testProfile("rex", "Rex", "rex")
-	rex.Brain.Provider, rex.Brain.Model = "cursor", ""
+	rex.Brain.Provider, rex.Brain.Model = "fixture-unverified", ""
 	writeTestProfile(t, c.catalog.Dir, rex)
-	if err := c.p.RunTurnTextMode(t.Context(), "Rex, what do you think?"); err == nil || strings.Contains(err.Error(), "switch to") || !strings.Contains(err.Error(), `provider "cursor" has no verified shared history projection`) {
+	if err := c.p.RunTurnTextMode(t.Context(), "Rex, what do you think?"); err == nil || strings.Contains(err.Error(), "switch to") || !strings.Contains(err.Error(), `provider "fixture-unverified" has no verified shared history projection`) {
 		t.Fatalf("a persona that cannot take over was offered a switch: %v", err)
+	}
+	cal := testProfile("cal", "Cal", "cal")
+	cal.Brain.Provider, cal.Brain.Model = "cursor", ""
+	writeTestProfile(t, c.catalog.Dir, cal)
+	if err := c.p.RunTurnTextMode(t.Context(), "Cal, what do you think?"); err == nil || !strings.Contains(err.Error(), `say "switch to Cal"`) {
+		t.Fatalf("a persona on Cursor can take the conversation and give it back: %v", err)
 	}
 	c.say("@ember what do you think?")
 	if got := c.selector.Snapshot().PersonaID; got != "ember" {

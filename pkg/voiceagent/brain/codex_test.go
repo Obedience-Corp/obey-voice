@@ -102,8 +102,19 @@ func TestCodexTransientContinuationAndTools(t *testing.T) {
 	if err = c.AppendAssistantResponse("host output"); err != nil {
 		t.Fatal(err)
 	}
-	if c.sessionID != "" {
-		t.Fatal("host output did not invalidate session")
+	if c.sessionID == "" {
+		t.Fatal("host output dropped the native session")
+	}
+	for range 2 {
+		if _, err = c.ThinkFull(context.Background(), "and then", StreamOptions{ToolsEnabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r := f.requests[3]; r.ThreadID == "" || strings.Count(r.Prompt, `"content":"host output"`) != 1 || strings.Contains(r.Prompt, `"content":"work"`) {
+		t.Fatalf("the resumed thread was not sent only the host output:\n%s", r.Prompt)
+	}
+	if r := f.requests[4]; r.ThreadID == "" || strings.Contains(r.Prompt, "host output") {
+		t.Fatalf("the host output was sent twice:\n%s", r.Prompt)
 	}
 	c.ClearHistory()
 	if len(c.History()) != 0 {

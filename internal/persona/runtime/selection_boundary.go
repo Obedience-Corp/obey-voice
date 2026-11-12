@@ -22,7 +22,7 @@ var sharedHistoryProviders = []string{"ollama", "codex", "muse-spark", "obey"}
 
 // sessionCatchUpProviders lists the brain providers whose parked sessions and
 // transcript catch-up are covered by selection tests.
-var sessionCatchUpProviders = []string{"claude"}
+var sessionCatchUpProviders = []string{"claude", "grok", "cursor"}
 
 func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reason string, preCommit func(context.Context) error) (events.PersonaSelection, error) {
 	if s.closed {
@@ -363,7 +363,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if err != nil {
 				return err
 			}
-			park = outgoingNative == nil && brain.KeepsPersonaSession(oldBrain) && !s.requiresSelection &&
+			park = outgoingNative == nil && brain.ParksSession(oldBrain) && !s.requiresSelection &&
 				previous.PersonaID != "" && previous.PersonaID != binding.PersonaID && previous.ConversationEpoch == scope.ConversationEpoch
 			if park {
 				prepared.RetainPrevious()

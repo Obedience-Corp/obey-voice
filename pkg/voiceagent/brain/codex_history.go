@@ -22,9 +22,17 @@ func (c *CodexBrain) ContextHistory() []Turn             { return deepCopyTurns(
 func (c *CodexBrain) ClearHistory() {
 	c.canonical = nil
 	c.working = nil
-	c.sessionID = ""
+	c.dropThread()
 	c.snapshot = ContinuitySnapshot{}
 }
+
+// dropThread gives up the native thread; the next request starts a new one.
+func (c *CodexBrain) dropThread() {
+	c.sessionID, c.unsent = "", 0
+}
+
+func (*CodexBrain) parksSession() {}
+
 func (c *CodexBrain) LoadHistory(turns []Turn) {
 	c.ClearHistory()
 	c.canonical = deepCopyTurns(turns)
@@ -38,7 +46,7 @@ func (c *CodexBrain) LoadHistory(turns []Turn) {
 func (c *CodexBrain) ImportHistory(turns []Turn) error {
 	c.canonical = deepCopyTurns(turns)
 	c.working = deepCopyTurns(turns)
-	c.sessionID = ""
+	c.dropThread()
 	c.trimWorking()
 	return nil
 }
@@ -49,15 +57,37 @@ func (c *CodexBrain) ContinuitySnapshot() ContinuitySnapshot {
 	s.Working = c.ContextHistory()
 	return s
 }
+
+// ImportContinuity replaces the conversation with s. A live thread is kept
+// when s only adds lines to the view it holds, as when the host records a
+// reply or brings a parked persona back; its next request sends those lines.
+// Any other view starts a new thread.
 func (c *CodexBrain) ImportContinuity(s ContinuitySnapshot) error {
+	thread, tools, unsent, held := c.sessionID, c.sessionTools, c.unsent, c.working
 	c.LoadHistory(s.Canonical)
 	c.snapshot = s
 	c.snapshot.Archive = slices.Clone(s.Archive)
 	if s.Working != nil {
 		c.working = deepCopyTurns(s.Working)
+		if thread != "" && extendsView(held, c.working) {
+			c.sessionID, c.sessionTools, c.unsent = thread, tools, unsent+len(c.working)-len(held)
+		}
 		c.trimWorking()
 	}
 	return nil
+}
+
+// extendsView reports whether working begins with every turn of held.
+func extendsView(held, working []Turn) bool {
+	if len(working) < len(held) {
+		return false
+	}
+	for i, t := range held {
+		if t.ResponseID != working[i].ResponseID || cliHistoryRecord(t, nil) != cliHistoryRecord(working[i], nil) {
+			return false
+		}
+	}
+	return true
 }
 func (c *CodexBrain) appendTurn(t Turn) {
 	c.canonical = append(c.canonical, t)
@@ -69,7 +99,7 @@ func (c *CodexBrain) appendTurn(t Turn) {
 // the transcript that is persisted or transferred to another persona.
 func (c *CodexBrain) ReseedContinuity(turns []Turn) {
 	c.working = deepCopyTurns(turns)
-	c.sessionID = ""
+	c.dropThread()
 	c.trimWorking()
 }
 func (c *CodexBrain) trimWorking() {
@@ -86,6 +116,10 @@ func (c *CodexBrain) trimWorking() {
 			// Keep whole exchanges, including their tool calls/results and host
 			// continuations. Retain a leading shared compaction seed as well.
 			if i > 0 {
+				// A thread cannot be sent lines trimmed away before it saw them.
+				if c.unsent > len(c.working)-i {
+					c.dropThread()
+				}
 				seed := c.working[0]
 				tail := deepCopyTurns(c.working[i:])
 				if seed.Role == "assistant" && seed.PersonaID == "" && seed.PersonaDisplayName == "" && len(seed.ToolCalls) == 0 {
@@ -104,8 +138,11 @@ func (c *CodexBrain) AppendAssistantResponseWithIdentity(text string, i TurnIden
 	if strings.TrimSpace(text) == "" {
 		return fmt.Errorf("codex: empty assistant response")
 	}
+	// The live thread is sent this line with its next request.
+	if c.sessionID != "" {
+		c.unsent++
+	}
 	c.appendTurn(Turn{Role: "assistant", Content: text, At: time.Now().UTC(), PersonaID: i.PersonaID, PersonaDisplayName: i.PersonaDisplayName, PromptHash: i.PromptHash, ResponseID: i.ResponseID})
-	c.sessionID = ""
 	return nil
 }
 func (c *CodexBrain) SessionInfo() SessionState {
