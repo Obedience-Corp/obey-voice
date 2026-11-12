@@ -74,7 +74,7 @@ when you select it.
 
 | Key | Default | Environment | Description |
 |-----|---------|-------------|-------------|
-| `active_persona` | `obey` | `ACTIVE_PERSONA` | Persona profile id under `personas/<id>/` |
+| `active_persona` | `obey` | `ACTIVE_PERSONA` | Default persona for new conversations: the profile id under `personas/<id>/` a start uses when none is chosen. Set by `persona use`; it does not say which persona a running conversation is speaking as. |
 | `agent_name` | `Obey` | | Display name (overlaid from active persona) |
 | `user_display_name` | empty | | Your name in prompts and chat labels. Empty keeps `speaker-1` and `{user_name}` as the OS login |
 | `persona` | `obey` | `PERSONA` | Prompt document name for kind=persona (overlaid from active persona) |

@@ -43,8 +43,9 @@ func newConfigGetCmd() *cobra.Command {
 		Long: "Show what the config file and defaults hold, with the source of each\n" +
 			"value (default, file, or env). With no key, every setting is reported.\n\n" +
 			"Values are the app-level ones — the ones `config set` writes. Where the\n" +
-			"active persona overrides a key, the persona block names it rather than\n" +
-			"the value being silently replaced.\n\n" +
+			"default persona for new conversations overrides a key, the persona block\n" +
+			"names it rather than the value being silently replaced. A running\n" +
+			"conversation may be speaking as another persona.\n\n" +
 			"Reads only: this command never writes to the install root.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -122,7 +123,7 @@ func printValues(cmd *cobra.Command, payload configValuesPayload) {
 	}
 	if payload.Persona != nil {
 		fmt.Fprintf(out, "\n  %s %s\n",
-			dimStyle.Render("overridden by persona"),
+			dimStyle.Render("overridden by the default persona for new conversations,"),
 			valueStyle.Render(payload.Persona.DisplayName))
 		for _, key := range payload.Persona.Overrides {
 			fmt.Fprintf(out, "    %s\n", keyStyle.Render(key))
