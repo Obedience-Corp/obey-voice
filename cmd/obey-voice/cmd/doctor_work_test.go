@@ -42,7 +42,7 @@ func TestDoctorSaysWhoDoesEachPersonasWork(t *testing.T) {
 		t.Fatalf("doctor: %v\n%s", err, out)
 	}
 	for name, want := range map[string]string{
-		"work persona mira":  "[OK  ] work persona mira: its own claude (haiku) does it; default on claude",
+		"work persona mira":  "[OK  ] work persona mira: its own claude (haiku) does it for up to 15 minutes; default on claude",
 		"work persona ember": "[OK  ] work persona ember: the worker ollama (qwen3:8b) does it; default on ollama",
 		"work persona rex":   "[OK  ] work persona rex: the worker codex (gpt-5.5) does it; default: its brain.worker is set",
 		"work persona ada":   "[OK  ] work persona ada: the worker ollama (qwen3:8b) does it; brain.work is worker",
@@ -58,7 +58,7 @@ func TestDoctorSaysWhoDoesEachPersonasWork(t *testing.T) {
 	tiered.Mode, tiered.Policy.ChargePolicy, tiered.Policy.DailyChargeMicroUSD = config.WorkerModeTiered, "strict", &daily
 	cfg.VoiceWorkers = tiered
 	out, _ = runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
-	if got := doctorLine(t, out, "work persona mira"); !strings.HasPrefix(got, "[WARN] work persona mira: its own claude (haiku) does it; default on claude; refused under the strict worker policy") ||
+	if got := doctorLine(t, out, "work persona mira"); !strings.HasPrefix(got, "[WARN] work persona mira: its own claude (haiku) does it for up to 15 minutes; default on claude; refused under the strict worker policy") ||
 		!strings.Contains(out, "persona edit mira --work worker") {
 		t.Errorf("strict mira = %q", got)
 	}
@@ -69,7 +69,22 @@ func TestDoctorSaysWhoDoesEachPersonasWork(t *testing.T) {
 		t.Errorf("tiered ember = %q", got)
 	}
 
-	cfg.VoiceWorkers, cfg.VoiceWorkEnabled = nil, true
+	cfg.VoiceWorkers, cfg.VoiceWorkerJobBudget = nil, config.UnlimitedJobBudget
+	out, _ = runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
+	if got := doctorLine(t, out, "work persona mira"); got != "[WARN] work persona mira: its own claude (haiku) does it with no time limit (voice_worker_job_budget is -1); default on claude" ||
+		!strings.Contains(out, "or to 0 for the 15-minute default") {
+		t.Errorf("unlimited mira = %q", got)
+	}
+	if got := doctorLine(t, out, "work persona kai"); got != "[OK  ] work persona kai: its own ollama (persona:14b) does it; brain.work is own" {
+		t.Errorf("unlimited kai = %q", got)
+	}
+	cfg.VoiceWorkerJobBudget = 600
+	out, _ = runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
+	if got := doctorLine(t, out, "work persona mira"); got != "[OK  ] work persona mira: its own claude (haiku) does it for up to 600s; default on claude" {
+		t.Errorf("budgeted mira = %q", got)
+	}
+
+	cfg.VoiceWorkerJobBudget, cfg.VoiceWorkEnabled = 0, true
 	out, _ = runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
 	if got := doctorLine(t, out, "work persona mira"); !strings.Contains(got, "the worker ollama (qwen3:8b) does it; default on claude, but voice_work_enabled keeps a hosted persona's work on the local worker") {
 		t.Errorf("work inbox mira = %q", got)

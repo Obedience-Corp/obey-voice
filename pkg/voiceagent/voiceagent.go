@@ -497,6 +497,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		}
 	}
 	agency := pipeline.NewAgency(p, jobs, worker, cfg, workerErr)
+	agency.UseNotices(config.NewNotices(config.NoticesFile()))
 	agency.Wire()
 	cleanups = append(cleanups, jobs.Close)
 	cleanups = append(cleanups, func() { _ = agency.CloseWork() })

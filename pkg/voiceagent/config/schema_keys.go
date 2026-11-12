@@ -272,9 +272,9 @@ func brainKeys() []KeySpec {
 			Help: "How many spawned jobs run at the same time; the rest wait in order. Each is its own model session, so more than one on a local Ollama shares the machine.",
 		},
 		{
-			Key: "voice_worker_job_budget", Type: TypeInt, Default: DefaultVoiceWorkerJobBudget, Unit: "seconds", Min: num(0), Max: num(86400),
+			Key: "voice_worker_job_budget", Type: TypeInt, Default: DefaultVoiceWorkerJobBudget, Unit: "seconds", Min: num(UnlimitedJobBudget), Max: num(86400),
 			Group: GroupBrain, Title: "Job time budget",
-			Help: "Optional limit on how long a spawned job may run before it is stopped and you are told. Zero, the default, means no limit.",
+			Help: "Optional limit on how long a spawned job may run before it is stopped and you are told. Zero, the default, means no limit for the worker and 15 minutes for a job a persona on a hosted backend does itself. -1 means no limit for either.",
 		},
 		{
 			Key: "voice_worker_boundary", Type: TypeBool, Default: true,

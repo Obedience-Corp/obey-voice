@@ -3,6 +3,9 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -242,7 +245,7 @@ func TestPersonaOnOllamaChoosesBetweenTheWorkerAndItsOwnModel(t *testing.T) {
 }
 
 // tieredPersona is Mira on provider in tiered mode, with the simple tier
-// assigned to a local worker and the medium tier left unassigned.
+// assigned to a local worker and the medium tier disabled.
 func tieredPersona(provider, work string, tools bool) *config.Config {
 	cfg := tierTestConfig()
 	cfg.ActivePersona, cfg.AgentName, cfg.BrainProvider, cfg.PersonaWork, cfg.VoiceToolsEnabled = "mira", "Mira", provider, work, tools
@@ -325,8 +328,8 @@ func TestOwnWorkInTieredModeIsHeldToTheRoutedTier(t *testing.T) {
 			want  time.Duration
 		}{
 			{"simple", config.WorkerTierSimple, time.Hour, 45 * time.Second},
-			{"an unassigned tier keeps its limits", config.WorkerTierMedium, time.Hour, 90 * time.Second},
 			{"a shorter job budget wins", config.WorkerTierSimple, 20 * time.Second, 20 * time.Second},
+			{"the hosted default when the budget is unset", config.WorkerTierSimple, 0, 45 * time.Second},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				h := newOwnHarness(t, tieredPersona("claude", "", true), nil, job.WithBudget(tc.table))
@@ -360,11 +363,30 @@ func TestOwnWorkInTieredModeIsHeldToTheRoutedTier(t *testing.T) {
 		}
 	})
 	t.Run("a hosted own job is refused under the strict policy", func(t *testing.T) {
-		for _, tools := range []bool{true, false} {
-			h := newOwnHarness(t, strictPolicy(tieredPersona("claude", "", tools)), nil)
-			h.spawn("refactor the parser", config.WorkerTierSimple)
-			h.awaitRejected(t, "Mira cannot do its own work under the strict worker policy: claude")
+		for _, provider := range []string{"claude", "codex", "cursor", "grok", "muse-spark", "obey"} {
+			for _, tools := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s tools %v", provider, tools), func(t *testing.T) {
+					h := newOwnHarness(t, strictPolicy(tieredPersona(provider, "", tools)), nil)
+					h.spawn("refactor the parser", config.WorkerTierSimple)
+					h.awaitRejected(t, "Mira cannot do its own work under the strict worker policy: "+provider+" runs its own tools")
+				})
+			}
 		}
+	})
+	t.Run("a disabled tier is refused", func(t *testing.T) {
+		h := newOwnHarness(t, tieredPersona("claude", "", true), nil)
+		h.spawn("refactor the parser", config.WorkerTierMedium)
+		h.awaitRejected(t, "worker tier medium is disabled")
+	})
+	t.Run("with every tier disabled, own work is refused and not advertised", func(t *testing.T) {
+		cfg := tieredPersona("claude", "", true)
+		cfg.VoiceWorkers.Tiers.Simple.Enabled = false
+		h := newOwnHarness(t, cfg, nil)
+		if refused := h.a.resolveWork().refused; refused == nil || !strings.Contains(refused.Error(), "none is enabled") {
+			t.Fatalf("refused = %v", refused)
+		}
+		h.spawn("refactor the parser", config.WorkerTierSimple)
+		h.awaitRejected(t, "worker tiers are on and none is enabled")
 	})
 	t.Run("a job routed to no tier is refused", func(t *testing.T) {
 		h := newOwnHarness(t, tieredPersona("claude", "", true), nil)
@@ -745,82 +767,132 @@ func TestATurnSpawnsOnTheWorkDecisionItWasAdmittedWith(t *testing.T) {
 	}
 }
 
-func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
-	notices := 0
-	setup := func(t *testing.T, work string) (*Agency, *recordingWorker, *progressiveFakeTTS, *[]events.Error, *sync.Mutex) {
-		notices = 0
-		cfg := claudePersona()
-		cfg.PersonaWork, cfg.WorkDir = work, t.TempDir()
-		provider := &progressiveFakeTTS{}
-		player := newFakePlayer(time.Millisecond)
-		t.Cleanup(func() { _ = player.Close() })
-		jobs := job.NewTable(t.Context())
-		t.Cleanup(jobs.Close)
-		p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
-		p.HostedNotice = func(e events.ResponseEnvelope) (HostedNotice, bool) {
-			if e.PersonaID != "mira" || notices > 0 {
-				return HostedNotice{}, false
-			}
-			return HostedNotice{Text: "Mira runs on Claude, a hosted service.", Delivered: func() { notices++ }}, true
+// storyHarness asks Mira for a long story on an install with no configured
+// worker, with Mira's own backend standing in, and records what reached it.
+type storyHarness struct {
+	a        *Agency
+	jobs     *job.Table
+	own      *recordingWorker
+	speech   *progressiveFakeTTS
+	mu       sync.Mutex
+	errs     []events.Error
+	notices  int
+	atBuild  []int
+	infoLine []string
+}
+
+func newStoryHarness(t *testing.T, cfg *config.Config) *storyHarness {
+	cfg.WorkDir = t.TempDir()
+	h := &storyHarness{speech: &progressiveFakeTTS{}, own: &recordingWorker{reply: "Chapter One. Once upon a time on Mira's own model.\n\nChapter Two. The end."}}
+	player := newFakePlayer(time.Millisecond)
+	t.Cleanup(func() { _ = player.Close() })
+	h.jobs = job.NewTable(t.Context())
+	t.Cleanup(h.jobs.Close)
+	p := &Pipeline{TTS: h.speech, Player: player, Events: events.NewBus()}
+	p.HostedNotice = func(e events.ResponseEnvelope) (HostedNotice, bool) {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if e.PersonaID != "mira" || h.notices > 0 {
+			return HostedNotice{}, false
 		}
-		var mu sync.Mutex
-		var errs []events.Error
-		events.Subscribe(p.Events, func(e events.Error) { mu.Lock(); errs = append(errs, e); mu.Unlock() })
-		a := NewAgency(p, jobs, nil, cfg, errors.New("ollama worker model is missing"))
-		own := &recordingWorker{reply: "Chapter One. Once upon a time on Mira's own model.\n\nChapter Two. The end."}
-		a.ownFactory = func(context.Context, *config.Config) (brain.Provider, error) { return own, nil }
-		a.Wire()
-		metrics := newTurnMetrics()
-		metrics.response = events.ResponseEnvelope{ResponseID: "response-1", PersonaID: "mira", DisplayName: "Mira", BrainProvider: "claude", Hosted: true}
-		a.HandleRoute(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "tell me a long story", Source: "test"})
-		return a, own, provider, &errs, &mu
+		return HostedNotice{Text: "Mira runs on Claude, a hosted service.", Delivered: func() { h.mu.Lock(); h.notices++; h.mu.Unlock() }}, true
 	}
-	t.Run("own: the persona's backend writes it", func(t *testing.T) {
-		_, own, provider, errs, mu := setup(t, "")
-		deadline := time.After(5 * time.Second)
-		for !strings.Contains(strings.Join(provider.Calls(), " "), "Once upon a time on Mira's own model") {
-			select {
-			case <-deadline:
-				mu.Lock()
-				defer mu.Unlock()
-				t.Fatalf("narration never started: speech %v errors %+v", provider.Calls(), *errs)
-			case <-time.After(10 * time.Millisecond):
-			}
+	events.Subscribe(p.Events, func(e events.Error) { h.mu.Lock(); h.errs = append(h.errs, e); h.mu.Unlock() })
+	events.Subscribe(p.Events, func(e events.Info) { h.mu.Lock(); h.infoLine = append(h.infoLine, e.Message); h.mu.Unlock() })
+	h.a = NewAgency(p, h.jobs, nil, cfg, errors.New("ollama worker model is missing"))
+	h.a.ownFactory = func(context.Context, *config.Config) (brain.Provider, error) {
+		h.mu.Lock()
+		h.atBuild = append(h.atBuild, h.notices)
+		h.mu.Unlock()
+		return h.own, nil
+	}
+	h.a.Wire()
+	return h
+}
+
+func (h *storyHarness) ask(t *testing.T, tier config.WorkerTierName) {
+	metrics := newTurnMetrics()
+	metrics.response = events.ResponseEnvelope{ResponseID: "response-1", PersonaID: "mira", DisplayName: "Mira", BrainProvider: "claude", Hosted: true}
+	h.a.HandleRoute(t.Context(), h.a.pipeline.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "tell me a long story", Tier: tier, Source: "test"})
+}
+
+func (h *storyHarness) awaitSpeech(t *testing.T) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for !strings.Contains(strings.Join(h.speech.Calls(), " "), "Once upon a time on Mira's own model") {
+		select {
+		case <-deadline:
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			t.Fatalf("narration never started: speech %v errors %+v", h.speech.Calls(), h.errs)
+		case <-time.After(10 * time.Millisecond):
 		}
-		mu.Lock()
-		defer mu.Unlock()
-		if len(*errs) != 0 {
-			t.Fatalf("errors = %+v", *errs)
+	}
+}
+
+func (h *storyHarness) awaitError(t *testing.T) events.Error {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		h.mu.Lock()
+		if len(h.errs) > 0 {
+			e := h.errs[0]
+			h.mu.Unlock()
+			return e
 		}
-		own.mu.Lock()
-		defer own.mu.Unlock()
-		if len(own.opts) != 1 || !own.opts[0].ToolsEnabled || !own.opts[0].OmitTurnInstruction || own.briefs[0] != storyWriterPrompt {
-			t.Fatalf("story job on the own backend = %d call(s), %+v", len(own.opts), own.opts)
+		h.mu.Unlock()
+		select {
+		case <-deadline:
+			t.Fatal("no error")
+		case <-time.After(10 * time.Millisecond):
 		}
-		if notices != 1 {
-			t.Fatalf("hosted notice given %d times before the story went to Claude", notices)
+	}
+}
+
+func (h *storyHarness) storyJob(t *testing.T) (job.Info, map[string]string) {
+	t.Helper()
+	status := h.jobs.Status()
+	if len(status) != 1 {
+		t.Fatalf("jobs = %+v", status)
+	}
+	h.a.mu.Lock()
+	defer h.a.mu.Unlock()
+	return status[0], h.a.workerOrigins[status[0].ID].admission
+}
+
+func TestStoryNarrationWithNoConfiguredWorker(t *testing.T) {
+	t.Run("own: the persona's backend writes it, after the hosted notice", func(t *testing.T) {
+		h := newStoryHarness(t, claudePersona())
+		start := time.Now()
+		h.ask(t, "")
+		h.awaitSpeech(t)
+		h.mu.Lock()
+		errs, notices, atBuild := len(h.errs), h.notices, append([]int(nil), h.atBuild...)
+		h.mu.Unlock()
+		if errs != 0 || notices != 1 || len(atBuild) != 1 || atBuild[0] != 1 {
+			t.Fatalf("errors %d, notices %d, notices given when the backend was built %v; want the notice before the story", errs, notices, atBuild)
+		}
+		h.own.mu.Lock()
+		opts, brief, deadline := h.own.opts, h.own.briefs, h.own.deadlines
+		h.own.mu.Unlock()
+		if len(opts) != 1 || !opts[0].ToolsEnabled || !opts[0].OmitTurnInstruction || brief[0] != storyWriterPrompt {
+			t.Fatalf("story job on the own backend = %d call(s), %+v", len(opts), opts)
+		}
+		if got, want := deadline[0].Sub(start), 15*time.Minute; got > want+time.Second || got < want-5*time.Second {
+			t.Fatalf("story deadline in %s, want the hosted own-job default %s", got, want)
+		}
+		info, admission := h.storyJob(t)
+		if info.Provider != "claude" || info.Model != "haiku" || admission["work"] != config.WorkOwn || admission["persona"] != "mira" || admission["provider"] != "claude" {
+			t.Fatalf("story job %+v admitted as %v", info, admission)
 		}
 	})
 	t.Run("worker: the missing worker is reported", func(t *testing.T) {
-		_, own, _, errs, mu := setup(t, config.WorkWorker)
-		deadline := time.After(5 * time.Second)
-		for {
-			mu.Lock()
-			n := len(*errs)
-			mu.Unlock()
-			if n > 0 {
-				break
-			}
-			select {
-			case <-deadline:
-				t.Fatal("no error for a story with no worker to write it")
-			case <-time.After(10 * time.Millisecond):
-			}
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		if e := (*errs)[0]; e.Stage != "narrate" || !strings.Contains(e.Message, "ollama worker model is missing") || own.calls() != 0 || notices != 0 {
-			t.Fatalf("error = %+v, own calls %d, notices %d", e, own.calls(), notices)
+		cfg := claudePersona()
+		cfg.PersonaWork = config.WorkWorker
+		h := newStoryHarness(t, cfg)
+		h.ask(t, "")
+		if e := h.awaitError(t); e.Stage != "narrate" || !strings.Contains(e.Message, "ollama worker model is missing") || h.own.calls() != 0 || h.notices != 0 {
+			t.Fatalf("error = %+v, own calls %d, notices %d", e, h.own.calls(), h.notices)
 		}
 	})
 }
@@ -846,32 +918,163 @@ func TestOllamaPersonaDoesItsOwnWorkWithNoConfiguredWorker(t *testing.T) {
 	}
 }
 
-// Tiered mode builds no legacy worker, and a story phrase names no tier, so
-// the story stays where it was: with the configured worker, which is not
-// there, and the persona's own backend is not used.
-func TestStoryNarrationInTieredModeStaysOnTheConfiguredWorker(t *testing.T) {
-	cfg := tieredPersona("claude", "", true)
-	cfg.WorkDir = t.TempDir()
-	jobs := job.NewTable(t.Context())
-	t.Cleanup(jobs.Close)
-	p := &Pipeline{Events: events.NewBus()}
-	p.SetOutputMuted(true)
-	errs := make(chan events.Error, 4)
-	events.Subscribe(p.Events, func(e events.Error) { errs <- e })
-	a := NewAgency(p, jobs, nil, cfg, nil)
-	a.ownFactory = func(context.Context, *config.Config) (brain.Provider, error) {
-		t.Error("a tiered story ran on the persona's own backend")
-		return nil, errors.New("refused")
-	}
-	a.Wire()
-	metrics := newTurnMetrics()
-	a.HandleRoute(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "tell me a long story", Source: "phrase"})
-	select {
-	case e := <-errs:
-		if e.Stage != "narrate" || !strings.Contains(e.Message, "worker provider is not configured") {
-			t.Fatalf("error = %+v", e)
+// A story in tiered mode is held to its routed tier, as any own job is. A
+// story phrase names no tier, so it is refused; a story routed to a tier is
+// written under it.
+func TestStoryNarrationInTieredModeIsHeldToTheRoutedTier(t *testing.T) {
+	t.Run("no tier", func(t *testing.T) {
+		h := newStoryHarness(t, tieredPersona("claude", "", true))
+		h.ask(t, "")
+		if e := h.awaitError(t); e.Stage != "job" || !strings.Contains(e.Message, "routed to no known tier") || h.own.calls() != 0 || h.notices != 0 || len(h.jobs.Status()) != 0 {
+			t.Fatalf("error = %+v, own calls %d, notices %d, jobs %d", e, h.own.calls(), h.notices, len(h.jobs.Status()))
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("no error for a tiered story with no worker to write it")
+	})
+	t.Run("routed to a tier", func(t *testing.T) {
+		h := newStoryHarness(t, tieredPersona("claude", "", true))
+		start := time.Now()
+		h.ask(t, config.WorkerTierSimple)
+		h.awaitSpeech(t)
+		h.own.mu.Lock()
+		deadline := h.own.deadlines[0]
+		h.own.mu.Unlock()
+		if got := deadline.Sub(start); got > 46*time.Second || got < 40*time.Second {
+			t.Fatalf("story deadline in %s, want the simple tier's 45s", got)
+		}
+		if _, admission := h.storyJob(t); admission["worker_tier"] != "simple" || admission["work"] != config.WorkOwn {
+			t.Fatalf("admission = %v", admission)
+		}
+	})
+	t.Run("strict policy", func(t *testing.T) {
+		h := newStoryHarness(t, strictPolicy(tieredPersona("claude", "", true)))
+		h.ask(t, config.WorkerTierSimple)
+		if e := h.awaitError(t); !strings.Contains(e.Message, "strict worker policy") || h.own.calls() != 0 {
+			t.Fatalf("error = %+v, own calls %d", e, h.own.calls())
+		}
+	})
+}
+
+// A hosted persona's own job is capped at the hosted default while
+// voice_worker_job_budget is unset; a set budget wins, -1 lifts the cap, and
+// a local own job keeps the job table's budget.
+func TestHostedOwnJobDefaultTimeCap(t *testing.T) {
+	t.Run("budget unset: cut off at the default", func(t *testing.T) {
+		h := newOwnHarness(t, claudePersona(), nil)
+		h.a.ownJobDefault = 80 * time.Millisecond
+		release := make(chan struct{})
+		defer close(release)
+		h.own.release = release
+		h.spawn("refactor the parser", "")
+		select {
+		case e := <-h.aborted:
+			if e.Reason != events.AbortBudget {
+				t.Fatalf("reason = %q", e.Reason)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("the hosted default never stopped the own job")
+		}
+	})
+	for _, tc := range []struct {
+		name   string
+		cfg    func() *config.Config
+		table  time.Duration
+		budget int
+		want   time.Duration
+	}{
+		{"budget unset: the default", claudePersona, 0, 0, 15 * time.Minute},
+		{"a set budget wins, even a longer one", claudePersona, time.Hour, 3600, time.Hour},
+		{"unlimited: no cap", claudePersona, 0, config.UnlimitedJobBudget, 0},
+		{"a local own job keeps the table's budget", func() *config.Config {
+			cfg := claudePersona()
+			cfg.BrainProvider, cfg.OllamaModel, cfg.PersonaWork = "ollama", "persona:14b", config.WorkOwn
+			return cfg
+		}, 0, 0, 0},
+		{"in tiered mode a shorter default wins over the tier", func() *config.Config { return tieredPersona("claude", "", true) }, 0, 0, 30 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := tc.cfg()
+			cfg.VoiceWorkerJobBudget = tc.budget
+			h := newOwnHarness(t, cfg, nil, job.WithBudget(tc.table))
+			if tiered := tieredWorkers(cfg); tiered {
+				h.a.ownJobDefault = 30 * time.Second
+			}
+			start := time.Now()
+			h.spawn("refactor the parser", config.WorkerTierSimple)
+			h.awaitFinished(t)
+			_, deadline := h.ownCall(t)
+			if tc.want == 0 {
+				if !deadline.IsZero() {
+					t.Fatalf("own job has a deadline in %s, want none", deadline.Sub(start))
+				}
+				return
+			}
+			if got := deadline.Sub(start); got > tc.want+time.Second || got < tc.want-5*time.Second {
+				t.Fatalf("own job deadline in %s, want %s", got, tc.want)
+			}
+		})
 	}
+}
+
+// The first own job of a hosted persona on an install whose Settings chose a
+// worker says, once, where its jobs now run and how to send them back.
+func TestOwnWorkDefaultNoticeIsShownOncePerPersona(t *testing.T) {
+	const notice = "does its background jobs on its own backend, claude, not on the worker chosen in Settings. To hand them to that worker: obey-voice persona edit mira --work worker"
+	shown := func(h *ownHarness) int {
+		n := 0
+		for {
+			select {
+			case msg := <-h.info:
+				if strings.Contains(msg, notice) {
+					n++
+				}
+			default:
+				return n
+			}
+		}
+	}
+	run := func(t *testing.T, cfg *config.Config, notices OneTimeNotices) int {
+		h := newOwnHarness(t, cfg, nil)
+		if notices != nil {
+			h.a.UseNotices(notices)
+		}
+		total := 0
+		for range 2 {
+			h.spawn("refactor the parser", "")
+			h.awaitFinished(t)
+			total += shown(h)
+		}
+		h.own.mu.Lock()
+		defer h.own.mu.Unlock()
+		for _, brief := range h.own.briefs {
+			if strings.Contains(brief, "chosen in Settings") {
+				t.Fatal("the notice reached the model")
+			}
+		}
+		return total
+	}
+	t.Run("once, and not again after a restart", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "notices.json")
+		if n := run(t, claudePersona(), config.NewNotices(path)); n != 1 {
+			t.Fatalf("notice shown %d times in the first session, want 1", n)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("notice not recorded: %v", err)
+		}
+		if n := run(t, claudePersona(), config.NewNotices(path)); n != 0 {
+			t.Fatalf("notice shown %d times after a restart", n)
+		}
+	})
+	t.Run("never without a worker in Settings", func(t *testing.T) {
+		cfg := claudePersona()
+		cfg.VoiceWorkerProvider, cfg.VoiceWorkerModel = "", ""
+		if n := run(t, cfg, nil); n != 0 {
+			t.Fatalf("notice shown %d times", n)
+		}
+	})
+	t.Run("never for a persona that set its work", func(t *testing.T) {
+		cfg := claudePersona()
+		cfg.PersonaWork = config.WorkOwn
+		if n := run(t, cfg, nil); n != 0 {
+			t.Fatalf("notice shown %d times", n)
+		}
+	})
 }

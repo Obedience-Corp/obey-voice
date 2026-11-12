@@ -42,11 +42,16 @@ func workDiag(id string, cfg *config.Config) config.Diagnostic {
 	case config.WorkOf(cfg) == config.WorkOwn && cfg.VoiceWorkEnabled && brain.IsHosted(provider):
 		d.Detail = workerDetail(cfg) + "; " + reason + ", but voice_work_enabled keeps a hosted persona's work on the local worker"
 	case config.WorkOf(cfg) == config.WorkOwn:
-		d.Detail = fmt.Sprintf("its own %s (%s) does it; %s", provider, modelLabel(config.BrainModelFor(cfg, provider)), reason)
-		if config.OwnWorkStrict(cfg) && !brain.WorkerCapabilitiesFor(provider).ToolCallMediation.Supported {
+		hosted := brain.IsHosted(provider)
+		d.Detail = fmt.Sprintf("its own %s (%s) does it%s; %s", provider, modelLabel(config.BrainModelFor(cfg, provider)), ownCapLabel(cfg, hosted), reason)
+		switch {
+		case config.OwnWorkStrict(cfg) && !brain.WorkerCapabilitiesFor(provider).ToolCallMediation.Supported:
 			d.Severity = config.SeverityWarn
 			d.Detail += "; refused under the strict worker policy"
 			d.Remediation = fmt.Sprintf("obey-voice persona edit %s --work worker, or use the advisory worker policy", id)
+		case hosted && cfg.VoiceWorkerJobBudget == config.UnlimitedJobBudget:
+			d.Severity = config.SeverityWarn
+			d.Remediation = "set voice_worker_job_budget to a number of seconds, or to 0 for the 15-minute default"
 		}
 	default:
 		d.Detail = workerDetail(cfg) + "; " + reason
@@ -64,6 +69,19 @@ func workerDetail(cfg *config.Config) string {
 	provider := config.VoiceWorkerProviderOf(cfg)
 	model := config.BrainModelFor(config.WorkerBrainConfig(cfg), provider)
 	return fmt.Sprintf("the worker %s (%s) does it", provider, modelLabel(model))
+}
+
+// ownCapLabel is how long the persona's own jobs may run outside a tier.
+func ownCapLabel(cfg *config.Config, hosted bool) string {
+	switch {
+	case cfg.VoiceWorkerJobBudget > 0:
+		return fmt.Sprintf(" for up to %ds", cfg.VoiceWorkerJobBudget)
+	case !hosted:
+		return ""
+	case cfg.VoiceWorkerJobBudget == config.UnlimitedJobBudget:
+		return " with no time limit (voice_worker_job_budget is -1)"
+	}
+	return fmt.Sprintf(" for up to %d minutes", config.DefaultHostedOwnJobBudget/60)
 }
 
 func modelLabel(model string) string {

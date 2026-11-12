@@ -89,8 +89,7 @@ func OwnWorkConfig(cfg *Config) *Config {
 
 // OwnTier is what the routed tier holds a persona's own job to in tiered
 // mode: the tier's limits and the installation's charge policy. The tier's
-// assignment, billing and enabled flag describe the worker's backend and do
-// not apply.
+// assignment and billing describe the worker's backend and do not apply.
 type OwnTier struct {
 	Tier   WorkerTierName
 	Limits WorkerLimits
@@ -99,7 +98,8 @@ type OwnTier struct {
 
 // OwnWorkTier resolves the routed tier for an own job of the bound persona,
 // with the persona's worker_tiers overrides applied. It is nil outside tiered
-// mode, and an error when the route named no known tier.
+// mode, and an error when the route named no known tier or a disabled one,
+// as for a worker.
 func OwnWorkTier(cfg *Config, name WorkerTierName) (*OwnTier, error) {
 	if cfg == nil || cfg.VoiceWorkers == nil || cfg.VoiceWorkers.Mode != WorkerModeTiered {
 		return nil, nil
@@ -112,7 +112,40 @@ func OwnWorkTier(cfg *Config, name WorkerTierName) (*OwnTier, error) {
 	if t == nil {
 		return nil, fmt.Errorf("worker tiers are on and this job was routed to no known tier (%q)", name)
 	}
+	if !t.Enabled {
+		return nil, fmt.Errorf("worker tier %s is disabled", name)
+	}
 	return &OwnTier{Tier: name, Limits: cloneTier(*t).Limits, Strict: workers.Policy.ChargePolicy == "strict"}, nil
+}
+
+// OwnWorkTiersClosed is why no tier can hold the bound persona's own jobs:
+// tiered mode is on and none of its tiers, with the persona's overrides, is
+// enabled. It is nil otherwise.
+func OwnWorkTiersClosed(cfg *Config) error {
+	if cfg == nil || cfg.VoiceWorkers == nil || cfg.VoiceWorkers.Mode != WorkerModeTiered {
+		return nil
+	}
+	workers, err := cfg.EffectiveVoiceWorkers()
+	if err != nil {
+		return err
+	}
+	if workers.Tiers.Simple.Enabled || workers.Tiers.Medium.Enabled || workers.Tiers.Complex.Enabled {
+		return nil
+	}
+	return fmt.Errorf("worker tiers are on and none is enabled")
+}
+
+// SettingsWorkerChosen reports whether Settings, rather than the persona,
+// chose a worker for the bound persona: voice_worker_provider, or an enabled
+// tier in tiered mode.
+func SettingsWorkerChosen(cfg *Config) bool {
+	if cfg == nil {
+		return false
+	}
+	if w := cfg.VoiceWorkers; w != nil && w.Mode == WorkerModeTiered {
+		return w.Tiers.Simple.Enabled || w.Tiers.Medium.Enabled || w.Tiers.Complex.Enabled
+	}
+	return !cfg.PersonaNamesWorker && WorkerSelected(cfg)
 }
 
 // OwnWorkStrict reports whether tiered mode holds the bound persona's own

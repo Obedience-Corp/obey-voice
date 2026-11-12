@@ -154,7 +154,7 @@ func (n *Narrator) retryFlushPending() {
 
 func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
 	if isLongStoryPhrase(d.Transcript) {
-		n.startStoryJob(ctx, metrics)
+		n.startStoryJob(ctx, metrics, d.Tier)
 		return
 	}
 
@@ -172,25 +172,44 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 }
 
 // startStoryJob writes the story on the persona's own backend when it does
-// its own work, and on the configured worker otherwise. In tiered mode it
-// stays with the configured worker, as before: a story is asked for by a
-// phrase that names no tier. A hosted backend gives its notice first, as for
-// any own job.
-func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics) {
+// its own work, under the same gates as its other own jobs: the policy and the
+// routed tier, the hosted notice first, the own-job time cap and the admission
+// record. Otherwise the configured worker writes it. Story jobs never start
+// under the experimental inbox (HandleRoute refuses them), so none is
+// registered with it.
+func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics, tier config.WorkerTierName) {
 	work := n.agency.turnWork(ctx)
-	own := work.own
-	if own != nil && tieredWorkers(work.bound) {
-		own = nil
-	}
-	if own != nil && brain.IsHosted(providerName(own)) {
-		if err := n.pipeline.announceHosted(ctx, metrics); err != nil {
+	spec := job.Spec{Task: "write a long story", Run: n.storyWriterRun(nil, nil)}
+	if work.own != nil {
+		ownTier, err := work.admit(tier)
+		if err != nil {
+			n.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 			return
 		}
+		if brain.IsHosted(providerName(work.own)) {
+			if err := n.pipeline.announceHosted(ctx, metrics); err != nil {
+				return
+			}
+		}
+		admission := frozenWorkerConfig(work.own, nil)
+		admission["work"] = config.WorkOwn
+		if ownTier != nil {
+			admission["worker_tier"] = string(ownTier.Tier)
+		}
+		origin := workerOrigin{admission: admission}
+		if metrics != nil {
+			origin.Envelope = metrics.response
+		}
+		spec.Provider, spec.Model = providerName(work.own), modelName(work.own)
+		spec.RuntimeBudget = n.agency.ownRuntimeBudget(work, ownTier)
+		spec.Run = n.storyWriterRun(work.own, ownTier)
+		spec.OnAccepted = func(id string) {
+			n.agency.mu.Lock()
+			n.agency.workerOrigins[id] = origin
+			n.agency.mu.Unlock()
+		}
 	}
-	id, err := n.agency.jobs.Start(ctx, job.Spec{
-		Task: "write a long story",
-		Run:  n.storyWriterRun(own),
-	})
+	id, err := n.agency.jobs.Start(ctx, spec)
 	if err != nil {
 		n.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 		return
@@ -198,14 +217,21 @@ func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics) {
 	n.mu.Lock()
 	n.storyJobID = id
 	n.mu.Unlock()
+	n.agency.noteOwnWorkDefault(work)
 }
 
-func (n *Narrator) storyWriterRun(own *config.Config) func(context.Context) (string, error) {
+func (n *Narrator) storyWriterRun(own *config.Config, tier *config.OwnTier) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		opts := brain.WorkerStreamOptions(n.cfg == nil || n.cfg.VoiceToolsEnabled)
+		if end, ok := job.BudgetEnd(ctx); ok {
+			ctx = brain.WithWorkerDeadline(ctx, end)
+		}
 		var worker brain.Provider
 		if own != nil {
 			opts.ToolsEnabled = own.VoiceToolsEnabled
+			if opts.WorkerBudget = ownTierBudget(own, tier); opts.WorkerBudget != nil {
+				ctx = opts.WorkerBudget.Context(ctx)
+			}
 			built, err := n.agency.buildOwnWorker(ctx, own)
 			if err != nil {
 				return "", err

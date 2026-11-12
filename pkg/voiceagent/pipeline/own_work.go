@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
 
@@ -41,11 +42,22 @@ func (a *Agency) resolveWork() workDecision {
 		return workDecision{}
 	}
 	d := workDecision{own: own, bound: cfg}
-	if config.OwnWorkStrict(cfg) && !brain.WorkerCapabilitiesFor(provider).ToolCallMediation.Supported {
+	switch {
+	case config.OwnWorkStrict(cfg) && !brain.WorkerCapabilitiesFor(provider).ToolCallMediation.Supported:
 		d.refused = fmt.Errorf("%s cannot do its own work under the strict worker policy: %s runs its own tools and requests, which that policy cannot restrict. Set its work to worker, or use the advisory policy",
 			personaLabel(cfg), provider)
+	default:
+		d.refused = config.OwnWorkTiersClosed(cfg)
 	}
 	return d
+}
+
+// admit is the routed tier an own job runs under, or why it cannot run.
+func (d workDecision) admit(tier config.WorkerTierName) (*config.OwnTier, error) {
+	if d.refused != nil {
+		return nil, d.refused
+	}
+	return config.OwnWorkTier(d.bound, tier)
 }
 
 // withTurnWork carries the admitted persona's work decision through the turn.
@@ -75,17 +87,58 @@ func personaLabel(cfg *config.Config) string {
 	return "this persona"
 }
 
-// ownRuntimeBudget is the routed tier's runtime limit, never longer than
-// voice_worker_job_budget.
-func (a *Agency) ownRuntimeBudget(tier *config.OwnTier) time.Duration {
-	if tier == nil {
-		return 0
+// ownRuntimeBudget is how long an own job may run: voice_worker_job_budget
+// when it is set, else the hosted default on a hosted backend unless the
+// budget was set to unlimited, and never longer than the routed tier allows.
+// Zero leaves the job table's budget in force, which a local own job keeps.
+func (a *Agency) ownRuntimeBudget(d workDecision, tier *config.OwnTier) time.Duration {
+	limit := a.jobs.Budget()
+	if limit == 0 && brain.IsHosted(providerName(d.own)) && (d.bound == nil || d.bound.VoiceWorkerJobBudget != config.UnlimitedJobBudget) {
+		limit = a.ownJobDefault
 	}
-	limit := time.Duration(tier.Limits.RuntimeSeconds) * time.Second
-	if table := a.jobs.Budget(); table > 0 && table < limit {
-		return table
+	if tier != nil {
+		if t := time.Duration(tier.Limits.RuntimeSeconds) * time.Second; limit == 0 || t < limit {
+			limit = t
+		}
 	}
 	return limit
+}
+
+// OneTimeNotices records notices that are shown once per install.
+type OneTimeNotices interface {
+	Shown(key string) bool
+	Mark(key string) error
+}
+
+// UseNotices keeps one-time notices in n, which outlives the session; the
+// default keeps them for this Agency only.
+func (a *Agency) UseNotices(n OneTimeNotices) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.notices = n
+}
+
+// noteOwnWorkDefault tells the user, once per persona, that a persona on a
+// hosted backend does its own jobs by default even though Settings chose a
+// worker. It is an info line only: never spoken and never sent to a model.
+func (a *Agency) noteOwnWorkDefault(d workDecision) {
+	cfg := d.bound
+	if d.own == nil || cfg == nil || strings.TrimSpace(cfg.PersonaWork) != "" || !brain.IsHosted(providerName(d.own)) || !config.SettingsWorkerChosen(cfg) {
+		return
+	}
+	a.mu.Lock()
+	notices := a.notices
+	a.mu.Unlock()
+	key := "own-work-default:" + personaKey(cfg.ActivePersona)
+	if notices == nil || notices.Shown(key) {
+		return
+	}
+	id := strings.TrimSpace(cfg.ActivePersona)
+	a.pipeline.emit(events.Info{Message: fmt.Sprintf("%s does its background jobs on its own backend, %s, not on the worker chosen in Settings. To hand them to that worker: obey-voice persona edit %s --work worker",
+		personaLabel(cfg), providerName(d.own), id)})
+	if err := notices.Mark(key); err != nil {
+		a.pipeline.emit(events.Info{Message: fmt.Sprintf("could not record that notice: %v", err)})
+	}
 }
 
 // ownTierBudget holds a local own job to the routed tier's request, tool,

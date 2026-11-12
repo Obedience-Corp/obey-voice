@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -384,6 +385,9 @@ func TestPersonaOnClaudeInTieredModeDoesItsOwnWorkWithToolsOff(t *testing.T) {
 		c.tools, c.base.VoiceToolsEnabled = false, false
 		tiers := config.DefaultVoiceWorkers()
 		tiers.Mode = config.WorkerModeTiered
+		host := "http://127.0.0.1:11434"
+		tiers.Tiers.Simple.Enabled = true
+		tiers.Tiers.Simple.Assignment = &config.WorkerAssignment{Provider: "ollama", Model: "fixture:latest", EndpointRef: &host, Billing: config.WorkerBillingLocal}
 		c.base.VoiceWorkers = tiers
 	})
 	finished := make(chan events.JobFinished, 1)
@@ -410,5 +414,53 @@ func TestPersonaOnClaudeInTieredModeDoesItsOwnWorkWithToolsOff(t *testing.T) {
 	}
 	if !toolsOff || job.Permission == "bypassPermissions" || !job.NoPersist || job.Model != "haiku" || job.Cwd != miraDir {
 		t.Fatalf("own job ran with tools off %v, permission %q, no-persist %v, model %q, cwd %q; args %q", toolsOff, job.Permission, job.NoPersist, job.Model, job.Cwd, job.Args)
+	}
+}
+
+// A worker chosen only in Settings leaves a persona on Claude doing its own
+// work, and says so once.
+func TestAWorkerChosenOnlyInSettingsLeavesAPersonaOnClaudeDoingItsOwnWork(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SPAWN", "haiku")
+	miraDir, _ := filepath.EvalSymlinks(t.TempDir())
+	c := newConversation(t, 50, "mira", "claude", "", ownWorkSetup(t, "", miraDir))
+	if !config.WorkerSelected(c.base) {
+		t.Fatal("the test needs a worker chosen in Settings")
+	}
+	finished := make(chan events.JobFinished, 2)
+	events.Subscribe(c.p.Events, func(e events.JobFinished) { finished <- e })
+	var mu sync.Mutex
+	var notices []string
+	events.Subscribe(c.p.Events, func(e events.Info) {
+		if strings.Contains(e.Message, "not on the worker chosen in Settings") {
+			mu.Lock()
+			notices = append(notices, e.Message)
+			mu.Unlock()
+		}
+	})
+	for range 2 {
+		c.say("Mira, can you change it to haiku?")
+		select {
+		case done := <-finished:
+			if done.Summary != claudeJobResult {
+				t.Fatalf("result = %+v, want Mira's own", done)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("job did not finish: %+v", c.p.Workers())
+		}
+	}
+	if jobs, _ := jobRequests(t, c.log); len(jobs) != 2 {
+		t.Fatalf("Mira's own backend ran %d job(s), want 2", len(jobs))
+	}
+	for _, msg := range c.ollamaRequests() {
+		for _, m := range msg {
+			if strings.Contains(m.Content, claudeJobBrief) {
+				t.Fatal("the worker chosen in Settings received Mira's job")
+			}
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(notices) != 1 || !strings.Contains(notices[0], "obey-voice persona edit mira --work worker") {
+		t.Fatalf("notices = %q, want one", notices)
 	}
 }

@@ -237,7 +237,9 @@ type Config struct {
 	VoiceWorkerOllamaHost string `mapstructure:"voice_worker_ollama_host"`
 	// VoiceWorkerMaxConcurrent is how many spawned jobs run at once; the rest queue.
 	VoiceWorkerMaxConcurrent int `mapstructure:"voice_worker_max_concurrent"`
-	// VoiceWorkerJobBudget caps one spawned job's wall-clock seconds; zero means no cap.
+	// VoiceWorkerJobBudget caps one spawned job's wall-clock seconds. Zero
+	// leaves the worker uncapped and a hosted persona's own job at
+	// DefaultHostedOwnJobBudget; UnlimitedJobBudget lifts both.
 	VoiceWorkerJobBudget int `mapstructure:"voice_worker_job_budget"`
 	// VoiceWorkerBoundary fences a spawned worker to the campaign it was launched in.
 	VoiceWorkerBoundary  bool   `mapstructure:"voice_worker_boundary"`
