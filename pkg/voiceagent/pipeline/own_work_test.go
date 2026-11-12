@@ -238,7 +238,7 @@ func TestOwnWorkIgnoresWorkerTiers(t *testing.T) {
 		t.Fatalf("tier plan built %d, configured ran %d", h.planned, h.configured.calls())
 	}
 	got := h.builtConfigs()[0]
-	if got.VoiceWorkers != nil || !got.VoiceToolsEnabled || got.VoiceWorkerProvider != "claude" || got.VoiceWorkerModel != "sonnet" {
+	if tieredWorkers(got) || !got.VoiceToolsEnabled || got.VoiceWorkerProvider != "claude" || got.VoiceWorkerModel != "sonnet" {
 		t.Fatalf("own job config: tiers %v tools %v worker %s/%s", got.VoiceWorkers, got.VoiceToolsEnabled, got.VoiceWorkerProvider, got.VoiceWorkerModel)
 	}
 	h.own.mu.Lock()

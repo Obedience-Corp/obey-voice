@@ -50,7 +50,8 @@ func WorkOf(cfg *Config) string {
 // OwnWorkConfig is the job configuration for work the persona does itself:
 // cfg with the persona's own backend, model and host in place of the
 // configured worker. Worker tiers apply only to the configured worker, so an
-// own job runs outside them, with the tools a tiered worker would get.
+// own job runs as a legacy worker under the same policy, with the tools a
+// tiered worker would get.
 func OwnWorkConfig(cfg *Config) *Config {
 	if cfg == nil {
 		return nil
@@ -64,10 +65,10 @@ func OwnWorkConfig(cfg *Config) *Config {
 	// Same model, same window: a different num_ctx would make Ollama reload
 	// the model the persona is talking on.
 	own.VoiceWorkerNumCtx = cfg.OllamaNumCtx
-	if cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == WorkerModeTiered {
+	if own.VoiceWorkers != nil && own.VoiceWorkers.Mode == WorkerModeTiered {
 		own.VoiceToolsEnabled = true
+		own.VoiceWorkers.Mode = WorkerModeLegacy
 	}
-	own.VoiceWorkers = nil
 	own.DelegationEnabled = false
 	return own
 }

@@ -37,10 +37,10 @@ func TestOwnWorkConfigRunsOnThePersonasBackend(t *testing.T) {
 		VoiceWorkers: tiers, DelegationEnabled: true}
 	own := OwnWorkConfig(cfg)
 	if own.VoiceWorkerProvider != "claude" || own.VoiceWorkerModel != "haiku" || own.VoiceWorkerOllamaHost != "" || own.VoiceWorkerNumCtx != 8192 ||
-		own.VoiceWorkers != nil || !own.VoiceToolsEnabled || own.DelegationEnabled || own.ActivePersona != "mira" || own.WorkDir != "/work/mira" {
+		own.VoiceWorkers == nil || own.VoiceWorkers.Mode != WorkerModeLegacy || own.VoiceWorkers.Policy != tiers.Policy || !own.VoiceToolsEnabled || own.DelegationEnabled || own.ActivePersona != "mira" || own.WorkDir != "/work/mira" {
 		t.Fatalf("own work config = %+v", own)
 	}
-	if cfg.VoiceWorkerProvider != "ollama" || cfg.VoiceWorkers == nil || !cfg.DelegationEnabled {
+	if cfg.VoiceWorkerProvider != "ollama" || cfg.VoiceWorkers.Mode != WorkerModeTiered || !cfg.DelegationEnabled {
 		t.Fatal("OwnWorkConfig changed the bound config")
 	}
 	worker := WorkerBrainConfig(own)
