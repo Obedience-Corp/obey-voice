@@ -22,7 +22,7 @@ require (
 	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.8 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.8 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.8 // indirect
-	github.com/lancekrogers/claude-code-go v1.6.0 // indirect
+	github.com/lancekrogers/claude-code-go v1.7.0 // indirect
 	github.com/lancekrogers/grok-go-sdk v0.2.1 // indirect
 	github.com/mailru/easyjson v0.9.2 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
