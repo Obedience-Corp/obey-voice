@@ -216,9 +216,10 @@ type SpeechStop struct {
 	// BeforeAudio is true when the first stop came before any of the turn's
 	// audio played, so the whole reply went unspoken.
 	BeforeAudio bool `json:"before_audio,omitempty"`
-	// KeyRunes and KeyPaste describe the first keystroke's message. Typing
-	// sends one rune per message and a paste is flagged; several runes
-	// without the flag arrived from the terminal in one piece.
+	// KeyRunes and KeyPaste describe the first keystroke's message. A typed
+	// key is usually one rune and a paste is flagged. Several runes without
+	// the flag arrived in one terminal read: fast typing, an input method, or
+	// input the terminal sent itself.
 	KeyRunes int  `json:"key_runes,omitempty"`
 	KeyPaste bool `json:"key_paste,omitempty"`
 }
