@@ -116,6 +116,10 @@ func (m *settingsModel) commitObeyEdit(key, value string) {
 	m.message = "Obey setting saved; applies to the next conversation"
 }
 
+// discoverObeyRoute reads the selected daemon's catalog. Tests replace it so
+// no run reaches an installed obey CLI.
+var discoverObeyRoute = discovery.DiscoverObeyRoute
+
 type obeyCatalogMsg struct {
 	seq   int
 	route discovery.ObeyRoute
@@ -137,7 +141,7 @@ func (m *settingsModel) loadObeyCatalog(refresh bool) tea.Cmd {
 	cfg, seq := *m.cfg, m.obeyCatalogSeq
 	return func() tea.Msg {
 		defer cancel()
-		return obeyCatalogMsg{seq: seq, route: discovery.DiscoverObeyRoute(ctx, &cfg, refresh)}
+		return obeyCatalogMsg{seq: seq, route: discoverObeyRoute(ctx, &cfg, refresh)}
 	}
 }
 func (m settingsModel) receiveObeyCatalog(msg obeyCatalogMsg) settingsModel {
