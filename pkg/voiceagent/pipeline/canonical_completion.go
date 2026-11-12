@@ -68,7 +68,7 @@ func (p *Pipeline) runCanonicalCompletion(ctx context.Context, lease work.Comple
 	} else {
 		// Only a provider asked to word the results is sent anything, so a
 		// hosted one is announced here, not before a delivery that asks none.
-		if err := p.announceHosted(ctx, metrics, turn); err != nil {
+		if err := p.announceHosted(ctx, metrics); err != nil {
 			turn.finish(TurnInterrupted)
 			return err
 		}

@@ -15,12 +15,7 @@ import (
 type hostedNotices struct {
 	mu    sync.Mutex
 	epoch string
-	// startedOn is the provider the conversation began on. Its first notice
-	// is shown but not spoken, so a conversation that never left a hosted
-	// backend does not announce it at every launch; a later one, saying that
-	// a persona on it receives more, is spoken.
-	startedOn string
-	told      []string
+	told  []string
 	// whole lists the providers told that they receive the whole
 	// conversation. A provider told only from an invitation is told again
 	// when a persona on it would receive more.
@@ -29,11 +24,11 @@ type hostedNotices struct {
 	stale bool
 }
 
-func (n *hostedNotices) reset(epoch, startedOn string, told, whole []string) {
+func (n *hostedNotices) reset(epoch string, told, whole []string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.stale = len(n.told) > 0 && len(told) == 0
-	n.epoch, n.startedOn, n.told, n.whole = epoch, startedOn, slices.Clone(told), slices.Clone(whole)
+	n.epoch, n.told, n.whole = epoch, slices.Clone(told), slices.Clone(whole)
 }
 
 func (n *hostedNotices) takeStale() bool {
@@ -46,14 +41,14 @@ func (n *hostedNotices) takeStale() bool {
 
 // sync starts a new record when the conversation epoch has changed, and
 // reports whether that dropped providers already told.
-func (n *hostedNotices) sync(epoch, live string) (dropped bool) {
+func (n *hostedNotices) sync(epoch string) (dropped bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.epoch == epoch {
 		return false
 	}
 	dropped = len(n.told) > 0
-	n.epoch, n.startedOn, n.told, n.whole = epoch, live, nil, nil
+	n.epoch, n.told, n.whole = epoch, nil, nil
 	return dropped
 }
 
@@ -64,17 +59,14 @@ func (n *hostedNotices) list() (told, whole []string) {
 }
 
 // due reports whether the user must be told about provider before it receives
-// the given share, and whether the notice may go unspoken: only the first one
-// for the provider the conversation started on.
-func (n *hostedNotices) due(epoch, provider string, whole bool) (due, quiet bool) {
+// the given share.
+func (n *hostedNotices) due(epoch, provider string, whole bool) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.epoch != epoch {
-		return true, false
+		return true
 	}
-	told := slices.Contains(n.told, provider)
-	due = !told || (whole && !slices.Contains(n.whole, provider))
-	return due, n.startedOn == provider && !told
+	return !slices.Contains(n.told, provider) || (whole && !slices.Contains(n.whole, provider))
 }
 
 // take records provider as told about the given share and reports whether
@@ -83,7 +75,7 @@ func (n *hostedNotices) take(epoch, provider string, whole bool) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.epoch != epoch {
-		n.epoch, n.startedOn, n.told, n.whole = epoch, "", nil, nil
+		n.epoch, n.told, n.whole = epoch, nil, nil
 	}
 	changed := false
 	if !slices.Contains(n.told, provider) {
@@ -124,8 +116,7 @@ func (s *Selector) HostedNotice(envelope events.ResponseEnvelope) (pipeline.Host
 	}
 	label := providerLabel(envelope.BrainProvider)
 	scope, whole := s.noticeScope(envelope.PersonaID, envelope.BrainProvider, label)
-	due, quiet := s.notices.due(envelope.ConversationEpoch, envelope.BrainProvider, whole)
-	if !due {
+	if !s.notices.due(envelope.ConversationEpoch, envelope.BrainProvider, whole) {
 		return pipeline.HostedNotice{}, false
 	}
 	name := envelope.DisplayName
@@ -133,8 +124,7 @@ func (s *Selector) HostedNotice(envelope events.ResponseEnvelope) (pipeline.Host
 		name = "This persona"
 	}
 	return pipeline.HostedNotice{
-		Text:   fmt.Sprintf("%s runs on %s, a hosted service. %s", name, label, scope),
-		Spoken: !quiet,
+		Text: fmt.Sprintf("%s runs on %s, a hosted service. %s", name, label, scope),
 		Delivered: func() {
 			if s.notices.take(envelope.ConversationEpoch, envelope.BrainProvider, whole) {
 				s.persistNotices()
@@ -162,15 +152,8 @@ func (s *Selector) persistNotices() {
 // serialized boundary, with the providers a saved conversation already told
 // the user about, and those of them told the whole conversation is sent.
 func (s *Selector) RestoreNotices(told, whole []string) {
-	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, s.restored.provider, told, whole)
+	s.notices.reset(s.opts.Pipeline.ConversationScope().ConversationEpoch, told, whole)
 	s.notices.takeStale()
-}
-
-func (s *Selector) liveProvider() string {
-	if s.binding == nil {
-		return ""
-	}
-	return s.binding.BrainProvider
 }
 
 // noticeScope says what the provider is about to receive, from the persona's

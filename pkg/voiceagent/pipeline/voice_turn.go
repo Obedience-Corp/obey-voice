@@ -194,9 +194,8 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		return original, p.completeRoutedTurn(ctx, turn, metrics, text, RouteSpawn, "decision")
 	}
 
-	// The hosted notice comes after every exit that sends nothing to the
-	// provider, and before a completion lease counts the turn's playback.
-	if err := p.announceHostedRequest(ctx, metrics, turn); err != nil {
+	// The hosted notice comes after every exit that sends nothing to the provider.
+	if err := p.announceHostedRequest(ctx, metrics); err != nil {
 		turn.finish(TurnInterrupted)
 		return original, err
 	}
