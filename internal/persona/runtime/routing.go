@@ -104,8 +104,9 @@ func (s *Selector) warnCatalogIssues(issues []persona.CatalogIssue) {
 // persona: the live provider keeps no shared history, and no other persona is
 // on a provider that does. Routing then leaves every input to the live persona
 // with no roster, as before persona selection existed for that provider. A
-// conversation on Claude with only other personas on Claude stays this way too;
-// there an explicit switch or @mention still hands it over.
+// conversation whose personas all keep their own session (Claude, Grok,
+// Cursor) stays this way too; there an explicit switch or @mention still hands
+// it over.
 func (s *Selector) fixedResponder() bool {
 	if brain.KeepsSharedHistory(s.opts.Pipeline.Brain) {
 		return false
@@ -137,7 +138,8 @@ func (s *Selector) canTakeOver(p *persona.Profile) (string, bool) {
 }
 
 // routeExplicitHandover honours an explicit switch or @mention in a
-// conversation that otherwise stays with a live persona on Claude.
+// conversation that otherwise stays with a live persona keeping its own
+// session.
 func (s *Selector) routeExplicitHandover(ctx context.Context, input string, background bool) (pipeline.ResponseAdmission, bool, error) {
 	admitted := pipeline.ResponseAdmission{Request: input}
 	if background || !brain.KeepsPersonaSession(s.opts.Pipeline.Brain) {
@@ -166,8 +168,8 @@ func explicitHandover(address summon.Address) bool {
 
 // refuseOneWaySwitch keeps the conversation on a live provider that could not
 // take it back, unless the user asked for the move with an explicit switch or
-// @mention. A persona on Claude can take it back, so it is addressed by name
-// like any other.
+// @mention. A persona keeping its own session can take it back, so it is
+// addressed by name like any other.
 func (s *Selector) refuseOneWaySwitch(address summon.Address) error {
 	live := s.Snapshot()
 	if brain.KeepsSharedHistory(s.opts.Pipeline.Brain) || brain.KeepsPersonaSession(s.opts.Pipeline.Brain) || address.PersonaID == "" || address.PersonaID == live.PersonaID {

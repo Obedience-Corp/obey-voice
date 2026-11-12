@@ -225,20 +225,24 @@ func TestSessionCatchUpShortensAnOversizedLine(t *testing.T) {
 func TestCodexThreadMissingLinesPastMaxHistoryStartsANewThread(t *testing.T) {
 	t.Setenv("OBEY_CODEX_FIXTURE_THREADS", "distinct")
 	c := newConversation(t, 3, "ember", "codex", "")
-	c.say("switch to Mira", "What do you think?", "switch to Ember", "LINE-ONE", "LINE-TWO", "LINE-THREE", "LINE-FOUR", "switch to Mira", "Do you agree?")
+	c.say("switch to Mira", "What do you think?", "switch to Ember", "LINE-ZERO", "switch to Mira", "Still there?")
+	c.say("switch to Ember", "LINE-ONE", "LINE-TWO", "LINE-THREE", "LINE-FOUR", "switch to Mira", "Do you agree?")
 
 	requests := c.sessionRequests()
-	if len(requests) != 2 {
+	if len(requests) != 3 {
 		t.Fatalf("codex requests = %+v", requests)
 	}
-	if second := requests[1]; second.Resume != "" || second.Session == requests[0].Session {
-		t.Fatalf("a thread missing trimmed lines was resumed: %+v", second)
+	if requests[1].Resume != requests[0].Session || requests[1].Resume == "" {
+		t.Fatalf("a short gap did not resume Mira's thread: %+v", requests[1])
+	}
+	if third := requests[2]; third.Resume != "" || third.Session == requests[0].Session {
+		t.Fatalf("a thread missing trimmed lines was resumed: %+v", third)
 	}
 	transcript := c.selector.Transcript()
-	if got, want := promptRecords(t, requests[1].Prompt), recordsOf(transcript[10:16]); !slices.Equal(got, want) {
+	if got, want := promptRecords(t, requests[2].Prompt), recordsOf(transcript[18:24]); !slices.Equal(got, want) {
 		t.Fatalf("replay = %+v, want the max_history window %+v", got, want)
 	}
-	requireOmits(t, requests[1].Prompt, "LINE-ONE", "LINE-TWO")
+	requireOmits(t, requests[2].Prompt, "LINE-ONE", "LINE-TWO")
 }
 
 func TestCodexThreadIsSentALongLineWhole(t *testing.T) {
@@ -586,5 +590,24 @@ func TestConversationOfOnlyGrokAndCursorPersonasHandsOverOnExplicitSwitch(t *tes
 	requireOmits(t, miraAgain.Prompt, "door is teal")
 	if got := replies(c.selector.Transcript()); len(got) != 6 || got[3].PersonaID != "nova" || got[5].PersonaID != "mira" {
 		t.Fatalf("replies = %+v", got)
+	}
+}
+
+// A Grok or Cursor conversation saved before its persona's place in it was
+// kept has no cursor, and its replies name their persona: as on Codex, the
+// persona is sent nothing said before the resume.
+func TestGrokOrCursorConversationSavedWithoutACursorSendsNothingEarlier(t *testing.T) {
+	for _, provider := range []string{"grok", "cursor"} {
+		t.Run(provider, func(t *testing.T) {
+			c := newCLIConversation(t, provider)
+			c.provider = provider
+			c.say("Remember the code K-77.", "What was it?")
+			saved := c.saved()
+			c.start("mira", saved.Turns, nil)
+			c.say("Anything else?")
+			last := c.lastSessionRequest()
+			requireContains(t, last.Prompt, "User: Anything else?")
+			requireOmits(t, last.Prompt, "K-77", "What was it?")
+		})
 	}
 }

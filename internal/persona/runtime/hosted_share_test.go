@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -400,7 +401,7 @@ func TestJobStartedOnClaudeIsDeliveredToItsPersonaMovedToCodex(t *testing.T) {
 }
 
 func TestJobStartedOnOllamaFollowsItsPersonaToAHostedBackend(t *testing.T) {
-	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+	for _, provider := range append([]string{"claude", "grok", "cursor"}, hostedShareProviders...) {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "ember", provider, "")
 			c.work = true
@@ -447,7 +448,7 @@ func TestJobStartedOnOllamaFollowsItsPersonaToAHostedBackend(t *testing.T) {
 }
 
 func TestJobStatusGivesAHostedPersonaOnlyACountOfJobsItDidNotStart(t *testing.T) {
-	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+	for _, provider := range append([]string{"claude", "grok", "cursor"}, hostedShareProviders...) {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "ember", provider, "")
 			binding, err := c.catalog.ResolveBinding(c.base, "ember")
@@ -480,7 +481,7 @@ func TestJobStatusGivesAHostedPersonaOnlyACountOfJobsItDidNotStart(t *testing.T)
 }
 
 func TestHostedPersonaSelectedButNeverAddressedIsSharedByTheSettingInForceWhenAddressed(t *testing.T) {
-	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+	for _, provider := range append([]string{"claude", "grok", "cursor"}, hostedShareProviders...) {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "ember", provider, "whole_conversation")
 			c.setEmberReply(preInviteEmber)
@@ -688,7 +689,7 @@ func TestLoadHistoryUsesOnlyACursorOfTheLiveBackend(t *testing.T) {
 		{Role: "user", Content: preInviteUser},
 		{Role: "assistant", Content: "Noted.", PersonaID: "mira", PersonaDisplayName: "Mira", ResponseID: "m1"},
 	}
-	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+	for _, provider := range append([]string{"claude", "grok", "cursor"}, hostedShareProviders...) {
 		t.Run(provider, func(t *testing.T) {
 			c := newConversation(t, 20, "mira", provider, "")
 			other := "claude"
@@ -707,7 +708,7 @@ func TestLoadHistoryUsesOnlyACursorOfTheLiveBackend(t *testing.T) {
 			if len(sent) != 0 {
 				t.Fatalf("a cursor from %s opened the share on %s: %+v", other, provider, sent)
 			}
-			if provider == "claude" {
+			if !slices.Contains(hostedShareProviders, provider) {
 				return
 			}
 			label := providerLabelFor[provider]
