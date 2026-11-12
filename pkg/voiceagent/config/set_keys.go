@@ -11,17 +11,12 @@ type keyValue struct {
 	Value any
 }
 
-// setKeyFileValues writes every pair in one locked read-modify-write of
-// config.yaml, so either all of them land or none do. With dryRun it only
-// checks that the edit would apply and writes nothing.
-func setKeyFileValues(pairs []keyValue, dryRun bool) error {
-	_, err := setKeyFileValuesFrom(func(func(string) (string, bool)) []keyValue { return pairs }, dryRun)
-	return err
-}
-
-// setKeyFileValuesFrom is setKeyFileValues where the pairs are decided from
-// the file as read under the write lock: build gets each key's text value in
-// config.yaml (false when the file does not set it) and returns what to write.
+// setKeyFileValuesFrom writes several keys in one locked read-modify-write
+// of config.yaml, so either all of them land or none do. The pairs are
+// decided from the file as read under the write lock: build gets each key's
+// text value in config.yaml (false when the file does not set it) and returns
+// what to write. With dryRun it only checks that the edit would apply and
+// writes nothing.
 func setKeyFileValuesFrom(build func(fileValue func(key string) (string, bool)) []keyValue, dryRun bool) ([]keyValue, error) {
 	fileWriteMu.Lock()
 	defer fileWriteMu.Unlock()
