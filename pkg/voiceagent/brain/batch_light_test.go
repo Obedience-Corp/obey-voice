@@ -72,6 +72,7 @@ func TestNewOllamaBatchLight(t *testing.T) {
 	}
 }
 
+// Swaps package globals; must not run in parallel.
 func TestNewOllamaBatchLightWarnsOnInvalidKeepAlive(t *testing.T) {
 	var buf strings.Builder
 	prev := keepAliveWarnOut
@@ -90,5 +91,11 @@ func TestNewOllamaBatchLightWarnsOnInvalidKeepAlive(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), `invalid ollama_keep_alive "forever"`) {
 		t.Fatalf("no warning for the light batch path: %q", buf.String())
+	}
+	if len(bodies) == 0 {
+		t.Fatal("no chat request reached the server")
+	}
+	if got, sent := bodies[len(bodies)-1]["keep_alive"]; sent {
+		t.Fatalf("invalid keep_alive sent as %v, want the field omitted", got)
 	}
 }

@@ -89,6 +89,7 @@ func TestSkillRouterEmbedsSendForeverKeepAlive(t *testing.T) {
 	}
 }
 
+// Swaps package globals; must not run in parallel.
 func TestKeepAliveOrDefaultWarnsOncePerInvalidValue(t *testing.T) {
 	var buf strings.Builder
 	prev := keepAliveWarnOut
