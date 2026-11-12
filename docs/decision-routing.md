@@ -68,8 +68,9 @@ Resolution runs in this order and stops at the first step that answers:
    mention (`what did Mira say?`) is not an address.
 3. The Ollama classifier, only when the live brain is Ollama. It also answers
    when the decision model fails, abstains or is not ready. If the decision model
-used up the whole `persona_routing_timeout`, the classifier is not called with
-the expired time; step 4 applies and the notice is given.
+   fails or abstains with less than 50 ms of `persona_routing_timeout` left, the
+   classifier is not called with that time; step 4 applies, with the notice
+   below only when the decision model failed.
 4. Otherwise the name grammar used before either model existed (for example
    `Santa tell me a story`), and failing that the current persona.
 
@@ -104,12 +105,22 @@ model stays on this computer, while `jev` sends it to TypeSafe and `openai` send
 it to OpenAI. The worker-routing question already sends up to eight recent
 messages (role and text) to the same provider; the addressee question adds
 speaker and persona names and runs whenever a message names a persona, even with
-both work switches off. `decision_addressee` defaults to on, so an existing setup
-with a hosted provider starts sending it after upgrading. Turn it off with
-`obey-voice config set decision_addressee false` or **Settings → Brain → Decide
-who is addressed**; the Ollama classifier and the name grammar then answer as
-before. With all three switches off nothing is prepared: no credential is read
-and no model is installed or loaded.
+both work switches off. With all three switches off nothing is prepared: no
+credential is read and no model is installed or loaded.
+
+### Upgrade note: on by default
+
+`decision_addressee` is on by default. This is a deliberate choice. It affects
+only setups where `decision_enabled` is already on, since that master switch is
+still off by default. After upgrading, such a setup asks its configured decision
+provider who is addressed, whether that provider is the local model or a hosted
+one. With a hosted provider (`jev` or `openai`), the text needed to pick the
+addressee, listed above, goes to that service. There is no separate opt-in: you
+chose the decision provider and are responsible for what it receives. To keep
+addressee picking as it was before, run
+`obey-voice config set decision_addressee false` or turn off
+**Settings → Brain → Decide who is addressed**; the Ollama classifier (when the
+live brain is Ollama) and the name grammar then answer.
 
 ### Thresholds and timing
 

@@ -263,8 +263,56 @@ func TestDecisionModelUsingWholeTimeoutSkipsClassifier(t *testing.T) {
 	}
 }
 
+const abstainBody = `{"answers":{"target":{"choice":"person_1","confidence":0.4,"probabilities":{"none":0.2,"ambiguous":0.1,"unavailable":0.1,"person_0":0.2,"person_1":0.4}}}}`
+
+// lateAbstainer abstains just before its deadline, leaving the classifier less
+// than minClassifierWindow.
+type lateAbstainer struct{ left time.Duration }
+
+func (e lateAbstainer) Evaluate(ctx context.Context, _ decision.Request) (decision.Response, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return decision.Response{}, errors.New("no deadline")
+	}
+	timer := time.NewTimer(time.Until(deadline) - e.left)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		return decision.Response{}, ctx.Err()
+	}
+	var response decision.Response
+	err := json.Unmarshal([]byte(abstainBody), &response)
+	return response, err
+}
+
+// An abstention can use up persona_routing_timeout as surely as a failure; the
+// classifier must not then be called with the time that is left.
+func TestDecisionModelAbstainingAtTheDeadlineSkipsClassifier(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+	defer f.close(t)
+	f.selector.opts.Base.PersonaRoutingTimeout = 1
+	watch := watchRouting(f.pipeline)
+	// A budget above the routing timeout leaves the routing timeout as the
+	// decision call's deadline.
+	f.pipeline.Decisions.Configure(decision.Options{Policy: decision.WorkPolicy{Evaluator: lateAbstainer{left: 40 * time.Millisecond}}, Budget: 2 * time.Second, Addressee: true})
+	defer f.pipeline.Decisions.Close()
+	var classifier atomic.Int32
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		classifier.Add(1)
+		return brain.Addressee{}, admission.WrapClassifierFailure(admission.ClassifierLocalTimeout, context.DeadlineExceeded)
+	})
+	got, err := f.selector.Route(t.Context(), "Santa tell me a story", false)
+	if err != nil || got.Envelope.PersonaID != "santa" || classifier.Load() != 0 {
+		t.Fatalf("admission=%+v err=%v classifier calls=%d", got, err, classifier.Load())
+	}
+	infos, diagnostics := watch.snapshot()
+	if len(infos) != 0 || len(diagnostics) != 1 || diagnostics[0].Resolver != "grammar" || diagnostics[0].Disposition != "abstained" {
+		t.Fatalf("infos=%q diagnostics=%+v", infos, diagnostics)
+	}
+}
+
 func TestAddresseeDiagnosticNamesTheResolver(t *testing.T) {
-	abstain := `{"answers":{"target":{"choice":"person_1","confidence":0.4,"probabilities":{"none":0.2,"ambiguous":0.1,"unavailable":0.1,"person_0":0.2,"person_1":0.4}}}}`
 	for _, tc := range []struct {
 		name, input, body     string
 		status                int
@@ -274,8 +322,8 @@ func TestAddresseeDiagnosticNamesTheResolver(t *testing.T) {
 	}{
 		{name: "decision model", input: "Could we hear from Santa on that?", resolver: "decision_model", disposition: "answered", wantPersona: "santa"},
 		{name: "decision says none", input: "What did Santa say?", resolver: "decision_model", disposition: "answered", wantPersona: "jarvis"},
-		{name: "abstain then grammar", input: "Santa tell me a story", body: abstain, resolver: "grammar", disposition: "abstained", wantPersona: "santa"},
-		{name: "abstain then current", input: "Could we hear from Santa on that?", body: abstain, resolver: "current_persona", disposition: "abstained", wantPersona: "jarvis"},
+		{name: "abstain then grammar", input: "Santa tell me a story", body: abstainBody, resolver: "grammar", disposition: "abstained", wantPersona: "santa"},
+		{name: "abstain then current", input: "Could we hear from Santa on that?", body: abstainBody, resolver: "current_persona", disposition: "abstained", wantPersona: "jarvis"},
 		{name: "failure then classifier", input: "Could we hear from Santa on that?", status: http.StatusServiceUnavailable, ollama: true, resolver: "ollama_classifier", disposition: "provider_error", wantPersona: "santa"},
 		{name: "classifier only", input: "Could we hear from Santa on that?", decisionOff: true, ollama: true, resolver: "ollama_classifier", disposition: "not_asked", wantPersona: "santa"},
 	} {
@@ -441,6 +489,17 @@ func TestDecisionModelFailureWithoutOllamaKeepsNameGrammar(t *testing.T) {
 	}
 }
 
+func TestAddresseeFailureReasonBlamesTheProviderOnlyForProviderErrors(t *testing.T) {
+	if got := addresseeFailureReason(decision.AddresseeProviderError); got != "its provider returned an error" {
+		t.Fatalf("provider error reason = %q", got)
+	}
+	for _, outcome := range []decision.AddresseeOutcome{decision.AddresseeCancelled, decision.AddresseeSkipped, "not_yet_defined"} {
+		if got := addresseeFailureReason(outcome); got != "the question did not complete" {
+			t.Errorf("%s reason = %q, want the neutral phrase", outcome, got)
+		}
+	}
+}
+
 func TestTurnCancellationDuringDecisionStillCancels(t *testing.T) {
 	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 	defer f.close(t)
@@ -474,7 +533,7 @@ func TestDecisionModelAbstainStaysWithCurrentPersona(t *testing.T) {
 	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 	defer f.close(t)
 	server := newDecisionServer(t, nil)
-	server.body = `{"answers":{"target":{"choice":"person_1","confidence":0.4,"probabilities":{"none":0.2,"ambiguous":0.1,"unavailable":0.1,"person_0":0.2,"person_1":0.4}}}}`
+	server.body = abstainBody
 	server.enable(t, f.pipeline)
 	before := f.selector.Snapshot()
 	got, err := f.selector.Route(t.Context(), "Could we hear from Santa on that?", false)

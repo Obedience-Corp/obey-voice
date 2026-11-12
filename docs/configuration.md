@@ -700,7 +700,9 @@ the current persona's name, and every persona name and alias in the conversation
 to the configured `decision_provider`. With `local` that stays on this computer;
 with `jev` or `openai` the hosted service receives it. Turn the question off with
 `obey-voice config set decision_addressee false`. The full list, thresholds and
-fallback order are in [Decision routing](decision-routing.md#who-is-being-addressed).
+fallback order are in [Decision routing](decision-routing.md#who-is-being-addressed),
+and why the question is on by default is in its
+[upgrade note](decision-routing.md#upgrade-note-on-by-default).
 
 ### Ollama thinking in the terminal
 

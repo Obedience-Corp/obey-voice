@@ -1,6 +1,7 @@
 package personaruntime
 
 import (
+	"cmp"
 	"context"
 	"strings"
 	"time"
@@ -22,8 +23,9 @@ const (
 	resolutionFailed     = "failed"
 )
 
-// minClassifierWindow is the least time worth handing to the classifier after
-// the decision model has failed.
+// minClassifierWindow is a chosen floor well under one classifier round trip:
+// less time left can only end as a local timeout. persona_routing_timeout is
+// whole seconds, at least 1, so the floor alone never rules the classifier out.
 const minClassifierWindow = 50 * time.Millisecond
 
 func contextWindowBelow(ctx context.Context, floor time.Duration) bool {
@@ -39,8 +41,10 @@ func addresseeFailureReason(outcome decision.AddresseeOutcome) string {
 		return "it timed out"
 	case decision.AddresseeInvalidOutput:
 		return "it gave an answer that could not be used"
-	default:
+	case decision.AddresseeProviderError:
 		return "its provider returned an error"
+	default:
+		return "the question did not complete"
 	}
 }
 
@@ -71,22 +75,19 @@ func (s *Selector) classifyAddressee(ctx context.Context, resolver brain.Address
 			trace.resolver = resolvedByDecision
 			answer := result.Addressee
 			return &brain.Addressee{Kind: answer.Kind, Name: answer.Name, Bare: answer.Bare}, nil
-		case err != nil && ctx.Err() != nil:
-			return nil, err
-		case err != nil:
-			// A dead or nearly dead context would fail the classifier as a
-			// local timeout, so the turn falls back as if there were none.
-			exhausted := resolver != nil && contextWindowBelow(bounded, minClassifierWindow)
-			if resolver == nil || exhausted {
-				// A persona's reply has no user waiting on it; the diagnostic
-				// records that failure, so a turn gets at most one notice.
-				if s.opts.Pipeline.Events != nil && request.Account == "user" {
-					s.opts.Pipeline.Events.Emit(events.Info{Message: "The decision model did not answer who was addressed because " + addresseeFailureReason(result.Outcome) + "; routing by name only."})
-				}
-			}
-			if exhausted {
-				return nil, nil
-			}
+		case ctx.Err() != nil:
+			return nil, cmp.Or(err, ctx.Err())
+		}
+		// A failure or an abstention can leave the classifier a dead or nearly
+		// dead context, which would fail as a local timeout; fall back instead.
+		exhausted := resolver != nil && contextWindowBelow(bounded, minClassifierWindow)
+		// Only a failure on the user's own message is noticed; the diagnostic
+		// records the rest, so a turn gets at most one notice.
+		if err != nil && (resolver == nil || exhausted) && s.opts.Pipeline.Events != nil && request.Account == "user" {
+			s.opts.Pipeline.Events.Emit(events.Info{Message: "The decision model did not answer who was addressed because " + addresseeFailureReason(result.Outcome) + "; routing by name only."})
+		}
+		if exhausted {
+			return nil, nil
 		}
 	}
 	if resolver == nil {
