@@ -401,11 +401,17 @@ resets the session, or when the unseen lines do not fit, sends more input tokens
 and costs more than before. After a compaction the fresh session starts from the
 summary instead. A prompt of 100 KiB or more reaches the Claude CLI on stdin
 rather than as one command-line argument. The Grok and Cursor CLIs take the
-whole request as one argument, so Obey Voice keeps it within 100 KiB: Linux
-refuses a single argument of 128 KiB or more, and macOS limits all arguments
-and the environment together to 1 MiB. The conversation record gets what the
-rest of the request leaves, up to 64 KiB, so a long line you type or paste
-leaves less room for it. Unseen lines that no longer fit start a fresh session
+whole request as one argument, so Obey Voice keeps it within 100 KiB on Linux
+and macOS: Linux refuses a single argument of 128 KiB or more, and macOS limits
+all arguments and the environment together to 1 MiB. On Windows the whole
+command line is limited to 32,767 UTF-16 code units, so the request and the
+CLI's other arguments that vary with the conversation, such as Grok's system
+prompt, are kept within 30,000 together, counted as Windows quotes them; a CLI
+installed as a `.cmd` or `.bat` file runs under `cmd.exe`, whose 8,191 limit is
+not allowed for. Obey Voice does not build for Windows yet, so the Windows
+limit is untested there. The conversation record gets what the rest of the
+request leaves, up to 64 KiB, so a long line you type or paste leaves less
+room for it. Unseen lines that no longer fit start a fresh session
 with the newest lines that do, shortened to half that room; the recent lines a
 fresh session gets without a conversation record are held to that room the same
 way. A request that does not fit even without the record is refused before the

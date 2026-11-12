@@ -21,7 +21,7 @@ type SessionCatchUp struct {
 // the harness request context bound. It does not bound the rest of the
 // request. Claude takes a prompt past maxInlinePromptBytes on stdin; Grok and
 // Cursor take theirs as one argument, so their record also gets no more than
-// the rest of the request leaves under maxPromptArgBytes (argPrompt).
+// the rest of the request leaves on a command line (argPrompt).
 const maxCatchUpBytes = harnessRouteContextBytes / 2
 
 // catchUpBudget also keeps a replay under half the session fuse when one is
