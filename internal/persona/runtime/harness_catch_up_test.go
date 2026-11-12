@@ -556,3 +556,35 @@ func TestSessionPersonaNeverReceivesPreInviteLinesOrAnotherPersonasToolTraffic(t
 		})
 	}
 }
+
+func TestConversationOfOnlyGrokAndCursorPersonasHandsOverOnExplicitSwitch(t *testing.T) {
+	t.Setenv("OBEY_CLI_FIXTURE_SESSIONS", "distinct")
+	c := newCLIConversation(t, "grok")
+	c.provider = "grok"
+	ember := testProfile("ember", "Ember", "ember")
+	ember.Brain.Model, ember.Inactive = "", true
+	writeTestProfile(t, c.catalog.Dir, ember)
+	nova := testProfile("nova", "Nova", "nova")
+	nova.Brain.Provider, nova.Brain.Model = "cursor", ""
+	writeTestProfile(t, c.catalog.Dir, nova)
+	writeTestPrompt(t, c.base.PromptsDir, "nova", "You are {agent_name}.")
+	c.say("Note that the door is teal.", "Nova, what do you think?", "switch to Nova", "What do you think?", "switch to Mira", "And you?")
+
+	requests := readCLIRequests(t, c.log)
+	if len(requests) != 4 {
+		t.Fatalf("requests = %+v", requests)
+	}
+	mira, novaFirst, miraAgain := requests[0], requests[2], requests[3]
+	if requests[1].Provider != "grok" || novaFirst.Provider != "cursor" || novaFirst.Resume != "" {
+		t.Fatalf("Nova did not start its own Cursor session: %+v", requests)
+	}
+	requireOmits(t, novaFirst.Prompt, "door is teal", "Nova, what do you think?")
+	if miraAgain.Provider != "grok" || miraAgain.Resume != mira.Session {
+		t.Fatalf("Mira's Grok session did not survive Nova speaking: %+v", miraAgain)
+	}
+	requireContains(t, miraAgain.Prompt, `"content":"Nova here.","persona":"Nova"`, `"content":"What do you think?"`, `"persona":"Nova"`, "User: And you?")
+	requireOmits(t, miraAgain.Prompt, "door is teal")
+	if got := replies(c.selector.Transcript()); len(got) != 6 || got[3].PersonaID != "nova" || got[5].PersonaID != "mira" {
+		t.Fatalf("replies = %+v", got)
+	}
+}
