@@ -29,6 +29,8 @@ func (b *Brain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (St
 }
 
 func (b *CodexBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (StreamResult, error) {
+	// A route answers this request without a streamed request to record it.
+	b.request = routedRequest(b.canonical)
 	return classifyHarnessRoute(ctx, b.cfg, req, func(ctx context.Context, req BatchRequest) (string, error) {
 		var text strings.Builder
 		_, err := b.client.run(ctx, codexRequest{System: req.SystemPrompt, Prompt: req.Text, Model: b.cfg.CodexModel,
@@ -78,6 +80,9 @@ func (b *GrokBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest)
 }
 
 func (b *MuseSparkBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (StreamResult, error) {
+	b.mu.Lock()
+	b.request = routedRequest(b.canonical)
+	b.mu.Unlock()
 	return classifyHarnessRoute(ctx, b.cfg, req, func(ctx context.Context, req BatchRequest) (string, error) {
 		r, err := b.client.RunPromptCtx(ctx, AssembleBatchPrompt(req), museRunOptions(b.cfg, false))
 		if err != nil {
@@ -91,6 +96,9 @@ func (b *MuseSparkBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteReq
 }
 
 func (b *ObeyBrain) ClassifyLiveRoute(ctx context.Context, req LiveRouteRequest) (StreamResult, error) {
+	b.mu.Lock()
+	b.request = routedRequest(b.canonical)
+	b.mu.Unlock()
 	return classifyHarnessRoute(ctx, b.cfg, req, func(ctx context.Context, req BatchRequest) (string, error) {
 		opts, err := b.runOptions(false)
 		if err != nil {

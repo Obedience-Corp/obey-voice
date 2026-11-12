@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Obedience-Corp/muse-spark-go/pkg/muse"
@@ -26,11 +27,16 @@ type MuseSparkBrain struct {
 	cfg                                          *config.Config
 	personaPrompt, systemPrompt, turnInstruction string
 	personaReloader, turnReloader                *promptReloader
-	canonical, working                           []Turn
-	snapshot                                     ContinuitySnapshot
 	speakerNames                                 SpeakerNames
-	// requestStart is where the last streamed request began in canonical.
-	requestStart int
+
+	// mu guards the conversation state below, which a request's goroutine
+	// and the host both reach.
+	mu                 sync.Mutex
+	canonical, working []Turn
+	snapshot           ContinuitySnapshot
+	// request is the last streamed request, until it is recorded, abandoned
+	// or the conversation is replaced.
+	request *streamedRequest
 }
 
 func NewMuseSpark(cfg *config.Config) (*MuseSparkBrain, error) {
@@ -101,6 +107,7 @@ func museRunOptions(cfg *config.Config, tools bool) *muse.RunOptions {
 	return o
 }
 
+// buildPrompt is called with b.mu held.
 func (b *MuseSparkBrain) buildPrompt(input string, o StreamOptions) string {
 	parts := []string{b.systemPrompt}
 	for _, t := range b.working {
@@ -124,8 +131,12 @@ func (b *MuseSparkBrain) buildPrompt(input string, o StreamOptions) string {
 	return joinPromptParts(parts...) + harnessRoutingContext(b.cfg, o) + currentRequestContext(b.cfg, o)
 }
 
-func (b *MuseSparkBrain) commit(input, response string, o StreamOptions) {
-	if o.TransientHistory {
+// commit records a completed request, unless it was a streamed request req
+// that is no longer b.request.
+func (b *MuseSparkBrain) commit(req *streamedRequest, input, response string, o StreamOptions) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if o.TransientHistory || (req != nil && b.request != req) {
 		return
 	}
 	if !o.AgentContinuation {
@@ -151,7 +162,10 @@ func (b *MuseSparkBrain) ThinkFull(ctx context.Context, input string, o StreamOp
 		}
 	}
 	b.refreshPrompts(o.OnPromptWarn)
-	result, err := b.client.RunPromptCtx(ctx, b.buildPrompt(input, o), museRunOptions(b.cfg, liveCLITools(o)))
+	b.mu.Lock()
+	prompt := b.buildPrompt(input, o)
+	b.mu.Unlock()
+	result, err := b.client.RunPromptCtx(ctx, prompt, museRunOptions(b.cfg, liveCLITools(o)))
 	if err != nil {
 		return "", fmt.Errorf("muse-spark: %w", err)
 	}
@@ -165,7 +179,7 @@ func (b *MuseSparkBrain) ThinkFull(ctx context.Context, input string, o StreamOp
 		return "", err
 	}
 	response := spokenOrFallback(cleanForVoice(stripReplyConventions(b.agentName(), result.Text)))
-	b.commit(input, response, o)
+	b.commit(nil, input, response, o)
 	if o.OnWorkerUsage != nil {
 		o.OnWorkerUsage(WorkerUsage{})
 	}
@@ -182,8 +196,11 @@ func (b *MuseSparkBrain) ThinkStream(ctx context.Context, input string, o Stream
 		}
 	}
 	b.refreshPrompts(o.OnPromptWarn)
-	b.requestStart = len(b.canonical)
+	b.mu.Lock()
+	req := newStreamedRequest(b.canonical, input, o)
+	b.request = req
 	prompt := b.buildPrompt(input, o)
+	b.mu.Unlock()
 	out := make(chan string, 8)
 	done := make(chan StreamResult, 1)
 	go func() {
@@ -265,7 +282,7 @@ func (b *MuseSparkBrain) ThinkStream(ctx context.Context, input string, o Stream
 			done <- StreamResult{Err: err}
 			return
 		}
-		b.commit(input, response, o)
+		b.commit(req, input, response, o)
 		if o.OnWorkerUsage != nil {
 			o.OnWorkerUsage(WorkerUsage{})
 		}

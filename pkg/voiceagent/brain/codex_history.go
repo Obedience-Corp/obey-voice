@@ -22,6 +22,7 @@ func (c *CodexBrain) ContextHistory() []Turn             { return deepCopyTurns(
 func (c *CodexBrain) ClearHistory() {
 	c.canonical = nil
 	c.working = nil
+	c.request = nil
 	c.dropThread()
 	c.snapshot = ContinuitySnapshot{}
 }
@@ -46,6 +47,7 @@ func (c *CodexBrain) LoadHistory(turns []Turn) {
 func (c *CodexBrain) ImportHistory(turns []Turn) error {
 	c.canonical = deepCopyTurns(turns)
 	c.working = deepCopyTurns(turns)
+	c.request = nil
 	c.dropThread()
 	c.trimWorking()
 	return nil
@@ -99,6 +101,7 @@ func (c *CodexBrain) appendTurn(t Turn) {
 // the transcript that is persisted or transferred to another persona.
 func (c *CodexBrain) ReseedContinuity(turns []Turn) {
 	c.working = deepCopyTurns(turns)
+	c.request = nil
 	c.dropThread()
 	c.trimWorking()
 }

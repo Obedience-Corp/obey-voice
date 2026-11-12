@@ -103,7 +103,11 @@ func TestStoppedHostedRequestReplacesWhatItsProviderRecorded(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			canonical := append(CloneTurns(earlier), recorded...)
 			working := CloneTurns(canonical[1:])
-			canonical, working = replaceStoppedRequest(canonical, working, len(earlier), StoppedRequest{Line: &line, Reply: &reply})
+			request := &streamedRequest{start: len(earlier), records: true, hasLine: true, line: "Say more.", responseID: "r2"}
+			canonical, working, ok := replaceStoppedRequest(canonical, working, request, StoppedRequest{Line: &line, Reply: &reply})
+			if !ok {
+				t.Fatal("the stopped request was not recorded")
+			}
 			want := append(CloneTurns(earlier), line, reply)
 			if len(canonical) != 4 || canonical[2].Content != line.Content || canonical[3].Content != reply.Content || canonical[3].Disposition != "interrupted" {
 				t.Fatalf("canonical = %+v, want %+v", canonical, want)

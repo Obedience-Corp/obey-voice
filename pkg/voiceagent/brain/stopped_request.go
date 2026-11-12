@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"log/slog"
 	"strings"
 
 	"github.com/ollama/ollama/api"
@@ -27,11 +28,81 @@ type StoppedRequestRecorder interface {
 	RecordStoppedRequest(StoppedRequest)
 }
 
-// replaceStoppedRequest takes the turns a request recorded, canonical[start:]
-// and the same number from the end of working, and puts the stopped request
-// in their place.
-func replaceStoppedRequest(canonical, working []Turn, start int, s StoppedRequest) ([]Turn, []Turn) {
-	recorded := len(canonical) - min(max(start, 0), len(canonical))
+// RequestAbandoner is a StoppedRequestRecorder the host tells when it stops
+// waiting for a stopped request that is still ending. Nothing that request
+// does when it ends changes the conversation, and the next request does not
+// share its session.
+type RequestAbandoner interface {
+	AbandonRequest()
+}
+
+// streamedRequest marks the last request a provider replaying the shared
+// history was given: where it began in canonical and the record the provider
+// keeps of it when it completes. The provider forgets it when the conversation
+// is replaced or the host abandons the request, so a late record of that
+// request changes nothing.
+type streamedRequest struct {
+	start int
+	// records is false when the provider keeps no record of the request, as
+	// when a route answered it. Otherwise the record is the user line, when
+	// hasLine, then the reply under responseID.
+	records    bool
+	hasLine    bool
+	line       string
+	responseID string
+}
+
+func newStreamedRequest(canonical []Turn, input string, opts StreamOptions) *streamedRequest {
+	r := &streamedRequest{start: len(canonical), records: !opts.TransientHistory, hasLine: !opts.AgentContinuation, line: input}
+	if opts.OriginalInput != "" {
+		r.line = opts.OriginalInput
+	}
+	if opts.Identity != nil {
+		r.responseID = opts.Identity.ResponseID
+	}
+	return r
+}
+
+// routedRequest marks a request a route answered before the provider saw it.
+func routedRequest(canonical []Turn) *streamedRequest {
+	return &streamedRequest{start: len(canonical)}
+}
+
+// ownRecord reports how many turns at the end of canonical are the record
+// the provider kept of r, or false when canonical no longer ends with that
+// record: the conversation changed after r began.
+func (r *streamedRequest) ownRecord(canonical []Turn) (int, bool) {
+	if r == nil || r.start > len(canonical) {
+		return 0, false
+	}
+	n := len(canonical) - r.start
+	if n == 0 {
+		return 0, true
+	}
+	want := 1
+	if r.hasLine {
+		want = 2
+	}
+	first, reply := canonical[r.start], canonical[len(canonical)-1]
+	if !r.records || n != want || (r.hasLine && (first.Role != "user" || first.Content != r.line)) ||
+		reply.Role != "assistant" || reply.ResponseID != r.responseID {
+		return 0, false
+	}
+	return n, true
+}
+
+// replaceStoppedRequest takes the record the provider kept of r, if any, from
+// the end of canonical and working, and puts the stopped request in its
+// place. It changes nothing and reports false when canonical no longer ends
+// with that record.
+func replaceStoppedRequest(canonical, working []Turn, r *streamedRequest, s StoppedRequest) ([]Turn, []Turn, bool) {
+	recorded, ok := r.ownRecord(canonical)
+	if !ok {
+		if r != nil {
+			slog.Warn("stopped request not recorded: the conversation changed after it began", "began_at", r.start, "turns", len(canonical))
+		}
+		return canonical, working, false
+	}
 	canonical = canonical[:len(canonical)-recorded]
 	working = working[:len(working)-min(recorded, len(working))]
 	for _, t := range []*Turn{s.Line, s.Reply} {
@@ -40,24 +111,65 @@ func replaceStoppedRequest(canonical, working []Turn, start int, s StoppedReques
 			working = append(working, deepCopyTurns([]Turn{*t})...)
 		}
 	}
-	return canonical, working
+	return canonical, working, true
 }
 
 func (c *CodexBrain) RecordStoppedRequest(s StoppedRequest) {
-	c.canonical, c.working = replaceStoppedRequest(c.canonical, c.working, c.requestStart, s)
+	r := c.request
+	c.request = nil
+	if r == nil {
+		return
+	}
+	if canonical, working, ok := replaceStoppedRequest(c.canonical, c.working, r, s); ok {
+		c.canonical, c.working = canonical, working
+		c.trimWorking()
+	}
 	// The thread may hold more of the reply than the turn read.
 	c.dropThread()
-	c.trimWorking()
 }
 
+func (c *CodexBrain) AbandonRequest() {
+	c.request = nil
+	// The abandoned turn may still be running on the thread.
+	c.dropThread()
+}
+
+// owns reports whether r is still the request whose end may change the
+// conversation; nil is a request outside that, as ThinkFull's.
+func (c *CodexBrain) owns(r *streamedRequest) bool { return r == nil || c.request == r }
+
 func (b *MuseSparkBrain) RecordStoppedRequest(s StoppedRequest) {
-	b.canonical, b.working = replaceStoppedRequest(b.canonical, b.working, b.requestStart, s)
-	b.trimWorking()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	r := b.request
+	b.request = nil
+	if canonical, working, ok := replaceStoppedRequest(b.canonical, b.working, r, s); ok {
+		b.canonical, b.working = canonical, working
+		b.trimWorking()
+	}
+}
+
+func (b *MuseSparkBrain) AbandonRequest() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.request = nil
 }
 
 func (b *ObeyBrain) RecordStoppedRequest(s StoppedRequest) {
-	b.canonical, b.working = replaceStoppedRequest(b.canonical, b.working, b.requestStart, s)
-	b.trimWorking()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	r := b.request
+	b.request = nil
+	if canonical, working, ok := replaceStoppedRequest(b.canonical, b.working, r, s); ok {
+		b.canonical, b.working = canonical, working
+		b.trimWorking()
+	}
+}
+
+func (b *ObeyBrain) AbandonRequest() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.request = nil
 }
 
 // ollamaStopped is what the last streamed request left that the host may
@@ -133,4 +245,7 @@ var (
 	_ StoppedRequestRecorder = (*CodexBrain)(nil)
 	_ StoppedRequestRecorder = (*MuseSparkBrain)(nil)
 	_ StoppedRequestRecorder = (*ObeyBrain)(nil)
+	_ RequestAbandoner       = (*CodexBrain)(nil)
+	_ RequestAbandoner       = (*MuseSparkBrain)(nil)
+	_ RequestAbandoner       = (*ObeyBrain)(nil)
 )
