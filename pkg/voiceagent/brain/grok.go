@@ -451,7 +451,7 @@ func (g *GrokBrain) buildPrompt(opts StreamOptions, budget int) string {
 	return cliSessionPrompt{
 		cfg: g.cfg, provider: providerGrok, history: g.history, live: g.sessionID != "",
 		hostContext: g.hostContext, seed: g.seed, names: g.speakerNames, group: &g.groupContext,
-		turnInstruction: g.turnInstruction, budget: budget,
+		turnInstruction: g.turnInstruction, budget: budget, boundRecent: true,
 	}.render(opts)
 }
 

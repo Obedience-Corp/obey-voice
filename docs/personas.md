@@ -406,9 +406,11 @@ refuses a single argument of 128 KiB or more, and macOS limits all arguments
 and the environment together to 1 MiB. The conversation record gets what the
 rest of the request leaves, up to 64 KiB, so a long line you type or paste
 leaves less room for it. Unseen lines that no longer fit start a fresh session
-with the newest lines that do, shortened to half that room. A request that does
-not fit even without the record is refused before the CLI runs, with an error
-saying it is too large; the session is kept.
+with the newest lines that do, shortened to half that room; the recent lines a
+fresh session gets without a conversation record are held to that room the same
+way. A request that does not fit even without the record is refused before the
+CLI runs, with an error saying it is too large, and a session it would have
+resumed is kept for the next request.
 
 At most four sessions stay parked, whatever their backends, a Codex thread
 included (see below); the least recently used one is closed first. A parked

@@ -424,7 +424,7 @@ func (c *CursorBrain) buildPrompt(opts StreamOptions, budget int) string {
 	return cliSessionPrompt{
 		cfg: c.cfg, provider: providerCursor, history: c.history, live: c.sessionID != "", system: c.systemPrompt,
 		hostContext: c.hostContext, seed: c.seed, names: c.speakerNames, group: &c.groupContext,
-		turnInstruction: c.turnInstruction, budget: budget,
+		turnInstruction: c.turnInstruction, budget: budget, boundRecent: true,
 	}.render(opts)
 }
 
