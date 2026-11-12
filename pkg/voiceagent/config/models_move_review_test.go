@@ -316,8 +316,8 @@ func TestMoveModelsKeepsTheOldFolderWhenTheConfigFlushFails(t *testing.T) {
 	}
 }
 
-// A copy failure while bringing a changed link over must not leave a temp
-// file in the new folder.
+// A copy failure while bringing a late folder over must not leave its
+// half-written temp copy in the new folder.
 func TestMoveModelsLeavesNoTempFileWhenALateCopyFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("needs symlinks")
@@ -329,11 +329,9 @@ func TestMoveModelsLeavesNoTempFileWhenALateCopyFails(t *testing.T) {
 		if pass != 1 {
 			return
 		}
-		link := filepath.Join(old, "audio8-voices")
-		if err := os.Remove(link); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(filepath.Join(root, "elsewhere", "voice.bin"), link); err != nil {
+		late := filepath.Join(old, "late-voices")
+		writeMoveFile(t, filepath.Join(late, "a-voice.bin"), "late")
+		if err := os.Symlink(filepath.Join(root, "elsewhere", "voice.bin"), filepath.Join(late, "z-link")); err != nil {
 			t.Fatal(err)
 		}
 		moveHooks.symlink = func(string, string) error { return errors.New("operation not supported") }
@@ -347,7 +345,7 @@ func TestMoveModelsLeavesNoTempFileWhenALateCopyFails(t *testing.T) {
 	}
 	leftovers, _ := filepath.Glob(filepath.Join(dest, "*.obey-voice-move.part"))
 	if len(leftovers) != 0 {
-		t.Fatalf("temp files left in the new folder: %v", leftovers)
+		t.Fatalf("temp copies left in the new folder: %v", leftovers)
 	}
 }
 
