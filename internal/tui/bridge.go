@@ -87,6 +87,7 @@ func (b *eventBridge) attach(bus *events.Bus) {
 	forward[events.JobQueued](b, bus)
 	forward[events.JobStarted](b, bus)
 	forward[events.JobFinished](b, bus)
+	forward[events.JobResultDelivered](b, bus)
 	forward[events.JobFailed](b, bus)
 	forward[events.JobAborted](b, bus)
 }
@@ -105,7 +106,7 @@ func isDurableBridgeMsg(msg tea.Msg) bool {
 	case events.UserInput, events.InputTranscriptUpdated, events.ResponseReady, events.PersonaSelection, events.ConversationCleared, events.Error,
 		events.ContinuityBudget, events.CompactionProgress,
 		events.ToolCallStarted, events.ToolCallFinished,
-		events.JobQueued, events.JobStarted, events.JobFinished, events.JobFailed, events.JobAborted:
+		events.JobQueued, events.JobStarted, events.JobFinished, events.JobResultDelivered, events.JobFailed, events.JobAborted:
 		return true
 	default:
 		return false

@@ -163,6 +163,7 @@ type conversationModel struct {
 	startedAt            time.Time
 	sessionID            string
 	workerRepliesSeen    map[string]bool
+	workerRepliesShown   map[string]bool
 	capture              *capture.Session
 	capturePending       captureSeal
 	captureNextMode      string

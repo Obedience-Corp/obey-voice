@@ -123,6 +123,14 @@ the job, started when it actually begins (a spawn behind a running job waits
 for that job's terminal event), and the last three carry elapsed time. The
 footer reads `Workers: 1 running · 2 queued · /workers`.
 
+In legacy mode a finished job's answer is spoken through the idle gate, after
+any reply already being spoken or waiting its turn. When it will be spoken,
+`job_finished` marks it speech-pending and `job_result_delivered` follows once
+its audio starts: the chat shows the answer and the conversation history takes
+it at that point, so the thread reads in the order it was heard. If that speech
+is muted, fails or is dropped, `job_result_delivered` still arrives, unspoken.
+With speech off the answer appears with `job_finished`.
+
 "Cancel", "cancel that", "kill it" or "kill that" ends the work: every running
 and queued job is aborted, and she says so once for the lot — "Stopped after
 40 seconds.", or just "Stopped." inside the first second — adding "Dropped 1

@@ -466,6 +466,9 @@ func (m *conversationModel) handleEvent(e events.Event) {
 	case events.JobFinished:
 		m.jobFinished(e)
 
+	case events.JobResultDelivered:
+		m.jobResultDelivered(e)
+
 	case events.JobFailed:
 		m.jobFailed(e)
 

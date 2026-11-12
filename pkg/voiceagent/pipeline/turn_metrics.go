@@ -110,6 +110,9 @@ type turnMetrics struct {
 	// thinkLeak counts think tags that still reached filterThink after the
 	// brain split. Must stay 0 on the product path.
 	thinkLeak int
+	// onAudible runs when a standalone line's audio starts, before
+	// SpeakingStarted.
+	onAudible func()
 }
 
 // Speech has its own lifetime: typing stops output while the model continues

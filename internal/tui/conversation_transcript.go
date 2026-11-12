@@ -34,6 +34,7 @@ func (m *conversationModel) clearTranscript() {
 	m.jobItems = nil
 	m.completedJobItems = nil
 	m.workerRepliesSeen = nil
+	m.workerRepliesShown = nil
 	m.workResultItems = nil
 	m.workResultJobs = nil
 	m.workScope = work.WorkScope{}

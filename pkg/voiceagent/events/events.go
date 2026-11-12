@@ -673,9 +673,29 @@ type JobFinished struct {
 	Task     string
 	Summary  string
 	Elapsed  time.Duration
+	// SpeechPending means Summary is queued to be spoken. A display shows it
+	// from JobResultDelivered, when that speech starts, not from this event.
+	SpeechPending bool
 }
 
 func (e JobFinished) eventType() string { return "job_finished" }
+
+// JobResultDelivered is the moment a SpeechPending result reaches the user:
+// Spoken when its audio started, false when its speech was skipped, failed
+// or dropped. It carries the whole reply and is emitted once per such job.
+type JobResultDelivered struct {
+	Attachments []chatmedia.Ref `json:"attachments,omitempty"`
+	Trace       *TraceContext   `json:"trace,omitempty"`
+
+	Envelope *ResponseEnvelope
+	Scope    work.WorkScope
+	ID       string
+	Task     string
+	Summary  string
+	Spoken   bool
+}
+
+func (e JobResultDelivered) eventType() string { return "job_result_delivered" }
 
 // JobFailed signals a worker job ended with an error.
 type JobFailed struct {
