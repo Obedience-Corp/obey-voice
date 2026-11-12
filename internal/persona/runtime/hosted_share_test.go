@@ -170,7 +170,7 @@ func TestHostedSharedHistorySendsOnlyTheShareWithoutOtherPersonasToolTraffic(t *
 				}
 
 				label := providerLabelFor[provider]
-				want := "Mira runs on " + label + ", a hosted service. Only what is said from when it was invited is sent to " + label + "; earlier lines stay on this machine."
+				want := "Mira runs on " + label + ", a hosted service. Only what is said from when it was invited is sent to " + label + ", plus jobs it started earlier and their results; earlier lines stay on this machine."
 				if whole {
 					want = "Mira runs on " + label + ", a hosted service. The whole conversation is sent to " + label + "."
 				}
@@ -397,6 +397,53 @@ func TestJobStartedOnClaudeIsDeliveredToItsPersonaMovedToCodex(t *testing.T) {
 	}
 }
 
+func TestJobStartedOnOllamaFollowsItsPersonaToAHostedBackend(t *testing.T) {
+	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
+		t.Run(provider, func(t *testing.T) {
+			c := newConversation(t, 20, "ember", provider, "")
+			c.work = true
+			c.start("ember", nil, nil)
+			c.say("Note that the vault code is cobalt.")
+			if cfg := c.p.Agency.WorkerMigrationConfig(); cfg.ActivePersona != "ember" || cfg.BrainProvider == provider {
+				t.Fatalf("the job would start for %q on %q", cfg.ActivePersona, cfg.BrainProvider)
+			}
+			emberJob := c.startJob("ember-job", "ember", "Check the build")
+			miraJob := c.startJob("mira-job", "mira", "Read my private tax notes")
+
+			moved := testProfile("ember", "Ember", "ember")
+			moved.Brain.Provider, moved.Brain.Model = provider, ""
+			writeTestProfile(t, c.catalog.Dir, moved)
+			c.finishJob(emberJob, "The build is green.")
+			c.finishJob(miraJob, "The tax refund is 1234.")
+			c.say("Any news?")
+
+			if cfg := c.p.Agency.WorkerMigrationConfig(); cfg.ActivePersona != "ember" || cfg.BrainProvider != provider {
+				t.Fatalf("Ember is %q on %q", cfg.ActivePersona, cfg.BrainProvider)
+			}
+			prompts := c.hostedPrompts()
+			if len(prompts) != 1 {
+				t.Fatalf("%s requests = %d", provider, len(prompts))
+			}
+			requireContains(t, prompts[0], "Check the build", "The build is green.")
+			requireOmits(t, c.hostedLog(), "cobalt", "tax notes", "1234")
+
+			label := providerLabel(provider)
+			want := "Ember runs on " + label + ", a hosted service. Only what is said from when it was invited is sent to " + label + ", plus jobs it started earlier and their results; earlier lines stay on this machine."
+			notices := c.hostedNotices()
+			if len(notices) != 1 || notices[0].message != want {
+				t.Fatalf("notices = %+v, want %q", notices, want)
+			}
+			before := strings.Join(strings.SplitAfter(c.hostedLog(), "\n")[:notices[0].claudeRequests], "")
+			if provider == "codex" && strings.Contains(before, `"turn/start"`) || provider != "codex" && before != "" {
+				t.Fatalf("%s was sent a request before the notice:\n%s", provider, before)
+			}
+			if c.resultWaiting(emberJob) || !c.resultWaiting(miraJob) {
+				t.Fatalf("Ember's result waiting = %v, Mira's = %v; want false, true", c.resultWaiting(emberJob), c.resultWaiting(miraJob))
+			}
+		})
+	}
+}
+
 func TestJobStatusGivesAHostedPersonaOnlyACountOfJobsItDidNotStart(t *testing.T) {
 	for _, provider := range append([]string{"claude"}, hostedShareProviders...) {
 		t.Run(provider, func(t *testing.T) {
@@ -453,7 +500,7 @@ func TestHostedPersonaSelectedButNeverAddressedIsSharedByTheSettingInForceWhenAd
 			c.say("switch to Mira", "First words to you.")
 			requireOmits(t, c.hostedLog(), "PRIVATE-4711", "PRE-INVITE")
 			label := providerLabel(provider)
-			want := "Mira runs on " + label + ", a hosted service. Only what is said from when it was invited is sent to " + label + "; earlier lines stay on this machine."
+			want := "Mira runs on " + label + ", a hosted service. Only what is said from when it was invited is sent to " + label + ", plus jobs it started earlier and their results; earlier lines stay on this machine."
 			if notices := c.hostedNotices(); len(notices) != 1 || notices[0].message != want {
 				t.Fatalf("notices = %+v, want %q", notices, want)
 			}
@@ -646,7 +693,7 @@ func TestLoadHistoryUsesOnlyACursorOfTheLiveBackend(t *testing.T) {
 				return
 			}
 			label := providerLabelFor[provider]
-			want := "Only what is said from when it was invited is sent to " + label + "; earlier lines stay on this machine."
+			want := "Only what is said from when it was invited is sent to " + label + ", plus jobs it started earlier and their results; earlier lines stay on this machine."
 			if got, whole := c.selector.noticeScope("mira", provider, label); whole || got != want {
 				t.Fatalf("notice = %q (whole %v), want %q", got, whole, want)
 			}

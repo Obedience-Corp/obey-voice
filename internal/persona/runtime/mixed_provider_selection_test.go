@@ -222,7 +222,7 @@ func TestSelectorSharesConversationBetweenOllamaAndCLIProviders(t *testing.T) {
 			}
 
 			label := map[string]string{"muse-spark": "Muse Spark", "obey": "Obey"}[provider]
-			want := "Scout runs on " + label + ", a hosted service. Only what is said from when it was invited is sent to " + label + "; earlier lines stay on this machine."
+			want := "Scout runs on " + label + ", a hosted service. Only what is said from when it was invited is sent to " + label + ", plus jobs it started earlier and their results; earlier lines stay on this machine."
 			if whole {
 				want = "Scout runs on " + label + ", a hosted service. The whole conversation is sent to " + label + "."
 			}
