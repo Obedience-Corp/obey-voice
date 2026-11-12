@@ -520,3 +520,30 @@ func TestMoveModelsMarksTheCopyUnfinishedWhileItIsWritten(t *testing.T) {
 	}
 	assertMoved(t, cfg, source, dest, result)
 }
+
+// A dry run reports a running move or install from their locks without
+// taking or creating them.
+func TestPlanModelsMoveReportsHeldLocks(t *testing.T) {
+	for name, tc := range map[string]struct {
+		lock func(source string) string
+		want string
+	}{
+		"another move":             {func(string) string { return filepath.Join(ConfigDir(), "models-move.lock") }, "another models move"},
+		"a decision model install": {func(source string) string { return filepath.Join(source, "decider", "native-install.lock") }, "decision model"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, source, root := moveFixture(t)
+			path := tc.lock(source)
+			writeMoveFile(t, path, "")
+			release, err := acquireLockGuard(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer release()
+			plan, err := PlanModelsMove(context.Background(), cfg, filepath.Join(root, "fast", "models"), MoveOptions{})
+			if err != nil || len(plan.Refusals) != 1 || !strings.Contains(plan.Refusals[0], tc.want) {
+				t.Fatalf("refusals = %v, %v", plan.Refusals, err)
+			}
+		})
+	}
+}
