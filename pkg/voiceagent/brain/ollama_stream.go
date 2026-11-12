@@ -441,11 +441,15 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					tier, reason := routeMetadata(toolCalls)
 					if sess.onStart != nil || sess.onEnd != nil {
 						decision := sess.describe("route", kind, "")
+						begun := time.Now()
 						if sess.onStart != nil {
 							sess.onStart(decision)
 						}
 						if sess.onEnd != nil {
-							sess.onEnd(ToolResult{ToolCall: decision, Preview: kind})
+							elapsed := time.Since(begun)
+							sess.onEnd(ToolResult{ToolCall: decision, Preview: kind, Elapsed: elapsed, Outcome: &events.ToolOutcome{
+								Status: events.ToolOutcomeSucceeded, InputSummary: kind, OutputPreview: kind, Elapsed: elapsed,
+							}})
 						}
 					}
 					// Drop this turn from the talking window. Work belongs on

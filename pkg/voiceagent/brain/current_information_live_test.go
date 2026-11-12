@@ -67,7 +67,7 @@ func TestLiveCurrentInformationRouting(t *testing.T) {
 		}
 		// Force the same false embedding shortlist seen in the user's capture;
 		// the actual local model must reject it before answering/routing.
-		router, err := newSemanticSkillRouter(t.Context(), &routingEmbedder{catalog: [][]float32{{1}, {1}, {1}}, queries: map[string][]float32{input: {1}}}, "fixture", .55, candidates)
+		router, err := newSemanticSkillRouter(t.Context(), &routingEmbedder{catalog: [][]float32{{1}, {1}, {1}}, queries: map[string][]float32{input: {1}}}, "fixture", .55, candidates, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
