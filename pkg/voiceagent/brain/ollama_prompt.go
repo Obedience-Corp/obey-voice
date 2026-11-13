@@ -168,19 +168,29 @@ func (o *OllamaBrain) groupConversationGuidance() string {
 }
 
 func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onStart func(ToolCall), onEnd func(ToolResult)) string {
-	if o.skillRouter == nil {
-		return ""
-	}
-	matched, err := o.skillRouter.Match(ctx, input)
-	if err == nil && len(matched) > 0 {
-		matched, err = o.confirmSkillMatches(ctx, input, matched)
-	}
-	if err != nil {
-		if !o.skillRouterWarned {
-			fmt.Fprintf(os.Stderr, "obey-voice: semantic skill routing failed (%v); continuing with the Agent Skills catalog\n", err)
-			o.skillRouterWarned = true
+	handed := o.handedSkills(ctx)
+	var matched []skills.Skill
+	if o.skillRouter != nil {
+		var err error
+		matched, err = o.skillRouter.Match(ctx, input)
+		if err == nil && len(matched) > 0 {
+			matched, err = o.confirmSkillMatches(ctx, input, matched)
 		}
-		return ""
+		if err != nil {
+			if !o.skillRouterWarned {
+				fmt.Fprintf(os.Stderr, "obey-voice: semantic skill routing failed (%v); continuing with the Agent Skills catalog\n", err)
+				o.skillRouterWarned = true
+			}
+			matched = nil
+		}
+	}
+	matched = mergeSkills(handed, matched)
+	if o.cfg == nil || !o.cfg.IsWorker {
+		names := make([]string, len(matched))
+		for i, skill := range matched {
+			names[i] = skill.Name
+		}
+		o.rememberActivatedSkills(names)
 	}
 	if len(matched) > 0 {
 		names := make([]string, len(matched))

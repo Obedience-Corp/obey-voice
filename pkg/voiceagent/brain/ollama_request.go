@@ -81,7 +81,13 @@ func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 	if o.audioResolver != nil || (o.cfg != nil && o.cfg.OllamaNumCtx > 0) {
 		opts["num_ctx"] = o.numCtxFor(highWater)
 	}
-	if batch := promptBatch(o.client, o.model, o.cfg); batch > 0 {
+	// Only a constructed brain asks Ollama about the model; one assembled
+	// field by field has no server to ask and sends the configured batch.
+	client := o.client
+	if !o.modelLookup {
+		client = nil
+	}
+	if batch := promptBatch(client, o.model, o.cfg); batch > 0 {
 		opts["num_batch"] = batch
 	}
 	if len(opts) == 0 {

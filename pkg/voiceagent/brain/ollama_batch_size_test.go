@@ -79,7 +79,7 @@ func TestPromptBatchKeepsConfiguredBatchWhenLookupFails(t *testing.T) {
 func TestChatRequestCarriesSlidingWindowBatch(t *testing.T) {
 	var shows atomic.Int32
 	client, host := showServer(t, map[string]any{"gemma4.attention.sliding_window": 1024}, &shows)
-	o := &OllamaBrain{client: client, model: "gemma", cfg: &config.Config{OllamaHost: host, OllamaNumCtx: 32768, OllamaNumBatch: 128}}
+	o := &OllamaBrain{client: client, modelLookup: true, model: "gemma", cfg: &config.Config{OllamaHost: host, OllamaNumCtx: 32768, OllamaNumBatch: 128}}
 	if got := o.newChatRequest(nil, nil).Options["num_batch"]; got != 512 {
 		t.Fatalf("chat num_batch = %v, want 512", got)
 	}

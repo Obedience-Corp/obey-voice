@@ -259,6 +259,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		originalRun := run
 		run = func(jobCtx context.Context) (string, error) { return originalRun(chatmedia.WithInput(jobCtx, refs)) }
 	}
+	run = withLiveSkills(a.pipeline.Brain, run)
 	var runtimeBudget time.Duration
 	if plan != nil {
 		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
@@ -364,6 +365,22 @@ func (a *Agency) liveHistory() []brain.Turn {
 		return live.(brain.ContinuityTransferProvider).ContinuitySnapshot().Working
 	}
 	return a.pipeline.Brain.History()
+}
+
+// withLiveSkills gives a job the skills the talking brain activated for the
+// conversation it is spawned from, so the worker does not choose again.
+func withLiveSkills(live brain.Provider, run func(context.Context) (string, error)) func(context.Context) (string, error) {
+	provider, ok := live.(brain.ActivatedSkillsProvider)
+	if !ok {
+		return run
+	}
+	names := provider.RecentActivatedSkills()
+	if len(names) == 0 {
+		return run
+	}
+	return func(jobCtx context.Context) (string, error) {
+		return run(brain.WithActivatedSkills(jobCtx, names))
+	}
 }
 
 // speakSpawnClarifier asks rather than guesses.
