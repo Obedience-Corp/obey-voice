@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -268,6 +269,8 @@ func nativeHandler(scorer *nativeScorer, model Model, device string) http.Handle
 		defer cancel()
 		result, err := scorer.evaluate(ctx, input.State, input.Questions)
 		if err != nil {
+			// The caller only sees a 503; keep the cause where it can be found.
+			slog.Warn("native decision failed", "model", model.Name, "error", err)
 			http.Error(w, "native decision failed", http.StatusServiceUnavailable)
 			return
 		}

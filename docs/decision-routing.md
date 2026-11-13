@@ -96,7 +96,13 @@ handoff check), the decision provider receives:
   or the persona's display name for a persona reply);
 - the speaker's name and whether the speaker is the user or a persona;
 - the name of the persona currently answering;
-- every persona name and alias in the conversation roster;
+- every persona name and alias in the conversation roster, up to seven personas.
+  A larger roster is cut to the personas the message or spoken-name hint names,
+  then the persona currently answering, then the most recent speakers, so the
+  question stays within the ten options the local decision model accepts
+  (three fixed answers plus one per persona). The cut applies to every
+  provider. A message that names more than seven personas is not sent; the
+  disposition is `skipped` and step 3 or 4 answers;
 - the spoken-name hint from speech recognition, when there is one.
 
 OpenAI also receives the private addressee instructions as its `instructions`

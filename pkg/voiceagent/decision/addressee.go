@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
@@ -113,8 +114,63 @@ func rosterNames(participants []AddresseeParticipant) []string {
 	return names
 }
 
+// maxAddresseeParticipants keeps the target question within the local
+// decider's limit of ten choice options: three fixed options plus one per participant.
+const maxAddresseeParticipants = 7
+
+// shortlistAddressee trims a roster too large for one target question. It keeps
+// the participants the message or spoken-name hint names, then the current
+// responder, then the most recent speakers. Named participants are never
+// dropped; when they alone exceed the limit, eligibleAddressee skips the question.
+func shortlistAddressee(in AddresseeInput) AddresseeInput {
+	if len(in.Participants) <= maxAddresseeParticipants {
+		return in
+	}
+	keep := make([]bool, len(in.Participants))
+	kept := 0
+	mark := func(capped bool, match func(AddresseeParticipant) bool) {
+		for i, p := range in.Participants {
+			if !keep[i] && (!capped || kept < maxAddresseeParticipants) && match(p) {
+				keep[i] = true
+				kept++
+			}
+		}
+	}
+	said := mentionWords(in.Text + " " + in.AcousticName)
+	mark(false, func(p AddresseeParticipant) bool {
+		return slices.ContainsFunc(participantNames(p), func(n string) bool {
+			w := mentionWords(n)
+			return strings.TrimSpace(w) != "" && strings.Contains(said, w)
+		})
+	})
+	named := func(name string) func(AddresseeParticipant) bool {
+		return func(p AddresseeParticipant) bool {
+			return slices.ContainsFunc(participantNames(p), func(n string) bool { return strings.EqualFold(strings.TrimSpace(n), strings.TrimSpace(name)) })
+		}
+	}
+	mark(true, named(in.Current))
+	for i := len(in.Conversation) - 1; i >= 0; i-- {
+		mark(true, named(in.Conversation[i].Name))
+	}
+	shortlisted := in
+	shortlisted.Participants = make([]AddresseeParticipant, 0, kept)
+	for i, p := range in.Participants {
+		if keep[i] {
+			shortlisted.Participants = append(shortlisted.Participants, p)
+		}
+	}
+	return shortlisted
+}
+
+func participantNames(p AddresseeParticipant) []string { return append([]string{p.Name}, p.Aliases...) }
+
+// mentionWords matches names on whole words, as the persona roster does.
+func mentionWords(s string) string {
+	return " " + strings.Join(strings.FieldsFunc(strings.ToLower(s), func(c rune) bool { return !unicode.IsLetter(c) && !unicode.IsDigit(c) }), " ") + " "
+}
+
 func eligibleAddressee(in AddresseeInput) bool {
-	if len(in.Participants) == 0 || in.Text == "" || utf8.RuneCountInString(in.Text) > 4000 || len(in.Conversation) > 8 {
+	if len(in.Participants) == 0 || len(in.Participants) > maxAddresseeParticipants || in.Text == "" || utf8.RuneCountInString(in.Text) > 4000 || len(in.Conversation) > 8 {
 		return false
 	}
 	for _, m := range in.Conversation {
@@ -241,10 +297,12 @@ type AddresseeResult struct {
 func (r AddresseeResult) Answered() bool { return r.Outcome == AddresseeAnswered }
 
 // ResolveAddressee asks the decision model who is being addressed. It blocks
-// for at most the configured budget. Skipped and abstained outcomes carry no
+// for at most the configured budget. A roster above seven participants is
+// shortlisted first (see shortlistAddressee). Skipped and abstained outcomes carry no
 // error. Busy, timeout, provider and invalid-output failures are admission
 // classifier failures; a done parent context returns its own error.
 func (c *Controller) ResolveAddressee(ctx context.Context, in AddresseeInput, guidance string) (AddresseeResult, error) {
+	in = shortlistAddressee(in)
 	if c == nil || !eligibleAddressee(in) {
 		return AddresseeResult{Outcome: AddresseeSkipped}, nil
 	}

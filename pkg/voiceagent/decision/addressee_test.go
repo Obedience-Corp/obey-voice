@@ -499,3 +499,68 @@ func TestAddresseeInjectionCannotLeaveTheRoster(t *testing.T) {
 		}
 	})
 }
+
+func largeRosterInput(text string) AddresseeInput {
+	in := AddresseeInput{Current: "Raw", Speaker: "Lance", Account: "user", Text: text,
+		Conversation: []AddresseeMessage{{Name: "Veronica", Account: "agent", Text: "Hi."}, {Name: "Lance", Account: "user", Text: "Hello."}}}
+	for _, name := range []string{"Dylan", "Festival", "Jarvis", "Joker", "Major", "Obey", "Raw", "Samantha", "Santa", "Uncle Fu", "Veronica", "Veronica Two", "Veronica Hype"} {
+		in.Participants = append(in.Participants, AddresseeParticipant{Name: name})
+	}
+	return in
+}
+
+func TestResolveAddresseeShortlistsALargeRoster(t *testing.T) {
+	var asked Request
+	evaluator := evaluatorFunc(func(_ context.Context, request Request) (Response, error) {
+		asked = request
+		probs := map[string]float64{}
+		for key := range request.Questions["target"].Criteria {
+			probs[key] = 0
+		}
+		probs["person_0"] = 1
+		confidence, bare := 1.0, 0.0
+		return Response{Answers: map[string]Answer{"target": {Choice: "person_0", Confidence: &confidence, Probabilities: probs}, "bare": {Noul: &bare}}}, nil
+	})
+	c := enabledController(t, evaluator, time.Second)
+	got, err := c.ResolveAddressee(t.Context(), largeRosterInput("All right. Jarvis, can you join the chat please and talk to Club?"), "")
+	if err != nil || !got.Answered() || got.Addressee != (Addressee{Kind: "address", Name: "Jarvis"}) {
+		t.Fatalf("got %+v err=%v", got, err)
+	}
+	criteria := asked.Questions["target"].Criteria
+	if len(criteria) < 2 || len(criteria) > 10 {
+		t.Fatalf("target has %d options, outside the 2..10 System One limit", len(criteria))
+	}
+	var roster []string
+	for _, p := range asked.State.(AddresseeInput).Participants {
+		roster = append(roster, p.Name)
+	}
+	if strings.Join(roster, ",") != "Jarvis,Raw,Veronica" {
+		t.Fatalf("roster = %v, want the named persona, the current one and the recent speaker", roster)
+	}
+}
+
+func TestResolveAddresseeSkipsWhenNamedParticipantsExceedTheLimit(t *testing.T) {
+	var calls atomic.Int32
+	c := enabledController(t, evaluatorFunc(func(context.Context, Request) (Response, error) { calls.Add(1); return Response{}, nil }), time.Second)
+	got, err := c.ResolveAddressee(t.Context(), largeRosterInput("Dylan, Festival, Jarvis, Joker, Major, Obey, Samantha and Santa, listen."), "")
+	if got.Outcome != AddresseeSkipped || err != nil || calls.Load() != 0 {
+		t.Fatalf("got %+v err=%v calls=%d", got, err, calls.Load())
+	}
+}
+
+func TestShortlistAddresseeKeepsSmallRostersAndAliases(t *testing.T) {
+	small := addresseeInput("user", "Meera?")
+	if got := shortlistAddressee(small); len(got.Participants) != 2 {
+		t.Fatalf("small roster trimmed to %v", got.Participants)
+	}
+	in := largeRosterInput("Uncle, are you there?")
+	in.Participants[9].Aliases = []string{"Uncle"}
+	in.AcousticName = "Santa"
+	var names []string
+	for _, p := range shortlistAddressee(in).Participants {
+		names = append(names, p.Name)
+	}
+	if strings.Join(names, ",") != "Raw,Santa,Uncle Fu,Veronica" {
+		t.Fatalf("shortlist = %v", names)
+	}
+}
