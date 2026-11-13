@@ -45,8 +45,12 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	}
 	o.inputRetry = nil
 	skillCtx := retrySkills
+	// activatedSkills is the skill text within skillCtx, kept apart so the
+	// routing round can be sent without it.
+	activatedSkills := ""
 	if opts.Discussion == nil && !opts.AgentContinuation && !opts.RetryInput {
 		skillCtx = o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
+		activatedSkills = skillCtx
 	} else if opts.Discussion != nil || opts.AgentContinuation {
 		opts.ToolsEnabled = false
 	}
@@ -119,11 +123,19 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				tools = sess.tools()
 			}
 
-			if err := o.prepareWorkerContext(ctx, skillCtx, tools, opts); err != nil {
+			// The route is chosen from what the user said, not from a skill's
+			// instructions. A skill body beside "Planner." reads as a task and
+			// was routed to a worker; the same turn without it is conversation.
+			// The reply round and the worker still get the skill.
+			roundCtx := skillCtx
+			if activatedSkills != "" && sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 {
+				roundCtx = strings.Replace(skillCtx, activatedSkills, "", 1)
+			}
+			if err := o.prepareWorkerContext(ctx, roundCtx, tools, opts); err != nil {
 				done <- StreamResult{Err: err}
 				return
 			}
-			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil, opts)
+			messages := o.buildMessagesForTurn(roundCtx, opts.AgentContinuation && opts.Discussion == nil, opts)
 			if jsonChat {
 				// The JSON route request ended at this same point, so the
 				// reply re-reads only this line.
