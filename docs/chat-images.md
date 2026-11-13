@@ -12,8 +12,22 @@ thread after sending. You can send images with a question or on their own.
 - F3 opens the most recent draft image (or most recent thread image) at original size.
 - F4 removes the last draft image. `/image N` opens thread image N, counting from one.
 
-Inline previews use colored half-blocks, so scrolling and tmux work without a terminal
-image protocol. These are low-resolution thumbnails, not native bitmap rendering.
+In Ghostty and kitty, still images are drawn at the terminal's own resolution through
+the Kitty graphics protocol. Each image is sent to the terminal once and placed with
+placeholder cells, so it scrolls and clips with the conversation, and a thread image
+may use up to three quarters of the conversation pane. An image is never enlarged past
+its own pixels. The terminal's copies are freed when the conversation is cleared and
+when Obey Voice exits.
+
+Everywhere else, and for animated GIFs in every terminal, inline previews use colored
+half-blocks, so scrolling and tmux work without a terminal image protocol. These are
+low-resolution thumbnails, not native bitmap rendering. Inside tmux, zellij or screen
+the half-blocks are used even in Ghostty or kitty, because a multiplexer needs
+passthrough turned on to carry the protocol. Set `OBEY_VOICE_TUI_IMAGES=blocks` to
+always use half-blocks, or `OBEY_VOICE_TUI_IMAGES=kitty` to use the protocol in a
+terminal or multiplexer setup that supports Kitty Unicode placeholders but is not
+recognized.
+
 Area averaging preserves thin detail when shrinking screenshots, and thread previews
 use more rows in taller windows. Draft thumbnails scale with the available terminal
 space. Use F3 to read screenshot text at full resolution. If the selected model cannot accept
@@ -145,7 +159,8 @@ session files let reviewers verify input bytes and durable reply references.
 
 The recordings above were refreshed for PR #368 using the real Bubble Tea UI and
 isolated, generated geometric fixtures. They show the current colored-character
-thumbnail renderer, not full-resolution terminal graphics.
+thumbnail renderer, not full-resolution terminal graphics: the recording terminal
+has no Kitty graphics protocol, so it shows the fallback.
 
 | Behavior | Evidence |
 | --- | --- |

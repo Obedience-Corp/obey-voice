@@ -58,6 +58,7 @@ func (a App) onMenuReady(msg menuReadyMsg) (tea.Model, tea.Cmd) {
 		next.launcher = next.launcher.withBanner(msg.captureErr.Error(), true)
 	}
 	next.builder, next.meetingBuilder = a.builder, a.meetingBuilder
+	next.conversation.adoptGraphics(a.conversation.graphics)
 	next.runCtx, next.runCancel = context.WithCancel(context.Background())
 	next.wg = &sync.WaitGroup{}
 	next.progress = newEventBridge(16)

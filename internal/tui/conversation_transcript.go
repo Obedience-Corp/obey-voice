@@ -30,6 +30,7 @@ func (m *conversationModel) clearTranscript() {
 	m.providerResponseID = ""
 	m.pendingInputRetry = false
 	m.media = mediaState{}
+	m.adoptGraphics(m.graphics)
 	m.transcript = nil
 	m.items = nil
 	m.jobItems = nil
@@ -181,8 +182,7 @@ func (m *conversationModel) refreshContent() {
 	for _, it := range m.items {
 		if s := it.render(m.showThink, m.viewport.Width); s != "" {
 			if len(it.attachments) > 0 {
-				previewRows := max(10, min(24, m.viewport.Height/(2*len(it.attachments))))
-				s += "\n" + m.renderMedia(it.attachments, max(1, m.viewport.Width-4), previewRows)
+				s += "\n" + m.renderMedia(it.attachments, max(1, m.viewport.Width-4), m.threadPreviewRows(len(it.attachments)))
 			}
 			parts = append(parts, s)
 		}
