@@ -77,7 +77,13 @@ type OllamaBrain struct {
 	skillRouter       *semanticSkillRouter
 	skillRouterWarned bool
 	// skillCallSeq numbers synthesized activate_skill call ids for this brain.
-	skillCallSeq     int
+	skillCallSeq int
+	// modelLookup lets request options ask Ollama what kind of model this is.
+	modelLookup bool
+	// recentSkills are the skills the last few turns activated, handed to a
+	// worker spawned from this conversation. Guarded by stateMu.
+	recentSkills     []string
+	recentSkillsAge  int
 	budgetWarned     bool
 	archive          continuity.Store
 	contextHighWater int
@@ -202,6 +208,7 @@ func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probe
 
 	return &OllamaBrain{
 		client:           client,
+		modelLookup:      true,
 		model:            cfg.OllamaModel,
 		workDir:          workDir,
 		cfg:              cfg,
