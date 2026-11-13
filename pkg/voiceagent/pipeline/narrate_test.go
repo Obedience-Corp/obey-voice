@@ -256,8 +256,64 @@ func TestUnreadableNarrateSourceReportsErrorWithoutSpeech(t *testing.T) {
 	if agency.narrator.IsActive() {
 		t.Fatal("unreadable source left narration mode active")
 	}
-	if len(provider.Calls()) != 0 || !strings.Contains(report.Message, "No narration source") {
-		t.Fatalf("speech=%v report=%+v", provider.Calls(), report)
+	if calls := provider.Calls(); len(calls) != 1 || calls[0] != narrateSourceQuestion || report.Message != "" {
+		t.Fatalf("a reading request with nothing to read must ask, not fail: speech=%v report=%+v", calls, report)
+	}
+}
+
+func TestStoryRequestsWithNothingToReadAreWritten(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "story.txt"), []byte("Once."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for transcript, want := range map[string]bool{
+		"tell me a long story":                           true,
+		"Can you tell me a longer story?":                true,
+		"Tell me a bedtime story about a dragon.":        true,
+		"read me a tale":                                 true,
+		"Tell me a short story.":                         false,
+		"a quick little tale please":                     false,
+		"read this":                                      false,
+		"read the history notes":                         false,
+		"read me the story at https://example.com/a.txt": false,
+		"read story.txt":                                 false,
+	} {
+		if got := wantsWrittenStory(transcript, dir); got != want {
+			t.Errorf("wantsWrittenStory(%q) = %v, want %v", transcript, got, want)
+		}
+	}
+}
+
+func TestSecondStoryRequestWaitsForTheFirst(t *testing.T) {
+	worker := &storyFileWorker{started: make(chan struct{}), done: make(chan struct{}), body: "Chapter One. A story."}
+	provider := &progressiveFakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	jobs := job.NewTable(context.Background())
+	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
+	agency := NewAgency(p, jobs, worker, &config.Config{WorkDir: t.TempDir()}, nil)
+	agency.Wire()
+	ask := func() {
+		metrics := newTurnMetrics()
+		agency.HandleRoute(context.Background(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "Can you tell me a longer story?", Source: "test"})
+	}
+	ask()
+	<-worker.started
+	ask()
+	if got := len(jobs.Status()); got != 1 {
+		t.Fatalf("story jobs = %d, want the one already writing", got)
+	}
+	if calls := provider.Calls(); len(calls) == 0 || calls[len(calls)-1] != storyInProgressLine {
+		t.Fatalf("the second request was not told the story is on its way: %v", calls)
+	}
+	// Let the job write its story before the temp dir is removed.
+	close(worker.done)
+	deadline := time.Now().Add(5 * time.Second)
+	for jobs.Status()[0].State != job.StateDone {
+		if time.Now().After(deadline) {
+			t.Fatalf("story job did not finish: %+v", jobs.Status()[0])
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

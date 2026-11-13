@@ -119,7 +119,7 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 	case RouteSpawn:
 		a.handleSpawn(ctx, turn, metrics, d)
 	case RouteNarrate, RouteNarratePause, RouteNarrateResume, RouteNarrateSkip, RouteNarrateStop:
-		if a.workEnabled() && d.Kind == RouteNarrate && isLongStoryPhrase(d.Transcript) {
+		if a.workEnabled() && d.Kind == RouteNarrate && wantsWrittenStory(d.Transcript, config.WorkDirFrom(a.currentConfig())) {
 			a.pipeline.emit(events.Error{Stage: "job", Message: "Story-writing narration is unavailable with the experimental work inbox. Existing files can still be read aloud."})
 			return
 		}
