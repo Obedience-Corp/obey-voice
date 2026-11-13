@@ -137,9 +137,39 @@ func (m *conversationModel) setShowThink(on bool) {
 	m.applyFollow()
 	if on {
 		m.appendActivity("view", "thinking on", 0)
+		if reason := m.noThinkingReason(); reason != "" {
+			m.commandNotice(reason)
+		}
 		return
 	}
 	m.appendActivity("view", "thinking off", 0)
+}
+
+// noThinkingReason explains a thinking toggle that reveals nothing, so the key
+// does not look dead. Empty when the thread already holds thinking to show.
+func (m *conversationModel) noThinkingReason() string {
+	if strings.TrimSpace(m.streamingThink) != "" {
+		return ""
+	}
+	for _, item := range m.items {
+		if item.kind == chatItemAgent && (item.think != "" || item.thinkLabel) {
+			return ""
+		}
+	}
+	provider := strings.TrimSpace(m.selection.BrainProvider)
+	if provider == "" && m.cfg != nil {
+		provider = strings.TrimSpace(m.cfg.BrainProvider)
+	}
+	if m.cfg != nil && (provider == "ollama" || provider == "") {
+		switch level := strings.ToLower(strings.TrimSpace(m.cfg.OllamaThink)); level {
+		case "", "auto", "false", "off", "0", "no":
+			if level == "" {
+				level = "auto"
+			}
+			return "No thinking to show: the model is not asked to think (Thinking is " + level + " in Settings → Brain)."
+		}
+	}
+	return "No thinking to show: no reply in this chat has included any yet."
 }
 
 func (m *conversationModel) toggleShowThink() {

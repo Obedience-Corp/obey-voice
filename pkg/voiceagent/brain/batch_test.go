@@ -656,13 +656,14 @@ func TestNewOllamaBatchWiresRequestPolicy(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	o, err := newOllamaBatch(&config.Config{
-		OllamaModel:     "test-model",
-		OllamaHost:      srv.URL,
-		OllamaNumCtx:    8192,
-		OllamaNumBatch:  128,
-		OllamaKeepAlive: "10m",
-		OllamaThink:     "false",
-		WorkDir:         t.TempDir(),
+		OllamaModel:            "test-model",
+		OllamaHost:             srv.URL,
+		OllamaNumCtx:           8192,
+		OllamaNumBatch:         128,
+		OllamaNumBatchExplicit: true,
+		OllamaKeepAlive:        "10m",
+		OllamaThink:            "false",
+		WorkDir:                t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("newOllamaBatch: %v", err)

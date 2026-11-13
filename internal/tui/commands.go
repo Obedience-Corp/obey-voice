@@ -75,7 +75,7 @@ var slashCommands = []slashCommand{
 	{id: commandWorkers, name: "/workers", usage: "/workers", description: "View background tasks, stop work, or turn workers on/off"},
 	{id: commandVoice, name: "/voice", usage: "/voice", description: "Return to voice mode after fallback", aliases: []string{"/v"}},
 	{id: commandSpeakers, name: "/speakers", usage: "/speakers [on|off|status|name|names]", description: "Live speaker labels, renames, and status"},
-	{id: commandCopy, name: "/copy", usage: "/copy [all]", description: "Copy last reply (or full chat) to the clipboard", aliases: []string{"/yank"}},
+	{id: commandCopy, name: "/copy", usage: "/copy [all|activity]", description: "Copy the last reply, the full chat or the activity log to the clipboard", aliases: []string{"/yank"}},
 	{id: commandVim, name: "/vim", usage: "/vim [on|off|insert]", description: "Toggle modal Vim editing"},
 	{id: commandMenu, name: "/menu", usage: "/menu", description: "Save this chat and return to the main menu", aliases: []string{"/back"}},
 	{id: commandQuit, name: "/quit", usage: "/quit", description: "Exit Obey Voice", aliases: []string{"/q", "/exit"}},
@@ -274,14 +274,14 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 	}
 }
 
-// runCopyCommand handles /copy [all|last]. Default is last assistant reply.
+// runCopyCommand handles /copy [all|last|activity]. Default is last assistant reply.
 func (m *conversationModel) runCopyCommand(args []string) {
 	if len(args) == 0 {
 		m.copyLastAssistant()
 		return
 	}
 	if len(args) > 1 {
-		m.commandError("usage: /copy [all]")
+		m.commandError("usage: /copy [all|activity]")
 		return
 	}
 	switch strings.ToLower(args[0]) {
@@ -289,8 +289,10 @@ func (m *conversationModel) runCopyCommand(args []string) {
 		m.copyPlainChat()
 	case "last", "reply":
 		m.copyLastAssistant()
+	case "activity", "log":
+		m.copyActivity()
 	default:
-		m.commandError("usage: /copy [all]")
+		m.commandError("usage: /copy [all|activity]")
 	}
 }
 
