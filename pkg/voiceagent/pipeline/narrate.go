@@ -224,14 +224,21 @@ func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics, tier
 			n.agency.mu.Unlock()
 		}
 	}
-	id, err := n.agency.jobs.Start(ctx, spec)
-	if err != nil {
+	// Record the id before the job can run. A job that fails at once used to
+	// finish first, and its result was then ignored as some other job's.
+	accepted := spec.OnAccepted
+	spec.OnAccepted = func(id string) {
+		n.mu.Lock()
+		n.storyJobID = id
+		n.mu.Unlock()
+		if accepted != nil {
+			accepted(id)
+		}
+	}
+	if _, err := n.agency.jobs.Start(ctx, spec); err != nil {
 		n.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 		return
 	}
-	n.mu.Lock()
-	n.storyJobID = id
-	n.mu.Unlock()
 	n.agency.noteOwnWorkDefault(work)
 }
 
