@@ -39,20 +39,43 @@ func TestOllamaGroupProjectionUsesCompactWireLabels(t *testing.T) {
 		!strings.Contains(messages[0].Content, "Alex") {
 		t.Fatalf("group system guidance = %q", messages[0].Content)
 	}
-	if got := messages[1].Content; got != "Lance user:\nhello" {
-		t.Fatalf("user wire label = %q", got)
+	if len(messages) != 5 {
+		t.Fatalf("messages = %d, want system, context block, own reply, tool note and the current message", len(messages))
 	}
-	if messages[2].Role != "user" || messages[2].Content != "Alex agent:\nchecking" {
-		t.Fatalf("shared assistant wire message = %+v", messages[2])
+	if got := messages[1]; got.Role != "user" || got.Content != sharedContextHeader+"Lance user:\nhello\n\nAlex agent:\nchecking" {
+		t.Fatalf("earlier turns were not one labelled block = %+v", got)
 	}
-	if messages[3].Role != "assistant" || messages[3].Content != "I can help" {
-		t.Fatalf("own assistant was not native = %+v", messages[3])
+	if messages[2].Role != "assistant" || messages[2].Content != "I can help" {
+		t.Fatalf("own assistant was not native = %+v", messages[2])
 	}
-	if messages[4].Role != "user" || messages[4].Content != "Alex tool (lookup):\ncobalt" {
-		t.Fatalf("shared tool wire message = %+v", messages[4])
+	if messages[3].Role != "user" || messages[3].Content != "Alex tool (lookup):\ncobalt" {
+		t.Fatalf("shared tool wire message = %+v", messages[3])
 	}
-	if messages[5].Content != "Unknown user:\nanyone there?"+groupReplyInstruction(nil, "Samantha") {
-		t.Fatalf("unknown user wire label = %q", messages[5].Content)
+	if messages[4].Content != "Unknown user:\nanyone there?"+groupReplyInstruction(nil, "Samantha") {
+		t.Fatalf("the current message must stay on its own = %q", messages[4].Content)
+	}
+}
+
+func TestBlockSharedContextLeavesAOneToOneChatAlone(t *testing.T) {
+	msgs := []api.Message{{Role: "system", Content: "s"}, {Role: "user", Content: "one"}, {Role: "user", Content: "two"}, {Role: "assistant", Content: "reply"}, {Role: "user", Content: "three"}}
+	got := blockSharedContext(msgs, map[int]bool{}, map[int]bool{4: true})
+	if len(got) != len(msgs) {
+		t.Fatalf("a chat with no other speaker was rewritten: %+v", got)
+	}
+}
+
+func TestBlockSharedContextGrowsOnlyAtItsEnd(t *testing.T) {
+	sys := api.Message{Role: "system", Content: "s"}
+	a, b, c := api.Message{Role: "user", Content: "Lance user:\nhi"}, api.Message{Role: "user", Content: "Alex agent:\nhello"}, api.Message{Role: "user", Content: "Mira agent:\nhey"}
+	ask := api.Message{Role: "user", Content: "Lance user:\nSam?"}
+	earlier := blockSharedContext([]api.Message{sys, a, b, ask}, map[int]bool{2: true}, map[int]bool{3: true})
+	later := blockSharedContext([]api.Message{sys, a, b, c, ask}, map[int]bool{2: true, 3: true}, map[int]bool{4: true})
+	if len(earlier) != 3 || len(later) != 3 || !strings.HasPrefix(later[1].Content, earlier[1].Content) {
+		t.Fatalf("the later block does not extend the earlier one:\n%q\n%q", earlier[1].Content, later[1].Content)
+	}
+	withImage := blockSharedContext([]api.Message{sys, a, {Role: "user", Content: "Alex agent:\nlook", Images: []api.ImageData{{1}}}, ask}, map[int]bool{2: true}, map[int]bool{3: true})
+	if len(withImage) != 4 {
+		t.Fatalf("a message carrying an image was folded into text: %+v", withImage)
 	}
 }
 

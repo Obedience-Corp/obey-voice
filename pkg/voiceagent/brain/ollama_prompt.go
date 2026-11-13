@@ -112,10 +112,19 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 		system += "\n" + systemPrompt(o.cfg, "peer-reply", nil)
 	}
 	msgs = append(msgs, api.Message{Role: "system", Content: system})
+	// shared marks the other speakers' turns and current the message being
+	// answered, both by position in msgs.
+	shared, current := map[int]bool{}, map[int]bool{}
 	recall := o.recallNotes()
 	for i, m := range o.history {
 		if i == lastUser && recall != "" {
 			msgs = append(msgs, recallMessages(recall)...)
+		}
+		if m.Role == ollamaSharedRole || m.Role == ollamaSharedToolRole {
+			shared[len(msgs)] = true
+		}
+		if i == lastUser || (agentContinuation && i == len(o.history)-1) {
+			current[len(msgs)] = true
 		}
 		if m.Role == "user" {
 			m.Content = o.formatStoredUser(m.Content)
@@ -140,7 +149,51 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 		}
 		msgs = append(msgs, m)
 	}
-	return msgs
+	return blockSharedContext(msgs, shared, current)
+}
+
+// sharedContextHeader opens a block of other speakers' turns.
+const sharedContextHeader = "Earlier in this conversation (context, not requests for you):\n\n"
+
+// blockSharedContext joins each run of consecutive user-role messages that
+// holds another speaker's turn into one message, leaving the message being
+// answered on its own.
+//
+// Other personas' replies reach a model as user-role text, so a persona that
+// joins a long group chat would otherwise be sent dozens of user messages in a
+// row with no reply of its own between them. A small model continues that
+// pattern instead of answering: replayed against lfm3 on a 76-turn chat, the
+// one-message-per-turn form ran to the output limit six times in six, copying
+// the other speakers, and the same turns as one block followed by the current
+// message drew a short in-character reply twelve times in twelve.
+//
+// A block only grows at its end, so earlier requests stay a prefix of later
+// ones. A conversation with no other speaker is left exactly as it was.
+func blockSharedContext(msgs []api.Message, shared, current map[int]bool) []api.Message {
+	if len(shared) == 0 {
+		return msgs
+	}
+	out := make([]api.Message, 0, len(msgs))
+	for i := 0; i < len(msgs); {
+		j, hasShared := i, false
+		for j < len(msgs) && msgs[j].Role == "user" && len(msgs[j].Images) == 0 && !current[j] {
+			hasShared = hasShared || shared[j]
+			j++
+		}
+		if j-i < 2 || !hasShared {
+			j = max(j, i+1)
+			out = append(out, msgs[i:j]...)
+			i = j
+			continue
+		}
+		parts := make([]string, 0, j-i)
+		for _, m := range msgs[i:j] {
+			parts = append(parts, m.Content)
+		}
+		out = append(out, api.Message{Role: "user", Content: sharedContextHeader + strings.Join(parts, "\n\n")})
+		i = j
+	}
+	return out
 }
 
 // Warmup and live requests must share the same stable identity prefix.
