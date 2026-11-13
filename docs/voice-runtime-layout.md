@@ -1,6 +1,6 @@
 # Voice runtime code layout
 
-The voice pipeline, Ollama provider, config package, audio player, meeting log,
+The voice pipeline, its job agency, Ollama provider, config package, audio player, meeting log,
 benchmark command, settings rows, the TUI's App update loop and the conversation
 screen use files grouped by responsibility within their existing Go packages;
 the Qwen TTS provider went further and became its own package. This guide
@@ -28,7 +28,7 @@ All paths below are in [`pkg/voiceagent/pipeline`](../pkg/voiceagent/pipeline).
 | `compaction.go` | Turn preparation and conversation compaction |
 
 Existing collaborators remain in their established files: routing in `route.go`,
-delegation in `agency.go`, narration in `narrate.go`, background turns in
+delegation in the `agency*.go` files below, narration in `narrate.go`, background turns in
 `background.go`, retained capture in `transcription.go`, and interruption control
 in `interrupt.go`. Consult those files before adding another implementation of
 the same responsibility.
@@ -37,6 +37,34 @@ the same responsibility.
 still publishes terminal metrics; the stream loop still coordinates synthesis,
 playback and interruption. Moving a method into a focused file does not make it
 safe to invoke from a different goroutine. Preserve its caller/lock contract.
+
+## Agency
+
+`Agency` runs the spawn, abort and status routes against the job table and the
+worker brain. All paths below are in
+[`pkg/voiceagent/pipeline`](../pkg/voiceagent/pipeline).
+
+| File | Responsibility |
+| --- | --- |
+| `agency.go` | `Agency` state, construction, wiring, route dispatch, the after-turn flush and the worker/config accessors |
+| `agency_spawn.go` | Spawn admission: the no-task clarifier, own-work versus worker choice, work registration, the brief, the job start and its acknowledgement |
+| `agency_worker_run.go` | The worker run function, a fresh conversation per job, tool-event folding and milestone narration |
+| `agency_job_events.go` | Job queued/started/done callbacks, outcome publication and terminal job events |
+| `agency_delivery.go` | Pending result speech: queueing, held replies, the idle flush and its gate, the active-turn counter |
+| `agency_status.go` | The abort and status routes and how their lines are phrased |
+| `agency_tiers.go` | Tiered worker settings, tier admission and the planned worker run |
+| `agency_work.go` | The work coordinator, conversation work scope and managed delegation runtimes |
+
+A persona's own work is in `own_work.go`, worker replies and threads in
+`worker_replies.go`, and who may hear about a job in `job_audience.go`.
+
+`Agency` remains the state owner, with two locks: `mu` guards deliveries,
+worker origins, replies and config; `workMu` guards the coordinator, work
+scope and job scopes. `canSpeakIdleSummary` is called with `mu` held, and
+`tryFlushPending` releases `mu` before it speaks. The spawn, job-event and
+delivery code takes one lock at a time; keep it that way when adding to them.
+`onJobDone` queues everything it will speak before it emits the terminal event
+and flushes last, so an observer of that event sees the delivery it announces.
 
 ## Ollama provider
 
