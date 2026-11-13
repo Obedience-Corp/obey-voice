@@ -2,6 +2,8 @@ package brain
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -59,7 +61,10 @@ func modelHasSlidingWindow(client *api.Client, host, model string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), slidingWindowProbeTimeout)
 	defer cancel()
 	sliding := false
-	if shown, err := client.Show(ctx, &api.ShowRequest{Model: model}); err == nil {
+	shown, err := client.Show(ctx, &api.ShowRequest{Model: model})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "obey-voice: could not read %q from Ollama to choose its prompt batch (%v); keeping ollama_num_batch as configured\n", model, err)
+	} else {
 		sliding = modelInfoHasSlidingWindow(shown.ModelInfo)
 	}
 	known, _ := slidingWindowModels.LoadOrStore(key, sliding)

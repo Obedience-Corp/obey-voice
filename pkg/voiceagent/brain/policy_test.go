@@ -207,6 +207,11 @@ func TestToolSurfaceContextMatchesRouterPolicy(t *testing.T) {
 		t.Fatalf("legacy surface missing web_search:\n%s", legacy)
 	}
 
+	worker := ToolSurfaceContext(config.WorkerBrainConfig(&config.Config{VoiceToolsEnabled: true, VoiceRouterTools: string(RouterToolsRouteOnly)}))
+	if strings.Contains(worker, "Live tool: route") || !strings.Contains(worker, "run_command") {
+		t.Fatalf("worker surface must list the worker's own tools, not route:\n%s", worker)
+	}
+
 	if got := ToolSurfaceContext(&config.Config{VoiceToolsEnabled: false}); got != "" {
 		t.Fatalf("tools-disabled surface = %q, want empty", got)
 	}
