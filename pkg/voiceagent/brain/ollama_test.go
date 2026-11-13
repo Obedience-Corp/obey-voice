@@ -830,7 +830,7 @@ func TestWarmupFiresMinimalRequest(t *testing.T) {
 func TestWarmupPrimesTheFirstTurnPrefix(t *testing.T) {
 	var count int
 	var bodies [][]byte
-	cfg := &config.Config{OllamaNumCtx: 8192, OllamaNumBatch: 128, VoiceToolsEnabled: true, VoiceRouterTools: "route_only", AgentName: "Samantha", MaxHistory: 10}
+	cfg := &config.Config{OllamaNumCtx: 8192, OllamaNumBatch: 128, OllamaNumBatchExplicit: true, VoiceToolsEnabled: true, VoiceRouterTools: "route_only", AgentName: "Samantha", MaxHistory: 10}
 	o := &OllamaBrain{
 		client:           recordingStub(t, &count, &bodies),
 		model:            "m",

@@ -144,7 +144,7 @@ func newPromptedOllama(t *testing.T, srv *httptest.Server, think, activePersona 
 	t.Helper()
 	home := t.TempDir()
 	t.Cleanup(skills.SetUserHomeDirForTest(func() (string, error) { return home, nil }))
-	o, err := NewOllama(&config.Config{OllamaHost: srv.URL, OllamaModel: "chat-model", OllamaNumCtx: 8192, OllamaNumBatch: 128,
+	o, err := NewOllama(&config.Config{OllamaHost: srv.URL, OllamaModel: "chat-model", OllamaNumCtx: 8192, OllamaNumBatch: 128, OllamaNumBatchExplicit: true,
 		OllamaThink: think, Persona: "samantha", ActivePersona: activePersona, AgentName: "Samantha", UserDisplayName: "Lance",
 		WorkDir: t.TempDir(), PromptsDir: t.TempDir(), MaxHistory: 20, VoiceToolsEnabled: true, VoiceRouterTools: JSONRouteSetting})
 	if err != nil {

@@ -110,6 +110,16 @@ demo-think-blocks: build
     just _optimize-demo-gif demos/think-blocks.gif
     ls -lh demos/think-blocks.gif
 
+demo-think-empty: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/think-empty.tape
+    just _optimize-demo-gif demos/think-empty.gif
+    ls -lh demos/think-empty.gif
+
 demo-launcher-notice: build
     #!/usr/bin/env bash
     set -euo pipefail

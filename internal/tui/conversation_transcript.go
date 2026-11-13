@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
@@ -239,6 +240,11 @@ func (m *conversationModel) refreshActivity() {
 		m.activityViewport.SetContent(lipgloss.NewStyle().Width(max(m.activityViewport.Width, 1)).Render(m.renderWorkActivity()))
 		return
 	}
+	m.activityViewport.SetContent(lipgloss.NewStyle().Width(max(m.activityViewport.Width, 1)).Render(m.activityText()))
+}
+
+// activityText is the activity log as plain lines, one per entry.
+func (m *conversationModel) activityText() string {
 	var lines []string
 	for _, entry := range m.activity {
 		// Session offset as a clock (20:50.5), not raw seconds (1250.5s) —
@@ -253,8 +259,28 @@ func (m *conversationModel) refreshActivity() {
 		}
 		lines = append(lines, line)
 	}
-	content := strings.Join(lines, "\n")
-	m.activityViewport.SetContent(lipgloss.NewStyle().Width(max(m.activityViewport.Width, 1)).Render(content))
+	return strings.Join(lines, "\n")
+}
+
+// selectHint answers a mouse drag the terminal routed to the app.
+const selectHint = "To select text, hold Option (iTerm2), Fn (Terminal) or Shift while dragging. Or use /copy, /copy all, /copy activity."
+
+// copyActivity writes the activity pane to the clipboard: the worker steps
+// when those are showing, otherwise the session log.
+func (m *conversationModel) copyActivity() {
+	text := m.activityText()
+	if m.workActivity {
+		text = strings.TrimSpace(ansi.Strip(m.renderWorkActivity()))
+	}
+	if text == "" {
+		m.commandError("nothing to copy yet")
+		return
+	}
+	if err := m.clipboard().WriteAll(text); err != nil {
+		m.commandError("copy failed: " + err.Error())
+		return
+	}
+	m.commandNotice(fmt.Sprintf("Copied activity (%d characters)", runeLen(text)))
 }
 
 // seedTranscript pre-populates the viewport from persisted session turns.

@@ -47,11 +47,12 @@ func NewOllamaBatchLight(cfg *config.Config) (BatchProvider, error) {
 	if cfg.OllamaNumCtx > 0 {
 		options["num_ctx"] = cfg.OllamaNumCtx
 	}
-	if cfg.OllamaNumBatch > 0 {
-		options["num_batch"] = cfg.OllamaNumBatch
+	client := api.NewClient(base, http.DefaultClient)
+	if batch := promptBatch(client, model, cfg); batch > 0 {
+		options["num_batch"] = batch
 	}
 	return &ollamaBatch{
-		client:    api.NewClient(base, http.DefaultClient),
+		client:    client,
 		model:     model,
 		options:   options,
 		keepAlive: keepAlive,

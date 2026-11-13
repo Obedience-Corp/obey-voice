@@ -184,6 +184,12 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			msg.Shift = false
 			return m.updateScroll(msg)
 		}
+		// A drag that reaches here selected nothing: the terminal handed the
+		// mouse to the app. Say once how to select and copy.
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionMotion && !m.selectHintShown {
+			m.selectHintShown = true
+			m.commandNotice(selectHint)
+		}
 		return m, nil
 
 	case tea.KeyMsg:

@@ -95,6 +95,9 @@ type conversationModel struct {
 	// startup is the waiting state while the runtime is built; see
 	// conversation_startup.go.
 	startup startupState
+	// selectHintShown records that a mouse drag already got the select-and-copy
+	// notice this session.
+	selectHintShown bool
 	// streamingThink accumulates ThinkingDelta text for the in-progress turn,
 	// painted dim and labeled "thinking". Copied into the matching chatItem
 	// on ResponseReady; hidden in the thread until showThink is on. Never

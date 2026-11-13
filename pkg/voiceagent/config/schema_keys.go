@@ -367,7 +367,7 @@ func brainKeys() []KeySpec {
 		{
 			Key: "ollama_num_batch", Type: TypeInt, Default: 128, Unit: "tokens", Min: num(0), Max: num(4096),
 			Group: GroupBrain, Title: "Prompt batch size",
-			Help: "How much of the prompt is re-read each turn. Smaller lets Ollama reuse more of an unchanged conversation, which is a large win to the first word on qwen3.8-class models, and costs a little on brand-new prompts. 0 lets Ollama choose.",
+			Help: "How much of the prompt is re-read each turn. Smaller lets Ollama reuse more of an unchanged conversation, which is a large win to the first word on qwen3.8-class models, and costs a little on brand-new prompts. Left at the default, models with sliding-window attention (Gemma, LFM) are sent 512, because they re-read the whole prompt at 128. 0 lets Ollama choose.",
 		},
 		{
 			Key: "ollama_keep_alive", Type: TypeString, Default: "10m",

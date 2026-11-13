@@ -287,6 +287,10 @@ type Config struct {
 	// moves the other way (239 to 182 tok/s), so genuinely new prompts cost
 	// slightly more. 0 restores Ollama's own choice.
 	OllamaNumBatch int `mapstructure:"ollama_num_batch"`
+	// OllamaNumBatchExplicit is set at load when ollama_num_batch came from the
+	// config file or the environment. A defaulted batch is raised for models
+	// with sliding-window attention; a chosen one is sent as written.
+	OllamaNumBatchExplicit bool `mapstructure:"-"`
 	// OllamaKeepAlive keeps the model resident between voice turns
 	// (Go duration string; empty = server default).
 	OllamaKeepAlive string `mapstructure:"ollama_keep_alive"`

@@ -103,6 +103,8 @@ func loadLocked() (*Config, error) {
 	cfg.OpenAISpeechExternal = v.InConfig("openai_speech_url") || v.InConfig("openai_speech_model") || speechURLEnv || speechModelEnv
 	cfg.ToolCommandTimeout = ClampToolCommandTimeout(cfg.ToolCommandTimeout)
 	cfg.OllamaNumBatch = ClampOllamaNumBatch(cfg.OllamaNumBatch, cfg.OllamaNumCtx)
+	_, _, numBatchEnv := envValueFor("ollama_num_batch")
+	cfg.OllamaNumBatchExplicit = v.InConfig("ollama_num_batch") || numBatchEnv
 	resolveVoiceFrontendMigration(v, &cfg)
 	resolveBargeInVADThresholdMigration(v, &cfg)
 	return &cfg, nil

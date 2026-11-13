@@ -151,7 +151,9 @@ func ToolSurfaceContext(cfg *config.Config) string {
 	if cfg != nil {
 		policy = NormalizeRouterToolsPolicy(cfg.VoiceRouterTools)
 	}
-	if policy == RouterToolsLegacy {
+	// A worker is given the full tool list whatever the live policy says, so
+	// its prompt must not tell it that route is its only tool.
+	if policy == RouterToolsLegacy || (cfg != nil && cfg.IsWorker) {
 		return "\n" + systemPrompt(cfg, "tool-surface-legacy", nil)
 	}
 	return "\n" + systemPrompt(cfg, "tool-surface-live", nil)

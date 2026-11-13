@@ -66,6 +66,9 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 // Sending num_batch explicitly also turns off Ollama's automatic choice, which
 // is the point: the useful batch depends on the model and on how much of the
 // prompt repeats, and the context window knows neither.
+//
+// The batch is raised for models with sliding-window attention, which reuse a
+// prefix by a different rule; see slidingWindowBatch.
 // See docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.md.
 func (o *OllamaBrain) requestOptions() map[string]any {
 	return o.requestOptionsFor(o.contextHighWater)
@@ -78,8 +81,8 @@ func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 	if o.audioResolver != nil || (o.cfg != nil && o.cfg.OllamaNumCtx > 0) {
 		opts["num_ctx"] = o.numCtxFor(highWater)
 	}
-	if o.cfg != nil && o.cfg.OllamaNumBatch > 0 {
-		opts["num_batch"] = o.cfg.OllamaNumBatch
+	if batch := promptBatch(o.client, o.model, o.cfg); batch > 0 {
+		opts["num_batch"] = batch
 	}
 	if len(opts) == 0 {
 		return nil
