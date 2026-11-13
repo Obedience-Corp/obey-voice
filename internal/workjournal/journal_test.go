@@ -200,10 +200,19 @@ func TestJournalRecoveryPreservesRevisionAndFailureGap(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("recovery flush did not start")
 	}
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if len(st.captures) < 3 || st.captures[len(st.captures)-1].Snapshot.Revision != 2 {
-		t.Fatalf("captures=%+v", st.captures)
+	// The failed write is retried on the sync ticker, so the third write can
+	// be that retry, taken before the new revision was observed.
+	recovered := func() bool {
+		st.mu.Lock()
+		defer st.mu.Unlock()
+		return len(st.captures) >= 3 && st.captures[len(st.captures)-1].Snapshot.Revision == 2
+	}
+	for deadline := time.Now().Add(time.Second); !recovered(); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			st.mu.Lock()
+			defer st.mu.Unlock()
+			t.Fatalf("captures=%+v", st.captures)
+		}
 	}
 	h := j.Health()
 	if len(h.Gaps) == 0 || !h.Incomplete {
