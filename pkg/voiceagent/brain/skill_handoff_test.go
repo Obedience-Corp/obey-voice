@@ -70,3 +70,37 @@ func TestWorkerWithoutHandedSkillsInjectsNothing(t *testing.T) {
 		t.Fatalf("context = %q, want empty", got)
 	}
 }
+
+// The route is chosen from the user's words. With a skill body beside them a
+// one-word remark was routed to a worker.
+func TestRouteIsChosenWithoutTheActivatedSkillText(t *testing.T) {
+	var chats []api.ChatRequest
+	embedder := &routingEmbedder{catalog: [][]float32{{1, 0}}, queries: map[string][]float32{"hello": {1, 0}}}
+	router, err := newSemanticSkillRouter(t.Context(), embedder, "embed", .55, []skills.Skill{{Name: "greeter", Description: "Greet people", Body: "SPECIALIZED_BODY"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := &OllamaBrain{client: recordingSelectionServerWith(t, &chats, `{"relevant":true,"names":["greeter"]}`), skillRouter: router, model: "m", workDir: t.TempDir(),
+		cfg: &config.Config{OllamaNumCtx: 8192, MaxHistory: 10, PromptsDir: t.TempDir()}}
+	runSelectionTurn(t, o)
+	if len(chats) != 3 {
+		t.Fatalf("chat requests = %d, want selection, route and answer", len(chats))
+	}
+	sent := func(req api.ChatRequest) string {
+		var b strings.Builder
+		for _, m := range req.Messages {
+			b.WriteString(m.Content)
+		}
+		return b.String()
+	}
+	route, answer := chats[1], chats[2]
+	if len(route.Tools) == 0 || strings.Contains(sent(route), "SPECIALIZED_BODY") {
+		t.Fatalf("the route request carried the skill text (tools=%d)", len(route.Tools))
+	}
+	if len(answer.Tools) != 0 || !strings.Contains(sent(answer), "SPECIALIZED_BODY") {
+		t.Fatalf("the reply request lost the skill text (tools=%d)", len(answer.Tools))
+	}
+	if got := o.RecentActivatedSkills(); !reflect.DeepEqual(got, []string{"greeter"}) {
+		t.Fatalf("activated skills for a worker = %v", got)
+	}
+}
