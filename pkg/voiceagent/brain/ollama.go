@@ -86,6 +86,8 @@ type OllamaBrain struct {
 	groupSpeakers     []string           // public names in imported shared history; guarded by stateMu
 	groupParticipants []GroupParticipant // guarded by stateMu
 	groupHistory      bool               // foreign canonical speakers; guarded by stateMu
+	// stopped is what the last streamed request left for RecordStoppedRequest.
+	stopped ollamaStopped
 }
 
 // NewOllama creates an Ollama brain provider.

@@ -206,8 +206,15 @@ func TestGrokAndCursorConversationsKeepAnAttributedTranscript(t *testing.T) {
 			if provider == "grok" {
 				events.Subscribe(c.p.Events, func(events.ResponseDelta) { once.Do(interrupt) })
 			} else {
+				// Cursor streams nothing before its result, so stop the request
+				// once the fixture has logged it and taken its reply number.
 				go func() {
-					time.Sleep(300 * time.Millisecond)
+					for turnCtx.Err() == nil {
+						if data, _ := os.ReadFile(c.log); bytes.Contains(data, []byte(claudeStall)) {
+							break
+						}
+						time.Sleep(5 * time.Millisecond)
+					}
 					interrupt()
 				}()
 			}

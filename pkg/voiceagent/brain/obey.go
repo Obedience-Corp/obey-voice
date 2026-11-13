@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Obedience-Corp/obey-go-sdk/pkg/obey"
@@ -59,9 +60,16 @@ type ObeyBrain struct {
 	cfg                                          *config.Config
 	personaPrompt, systemPrompt, turnInstruction string
 	personaReloader, turnReloader                *promptReloader
-	canonical, working                           []Turn
 	speakerNames                                 SpeakerNames
-	snapshot                                     ContinuitySnapshot
+
+	// mu guards the conversation state below, which a request's goroutine
+	// and the host both reach.
+	mu                 sync.Mutex
+	canonical, working []Turn
+	snapshot           ContinuitySnapshot
+	// request is the last streamed request, until it is recorded, abandoned
+	// or the conversation is replaced.
+	request *streamedRequest
 }
 
 func init() {
@@ -133,6 +141,10 @@ func (b *ObeyBrain) refreshPrompts(warn func(string)) {
 }
 func (b *ObeyBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	b.refreshPrompts(opts.OnPromptWarn)
+	b.mu.Lock()
+	req := newStreamedRequest(b.canonical, input, opts)
+	b.request = req
+	b.mu.Unlock()
 	if _, err := b.runOptions(liveCLITools(opts)); err != nil {
 		return nil, err
 	}
@@ -141,14 +153,14 @@ func (b *ObeyBrain) ThinkStream(ctx context.Context, input string, opts StreamOp
 	go func() {
 		defer close(out)
 		defer close(done)
-		_, err := b.think(ctx, input, opts, func(s string) error { return sendChunk(ctx, out, s) })
+		_, err := b.think(ctx, input, opts, req, func(s string) error { return sendChunk(ctx, out, s) })
 		done <- StreamResult{Err: err}
 	}()
 	return &Stream{Chunks: out, Done: done}, nil
 }
 func (b *ObeyBrain) ThinkFull(ctx context.Context, input string, opts StreamOptions) (string, error) {
 	b.refreshPrompts(opts.OnPromptWarn)
-	return b.think(ctx, input, opts, func(string) error { return nil })
+	return b.think(ctx, input, opts, nil, func(string) error { return nil })
 }
 
 func (b *ObeyBrain) runOptions(tools bool) (*obey.RunOptions, error) {
@@ -165,7 +177,9 @@ func (b *ObeyBrain) runOptions(tools bool) (*obey.RunOptions, error) {
 	}}, nil
 }
 
-func (b *ObeyBrain) think(ctx context.Context, input string, opts StreamOptions, emit func(string) error) (string, error) {
+// think runs one request. A streamed request req is recorded when it
+// completes only while it is still b.request.
+func (b *ObeyBrain) think(ctx context.Context, input string, opts StreamOptions, req *streamedRequest, emit func(string) error) (string, error) {
 	options, err := b.runOptions(liveCLITools(opts))
 	if err != nil {
 		return "", err
@@ -183,7 +197,10 @@ func (b *ObeyBrain) think(ctx context.Context, input string, opts StreamOptions,
 		return nil
 	}
 	calls := make(map[string]ToolCall)
-	result, err := b.client.run(ctx, b.buildPrompt(input, opts), options, func(ev obey.Event) error {
+	b.mu.Lock()
+	prompt := b.buildPrompt(input, opts)
+	b.mu.Unlock()
+	result, err := b.client.run(ctx, prompt, options, func(ev obey.Event) error {
 		// Never send reasoning, tool output, diagnostics or approval text to TTS.
 		if ev.Delta != nil && ev.Delta.ContentKind == "assistant" {
 			return feed(ev.Delta.Text)
@@ -256,7 +273,9 @@ func (b *ObeyBrain) think(ctx context.Context, input string, opts StreamOptions,
 	if strings.TrimSpace(response) == "" {
 		return "", fmt.Errorf("obey completed without assistant text")
 	}
-	if !opts.TransientHistory {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !opts.TransientHistory && (req == nil || b.request == req) {
 		if !opts.AgentContinuation {
 			t := Turn{Role: "user", Content: input, Speaker: opts.Speaker, At: time.Now().UTC()}
 			if opts.OriginalInput != "" {
@@ -295,6 +314,7 @@ func reportObeyUsage(usage obey.Usage, opts StreamOptions) {
 	}
 }
 
+// buildPrompt is called with b.mu held.
 func (b *ObeyBrain) buildPrompt(input string, opts StreamOptions) string {
 	parts := []string{b.systemPrompt}
 	if !opts.AgentContinuation {

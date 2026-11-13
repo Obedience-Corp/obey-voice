@@ -65,9 +65,24 @@ func TestMixedProviderFixtureProcess(t *testing.T) {
 		_ = f.Close()
 	}
 	out := json.NewEncoder(os.Stdout)
+	// A request asking to stall answers in part, or not at all, and waits to be
+	// stopped. Conversation records quoting an earlier request are JSON lines.
+	stalls := func(prompt string) bool {
+		for line := range strings.Lines(prompt) {
+			if !strings.HasPrefix(line, "{") && strings.Contains(line, claudeStall) {
+				return true
+			}
+		}
+		return false
+	}
 	switch kind {
 	case "muse":
 		record(args[len(args)-1])
+		if stalls(args[len(args)-1]) {
+			_ = out.Encode(map[string]any{"payload_type": "run.output.delta", "payload": map[string]string{"text": claudePartial}})
+			time.Sleep(time.Minute)
+			os.Exit(0)
+		}
 		_ = out.Encode(map[string]any{"payload_type": "run.output.delta", "payload": map[string]string{"text": scoutReply}})
 		_ = out.Encode(map[string]any{"payload_type": "run.terminal.completed", "payload": map[string]string{"terminal": "completed", "text": scoutReply}})
 	case "obey":
@@ -80,6 +95,10 @@ func TestMixedProviderFixtureProcess(t *testing.T) {
 		}
 		stdin, _ := io.ReadAll(bufio.NewReader(os.Stdin))
 		record(string(stdin))
+		if stalls(string(stdin)) {
+			time.Sleep(time.Minute)
+			os.Exit(0)
+		}
 		emit := func(kind string, fields map[string]any) {
 			fields["protocol"], fields["version"], fields["type"] = "obey.session.run", 1, kind
 			_ = out.Encode(fields)

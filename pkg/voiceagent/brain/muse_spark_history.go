@@ -8,34 +8,59 @@ import (
 
 // History is the transcript authority for persistence. ContextHistory is only
 // the bounded model view; trimming and compaction must never rewrite History.
-func (b *MuseSparkBrain) History() []Turn          { return deepCopyTurns(b.canonical) }
+func (b *MuseSparkBrain) History() []Turn {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return deepCopyTurns(b.canonical)
+}
 func (b *MuseSparkBrain) CanonicalHistory() []Turn { return b.History() }
-func (b *MuseSparkBrain) ContextHistory() []Turn   { return deepCopyTurns(b.working) }
+func (b *MuseSparkBrain) ContextHistory() []Turn {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return deepCopyTurns(b.working)
+}
 func (b *MuseSparkBrain) ClearHistory() {
-	b.canonical, b.working = nil, nil
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.canonical, b.working, b.request = nil, nil, nil
 	b.snapshot = ContinuitySnapshot{}
 }
 func (b *MuseSparkBrain) LoadHistory(turns []Turn) {
-	b.ClearHistory()
-	_ = b.ImportHistory(turns)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.snapshot = ContinuitySnapshot{}
+	b.importHistory(turns)
 }
 func (b *MuseSparkBrain) ImportHistory(turns []Turn) error {
-	b.canonical = deepCopyTurns(turns)
-	b.working = deepCopyTurns(turns)
-	b.trimWorking()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.importHistory(turns)
 	return nil
 }
-func (b *MuseSparkBrain) ReseedContinuity(turns []Turn) {
+func (b *MuseSparkBrain) importHistory(turns []Turn) {
+	b.canonical = deepCopyTurns(turns)
 	b.working = deepCopyTurns(turns)
+	b.request = nil
+	b.trimWorking()
+}
+func (b *MuseSparkBrain) ReseedContinuity(turns []Turn) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.working = deepCopyTurns(turns)
+	b.request = nil
 	b.trimWorking()
 }
 func (b *MuseSparkBrain) ContinuitySnapshot() ContinuitySnapshot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	s := b.snapshot
-	s.Canonical, s.Working = b.History(), b.ContextHistory()
+	s.Canonical, s.Working = deepCopyTurns(b.canonical), deepCopyTurns(b.working)
 	s.Archive = slices.Clone(s.Archive)
 	return s
 }
 func (b *MuseSparkBrain) ImportContinuity(s ContinuitySnapshot) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.canonical = deepCopyTurns(s.Canonical)
 	working := s.Working
 	// A non-nil empty view deliberately excludes the entire transcript.
@@ -43,10 +68,13 @@ func (b *MuseSparkBrain) ImportContinuity(s ContinuitySnapshot) error {
 		working = s.Canonical
 	}
 	b.working = deepCopyTurns(working)
+	b.request = nil
 	b.snapshot = ContinuitySnapshot{Archive: slices.Clone(s.Archive), ContextHighWater: s.ContextHighWater, Speakers: slices.Clone(s.Speakers)}
 	b.trimWorking()
 	return nil
 }
+
+// appendTurn and trimWorking are called with b.mu held.
 func (b *MuseSparkBrain) appendTurn(t Turn) {
 	b.canonical = append(b.canonical, t)
 	b.working = append(b.working, t)
@@ -89,10 +117,14 @@ func (b *MuseSparkBrain) AppendAssistantResponseWithIdentity(text string, identi
 	if text == "" {
 		return fmt.Errorf("brain: empty assistant response")
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.appendTurn(attributedHostTurn(text, identity))
 	return nil
 }
 func (b *MuseSparkBrain) SessionInfo() SessionState {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return SessionState{Kind: SessionKindChat, Turns: len(b.canonical)}
 }
 

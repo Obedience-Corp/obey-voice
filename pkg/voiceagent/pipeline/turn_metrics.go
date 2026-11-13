@@ -194,6 +194,7 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		PlaybackStartElapsed:    m.elapsed(m.playbackStart),
 		PlaybackCompleteElapsed: playbackComplete,
 		BargeInElapsed:          m.elapsed(m.bargeInAt()),
+		StopWaitElapsed:         m.recording.stopWaited(),
 		FirstTokenElapsed:       m.elapsedFromEOU(m.firstToken),
 		FirstThinkElapsed:       m.elapsedFromEOU(m.firstThink),
 		FirstSpeakableElapsed:   m.elapsedFromEOU(m.firstSpeakable),

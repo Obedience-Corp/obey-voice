@@ -19,8 +19,9 @@ import (
 // history changes with turns; Fresh creates independent worker state.
 type CodexBrain struct {
 	// mu guards the thread and the conversation: sessionID, sessionTools,
-	// unsent, canonical, working and snapshot. A request holds it only while
-	// it is built and recorded, so a line can be recorded while it runs.
+	// unsent, canonical, working, snapshot and request. A request holds it
+	// only while it is built and recorded, so a line can be recorded while
+	// it runs.
 	mu sync.Mutex
 	groupContext
 	client                                                  codexRunner
@@ -31,6 +32,9 @@ type CodexBrain struct {
 	speakerNames                                            SpeakerNames
 	snapshot                                                ContinuitySnapshot
 	sessionTools                                            bool
+	// request is the last streamed request, until it is recorded, abandoned
+	// or the conversation is replaced.
+	request *streamedRequest
 	// unsent counts the last turns of working that the live thread has not
 	// been sent: lines recorded by the host or by other personas since its
 	// last turn. Its next request carries them.
@@ -95,17 +99,21 @@ func (c *CodexBrain) refreshPrompts(warn func(string)) {
 }
 func (c *CodexBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	c.refreshPrompts(opts.OnPromptWarn)
+	c.mu.Lock()
+	req := newStreamedRequest(c.canonical, input, opts)
+	c.request = req
+	c.mu.Unlock()
 	out := make(chan string, 8)
 	done := make(chan StreamResult, 1)
 	target := c
 	if opts.TransientHistory {
-		target = c.Fresh().(*CodexBrain)
+		target, req = c.Fresh().(*CodexBrain), nil
 		target.LoadHistory(c.ContextHistory())
 	}
 	go func() {
 		defer close(out)
 		defer close(done)
-		_, err := target.think(ctx, input, opts, func(s string) error { return sendChunk(ctx, out, s) })
+		_, err := target.think(ctx, input, opts, req, func(s string) error { return sendChunk(ctx, out, s) })
 		done <- StreamResult{Err: err}
 	}()
 	return &Stream{Chunks: out, Done: done}, nil
@@ -117,9 +125,12 @@ func (c *CodexBrain) ThinkFull(ctx context.Context, input string, opts StreamOpt
 		target = c.Fresh().(*CodexBrain)
 		target.LoadHistory(c.ContextHistory())
 	}
-	return target.think(ctx, input, opts, func(string) error { return nil })
+	return target.think(ctx, input, opts, nil, func(string) error { return nil })
 }
-func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions, emit func(string) error) (string, error) {
+
+// think runs one request. A streamed request own changes the conversation
+// when it ends only while it is still c.request.
+func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions, own *streamedRequest, emit func(string) error) (string, error) {
 	tools := liveCLITools(opts)
 	c.mu.Lock()
 	if tools != c.sessionTools {
@@ -152,26 +163,31 @@ func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions
 		opts.OnUsage(*result.InputTokens, *result.OutputTokens)
 	}
 	if err != nil {
-		c.abandonThread()
+		c.dropOwnedThread(own)
 		return "", fmt.Errorf("codex: %w", err)
 	}
 	if err = ctx.Err(); err != nil {
-		c.abandonThread()
+		c.dropOwnedThread(own)
 		return "", err
 	}
 	if s := strip.Flush(); s != "" {
 		if err = emit(s); err != nil {
-			c.abandonThread()
+			c.dropOwnedThread(own)
 			return "", err
 		}
 	}
 	response := cleanForVoice(stripReplyConventions(c.cfg.AgentName, raw.String()))
 	if strings.TrimSpace(response) == "" {
-		c.abandonThread()
+		c.dropOwnedThread(own)
 		return "", fmt.Errorf("codex completed without assistant text")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// A request the host abandoned, or whose conversation was replaced while
+	// it ran, records nothing.
+	if !c.owns(own) {
+		return response, nil
+	}
 	// Lines recorded while the request ran come before its own, and the
 	// thread was never sent them. A thread dropped meanwhile, by a clear, an
 	// import or a compaction, no longer matches the conversation.

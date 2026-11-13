@@ -80,9 +80,13 @@ func (c *CodexBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
 	return setMediaViews(c.canonical, c.working, text, refs)
 }
 func (b *ObeyBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return setMediaViews(b.canonical, b.working, text, refs)
 }
 func (b *MuseSparkBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return setMediaViews(b.canonical, b.working, text, refs)
 }
 func (b *Brain) SetReplyMedia(text string, refs []chatmedia.Ref) error {

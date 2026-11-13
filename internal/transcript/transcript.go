@@ -110,6 +110,8 @@ type record struct {
 	// playback. Per-segment speaking.complete records still use PlayElapsed.
 	SpokeS   float64 `json:"spoke_s,omitempty"`
 	BargeInS float64 `json:"barge_in_s,omitempty"`
+	// StopWaitS is how long a stopped turn waited for its model request to end.
+	StopWaitS float64 `json:"stop_wait_s,omitempty"`
 
 	// ElapsedS is one tool call's or one job's wall time.
 	ElapsedS float64 `json:"elapsed_s,omitempty"`

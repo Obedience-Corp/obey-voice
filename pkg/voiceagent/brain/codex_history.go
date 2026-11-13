@@ -36,6 +36,7 @@ func (c *CodexBrain) ClearHistory() {
 func (c *CodexBrain) clearHistory() {
 	c.canonical = nil
 	c.working = nil
+	c.request = nil
 	c.dropThread()
 	c.snapshot = ContinuitySnapshot{}
 }
@@ -51,6 +52,17 @@ func (c *CodexBrain) abandonThread() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.dropThread()
+}
+
+// dropOwnedThread is abandonThread for a request that ended without
+// completing, unless the host has since abandoned it or replaced the
+// conversation: then the thread may belong to a later request.
+func (c *CodexBrain) dropOwnedThread(own *streamedRequest) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.owns(own) {
+		c.dropThread()
+	}
 }
 
 func (*CodexBrain) parksSession() {}
@@ -75,6 +87,7 @@ func (c *CodexBrain) ImportHistory(turns []Turn) error {
 	defer c.mu.Unlock()
 	c.canonical = deepCopyTurns(turns)
 	c.working = deepCopyTurns(turns)
+	c.request = nil
 	c.dropThread()
 	c.trimWorking()
 	return nil
@@ -144,6 +157,7 @@ func (c *CodexBrain) ReseedContinuity(turns []Turn) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.working = deepCopyTurns(turns)
+	c.request = nil
 	c.dropThread()
 	c.trimWorking()
 }

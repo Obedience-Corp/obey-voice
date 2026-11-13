@@ -111,7 +111,10 @@ type serialProvider interface{ SerialRequests() }
 
 // transcriptRecording records one live provider request in the host
 // transcript exactly once: when the provider finishes, or when the turn
-// settles it, whichever comes first.
+// settles it, whichever comes first. For a provider keeping the shared
+// history it records nothing itself: once the provider has ended, it tells
+// the provider how a request that did not complete ended, unless the request
+// was abandoned first.
 type transcriptRecording struct {
 	provider brain.Provider
 	ctx      context.Context
@@ -120,7 +123,14 @@ type transcriptRecording struct {
 	// to the same provider waits for it, so they never share session state.
 	drained  chan struct{}
 	recorded chan struct{}
-	write    func(delivered string, err error) *brain.Turn
+	// write records the request. unread is the text the provider sent after
+	// the last the turn read; routed marks a route the turn did not follow.
+	write func(delivered, unread string, err error, routed bool) *brain.Turn
+	// shared is set for a provider keeping the shared history, which may be
+	// written only once its request has ended.
+	shared bool
+	// gone closes when the request is abandoned.
+	gone chan struct{}
 
 	mu       sync.Mutex
 	finished bool
@@ -128,6 +138,7 @@ type transcriptRecording struct {
 	// when it clears, so the record waits to learn whether the turn read it.
 	sending   bool
 	handed    sync.Cond
+	received  strings.Builder
 	delivered strings.Builder
 	reply     *brain.Turn
 	// A routed request is recorded by the routed reply, or by release when
@@ -138,6 +149,8 @@ type transcriptRecording struct {
 	// abandoned is set once a later request stops waiting for this one;
 	// waited once a later request has said it is waiting for it.
 	abandoned, waited bool
+	// stopWait is how long settle waited for the stopped request to end.
+	stopWait time.Duration
 	// afterSend, set only by tests, runs between a chunk reaching the turn
 	// and its record.
 	afterSend func(string)
@@ -153,6 +166,7 @@ func (r *transcriptRecording) offer(text string, send func(string) bool) bool {
 		r.mu.Unlock()
 		return false
 	}
+	r.received.WriteString(text)
 	r.sending = true
 	r.mu.Unlock()
 	sent := send(text)
@@ -169,22 +183,43 @@ func (r *transcriptRecording) offer(text string, send func(string) bool) bool {
 	return sent
 }
 
-func (r *transcriptRecording) finish(route string, err error) {
+func (r *transcriptRecording) finish(route string, err error) { r.end(route, err, false) }
+
+// end records the request once. A request abandoned on a provider keeping the
+// shared history is not recorded: the provider may still be writing that
+// history, and is told to let nothing the request does later change it.
+func (r *transcriptRecording) end(route string, err error, abandon bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for r.sending {
 		r.handed.Wait()
+	}
+	if abandon && !r.abandoned {
+		r.abandoned = true
+		close(r.gone)
 	}
 	if r.finished {
 		return
 	}
 	r.finished = true
 	defer close(r.recorded)
+	if abandon && r.shared {
+		if a, ok := r.provider.(brain.RequestAbandoner); ok {
+			a.AbandonRequest()
+		}
+		return
+	}
 	if routeKindSkipsBrain(routeKindFromBrain(route)) {
 		r.route, r.routeErr = route, err
 		return
 	}
-	r.reply = r.write(r.delivered.String(), err)
+	r.reply = r.write(r.delivered.String(), r.unread(), err, false)
+}
+
+// unread is the text received after the last the turn read. What the turn
+// read is always the start of what was received.
+func (r *transcriptRecording) unread() string {
+	return strings.TrimPrefix(r.received.String(), r.delivered.String())
 }
 
 // takeRoute hands the request's record to the routed reply.
@@ -214,7 +249,7 @@ func (r *transcriptRecording) release() {
 	if err == nil {
 		err = r.ctx.Err()
 	}
-	r.reply = r.write(r.delivered.String(), err)
+	r.reply = r.write(r.delivered.String(), r.unread(), err, true)
 }
 
 // recordedReply is the reply this request recorded, if any.
@@ -229,30 +264,60 @@ func (r *transcriptRecording) recordedReply() *brain.Turn {
 
 // settle stops a request the turn no longer reads and makes sure it is
 // recorded before the turn returns. A provider that is slow to stop finishes
-// in the background; its late result is not recorded again.
+// in the background; its late result is not recorded again. A provider
+// keeping the shared history is waited for up to providerStopTimeout, since
+// only its end records the request; one slower still is abandoned, so the
+// next turn, a persona switch and a clear do not wait for it again.
 func (r *transcriptRecording) settle() {
 	if r == nil {
 		return
 	}
 	r.cancel()
-	grace := time.NewTimer(recordingGrace)
+	select {
+	case <-r.recorded:
+		return
+	default:
+	}
+	started := time.Now()
+	wait := recordingGrace
+	if r.shared {
+		wait = providerStopTimeout
+	}
+	grace := time.NewTimer(wait)
 	defer grace.Stop()
 	select {
 	case <-r.recorded:
 	case <-grace.C:
-		r.finish("", r.ctx.Err())
+		if _, serial := r.provider.(serialProvider); !r.shared {
+			r.finish("", r.ctx.Err())
+		} else if !serial {
+			r.abandon()
+		}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.stopWait == 0 {
+		r.stopWait = time.Since(started)
 	}
 }
 
-// abandon gives up on a stopped request that is still ending: it stays
-// recorded as the turn left it, and nothing it sends later is delivered or
-// recorded.
-func (r *transcriptRecording) abandon() {
-	r.cancel()
-	r.finish("", r.ctx.Err())
+// stopWaited is how long the turn waited for its stopped request to end.
+func (r *transcriptRecording) stopWaited() time.Duration {
+	if r == nil {
+		return 0
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.abandoned = true
+	return r.stopWait
+}
+
+// abandon gives up on a stopped request that is still ending. One the host
+// transcript records stays recorded as the turn left it; one on a provider
+// keeping the shared history is not recorded. Nothing it sends later is
+// delivered or recorded.
+func (r *transcriptRecording) abandon() {
+	r.cancel()
+	r.end("", r.ctx.Err(), true)
 }
 
 // ended reports whether the request has ended or been abandoned.
@@ -275,6 +340,19 @@ func (r *transcriptRecording) firstWait() bool {
 	first := !r.waited
 	r.waited = true
 	return first
+}
+
+// AwaitSharedHistory waits until requests earlier turns stopped have ended on
+// a live provider keeping the shared history, which writes that history
+// until they do, or have been abandoned. A host reads or replaces it only
+// after this.
+func (p *Pipeline) AwaitSharedHistory(ctx context.Context) error { return p.awaitSharedHistory(ctx) }
+
+func (p *Pipeline) awaitSharedHistory(ctx context.Context) error {
+	if p.Brain == nil || !brain.KeepsSharedHistory(p.Brain) {
+		return nil
+	}
+	return p.awaitProvider(ctx)
 }
 
 // awaitProvider waits until requests earlier turns stopped have ended on the
@@ -312,6 +390,7 @@ func awaitEnded(ctx context.Context, requests []*transcriptRecording) error {
 	for _, r := range requests {
 		select {
 		case <-r.drained:
+		case <-r.gone:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -373,10 +452,13 @@ func (p *Pipeline) trackRequest(r *transcriptRecording) {
 // transcript, the request and the text delivered from it are recorded under
 // the response identity. A provider keeping its own session receives the
 // turns it has not seen; they count as seen only when the provider itself
-// finishes without error, never when an interrupted turn records them.
+// finishes without error, never when an interrupted turn records them. A
+// provider keeping the shared history records its own requests; one that
+// does not complete is recorded as the turn read it (see recordStopped).
 func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, *transcriptRecording, error) {
 	t := p.transcriptFor(p.Brain)
-	if t == nil {
+	shared := brain.KeepsSharedHistory(p.Brain)
+	if t == nil && !shared {
 		stream, err := p.startBrainStream(ctx, input, opts)
 		return stream, nil, err
 	}
@@ -399,27 +481,38 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		cancel()
 		return nil, nil, err
 	}
-	rec := &transcriptRecording{provider: provider, ctx: ctx, cancel: cancel, drained: make(chan struct{}), recorded: make(chan struct{}),
-		write: func(delivered string, err error) *brain.Turn {
-			turns := requestTurns(input, opts, delivered, err, started)
-			if len(turns) == 0 {
-				return nil
-			}
-			var appendErr error
-			if sessions != nil && err == nil {
-				appendErr = sessions.AppendSeen(epoch, opts.Identity.PersonaID, covered, turns...)
-			} else {
-				appendErr = t.Append(epoch, turns...)
-			}
-			if appendErr != nil {
-				p.emit(events.Error{Stage: "history", Message: fmt.Sprintf("record reply in conversation transcript: %v", appendErr)})
-				return nil
-			}
-			if last := turns[len(turns)-1]; last.Role == "assistant" {
-				return &last
-			}
+	write := func(delivered, _ string, err error, _ bool) *brain.Turn {
+		turns := requestTurns(input, opts, delivered, err, started)
+		if len(turns) == 0 {
 			return nil
-		}}
+		}
+		var appendErr error
+		if sessions != nil && err == nil {
+			appendErr = sessions.AppendSeen(epoch, opts.Identity.PersonaID, covered, turns...)
+		} else {
+			appendErr = t.Append(epoch, turns...)
+		}
+		if appendErr != nil {
+			p.emit(events.Error{Stage: "history", Message: fmt.Sprintf("record reply in conversation transcript: %v", appendErr)})
+			return nil
+		}
+		if last := turns[len(turns)-1]; last.Role == "assistant" {
+			return &last
+		}
+		return nil
+	}
+	if shared {
+		write = func(delivered, unread string, err error, routed bool) *brain.Turn {
+			// A request ending after the conversation was cleared or replaced
+			// is no part of the new one.
+			if p.ConversationScope().ConversationEpoch != epoch {
+				return nil
+			}
+			recordStopped(provider, input, opts, delivered, unread, err, routed, started)
+			return nil
+		}
+	}
+	rec := &transcriptRecording{provider: provider, ctx: ctx, cancel: cancel, drained: make(chan struct{}), recorded: make(chan struct{}), gone: make(chan struct{}), write: write, shared: shared}
 	rec.handed.L = &rec.mu
 	p.trackRequest(rec)
 	// Unbuffered, so text counts as delivered only once the turn has read it.
@@ -474,6 +567,14 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 				}
 			}
 		}
+		// Thinking sent after the last text is still the turn's to show.
+		for thinks != nil {
+			v, ok := <-thinks
+			if !ok {
+				break
+			}
+			forward(thinking, v)
+		}
 		err := result.Err
 		switch {
 		case ctx.Err() != nil:
@@ -489,6 +590,28 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		done <- result
 	}()
 	return &brain.Stream{Chunks: out, Thinking: thinking, Done: done}, rec, nil
+}
+
+// recordStopped tells a provider keeping the shared history, once its request
+// has ended, how the request ended when the provider's own record of it does
+// not stand: the turn stopped it, it failed, or the turn did not follow the
+// route it chose. A request that completed is left as the provider recorded it.
+func recordStopped(provider brain.Provider, input string, opts brain.StreamOptions, delivered, unread string, err error, routed bool, started time.Time) {
+	recorder, ok := provider.(brain.StoppedRequestRecorder)
+	if !ok || (err == nil && !routed) || opts.TransientHistory {
+		return
+	}
+	stopped := brain.StoppedRequest{Unread: unread}
+	for _, turn := range requestTurns(input, opts, delivered, err, started) {
+		switch {
+		case turn.Role == "assistant":
+			stopped.Reply = &turn
+		case opts.Discussion == nil:
+			// A discussion's line was recorded when the discussion began.
+			stopped.Line = &turn
+		}
+	}
+	recorder.RecordStoppedRequest(stopped)
 }
 
 // requestTurns follows the shared-history providers: the finalized input is

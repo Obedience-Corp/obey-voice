@@ -75,6 +75,11 @@ func TestCodexSelectorAppServer(t *testing.T) {
 			reply(map[string]any{"thread": map[string]string{"id": thread}, "sandbox": map[string]string{"type": "readOnly"}, "approvalPolicy": "never", "cwd": m.Params["cwd"]})
 		case "turn/start":
 			reply(map[string]any{"turn": map[string]string{"id": "fixture-turn", "status": "inProgress"}})
+			if codexFixtureAsks(m.Params, codexFail) {
+				notice("item/agentMessage/delta", map[string]string{"threadId": thread, "turnId": "fixture-turn", "delta": claudePartial})
+				notice("turn/completed", map[string]any{"threadId": thread, "turn": map[string]any{"id": "fixture-turn", "status": "failed", "error": map[string]string{"message": "fixture failure"}}})
+				continue
+			}
 			if codexFixtureStalls(m.Params) {
 				notice("item/agentMessage/delta", map[string]string{"threadId": thread, "turnId": "fixture-turn", "delta": claudePartial})
 				time.Sleep(time.Minute)
@@ -88,15 +93,23 @@ func TestCodexSelectorAppServer(t *testing.T) {
 	os.Exit(0)
 }
 
+// codexFail in a request makes the fixture send part of a reply and then
+// report the turn failed.
+const codexFail = "FAILNOW"
+
 // codexFixtureStalls reports whether the request itself, not a conversation
 // record quoting an earlier one, asks the fixture to stall.
-func codexFixtureStalls(params map[string]any) bool {
+func codexFixtureStalls(params map[string]any) bool { return codexFixtureAsks(params, claudeStall) }
+
+// codexFixtureAsks reports whether the request itself, not a conversation
+// record quoting an earlier one, carries marker.
+func codexFixtureAsks(params map[string]any, marker string) bool {
 	inputs, _ := params["input"].([]any)
 	for _, in := range inputs {
 		item, _ := in.(map[string]any)
 		text, _ := item["text"].(string)
 		for line := range strings.Lines(text) {
-			if !strings.HasPrefix(line, "{") && strings.Contains(line, claudeStall) {
+			if !strings.HasPrefix(line, "{") && strings.Contains(line, marker) {
 				return true
 			}
 		}

@@ -31,6 +31,11 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	if err := ctx.Err(); err != nil {
 		return events.PersonaSelection{}, err
 	}
+	// The outgoing provider records a stopped request only once it has ended;
+	// one that has not ended within the stop timeout is abandoned.
+	if err := s.opts.Pipeline.AwaitSharedHistory(ctx); err != nil {
+		return events.PersonaSelection{}, err
+	}
 	s.generation++
 	generation := s.generation
 	p := s.opts.Pipeline
