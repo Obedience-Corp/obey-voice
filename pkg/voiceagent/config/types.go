@@ -4,6 +4,14 @@ package config
 type Config struct {
 	// PersonaWorkerTiers is a runtime binding, persisted only in persona.yaml.
 	PersonaWorkerTiers *WorkerTierOverrides `mapstructure:"-" yaml:"-" json:"-"`
+	// PersonaWork is who runs the persona's background work: WorkOwn,
+	// WorkWorker, or empty for its backend's default. A runtime binding,
+	// persisted only in persona.yaml.
+	PersonaWork string `mapstructure:"-" yaml:"-" json:"-"`
+	// PersonaNamesWorker is set when the persona's profile names its own
+	// worker (brain.worker), which makes worker the default for PersonaWork.
+	// A runtime binding, persisted only in persona.yaml.
+	PersonaNamesWorker bool `mapstructure:"-" yaml:"-" json:"-"`
 	// VoiceWorkers is nil for an installation that has not explicitly migrated
 	// from the singleton worker. A non-nil value is the complete versioned
 	// tier configuration and is authoritative over the legacy fields below.
@@ -229,7 +237,9 @@ type Config struct {
 	VoiceWorkerOllamaHost string `mapstructure:"voice_worker_ollama_host"`
 	// VoiceWorkerMaxConcurrent is how many spawned jobs run at once; the rest queue.
 	VoiceWorkerMaxConcurrent int `mapstructure:"voice_worker_max_concurrent"`
-	// VoiceWorkerJobBudget caps one spawned job's wall-clock seconds; zero means no cap.
+	// VoiceWorkerJobBudget caps one spawned job's wall-clock seconds. Zero
+	// leaves the worker uncapped and a hosted persona's own job at
+	// DefaultHostedOwnJobBudget; UnlimitedJobBudget lifts both.
 	VoiceWorkerJobBudget int `mapstructure:"voice_worker_job_budget"`
 	// VoiceWorkerBoundary fences a spawned worker to the campaign it was launched in.
 	VoiceWorkerBoundary  bool   `mapstructure:"voice_worker_boundary"`

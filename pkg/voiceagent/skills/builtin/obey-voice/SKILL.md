@@ -21,7 +21,7 @@ Conversation participants already listed by the host are existing personas. Insp
 
 - `obey-voice --help` and `<command> --help` describe the installed version. Prefer these over remembered flags.
 - `obey-voice persona list --json` lists installed personas. `persona show <id> --json` shows one profile; add `--with-prompt` for its prompt. Pass the id: with none, `persona show` reports the default persona for new conversations, which may not be the one speaking.
-- A persona's brain provider and model, worker and voice live in its profile, not in app settings. Change them with `persona edit <id>` and its `--brain-provider`, `--brain-model`, `--tts-provider`, `--voice` and `--tier` flags.
+- A persona's brain provider and model, worker and voice live in its profile, not in app settings. Change them with `persona edit <id>` and its `--brain-provider`, `--brain-model`, `--work`, `--tts-provider`, `--voice` and `--tier` flags. `--work own` has the persona do its background work on its own backend and model; `--work worker` hands it to the configured worker.
 - `obey-voice config get <key> --json` reads one app setting: its value, source, restart requirement and whether the default persona overrides it. `config schema <key> --json` describes one key: its type, accepted values, default and help. An unknown key returns the closest known keys. Without a key, both print every setting, more than a command result shows. Do not print or repeat secrets.
 - `obey-voice doctor` diagnoses runtime readiness; `obey-voice models --help` and `voices --help` describe model and voice discovery.
 

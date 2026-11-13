@@ -101,6 +101,7 @@ func (p *Pipeline) bindAdmission(ctx context.Context, input string, admitted Res
 	p.ttsMu.RUnlock()
 	ctx = context.WithValue(events.WithResponse(ctx, admitted.Envelope), responseVoicesKey{}, voices)
 	ctx = context.WithValue(ctx, responseMentionsKey{}, admitted.AgentMentionControl)
+	ctx = p.withTurnWork(ctx)
 	p.bindBrainInfo()
 	return ctx
 }

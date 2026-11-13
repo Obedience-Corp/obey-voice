@@ -123,14 +123,63 @@ func (m *personasModel) formWorker() persona.Worker {
 // prefillWorker seeds the Worker rows from a profile (nil = inherit).
 func (m *personasModel) prefillWorker(p *persona.Profile) {
 	if p == nil {
+		m.work = ""
 		m.workerTiers = nil
 		m.workerProviderIdx = 0
 		m.workerModel = ""
 		m.workerOllamaHost = ""
 		return
 	}
+	m.work = strings.ToLower(strings.TrimSpace(p.Brain.Work))
 	m.workerTiers = p.Brain.WorkerTiers.Clone()
 	m.workerProviderIdx = providerIndex(stackWorkerProviders(), p.Brain.Worker.Provider)
 	m.workerModel = strings.TrimSpace(p.Brain.Worker.Model)
 	m.workerOllamaHost = strings.TrimSpace(p.Brain.Worker.OllamaHost)
+}
+
+// workOptions are the Work row's choices: the backend's default, then own and
+// worker. All stay on screen, with a check on the current one.
+func workOptions() []string {
+	return append([]string{""}, config.WorkChoices...)
+}
+
+func (m *personasModel) cycleWork(delta int) {
+	options := workOptions()
+	idx := (indexOf(options, m.work) + delta + len(options)) % len(options)
+	m.work = options[idx]
+}
+
+// defaultWork is who runs the work when the persona does not say: it follows
+// the brain row, or Settings' brain under "(default)", and the Worker rows.
+func (m personasModel) defaultWork() string {
+	provider := providerAt(stackBrainProviders(), m.brainProviderIdx)
+	if provider == "" && m.cfg != nil {
+		provider = m.cfg.BrainProvider
+	}
+	return config.DefaultWork(provider, m.formWorker().Named())
+}
+
+// effectiveWork is who will run the work with the form as it stands.
+func (m personasModel) effectiveWork() string {
+	if m.work != "" {
+		return m.work
+	}
+	return m.defaultWork()
+}
+
+// workRowValue lists every choice inline and checks the current one.
+func (m personasModel) workRowValue() string {
+	parts := make([]string, 0, len(workOptions()))
+	for _, option := range workOptions() {
+		label := option
+		if option == "" {
+			label = stackDefaultLabel + " " + m.defaultWork()
+		}
+		if option == m.work {
+			parts = append(parts, statusStyle.Render("✓ "+label))
+		} else {
+			parts = append(parts, dimStyle.Render("  "+label))
+		}
+	}
+	return strings.Join(parts, "  ")
 }

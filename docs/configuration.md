@@ -100,7 +100,7 @@ when you select it.
 | `voice_work_enabled` | `false` | `VOICE_WORK_ENABLED` | Opt into the experimental conversation work inbox. Saves pending background results with the conversation; paid tiers require explicit advisory uncapped consent in Workers Settings; story-writing narration is unavailable. Restored updates remain held until explicitly resumed. Reading existing files aloud remains available. |
 | `voice_work_narration` | `status_only` | `VOICE_WORK_NARRATION` | How much a spawned worker narrates itself. `status_only` stays quiet until you ask what's happening; `milestones` speaks one short line each time the worker moves from one kind of work to another (a closed fold row), gated on the mic being idle. Never one line per tool call. See [delegation](delegation.md#what-the-worker-is-doing). |
 | `voice_worker_max_concurrent` | `1` (1–8) | `VOICE_WORKER_MAX_CONCURRENT` | **Legacy mode only.** How many spawned jobs run at the same time; the rest wait in order. Tiered Workers Settings use `voice_workers.policy.concurrent_workers` instead. |
-| `voice_worker_job_budget` | `0` (0–86400) | `VOICE_WORKER_JOB_BUDGET` | **Legacy mode only.** Optional limit, in seconds, on how long a spawned job may run before it is stopped and you are told once. The default is no limit: a job runs until it finishes or you cancel it. Tiered Workers Settings use each tier's `runtime_seconds` instead. Zero means no limit. See [delegation](delegation.md#what-the-worker-is-doing). |
+| `voice_worker_job_budget` | `0` (-1 to 86400) | `VOICE_WORKER_JOB_BUDGET` | Optional limit, in seconds, on how long a spawned job may run before it is stopped and you are told once. For the configured worker it applies in legacy mode only (tiered Workers Settings use each tier's `runtime_seconds`), and `0`, the default, means no limit: a job runs until it finishes or you cancel it. A job a persona on a hosted backend does itself is held to it in both modes, and with `0` to 15 minutes. `-1` means no limit for either, on purpose, apart from a tier's `runtime_seconds` in tiered mode; `obey-voice doctor` warns about it in legacy mode for every persona on a hosted backend that does its own work. See [delegation](delegation.md#who-does-the-work). |
 | `voice_worker_boundary` | `true` | `VOICE_WORKER_BOUNDARY` | Keeps a spawned worker inside the directory it was launched in, or that directory's campaign root when it is inside one: its prompt says so, and the Ollama worker's file tools and shell refuse paths outside it. No campaign is needed. See [delegation](delegation.md#where-a-worker-may-go). |
 | `remote_tools_enabled` | `false` | | Allow network-triggered turns from `obey-voice serve` to invoke tools; keep off unless remote clients are trusted. |
 | `calibre_enabled` | `false` | `CALIBRE_ENABLED` | Opt in to Calibre library browse/search, TUI Library + picker, and `--from-library` |
@@ -765,12 +765,34 @@ When Workers Settings are in **tiered** mode, the saved
 `voice_workers.policy.concurrent_workers` / `queued_workers` and each tier's
 `runtime_seconds` are the effective scheduling and runtime limits. The legacy
 `voice_worker_max_concurrent` and `voice_worker_job_budget` keys remain
-available for legacy mode only; enabling tiered mode does not silently migrate
-or reinterpret those explicit singleton values.
+available for legacy mode only, except that `voice_worker_job_budget` (with
+its 15-minute default for a persona on a hosted backend) also caps work a
+persona does itself when it is shorter than the routed tier's
+`runtime_seconds`; enabling tiered mode does not silently migrate or
+reinterpret those explicit singleton values.
 
 Existing saved `queued_workers: 1` remains an explicit one-job queue bound.
 Increase it in Workers Settings if desired; loading an older policy does not
 silently replace that saved value with a newer default.
+
+Who runs a persona's background work is a persona setting, not a config key:
+`brain.work` in its `persona.yaml` (`own` or `worker`), set with
+`obey-voice persona edit <id> --work own` or the **Work** row of the persona
+form. Empty takes the default: a persona on Ollama, or one whose profile
+names a worker of its own (`brain.worker`), hands it to the worker, as
+before; any other persona on Claude, Codex, Cursor, Grok, Muse Spark or Obey
+does its own work on its own backend and model. A worker chosen only with
+`voice_worker_provider` does not change that default; the first job such a
+persona does itself shows a one-time line saying so and how to hand its work
+to the worker. The `voice_worker_*`
+keys and the tier assignments in `voice_workers` apply only to work handed to
+the worker. `voice_worker_job_budget`, the concurrency limit
+(`voice_worker_max_concurrent`, or the tiered policy's),
+`voice_workers_disabled`, `voice_tools_enabled` and, in tiered mode, the
+routed tier's runtime limit and the charge policy apply to both; which other
+tier limits a backend enforces is in
+[Who does the work](delegation.md#who-does-the-work). `obey-voice doctor`
+lists who does each persona's work.
 
 ### Experimental group participation
 

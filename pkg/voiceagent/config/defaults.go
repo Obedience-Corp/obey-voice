@@ -15,6 +15,12 @@ import (
 const (
 	DefaultVoiceWorkerMaxConcurrent = 1
 	DefaultVoiceWorkerJobBudget     = 0
+	// DefaultHostedOwnJobBudget is the seconds a persona on a hosted backend
+	// may spend on a job it does itself while voice_worker_job_budget is 0.
+	DefaultHostedOwnJobBudget = 15 * 60
+	// UnlimitedJobBudget is the voice_worker_job_budget that lifts every
+	// cap, that default included.
+	UnlimitedJobBudget = -1
 )
 
 // DefaultKokoroVoice is what an unset tts_voice speaks as.

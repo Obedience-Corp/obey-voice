@@ -87,7 +87,7 @@ func TestJobStatusNamesTheJobsOfAClaudeOnlyInstallWithActivePersonaUnset(t *test
 	h := newBudgetHarness(t, job.WithMaxConcurrent(2))
 	defer close(h.release)
 	h.agency.pipeline.Brain = &brain.Brain{}
-	h.agency.ReplaceWorker(gatedHookWorker{release: h.release}, &config.Config{BrainProvider: "claude"}, nil)
+	h.agency.ReplaceWorker(gatedHookWorker{release: h.release}, &config.Config{BrainProvider: "claude", PersonaWork: config.WorkWorker}, nil)
 	h.spawn("audit the config")
 	select {
 	case <-h.tool:

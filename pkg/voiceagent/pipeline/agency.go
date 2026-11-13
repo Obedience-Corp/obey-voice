@@ -37,7 +37,12 @@ type Agency struct {
 	worker      brain.Provider
 	cfg         *config.Config
 	planFactory func(context.Context, *config.Config, *config.WorkerPlan) (brain.Provider, error)
-	narrator    *Narrator
+	// ownFactory builds the persona's own backend for work it does itself.
+	ownFactory func(context.Context, *config.Config) (brain.Provider, error)
+	// ownJobDefault caps a hosted persona's own job while
+	// voice_worker_job_budget is unset.
+	ownJobDefault time.Duration
+	narrator      *Narrator
 	// work folds a job's tool calls into rows: what "what's happening" answers
 	// with, and what milestone narration speaks one line of.
 	work *workfold.Tracker
@@ -59,6 +64,7 @@ type Agency struct {
 	managedClosing map[*delegation.Runtime]bool
 	liveManaged    func() *delegation.Runtime // guarded by mu; provider accessor is concurrency-safe
 	personas       map[string]bool            // guarded by mu
+	notices        OneTimeNotices             // guarded by mu
 	// heldReplies wait for their speech to start before history may take
 	// them, so the saved thread follows the order the user heard.
 	heldReplies map[string]workerReply
@@ -87,6 +93,9 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		worker:         worker,
 		cfg:            cloneConfig(cfg),
 		planFactory:    brain.NewPlannedWorker,
+		ownFactory:     newOwnWorker,
+		ownJobDefault:  time.Duration(config.DefaultHostedOwnJobBudget) * time.Second,
+		notices:        config.NewNotices(""),
 		work:           workfold.New(),
 		workerThreads:  make(map[string][]brain.Turn),
 		workerOrigins:  make(map[string]workerOrigin),
@@ -178,20 +187,52 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		task = "background task"
 	}
 	experimental := a.workEnabled()
-	worker, jobCfg, plan, workerErr := a.admitWorker(d.Tier)
-	if workerErr != nil {
-		a.emitRouteDecision(d, "rejected", "", workerErr.Error())
-		a.pipeline.emit(events.Error{Stage: "job", Message: workerErr.Error()})
-		return
+	// A persona doing its own work runs on its own backend, held to the
+	// routed tier's limits in tiered mode; the configured worker and the
+	// tier's assignment apply only to work handed to the worker.
+	decision := a.turnWork(ctx)
+	jobCfg, own := decision.own, decision.own != nil
+	var worker brain.Provider
+	var plan *config.WorkerPlan
+	var ownTier *config.OwnTier
+	if own {
+		var err error
+		if ownTier, err = decision.admit(d.Tier); err != nil {
+			a.emitRouteDecision(d, "rejected", "", err.Error())
+			a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
+			return
+		}
+	} else {
+		var workerErr error
+		worker, jobCfg, plan, workerErr = a.admitWorker(d.Tier)
+		if workerErr != nil {
+			a.emitRouteDecision(d, "rejected", "", workerErr.Error())
+			a.pipeline.emit(events.Error{Stage: "job", Message: workerErr.Error()})
+			return
+		}
 	}
 	if experimental && plan == nil && providerName(jobCfg) != "ollama" {
 		a.emitRouteDecision(d, "rejected", "", "Experimental work requires a local worker; paid and unknown providers are disabled.")
 		a.pipeline.emit(events.Error{Stage: "job", Message: "Experimental work requires a local worker; paid and unknown providers are disabled."})
 		return
 	}
+	// The job sends the persona's share to its hosted backend; the user is
+	// told first, as before any other request to it.
+	if own && brain.IsHosted(providerName(jobCfg)) {
+		if err := a.pipeline.announceHosted(ctx, metrics); err != nil {
+			a.emitRouteDecision(d, "rejected", "", err.Error())
+			return
+		}
+	}
 	jobID := ""
 	var key work.JobKey
 	admission := frozenWorkerConfig(jobCfg, plan)
+	if own {
+		admission["work"] = config.WorkOwn
+		if ownTier != nil {
+			admission["worker_tier"] = string(ownTier.Tier)
+		}
+	}
 	if c, scope := a.workAuthority(); c != nil {
 		jobID = newWorkID()
 		var err error
@@ -207,8 +248,11 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	}
 	brief := spawnBrief(history, d.Transcript, briefPersonaID(metrics, jobCfg))
 	run := a.workerRun(brief, worker, jobCfg)
-	if plan != nil {
+	switch {
+	case plan != nil:
 		run = a.plannedWorkerRun(brief, jobCfg, plan)
+	case own:
+		run = a.ownWorkRun(brief, jobCfg, ownTier)
 	}
 	refs := chatmedia.Input(ctx)
 	if len(refs) > 0 {
@@ -218,6 +262,9 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	var runtimeBudget time.Duration
 	if plan != nil {
 		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
+	}
+	if own {
+		runtimeBudget = a.ownRuntimeBudget(decision, ownTier)
 	}
 	origin := workerOrigin{Scope: a.pipeline.ConversationScope(), Trace: events.TraceFromContext(ctx), admission: admission}
 	if metrics != nil {
@@ -252,6 +299,9 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		}
 		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 		return
+	}
+	if own {
+		a.noteOwnWorkDefault(decision)
 	}
 	// A routed turn must not silently end while its work continues. Speak only
 	// after admission succeeded; the same bounded line is retained in canonical

@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -62,6 +63,10 @@ type claudeRequest struct {
 	Prompt, Format, Resume, Session, Input, Model, Persona string
 	PID, MaxArg                                            int
 	Images                                                 []fixtureImage `json:",omitempty"`
+	// Cwd, Permission, NoPersist and Args record where and how the CLI ran.
+	Cwd, Permission string   `json:",omitempty"`
+	NoPersist       bool     `json:",omitempty"`
+	Args            []string `json:",omitempty"`
 }
 
 // fixtureImage is an image block as the fixture received it: its media type
@@ -119,7 +124,10 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	name := "Mira"
 	for _, a := range args {
 		req.MaxArg = max(req.MaxArg, len(a))
+		req.NoPersist = req.NoPersist || a == "--no-session-persistence"
 	}
+	req.Args = args
+	req.Cwd, _ = os.Getwd()
 	// The SDK leaves -p without a value and pipes a large prompt on stdin.
 	if len(args) > 0 && args[0] == "-p" && (len(args) == 1 || strings.HasPrefix(args[1], "--")) {
 		data, _ := io.ReadAll(os.Stdin)
@@ -139,6 +147,8 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 			req.Input = args[i+1]
 		case "--model":
 			req.Model = args[i+1]
+		case "--permission-mode":
+			req.Permission = args[i+1]
 		case "--system-prompt":
 			if m := fixturePersonaName.FindStringSubmatch(args[i+1]); m != nil {
 				name, req.Persona = m[1], m[1]
@@ -183,7 +193,15 @@ func TestClaudeSelectorFixtureProcess(t *testing.T) {
 	_ = f.Close()
 	out := json.NewEncoder(os.Stdout)
 	if req.Format == "json" {
-		_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": claudeSummary, "session_id": req.Session})
+		result := claudeSummary
+		switch {
+		case strings.HasPrefix(req.Prompt, `{"conversation"`):
+			result = fixtureRoute(req.Prompt)
+		case strings.Contains(req.Prompt, claudeJobBrief):
+			holdFixtureJob()
+			result = claudeJobResult
+		}
+		_ = out.Encode(map[string]any{"type": "result", "subtype": "success", "result": result, "session_id": req.Session})
 		os.Exit(0)
 	}
 	text := fmt.Sprintf("%s: %s reply %d.", name, name, n)
@@ -237,6 +255,15 @@ type ollamaMessage struct {
 	ToolCalls     json.RawMessage `json:"tool_calls"`
 }
 
+func lastUserContent(messages []ollamaMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			return messages[i].Content
+		}
+	}
+	return ""
+}
+
 // claudeConversation is a conversation between Mira, a persona on Claude or
 // another hosted provider, and Ember, a persona on a fake Ollama server.
 type claudeConversation struct {
@@ -261,6 +288,19 @@ type claudeConversation struct {
 	emberSays string
 	// vision makes the fake Ollama model accept images.
 	vision bool
+	// jobs wires background jobs on the configured worker; tools turns on the
+	// live tool surface, so harness turns are routed between chat and work.
+	jobs, tools bool
+	// ollamaCalls are the fake Ollama chat requests, with model and options.
+	ollamaCalls []ollamaCall
+}
+
+// ollamaCall is one fake Ollama chat request.
+type ollamaCall struct {
+	Model    string
+	NumCtx   int
+	Tools    []string
+	Messages []ollamaMessage
 }
 
 func newClaudeConversation(t *testing.T, maxHistory int) *claudeConversation {
@@ -277,7 +317,7 @@ func newMixedConversation(t *testing.T, maxHistory int, start string) *claudeCon
 // newConversation starts a conversation between Mira, a persona on provider,
 // and Ember on Ollama, on the persona start, with hosted_persona_sharing set
 // to sharing.
-func newConversation(t *testing.T, maxHistory int, start, provider, sharing string) *claudeConversation {
+func newConversation(t *testing.T, maxHistory int, start, provider, sharing string, configure ...func(*claudeConversation)) *claudeConversation {
 	t.Helper()
 	c := &claudeConversation{t: t, provider: provider}
 	switch provider {
@@ -300,19 +340,51 @@ func newConversation(t *testing.T, maxHistory int, start, provider, sharing stri
 			_, _ = w.Write([]byte(`{"capabilities":["completion","vision"]}`))
 			return
 		}
+		c.mu.Lock()
+		jobs := c.jobs
+		c.mu.Unlock()
+		if r.URL.Path == "/api/show" && jobs {
+			_, _ = w.Write([]byte(`{"capabilities":["completion","tools"]}`))
+			return
+		}
 		if r.URL.Path != "/api/chat" {
 			_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
 			return
 		}
-		var req struct{ Messages []ollamaMessage }
+		var req struct {
+			Model    string
+			Messages []ollamaMessage
+			Options  struct {
+				NumCtx int `json:"num_ctx"`
+			}
+			Tools []struct{ Function struct{ Name string } }
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Error(err)
 			return
 		}
+		call := ollamaCall{Model: req.Model, NumCtx: req.Options.NumCtx, Messages: req.Messages}
+		for _, tool := range req.Tools {
+			call.Tools = append(call.Tools, tool.Function.Name)
+		}
 		c.mu.Lock()
 		c.ollama = append(c.ollama, req.Messages)
+		c.ollamaCalls = append(c.ollamaCalls, call)
 		reply := cmp.Or(c.emberSays, emberReply)
 		c.mu.Unlock()
+		if slices.Contains(call.Tools, "route") {
+			kind := "chat"
+			if marker := os.Getenv("OBEY_OLLAMA_FIXTURE_SPAWN"); marker != "" && strings.Contains(lastUserContent(req.Messages), marker) {
+				kind = "spawn"
+			}
+			_, _ = w.Write([]byte(`{"model":"fixture:latest","message":{"role":"assistant","tool_calls":[{"function":{"name":"route","arguments":{"kind":"` + kind + `"}}}]},"done":true,"done_reason":"stop"}` + "\n"))
+			return
+		}
+		for _, m := range req.Messages {
+			if strings.Contains(m.Content, claudeJobBrief) {
+				reply = ollamaJobResult + " " + req.Model
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": reply}, "done": true, "done_reason": "stop"})
 	}))
 	t.Cleanup(server.Close)
@@ -334,6 +406,9 @@ func newConversation(t *testing.T, maxHistory int, start, provider, sharing stri
 	}
 	c.store = session.NewStore(filepath.Join(root, "sessions"))
 	c.sess = session.New(provider, "")
+	for _, f := range configure {
+		f(c)
+	}
 	c.start(start, nil, nil)
 	return c
 }
@@ -367,9 +442,18 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 		if err := p.EnableConversationWork(c.sess.ID, nil, binding.Config()); err != nil {
 			t.Fatal(err)
 		}
-	} else if err := p.BeginConversationIdentity(c.sess.ID); err != nil {
-		t.Fatal(err)
+	} else {
+		if c.jobs {
+			jobs := job.NewTable(t.Context())
+			t.Cleanup(jobs.Close)
+			worker, workerErr := brain.NewWorkerProvider(binding.Config())
+			pipeline.NewAgency(p, jobs, worker, binding.Config(), workerErr).Wire()
+		}
+		if err := p.BeginConversationIdentity(c.sess.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
+	p.VoiceToolsEnabled = c.tools
 	t.Cleanup(func() {
 		if err := p.CloseBrains(); err != nil {
 			t.Error(err)

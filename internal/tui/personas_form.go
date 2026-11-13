@@ -23,6 +23,7 @@ const (
 	formRowName = iota
 	formRowBrainProvider
 	formRowBrainModel
+	formRowWork
 	formRowWorkerProvider
 	formRowWorkerModel
 	formRowTTSProvider
@@ -503,6 +504,8 @@ func (m *personasModel) cycleStackRow(delta int) {
 		m.clampSelectedModel()
 	case formRowBrainModel:
 		m.cycleStackModel(delta)
+	case formRowWork:
+		m.cycleWork(delta)
 	case formRowWorkerProvider:
 		list := stackWorkerProviders()
 		m.workerProviderIdx = (m.workerProviderIdx + delta + len(list)) % len(list)
@@ -592,6 +595,7 @@ func (m *personasModel) formBrain() persona.Brain {
 		WorkerTiers: m.workerTiers.Clone(),
 		Provider:    providerAt(stackBrainProviders(), m.brainProviderIdx),
 		Model:       strings.TrimSpace(m.brainModelInput.Value()),
+		Work:        m.work,
 		Worker:      m.formWorker(),
 	}
 }

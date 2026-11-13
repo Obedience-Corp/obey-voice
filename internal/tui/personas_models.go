@@ -284,6 +284,8 @@ func (m personasModel) formRowHelp() string {
 			return "Type a model name · ←/→ leaves custom · ctrl+b/ctrl+f move the cursor"
 		}
 		return "Model · (default) lets the provider choose"
+	case formRowWork:
+		return "Work · own: this persona's own brain does its background work · worker: the Worker below does it"
 	case formRowWorkerProvider:
 		if m.cfg != nil && m.cfg.VoiceWorkers != nil && m.cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
 			return "Tiered workers · edit brain.worker_tiers in persona.yaml; these rows edit legacy defaults"

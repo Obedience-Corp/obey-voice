@@ -74,6 +74,7 @@ var severityMark = map[config.Severity]string{
 func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPath func(string) (string, error), voiceChecker config.VoiceDeviceChecker, speechProbe config.SpeechProbe, asJSON bool) error {
 	diags := config.Diagnose(cfg, modelsDir, lookPath)
 	diags = append(diags, personaQwenDiags(cfg, modelsDir)...)
+	diags = append(diags, personaWorkDiags(cfg)...)
 	diags = append(diags, bargeInSpeakersDiags(cfg)...)
 	diags = append(diags, speakersEnrollmentDiags(cfg)...)
 

@@ -27,7 +27,7 @@ var personaVoiceCatalogFn func(provider string) ([]string, error)
 func personaEditCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit <id>",
-		Short: "Edit a persona's display name, prompt, brain model, or voice",
+		Short: "Edit a persona's display name, prompt, brain model, background work, or voice",
 		Long: `Edit one persona profile in place.
 
 Only the flags you pass are written: an untouched brain or TTS field keeps its
@@ -48,6 +48,7 @@ with.`,
 	cmd.Flags().Bool("allow-flatten", false, "Replace a structured prompt document with a flat body (destructive)")
 	cmd.Flags().String("brain-provider", "", "Brain provider for this persona (empty clears to the app default)")
 	cmd.Flags().String("brain-model", "", "Brain model for this persona (empty clears to the app default)")
+	cmd.Flags().String("work", "", "Who runs this persona's background work: own (its own backend and model) or worker (the configured worker); empty takes the default: worker on Ollama or when the persona names its own worker, own otherwise")
 	cmd.Flags().String("tts-provider", "", "TTS provider for this persona (empty clears to the app default)")
 	cmd.Flags().String("voice", "", "Voice id for the effective TTS provider (empty clears to the app default)")
 	cmd.Flags().String("tier", "", "Qwen3-TTS model tier: 0.6b or 1.7b (empty inherits the app default)")
@@ -252,6 +253,7 @@ func mergePersonaStack(cmd *cobra.Command, cfg *config.Config, p *persona.Profil
 	base := persona.Brain{
 		Provider:    strings.TrimSpace(p.Brain.Provider),
 		Model:       strings.TrimSpace(p.Brain.Model),
+		Work:        strings.TrimSpace(p.Brain.Work),
 		Worker:      p.Brain.Worker,
 		WorkerTiers: p.Brain.WorkerTiers,
 	}
@@ -275,6 +277,12 @@ func mergePersonaStack(cmd *cobra.Command, cfg *config.Config, p *persona.Profil
 	}
 	if v, ok := stringFlag("brain-model"); ok {
 		brain.Model = v
+	}
+	if v, ok := stringFlag("work"); ok {
+		if err := config.ValidateWork(v); err != nil {
+			return brain, tts, nil, codedError(codeInvalidInput, "--work: %v", err)
+		}
+		brain.Work = strings.ToLower(v)
 	}
 	if v, ok := stringFlag("tts-provider"); ok {
 		if err := validateTTSProvider(v); err != nil {
@@ -306,6 +314,9 @@ func mergePersonaStack(cmd *cobra.Command, cfg *config.Config, p *persona.Profil
 	}
 	if brain.Model != base.Model {
 		paths = append(paths, "brain.model")
+	}
+	if brain.Work != base.Work {
+		paths = append(paths, "brain.work")
 	}
 	if tts.Provider != baseTTS.Provider {
 		paths = append(paths, "tts.provider")

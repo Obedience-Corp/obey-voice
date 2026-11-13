@@ -77,7 +77,7 @@ func TestJobStatusNamesOnlyTheJobsAHostedPersonaMayReceive(t *testing.T) {
 				h.agency.pipeline.Brain = museSparkBrain(t)
 			}
 			for _, s := range tc.spawns {
-				h.agency.ReplaceWorker(gatedHookWorker{release: h.release}, &config.Config{ActivePersona: s.persona, BrainProvider: s.backend}, nil)
+				h.agency.ReplaceWorker(gatedHookWorker{release: h.release}, &config.Config{ActivePersona: s.persona, BrainProvider: s.backend, PersonaWork: config.WorkWorker}, nil)
 				h.spawn(s.task)
 			}
 			for i := 0; i < min(len(tc.spawns), 2); i++ {
@@ -87,7 +87,7 @@ func TestJobStatusNamesOnlyTheJobsAHostedPersonaMayReceive(t *testing.T) {
 					t.Fatalf("only %d job(s) reached a tool", i)
 				}
 			}
-			h.agency.ReplaceWorker(gatedHookWorker{release: h.release}, &config.Config{ActivePersona: "mira", BrainProvider: "muse-spark"}, nil)
+			h.agency.ReplaceWorker(gatedHookWorker{release: h.release}, &config.Config{ActivePersona: "mira", BrainProvider: "muse-spark", PersonaWork: config.WorkWorker}, nil)
 			h.agency.HandleRoute(context.Background(), h.turn, h.metrics, RouteDecision{Kind: RouteJobStatus, Transcript: "status", Source: "test"})
 			calls := h.tts.Calls()
 			if got := calls[len(calls)-1]; got != tc.want {

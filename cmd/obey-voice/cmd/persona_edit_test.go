@@ -495,3 +495,67 @@ func TestPersonaEditIgnoresWhitespaceOnlyStackDrift(t *testing.T) {
 		t.Fatalf("changed = %v, want only [display_name]", got.Changed)
 	}
 }
+
+// brain.work is written by --work, kept by unrelated edits, shown by
+// `persona show --json`, and bound into the runtime config.
+func TestPersonaEditWorkRoundTrips(t *testing.T) {
+	personaEnv(t)
+	seedUncleFu(t)
+
+	out, err := runPersona(t, "edit", "uncle-fu", "--work", "OWN", "--json")
+	if err != nil {
+		t.Fatalf("persona edit error = %v (out %s)", err, out)
+	}
+	if got := decodePersonaResult(t, out); got.Persona.Brain.Work != config.WorkOwn || len(got.Changed) != 1 || got.Changed[0] != "brain.work" {
+		t.Fatalf("edit = %+v changed %v", got.Persona.Brain, got.Changed)
+	}
+	if out, err = runPersona(t, "edit", "uncle-fu", "--voice", "bm_george", "--brain-model", "qwen3:8b", "--json"); err != nil {
+		t.Fatalf("persona edit error = %v (out %s)", err, out)
+	}
+	if got := decodePersonaResult(t, out); got.Persona.Brain.Work != config.WorkOwn {
+		t.Fatalf("an unrelated edit dropped brain.work: %+v", got.Persona.Brain)
+	}
+
+	out, err = runPersona(t, "show", "uncle-fu", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shown struct {
+		Persona struct {
+			Brain map[string]any `json:"brain"`
+		} `json:"persona"`
+	}
+	if err := json.Unmarshal([]byte(out), &shown); err != nil {
+		t.Fatal(err)
+	}
+	if shown.Persona.Brain["work"] != config.WorkOwn {
+		t.Fatalf("show --json brain = %v", shown.Persona.Brain)
+	}
+
+	binding, err := persona.Catalog{Dir: persona.Dir()}.ResolveBinding(&config.Config{}, "uncle-fu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := config.WorkOf(binding.Config()); got != config.WorkOwn {
+		t.Fatalf("bound work on ollama = %q, want own", got)
+	}
+
+	if out, err = runPersona(t, "edit", "uncle-fu", "--work", "", "--json"); err != nil {
+		t.Fatalf("persona edit error = %v (out %s)", err, out)
+	}
+	cleared, err := persona.Load("uncle-fu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Brain.Work != "" {
+		t.Fatalf("--work \"\" left %q", cleared.Brain.Work)
+	}
+
+	out, err = runPersona(t, "edit", "uncle-fu", "--work", "decide", "--json")
+	if err == nil {
+		t.Fatalf("--work decide accepted: %s", out)
+	}
+	if code, _, _ := decodeErrorJSON(t, out); code != codeInvalidInput {
+		t.Fatalf("code = %q, want %q", code, codeInvalidInput)
+	}
+}

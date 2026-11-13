@@ -113,7 +113,8 @@ func TestPersonaFormShowsTheWorkerRows(t *testing.T) {
 	}
 }
 
-// Arrow-only navigation must pass through the worker rows on the way down.
+// Arrow-only navigation must pass through the Work and worker rows on the
+// way down.
 func TestPersonaFormArrowsReachTheWorkerRows(t *testing.T) {
 	m := newPickerPersonas(t, &config.Config{BrainProvider: "ollama"}, nil)
 	m.formMode = "create"
@@ -121,8 +122,12 @@ func TestPersonaFormArrowsReachTheWorkerRows(t *testing.T) {
 	m.setFormRow(formRowBrainModel)
 
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyDown})
+	if m.formRow != formRowWork {
+		t.Fatalf("↓ from Brain model = %d, want Work %d", m.formRow, formRowWork)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyDown})
 	if m.formRow != formRowWorkerProvider {
-		t.Fatalf("↓ from Brain model = %d, want Worker %d", m.formRow, formRowWorkerProvider)
+		t.Fatalf("↓ from Work = %d, want Worker %d", m.formRow, formRowWorkerProvider)
 	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyDown})
 	if m.formRow != formRowWorkerModel {
@@ -199,5 +204,110 @@ func TestPersonaFormPreservesTierOverridesAndReportsOwnership(t *testing.T) {
 	m.formRow = formRowWorkerProvider
 	if !strings.Contains(m.formRowHelp(), "brain.worker_tiers") {
 		t.Fatal("UI claims legacy worker applies in tiered mode")
+	}
+}
+
+// The Work row lists every choice on screen with a check on the current one,
+// ←/→ moves the check, and the choice is saved by the form's real writers.
+func TestPersonaFormWorkRowListsChoicesInlineAndPersists(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	cfg := &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "global-worker"}
+	m := newPersonas(cfg)
+	m.width, m.height = 120, 40
+	m.beginCreate()
+	m.nameInput.SetValue("Rex")
+	m.promptTA.SetValue("You are Rex.")
+	m.brainProviderIdx = providerIndex(stackBrainProviders(), "claude")
+	m.setFormRow(formRowWork)
+
+	row := func() string {
+		t.Helper()
+		for _, line := range strings.Split(stripANSI(m.View()), "\n") {
+			if strings.Contains(line, "Work ") && !strings.Contains(line, "Worker") {
+				return line
+			}
+		}
+		t.Fatalf("no Work row:\n%s", stripANSI(m.View()))
+		return ""
+	}
+	if line := row(); !strings.Contains(line, "✓ (default) own") || !strings.Contains(line, "own") || !strings.Contains(line, "worker") {
+		t.Fatalf("Work row = %q, want every choice with the default checked", line)
+	}
+	if !strings.Contains(m.formRowHelp(), "own brain") {
+		t.Fatalf("Work help = %q", m.formRowHelp())
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
+	if line := row(); !strings.Contains(line, "✓ worker") || strings.Contains(line, "✓ own") || strings.Contains(line, "✓ (default)") {
+		t.Fatalf("Work row after →→ = %q, want worker checked", line)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if m.formMode != "" {
+		t.Fatalf("create failed: %s", m.message)
+	}
+	p, err := persona.Load("rex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Brain.Work != config.WorkWorker {
+		t.Fatalf("saved work = %q", p.Brain.Work)
+	}
+
+	for i, item := range m.items {
+		if item != nil && item.ID == "rex" {
+			m.cursor = i
+		}
+	}
+	m.beginEditAt(formRowWork)
+	if line := row(); !strings.Contains(line, "✓ worker") {
+		t.Fatalf("edit form opened with Work row %q", line)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if m.formMode != "" {
+		t.Fatalf("edit failed: %s", m.message)
+	}
+	if p, err = persona.Load("rex"); err != nil || p.Brain.Work != config.WorkOwn {
+		t.Fatalf("edited work = %q (%v)", p.Brain.Work, err)
+	}
+	effective := &config.Config{BrainProvider: "ollama"}
+	persona.Apply(effective, p)
+	if config.WorkOf(effective) != config.WorkOwn {
+		t.Fatalf("bound work = %q", config.WorkOf(effective))
+	}
+}
+
+// The Work row's default follows the Worker rows: a persona that names its
+// own worker hands its work to it unless set to own.
+func TestPersonaFormWorkDefaultFollowsTheWorkerRows(t *testing.T) {
+	cfg := &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "global-worker"}
+	m := newPersonas(cfg)
+	m.width, m.height = 120, 40
+	m.beginCreate()
+	m.brainProviderIdx = providerIndex(stackBrainProviders(), "claude")
+	lines := func() (work, worker string) {
+		t.Helper()
+		for _, line := range strings.Split(stripANSI(m.View()), "\n") {
+			switch {
+			case strings.Contains(line, "Work ") && !strings.Contains(line, "Worker"):
+				work = line
+			case strings.Contains(line, "Worker ") && !strings.Contains(line, "Worker model"):
+				worker = line
+			}
+		}
+		return work, worker
+	}
+	work, worker := lines()
+	if !strings.Contains(work, "✓ (default) own") || !strings.Contains(worker, "unused") {
+		t.Fatalf("with no worker of its own: Work %q, Worker %q", work, worker)
+	}
+	m.workerProviderIdx = providerIndex(stackWorkerProviders(), "codex")
+	work, worker = lines()
+	if !strings.Contains(work, "✓ (default) worker") || strings.Contains(worker, "unused") {
+		t.Fatalf("with a worker of its own: Work %q, Worker %q", work, worker)
+	}
+	m.work = config.WorkOwn
+	if work, worker = lines(); !strings.Contains(work, "✓ own") || !strings.Contains(worker, "unused") {
+		t.Fatalf("set to own: Work %q, Worker %q", work, worker)
 	}
 }

@@ -502,6 +502,11 @@
           },
           "description": "Per-persona tier overrides in installation tiered mode. Omitted tiers/fields inherit Settings; assignment and limits replace whole groups. Installation policy cannot be overridden. Null restores inheritance."
         },
+        "work": {
+          "type": "string",
+          "enum": ["", "own", "worker"],
+          "description": "Who runs this persona's background work. own: the persona's own backend and model, in a background session of its own. worker: the configured worker below. Empty takes the default: worker on Ollama or when worker below names a provider, model or host, own otherwise."
+        },
         "worker": {
           "type": "object",
           "additionalProperties": false,
