@@ -19,6 +19,8 @@ type mediaState struct {
 	token                                            *int
 	importing, validating, approved, ticking, paused bool
 	started                                          time.Time
+	placed                                           map[mediaBox]int
+	wantSignature                                    string
 }
 type mediaPreview struct {
 	preview chatmedia.Preview
@@ -172,7 +174,7 @@ func (m *conversationModel) mediaCommand() tea.Cmd {
 	}
 	refs = append(refs, m.media.draft...)
 	if len(refs) == 0 {
-		return nil
+		return m.syncGraphics(nil)
 	}
 	// Keep a bounded preview working set; originals remain available through /image.
 	keep := make(map[string]bool)
@@ -204,7 +206,7 @@ func (m *conversationModel) mediaCommand() tea.Cmd {
 	}
 	token := m.media.token
 	store := chatmedia.DefaultStore()
-	var cmds []tea.Cmd
+	cmds := []tea.Cmd{m.syncGraphics(keep)}
 	if len(missing) > 0 {
 		cmds = append(cmds, func() tea.Msg {
 			out := make(map[string]mediaPreview)
@@ -262,6 +264,15 @@ func (m *conversationModel) updateMedia(msg tea.Msg) (tea.Cmd, bool) {
 			}
 		}
 		m.refreshContent()
+		return nil, true
+	case mediaPlaced:
+		if v.token != m.media.token {
+			return nil, true
+		}
+		m.media.placed = v.placed
+		m.reflow()
+		m.refreshContent()
+		m.applyFollow()
 		return nil, true
 	case mediaTick:
 		if v.token != m.media.token {

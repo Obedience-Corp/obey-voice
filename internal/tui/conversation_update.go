@@ -39,8 +39,9 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		m.pollCapture()
 		return m, nil
 	case tea.WindowSizeMsg:
+		m.graphics.measure()
 		m.setSize(msg.Width, msg.Height)
-		return m, m.ensureVoiceTick()
+		return m, tea.Batch(m.ensureVoiceTick(), m.mediaCommand())
 	case tea.FocusMsg:
 		m.recoverWork(time.Now(), true)
 		return m, nil

@@ -33,6 +33,7 @@ type voiceTickMsg time.Time
 // bus wiring are layered on by later slices.
 type conversationModel struct {
 	media             mediaState
+	graphics          *mediaGraphics
 	agentName         string
 	cfg               *config.Config
 	selection         events.PersonaSelection
