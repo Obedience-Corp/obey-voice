@@ -23,7 +23,7 @@ func TestRouteRecoveryExplainsRejectedResponsesWithoutLeakingPrivateOutput(t *te
 		{"unfinished", "ended without completion", func(r *api.ChatResponse) { r.Done = false }},
 		{"budget", "exhausted its output budget", func(r *api.ChatResponse) {
 			r.DoneReason = "length"
-			r.Message.Content = `{"kind":"chat"`
+			r.Message.Content = `{"kind":"spawn","goal":"list the`
 		}},
 		{"tools", "tool calls instead of a JSON decision", func(r *api.ChatResponse) {
 			r.Message.ToolCalls = []api.ToolCall{{Function: api.ToolCallFunction{Name: "private_tool"}}}
@@ -101,5 +101,34 @@ func TestRouteRecoveryKeepsThinkingPrivateForValidDecision(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A small model picks chat and then fills an optional text field until the
+// limit. The decision it already wrote is enough to answer the user.
+func TestRouteDecisionCutOffAfterChoosingChatIsAccepted(t *testing.T) {
+	schema := liveRouterTools()[0].Function.Parameters
+	cut := api.ChatResponse{Done: true, DoneReason: "length", Message: api.Message{Content: `{"kind": "chat", "source": "MajorD? Actually I need to produce just the route object. The user says: "`}}
+	args, err := decodeRouteRecovery(cut, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind, _ := args.Get("kind"); kind != "chat" || args.Len() != 1 {
+		t.Fatalf("decision = %v, want only kind=chat", args)
+	}
+	for name, content := range map[string]string{
+		"spawn cut off in its goal":  `{"kind": "spawn", "goal": "delete the`,
+		"narrate cut off":            `{"kind": "narrate", "source": "/tmp/bo`,
+		"cut off inside kind":        `{"kind": "cha`,
+		"kind after a cut-off field": `{"goal": "chat about`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeRouteRecovery(api.ChatResponse{Done: true, DoneReason: "length", Message: api.Message{Content: content}}, schema); err == nil {
+				t.Fatal("a cut-off decision that could start work was accepted")
+			}
+		})
+	}
+	if _, err := decodeRouteRecovery(api.ChatResponse{Done: true, DoneReason: "stop", Message: api.Message{Content: `{"kind": "chat", "source": "x`}}, schema); err == nil {
+		t.Fatal("malformed JSON that was not cut off by the limit was accepted")
 	}
 }

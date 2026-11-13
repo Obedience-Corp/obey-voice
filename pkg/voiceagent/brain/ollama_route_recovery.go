@@ -165,7 +165,10 @@ func decodeRouteRecovery(response api.ChatResponse, schema api.ToolFunctionParam
 	}
 	var values map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(response.Message.Content), &values); err != nil {
-		return args, fmt.Errorf("decode route decision: %w", err)
+		values = truncatedChatDecision(response)
+		if values == nil {
+			return args, fmt.Errorf("decode route decision: %w", err)
+		}
 	}
 	for _, key := range schema.Required {
 		if _, ok := values[key]; !ok {
@@ -187,4 +190,39 @@ func decodeRouteRecovery(response api.ChatResponse, schema api.ToolFunctionParam
 		args.Set(key, strings.TrimSpace(*value))
 	}
 	return args, nil
+}
+
+// truncatedChatDecision recovers a decision cut off at the output limit after
+// it had already chosen chat. Small models write kind and then ramble inside an
+// optional free-text field until the limit, so the object never closes. Chat
+// starts no work and needs no other field, which makes the completed kind
+// enough; a cut-off spawn or narrate decision is still rejected, because its
+// goal or source is what would be acted on.
+func truncatedChatDecision(response api.ChatResponse) map[string]json.RawMessage {
+	if response.DoneReason != "length" {
+		return nil
+	}
+	dec := json.NewDecoder(strings.NewReader(response.Message.Content))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return nil
+	}
+	for dec.More() {
+		keyTok, err := dec.Token()
+		key, ok := keyTok.(string)
+		if err != nil || !ok {
+			return nil
+		}
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return nil
+		}
+		if key == "kind" {
+			var kind string
+			if json.Unmarshal(raw, &kind) != nil || kind != "chat" {
+				return nil
+			}
+			return map[string]json.RawMessage{"kind": raw}
+		}
+	}
+	return nil
 }

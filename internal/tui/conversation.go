@@ -98,6 +98,9 @@ type conversationModel struct {
 	// selectHintShown records that a mouse drag already got the select-and-copy
 	// notice this session.
 	selectHintShown bool
+	// mouseFragment holds the typed remains of a split mouse report until the
+	// rest arrives; see mouse_fragment.go.
+	mouseFragment string
 	// streamingThink accumulates ThinkingDelta text for the in-progress turn,
 	// painted dim and labeled "thinking". Copied into the matching chatItem
 	// on ResponseReady; hidden in the thread until showThink is on. Never

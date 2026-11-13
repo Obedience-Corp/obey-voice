@@ -193,6 +193,11 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		return m, nil
 
 	case tea.KeyMsg:
+		if absorbed, scroll, ok := m.absorbMouseFragment(msg); ok {
+			return absorbed, scroll
+		} else {
+			m = absorbed
+		}
 		if m.startup.active {
 			// Nothing is wired yet: a turn typed here would be dispatched at a
 			// nil runner. ctrl+c still quits (the app handles it above).

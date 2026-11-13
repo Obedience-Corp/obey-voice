@@ -277,3 +277,20 @@ func TestSpawnBriefNamesTheSpeakingPersonaID(t *testing.T) {
 		})
 	}
 }
+
+func TestSpawnBriefLeavesOutTheHandoffLine(t *testing.T) {
+	history := []brain.Turn{
+		{Role: "user", Content: "What should we plan?"},
+		{Role: "assistant", Content: spawnAcknowledgement, PersonaDisplayName: "Veronica"},
+		{Role: "assistant", Content: "Let's start by creating a festival.", PersonaDisplayName: "Veronica"},
+		{Role: "user", Content: "about temporary festivals."},
+		{Role: "assistant", Content: spawnQueuedAcknowledgement, PersonaDisplayName: "Veronica"},
+	}
+	brief := spawnBrief(history, "about temporary festivals.", "veronica")
+	if strings.Contains(brief, spawnAcknowledgement) || strings.Contains(brief, spawnQueuedAcknowledgement) {
+		t.Fatalf("the brief repeats the handoff line a worker then returns as its answer:\n%s", brief)
+	}
+	if !strings.Contains(brief, "Let's start by creating a festival.") {
+		t.Fatalf("a real reply was dropped:\n%s", brief)
+	}
+}

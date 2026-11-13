@@ -77,6 +77,13 @@ func bareContinuationPair(s string) bool {
 	return false
 }
 
+// The lines the assistant speaks when it hands a request to a worker;
+// handleSpawn speaks the same words.
+const (
+	spawnAcknowledgement       = "I'll work on that and report back."
+	spawnQueuedAcknowledgement = "I've queued that task and will report back."
+)
+
 // spawnableHistory keeps the turns worth carrying: what the user asked and
 // what the assistant answered. Tool traffic is the talking brain's own
 // bookkeeping and means nothing to a different provider's worker.
@@ -87,6 +94,11 @@ func spawnableHistory(history []brain.Turn) []brain.Turn {
 			continue
 		}
 		if strings.TrimSpace(t.Content) == "" {
+			continue
+		}
+		// The handoff line is the host speaking, not an answer. A brief that
+		// repeats it once per earlier job teaches the worker to return it.
+		if line := strings.TrimSpace(t.Content); t.Role == "assistant" && (line == spawnAcknowledgement || line == spawnQueuedAcknowledgement) {
 			continue
 		}
 		out = append(out, t)
