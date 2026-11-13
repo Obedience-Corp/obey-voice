@@ -153,15 +153,30 @@ func (n *Narrator) retryFlushPending() {
 }
 
 func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
-	if isLongStoryPhrase(d.Transcript) {
+	if wantsWrittenStory(d.Transcript, n.workDir()) {
+		n.mu.Lock()
+		writing := n.storyJobID != ""
+		n.mu.Unlock()
+		if writing {
+			// A second job would replace the first one's id and its finished
+			// story would then be dropped unread.
+			if err := n.pipeline.speakStandalone(ctx, turn, metrics, storyInProgressLine); err != nil {
+				n.pipeline.emit(events.Info{Message: fmt.Sprintf("story notice failed: %v", err)})
+			}
+			return
+		}
 		n.startStoryJob(ctx, metrics, d.Tier)
 		return
 	}
 
 	source := resolveNarrateSource(d.Transcript, n.workDir())
 	if source == "" {
-		metrics.degraded = true
-		n.pipeline.emit(events.Error{Stage: "narrate", Message: "No narration source found for the request"})
+		// The model chose reading aloud for a request that names nothing to
+		// read. Ask, as a person would, instead of failing the turn.
+		n.pipeline.emit(events.Info{Message: "narrate: the request names no file or link to read"})
+		if err := n.pipeline.speakStandalone(ctx, turn, metrics, narrateSourceQuestion); err != nil {
+			n.pipeline.emit(events.Info{Message: fmt.Sprintf("narrate question failed: %v", err)})
+		}
 		return
 	}
 
@@ -560,6 +575,34 @@ func (n *Narrator) workDir() string {
 
 func isLongStoryPhrase(transcript string) bool {
 	return normalizeUtterance(transcript) == "tell me a long story"
+}
+
+// narrateSourceQuestion is spoken when a reading request names nothing to read.
+const narrateSourceQuestion = "What should I read? Give me a file or a link, or ask me for a long story."
+
+// storyInProgressLine answers a story request made while one is being written.
+const storyInProgressLine = "I'm still writing your story. I'll read it as soon as it's ready."
+
+var (
+	storyWord      = regexp.MustCompile(`\b(story|stories|tale|tales)\b`)
+	shortStoryWord = regexp.MustCompile(`\b(short|quick|brief|little|tiny)\b`)
+)
+
+// wantsWrittenStory reports a reading request for a story that does not exist
+// yet: it asks for a story and names no file or link. The exact phrase "tell me
+// a long story" is one such request; "can you tell me a longer story?" is
+// another, and before this it ended in "No narration source found".
+func wantsWrittenStory(transcript, workDir string) bool {
+	if isLongStoryPhrase(transcript) {
+		return true
+	}
+	said := normalizeUtterance(transcript)
+	// The writer produces several chapters, which is not what a short story
+	// request asks for.
+	if !storyWord.MatchString(said) || shortStoryWord.MatchString(said) {
+		return false
+	}
+	return resolveNarrateSource(transcript, workDir) == ""
 }
 
 func resolveNarrateSource(transcript, workDir string) string {
