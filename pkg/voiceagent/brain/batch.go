@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
@@ -89,6 +90,8 @@ type ollamaBatch struct {
 	options   map[string]any
 	keepAlive *api.Duration
 	think     *api.ThinkValue
+	// observer reports requests made on behalf of a conversation's brain.
+	observer *atomic.Pointer[ModelRequestObserver]
 }
 
 // newOllamaBatch reuses the interactive constructor for its connection and
@@ -141,7 +144,7 @@ func (o *ollamaBatch) Transform(ctx context.Context, req BatchRequest) (BatchRes
 	}
 
 	var response api.Message
-	err := o.client.Chat(ctx, chatReq, func(resp api.ChatResponse) error {
+	err := observedChat(ctx, o.observer, o.client, chatReq, func(resp api.ChatResponse) error {
 		response = resp.Message
 		return nil
 	})

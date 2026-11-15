@@ -2,6 +2,8 @@ package brain
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/ollama/ollama/api"
@@ -9,12 +11,15 @@ import (
 
 // Purposes reported for a model request. Readers treat the set as open.
 const (
-	PurposeWarmup        = "warmup"
-	PurposeSkillCheck    = "skill_check"
-	PurposeRoute         = "route"
-	PurposeRouteRecovery = "route_recovery"
-	PurposeReply         = "reply"
-	PurposeOther         = "other"
+	PurposeWarmup            = "warmup"
+	PurposeSkillCheck        = "skill_check"
+	PurposeRoute             = "route"
+	PurposeRouteRecovery     = "route_recovery"
+	PurposeReply             = "reply"
+	PurposeAnnouncement      = "announcement"
+	PurposeDelegationSummary = "delegation_summary"
+	PurposeDiscussion        = "discussion"
+	PurposeOther             = "other"
 )
 
 // ModelRequest identifies one request as it is sent to a model provider.
@@ -67,13 +72,35 @@ func (o *OllamaBrain) SetModelRequestObserver(fn ModelRequestObserver) {
 
 // clientChat is the single place an Ollama chat request leaves this brain.
 func (o *OllamaBrain) clientChat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
-	observe := o.requestObserver.Load()
+	return observedChat(ctx, &o.requestObserver, o.client, req, fn)
+}
+
+// errRequestPanicked ends the observation of a request whose response
+// callback panicked; the panic itself continues unchanged.
+var errRequestPanicked = errors.New("model request callback panicked")
+
+// observedChat sends one chat request, reporting it to the observer when one
+// is bound. The finish is deferred so a panicking callback still ends the
+// observation.
+func observedChat(ctx context.Context, observer *atomic.Pointer[ModelRequestObserver], client *api.Client, req *api.ChatRequest, fn api.ChatResponseFunc) (err error) {
+	var observe *ModelRequestObserver
+	if observer != nil {
+		observe = observer.Load()
+	}
 	if observe == nil {
-		return o.client.Chat(ctx, req, fn)
+		return client.Chat(ctx, req, fn)
 	}
 	finish := (*observe)(ctx, ModelRequest{Purpose: modelRequestPurpose(ctx), Provider: "ollama", Model: req.Model, Sent: time.Now()})
 	var result ModelRequestResult
-	err := o.client.Chat(ctx, req, func(resp api.ChatResponse) error {
+	returned := false
+	defer func() {
+		result.Finished, result.Err = time.Now(), err
+		if !returned {
+			result.Err = errRequestPanicked
+		}
+		finish(result)
+	}()
+	err = client.Chat(ctx, req, func(resp api.ChatResponse) error {
 		if result.FirstChunk.IsZero() && (resp.Message.Content != "" || resp.Message.Thinking != "" || len(resp.Message.ToolCalls) > 0) {
 			result.FirstChunk = time.Now()
 		}
@@ -82,9 +109,7 @@ func (o *OllamaBrain) clientChat(ctx context.Context, req *api.ChatRequest, fn a
 		}
 		return fn(resp)
 	})
-	result.Finished = time.Now()
-	result.Err = err
-	finish(result)
+	returned = true
 	return err
 }
 

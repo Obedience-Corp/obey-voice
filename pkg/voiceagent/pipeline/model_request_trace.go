@@ -38,14 +38,25 @@ func (p *Pipeline) observeModelRequest(ctx context.Context, req brain.ModelReque
 		ended.FirstTokenMS = traceOffset(trace, r.FirstChunk)
 		ended.PromptTokens, ended.OutputTokens = r.PromptTokens, r.OutputTokens
 		ended.LoadMS, ended.PrefillMS, ended.GenerationMS = durationMS(r.Load), durationMS(r.Prefill), durationMS(r.Generation)
-		status := "completed"
-		switch {
-		case errors.Is(r.Err, context.Canceled):
-			status = "cancelled"
-		case r.Err != nil:
-			status = "failed"
-		}
-		p.traceModelRequest(trace, id, "end", status, req.Sent, r.Finished, ended)
+		p.traceModelRequest(trace, id, "end", modelRequestStatus(ctx, r.Err), req.Sent, r.Finished, ended)
+	}
+}
+
+// modelRequestStatus reports cancelled only when the request's context was
+// cancelled for a reason other than a deadline. The turn's idle watchdog
+// cancels with a DeadlineExceeded cause, which is a timeout, so it fails.
+// Every other error fails, including the engine's own stops from inside the
+// response callback.
+func modelRequestStatus(ctx context.Context, err error) string {
+	switch {
+	case err == nil:
+		return "completed"
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(context.Cause(ctx), context.DeadlineExceeded):
+		return "failed"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	default:
+		return "failed"
 	}
 }
 

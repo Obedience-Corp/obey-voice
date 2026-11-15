@@ -81,10 +81,13 @@ func modelRequestServer(t *testing.T, hang <-chan struct{}) *httptest.Server {
 	return server
 }
 
-func modelRequestPipeline(t *testing.T, server *httptest.Server) (*Pipeline, *brain.OllamaBrain, func() []events.PipelineTrace) {
+func modelRequestPipeline(t *testing.T, server *httptest.Server, configure ...func(*config.Config)) (*Pipeline, *brain.OllamaBrain, func() []events.PipelineTrace) {
 	t.Helper()
 	root := t.TempDir()
 	cfg := &config.Config{AgentName: "Harbour", BrainProvider: "ollama", OllamaHost: server.URL, OllamaModel: "fixture:latest", PromptsDir: root, WorkDir: root, MaxHistory: 20, OllamaNumCtx: 8192, VoiceToolsEnabled: true, VoiceRouterTools: "route_only"}
+	for _, c := range configure {
+		c(cfg)
+	}
 	provider, err := brain.NewOllama(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -243,5 +246,83 @@ func TestModelRequestSpanEndsCancelledWhenTheTurnIsCancelled(t *testing.T) {
 	}
 	if last.Request.FirstTokenMS == nil {
 		t.Fatal("first streamed token of the cancelled reply was not recorded")
+	}
+}
+
+// statusServer routes every turn to chat, then answers the reply as the case
+// requires. Requests it is told to hang wait for the caller to go away.
+func statusServer(t *testing.T, recovery, reply string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
+			return
+		}
+		var req api.ChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+			return
+		}
+		enc := json.NewEncoder(w)
+		hang := func() {
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+		}
+		switch {
+		case len(req.Tools) > 0 && recovery != "":
+			_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: "Hmm."}, Done: true, DoneReason: "stop"})
+		case len(req.Tools) > 0:
+			_, _ = w.Write([]byte(`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"route","arguments":{"kind":"chat"}}}]},"done":true,"eval_count":1}` + "\n"))
+		case len(req.Format) > 0:
+			hang()
+		case reply == "hang":
+			_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: "Well, "}})
+			hang()
+		default:
+			for range 200 {
+				_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: "and so on "}})
+			}
+			_ = enc.Encode(api.ChatResponse{Done: true, DoneReason: "stop"})
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// Consumers must not read failed as a provider error: timeouts and the
+// engine's own stops end failed too, and only a cancelled turn is cancelled.
+func TestModelRequestEndStatusFollowsTheCause(t *testing.T) {
+	for _, tc := range []struct {
+		name, recovery, reply string
+		configure             func(*config.Config)
+		brainTimeout          time.Duration
+		cancelOnDelta         bool
+		purpose, status       string
+	}{
+		{name: "turn cancelled", reply: "hang", cancelOnDelta: true, purpose: brain.PurposeReply, status: "cancelled"},
+		{name: "idle watchdog", reply: "hang", brainTimeout: 150 * time.Millisecond, purpose: brain.PurposeReply, status: "failed"},
+		{name: "routing deadline", recovery: "hang", configure: func(c *config.Config) { c.PersonaRoutingTimeout = 1 }, purpose: brain.PurposeRouteRecovery, status: "failed"},
+		{name: "response budget", configure: func(c *config.Config) { c.OllamaResponseTokens = 50 }, purpose: brain.PurposeReply, status: "failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var configure []func(*config.Config)
+			if tc.configure != nil {
+				configure = append(configure, tc.configure)
+			}
+			p, _, spans := modelRequestPipeline(t, statusServer(t, tc.recovery, tc.reply), configure...)
+			p.BrainTurnTimeout = tc.brainTimeout
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			if tc.cancelOnDelta {
+				events.Subscribe(p.Events, func(events.ResponseDelta) { cancel() })
+			}
+			_ = p.RunTurnTextMode(ctx, spanPrompt)
+
+			byID, order := requestsByID(t, spans())
+			last := byID[order[len(order)-1]].end.Span
+			if last.Request.Purpose != tc.purpose || last.Status != tc.status {
+				t.Fatalf("last request ended %s/%s, want %s/%s", last.Request.Purpose, last.Status, tc.purpose, tc.status)
+			}
+		})
 	}
 }
