@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -29,6 +30,7 @@ type ollamaDiscussion struct {
 	keepAlive *api.Duration
 	timeout   time.Duration
 	numCtx    int
+	observer  *atomic.Pointer[ModelRequestObserver]
 }
 
 func (o *OllamaBrain) DiscussionDecider() (discussion.Decider, error) {
@@ -42,7 +44,7 @@ func (o *OllamaBrain) DiscussionDecider() (discussion.Decider, error) {
 	if opts == nil {
 		opts = map[string]any{}
 	}
-	return &ollamaDiscussion{client: o.client, model: o.model, options: opts, keepAlive: o.keepAlive, timeout: config.PersonaRoutingTimeoutOf(o.cfg), numCtx: o.numCtxFor(o.contextHighWater)}, nil
+	return &ollamaDiscussion{client: o.client, model: o.model, options: opts, keepAlive: o.keepAlive, timeout: config.PersonaRoutingTimeoutOf(o.cfg), numCtx: o.numCtxFor(o.contextHighWater), observer: &o.requestObserver}, nil
 }
 func (d *ollamaDiscussion) call(ctx context.Context, point string, input any, persona *discussion.Persona, out any) error {
 	limit := 10 * time.Second
@@ -82,7 +84,7 @@ func (d *ollamaDiscussion) call(ctx context.Context, point string, input any, pe
 	stream := false
 	req := &api.ChatRequest{Model: model, Messages: []api.Message{{Role: "system", Content: instruction}, {Role: "user", Content: string(payload)}}, Format: discussionSchemas[point], Stream: &stream, Think: &api.ThinkValue{Value: false}, Options: options, KeepAlive: d.keepAlive}
 	var raw strings.Builder
-	err = d.client.Chat(ctx, req, func(r api.ChatResponse) error {
+	err = observedChat(withModelRequestPurpose(ctx, PurposeDiscussion), d.observer, d.client, req, func(r api.ChatResponse) error {
 		if len(r.Message.ToolCalls) > 0 {
 			return errors.New("tools are disabled for private discussion decisions")
 		}

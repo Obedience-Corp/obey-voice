@@ -95,7 +95,7 @@ func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) 
 		return Addressee{}, fmt.Errorf("addressee context: %w", err)
 	}
 	var raw strings.Builder
-	err = o.client.Chat(ctx, request, func(r api.ChatResponse) error { raw.WriteString(r.Message.Content); return nil })
+	err = o.clientChat(ctx, request, func(r api.ChatResponse) error { raw.WriteString(r.Message.Content); return nil })
 	if err != nil {
 		wrapped := fmt.Errorf("resolve conversation addressee: %w", err)
 		if parentErr := parentCtx.Err(); parentErr != nil {

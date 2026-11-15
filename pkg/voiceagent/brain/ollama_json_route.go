@@ -79,7 +79,7 @@ func (o *OllamaBrain) chatJSONRoute(ctx context.Context, original *api.ChatReque
 		return err
 	}
 	// A first attempt: unlike the recovery call, it does not draw on the retry budget.
-	ctx, cancel := context.WithTimeout(ctx, config.PersonaRoutingTimeoutOf(o.cfg))
+	ctx, cancel := context.WithTimeout(withModelRequestPurpose(ctx, PurposeRoute), config.PersonaRoutingTimeoutOf(o.cfg))
 	defer cancel()
 	var response api.ChatResponse
 	if err := o.chat(ctx, &req, func(resp api.ChatResponse) error {

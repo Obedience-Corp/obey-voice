@@ -267,6 +267,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if finalAnswer {
 				requestCtx, cancelRequest = rounds.answerContext(ctx)
 			}
+			requestCtx = withModelRequestPurpose(requestCtx, roundPurpose(routing, continuation != ""))
 			roundStarted := time.Now()
 			err := chat(requestCtx, req, func(resp api.ChatResponse) error {
 				if resp.Done {

@@ -56,6 +56,39 @@ First-release source stages: turn, STT phase, admission/routing, model request, 
 
 New capture subscriptions use `ObserveBeforeFanout` with an early type allowlist and bounded copied payloads. Keep high-rate audio levels/frames outside this path. Never recursively emit bus events or perform file I/O from the observer. Existing non-capture transcript subscribers can retain their legacy ordering.
 
+### Model requests (`span.request`)
+
+When the conversation's brain provider is Ollama, every chat request that brain sends is its own `trace_span` with stage `model_request` and lane `model`, beside the turn's existing `model` span. That covers the turn loop (skill check, route, route recovery, reply, repetition check and truncation continuation), conversation compaction (`/compact`, automatic compaction and the compaction before a truncated reply continues), the startup warmup, completion announcements, delegation summaries, group discussion decisions and group addressee resolution, including the handoff check after an agent reply, which belongs to the turn whose reply it reads. `id` is opaque and unique per request; transport and parse retries are separate requests. `parent_id` is the turn ID carried by the caller, or null for a request outside any turn, such as the warmup or a delegation summary, which carries runtime scope and null turn identity like other unscoped evidence. `start` is emitted when the request is sent and `end` when the client call returns; the span bounds are the engine's wall clock at those two points.
+
+Not reported, although they can use the same Ollama server:
+
+- Background jobs, including a persona's own work. They run on separate worker instances that are never observed, so their skill checks and compaction are not reported either.
+- STT post-processing and its warmup. When enabled it runs during transcription, before the model stage: on every voice turn in rewrite mode, and whenever custom-word candidates match in patch mode. Its time appears in no `model_request` span.
+- The native-audio setup check, native-audio transcription and captions.
+- Skill-routing embeddings.
+- `openai-speech` synthesis, which is reported as `synthesis`.
+- The separate `obey-voice narrate prepare` command.
+
+Other brain providers report no `model_request` spans.
+
+The optional `span.request` object appears only on these spans:
+
+| Field | Meaning |
+|---|---|
+| `purpose` | `warmup`, `skill_check`, `route`, `route_recovery`, `reply`, `announcement`, `delegation_summary`, `discussion`, `compaction` or `other`; an open set, so show an unknown value as-is |
+| `provider`, `model` | Provider and model the request was sent to |
+| `first_token_ms` | Runtime offset of the first streamed chunk of any kind (content, thinking or tool call), or null |
+| `prompt_tokens`, `output_tokens` | Token counts as the provider reports them, or null |
+| `load_ms`, `prefill_ms`, `generation_ms` | The provider's reported model load, prompt evaluation and generation durations, or null |
+
+`start` carries `purpose`, `provider` and `model` with the rest null; `end` carries everything measured. End status:
+
+- `completed`: the client call returned without error. A stream that closes cleanly without the provider's final frame also ends `completed`, with null provider fields because no final frame arrived.
+- `cancelled`: the request's context was cancelled for a reason other than a deadline, such as barge-in, the user stopping the turn or the turn being replaced.
+- `failed`: everything else. That includes provider and transport errors; timeouts, including the turn's idle watchdog and the routing and skill-check deadlines, which surface as `DeadlineExceeded`; and the engine's own stops from inside the response stream, such as reaching the response output limit or rejecting an invalid skill selection. `failed` does not by itself mean the provider reported an error. A reply stopped at the output limit ends `failed`, as the turn's `model` span does for the same stop.
+
+Provider durations are reported independently of the span bounds and are never derived from them. Wall time minus their sum is time not accounted for by the provider: queueing behind another request on the same runner, and anything else between send and the client call returning, including the engine's own consumer holding back a streamed reply while earlier sentences are spoken. Ollama omits zero metrics, so a zero is reported as null. On Ollama's MLX runner `prompt_tokens` is the whole prompt even when most of it came from cache; `prefill_ms` is the cache-miss signal. A non-streamed request delivers its first chunk with its last; when that single response carries no content, as a one-token warmup may, `first_token_ms` is null. The object never holds prompt, reply or reasoning text. Child requests overlap their parents and are not summed.
+
 ## Final metrics and reconciliation
 
 Preserve `timing` directly from `events.TurnTiming` and `audible_sink` directly from `TurnMetrics`. Keep the existing `segments` seconds fields and gap partitions. Append response envelope identity, and `trace.turn_start_ms` so segment offsets can be located on the common runtime axis. The model completion offset and local playback completion have different meanings in legacy flat fields; use the normalized contract when available.

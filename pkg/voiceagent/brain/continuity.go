@@ -216,7 +216,7 @@ func (o *OllamaBrain) compactForContinuation(ctx context.Context) error {
 	stream := false
 	req.Stream = &stream
 	var summary, reason string
-	err := o.chat(ctx, req, func(r api.ChatResponse) error { summary += r.Message.Content; reason = r.DoneReason; return nil })
+	err := o.chat(withModelRequestPurpose(ctx, PurposeCompaction), req, func(r api.ChatResponse) error { summary += r.Message.Content; reason = r.DoneReason; return nil })
 	if err != nil {
 		return err
 	}

@@ -60,7 +60,7 @@ func (o *OllamaBrain) chatRouteRecovery(ctx context.Context, original *api.ChatR
 	if err := workerBudgetFromContext(ctx).AcquireRetry(ctx); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, config.PersonaRoutingTimeoutOf(o.cfg))
+	ctx, cancel := context.WithTimeout(withModelRequestPurpose(ctx, PurposeRouteRecovery), config.PersonaRoutingTimeoutOf(o.cfg))
 	defer cancel()
 	var response api.ChatResponse
 	err = o.chat(ctx, &req, func(resp api.ChatResponse) error {

@@ -85,7 +85,7 @@ func (o *OllamaBrain) confirmSkillMatches(ctx context.Context, input string, can
 		return nil, errors.New("skill selection exceeds safe context budget")
 	}
 	var raw strings.Builder
-	err = o.chat(ctx, req, func(response api.ChatResponse) error {
+	err = o.chat(withModelRequestPurpose(ctx, PurposeSkillCheck), req, func(response api.ChatResponse) error {
 		if len(response.Message.ToolCalls) > 0 || response.DoneReason == "length" {
 			return errors.New("invalid private skill selection response")
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -70,5 +71,39 @@ func TestLiveWriterPressureDoesNotBlockProducer(t *testing.T) {
 	close(release)
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLiveWriterProjectsModelRequests(t *testing.T) {
+	var mu sync.Mutex
+	var records [][]byte
+	trace := events.TraceContext{RuntimeID: "current", ConversationEpoch: "epoch"}
+	w := NewLiveWriter(CaptureOptions{CaptureID: "live", Trace: trace}, func(raw []byte) { mu.Lock(); defer mu.Unlock(); records = append(records, raw) })
+	start, prefill, prompt := 12.5, 40.0, 120
+	w.Handle(events.PipelineTrace{Trace: &trace, Span: events.TraceSpan{ID: "request", Stage: "model_request", Lane: "model", StartMS: &start, State: "end", Status: "failed",
+		Request: &events.TraceModelRequest{Purpose: "route", Provider: "ollama", Model: "fixture", PromptTokens: &prompt, PrefillMS: &prefill}}})
+	w.Handle(events.PipelineTrace{Trace: &trace, Span: events.TraceSpan{ID: "turn", Stage: "turn", Lane: "turn", StartMS: &start, State: "start", Status: "running"}})
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(records) != 4 {
+		t.Fatalf("expected header, two spans and footer: %d", len(records))
+	}
+	var request struct {
+		Span struct {
+			Request map[string]any `json:"request"`
+		} `json:"span"`
+	}
+	if err := json.Unmarshal(records[1], &request); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"purpose": "route", "provider": "ollama", "model": "fixture", "first_token_ms": nil, "prompt_tokens": float64(120), "output_tokens": nil, "load_ms": nil, "prefill_ms": float64(40), "generation_ms": nil}
+	if !reflect.DeepEqual(request.Span.Request, want) {
+		t.Fatalf("projected request = %v\nwant %v", request.Span.Request, want)
+	}
+	if strings.Contains(string(records[2]), `"request"`) {
+		t.Fatalf("an ordinary span gained a request object: %s", records[2])
 	}
 }
