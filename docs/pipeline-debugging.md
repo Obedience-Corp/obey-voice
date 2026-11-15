@@ -59,12 +59,12 @@ and causal parent turn. Viewer exit does not stop the conversation.
 
 On the Ollama provider each chat request the conversation's brain sends is also
 traced on its own, labelled by purpose (warmup, skill check, route, route
-recovery, reply, announcement, delegation summary, discussion), with its wall
-time, first token, token counts and Ollama's load, prefill and generation times.
-Wall time the provider does not account for is not necessarily queueing; it also
-includes the engine holding back a reply while it speaks. Requests outside a
-turn, such as the startup warmup, carry runtime scope only. The trace contract
-lists what is not reported.
+recovery, reply, announcement, delegation summary, discussion, compaction), with
+its wall time, first token, token counts and Ollama's load, prefill and
+generation times. Wall time the provider does not account for is not necessarily
+queueing; it also includes the engine holding back a reply while it speaks.
+Requests outside a turn, such as the startup warmup, carry runtime scope only.
+The trace contract lists what is not reported.
 
 The source-owned [trace contract](../testdata/pipeline-trace/CONTRACT.md) and
 [canonical fixtures](../testdata/pipeline-trace/README.md) define nullable clocks,

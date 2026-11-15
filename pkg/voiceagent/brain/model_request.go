@@ -19,6 +19,7 @@ const (
 	PurposeAnnouncement      = "announcement"
 	PurposeDelegationSummary = "delegation_summary"
 	PurposeDiscussion        = "discussion"
+	PurposeCompaction        = "compaction"
 	PurposeOther             = "other"
 )
 
@@ -91,6 +92,9 @@ func observedChat(ctx context.Context, observer *atomic.Pointer[ModelRequestObse
 		return client.Chat(ctx, req, fn)
 	}
 	finish := (*observe)(ctx, ModelRequest{Purpose: modelRequestPurpose(ctx), Provider: "ollama", Model: req.Model, Sent: time.Now()})
+	if finish == nil {
+		finish = func(ModelRequestResult) {}
+	}
 	var result ModelRequestResult
 	returned := false
 	defer func() {

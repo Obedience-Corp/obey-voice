@@ -121,3 +121,41 @@ func TestInvalidSkillSelectionEndsAsAnError(t *testing.T) {
 		t.Fatalf("selection stop reported as %v", err)
 	}
 }
+
+func TestObserverWithoutFinishDoesNotBreakTheRequest(t *testing.T) {
+	o := &OllamaBrain{client: observedStub(t, `{"message":{"role":"assistant","content":"x"},"done":true}`), model: "m"}
+	o.SetModelRequestObserver(func(context.Context, ModelRequest) func(ModelRequestResult) { return nil })
+	if err := o.clientChat(t.Context(), &api.ChatRequest{Model: "m"}, func(api.ChatResponse) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Background jobs run on fresh worker instances, which are never observed:
+// their requests stay out of the conversation's model_request spans.
+func TestFreshWorkerInstanceIsNotObserved(t *testing.T) {
+	o := &OllamaBrain{client: observedStub(t, `{"message":{"role":"assistant","content":"x"},"done":true}`), model: "m"}
+	results := recordResults(o)
+	fresh := o.Fresh().(*OllamaBrain)
+	if err := fresh.clientChat(t.Context(), &api.ChatRequest{Model: "m"}, func(api.ChatResponse) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(*results) != 0 {
+		t.Fatalf("fresh instance reported %d requests", len(*results))
+	}
+}
+
+func TestContinuationCompactionIsReportedAsCompaction(t *testing.T) {
+	o := &OllamaBrain{client: observedStub(t, `{"message":{"role":"assistant","content":"A short summary."},"done":true,"done_reason":"stop"}`), model: "m", cfg: &config.Config{PromptsDir: t.TempDir(), MaxHistory: 10}}
+	o.history = []api.Message{{Role: "user", Content: "hello"}, {Role: "assistant", Content: "hi"}}
+	var purposes []string
+	o.SetModelRequestObserver(func(_ context.Context, req ModelRequest) func(ModelRequestResult) {
+		purposes = append(purposes, req.Purpose)
+		return nil
+	})
+	if err := o.compactForContinuation(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(purposes, " ") != PurposeCompaction {
+		t.Fatalf("purposes = %v", purposes)
+	}
+}

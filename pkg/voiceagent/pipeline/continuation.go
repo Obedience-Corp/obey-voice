@@ -86,7 +86,9 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 		err      error
 	}
 	resultCh := make(chan handoffResult, 1)
-	classifyCtx, cancelClassify := context.WithCancel(ctx)
+	// The classifier reads the reply that just finished, so its requests
+	// belong to that turn. Only the classifier sees this trace.
+	classifyCtx, cancelClassify := context.WithCancel(events.WithTrace(ctx, state.trace))
 	defer cancelClassify()
 	go func() {
 		proposal, accepted, err := p.RouteHandoff(withCompletionState(classifyCtx, state), state.turn, append([]string(nil), visited...))

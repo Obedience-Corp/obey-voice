@@ -273,8 +273,10 @@ func statusServer(t *testing.T, recovery, reply string) *httptest.Server {
 			_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: "Hmm."}, Done: true, DoneReason: "stop"})
 		case len(req.Tools) > 0:
 			_, _ = w.Write([]byte(`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"route","arguments":{"kind":"chat"}}}]},"done":true,"eval_count":1}` + "\n"))
-		case len(req.Format) > 0:
+		case len(req.Format) > 0 && recovery == "hang":
 			hang()
+		case len(req.Format) > 0:
+			_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: "{}"}, Done: true, DoneReason: "stop"})
 		case reply == "hang":
 			_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: "Well, "}})
 			hang()
@@ -324,5 +326,72 @@ func TestModelRequestEndStatusFollowsTheCause(t *testing.T) {
 				t.Fatalf("last request ended %s/%s, want %s/%s", last.Request.Purpose, last.Status, tc.purpose, tc.status)
 			}
 		})
+	}
+}
+
+// Each handoff check reads the reply that just finished, so its addressee
+// request belongs to that turn, not to no turn or the turn before it.
+func TestHandoffAddresseeRequestBelongsToTheFinishedTurn(t *testing.T) {
+	p, provider, spans := modelRequestPipeline(t, statusServer(t, "", ""), func(c *config.Config) { c.VoiceToolsEnabled = false })
+	p.VoiceToolsEnabled = false
+	var turns []string
+	var mu sync.Mutex
+	events.Subscribe(p.Events, func(e events.PipelineTrace) {
+		if e.Span.Stage == "turn" && e.Span.State == "start" {
+			mu.Lock()
+			turns = append(turns, e.Span.ID)
+			mu.Unlock()
+		}
+	})
+	admission := func(persona string) ResponseAdmission {
+		return ResponseAdmission{Request: spanPrompt, Envelope: events.ResponseEnvelope{PersonaID: persona, ResponseID: "response-" + persona}}
+	}
+	p.AdmitInput = func(context.Context, string, bool) (ResponseAdmission, error) { return admission("a"), nil }
+	next := []string{"b", "c"}
+	p.RouteHandoff = func(ctx context.Context, turn brain.Turn, _ []string) (HandoffProposal, bool, error) {
+		_, _ = provider.ResolveAddressee(ctx, brain.AddressRequest{Account: "agent", Text: turn.Content})
+		if len(next) == 0 {
+			return HandoffProposal{}, false, nil
+		}
+		persona := next[0]
+		next = next[1:]
+		return HandoffProposal{PersonaID: persona, Commit: func(context.Context) (ResponseAdmission, error) { return admission(persona), nil }}, true, nil
+	}
+	if err := p.RunTurnTextMode(t.Context(), spanPrompt); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	byID, order := requestsByID(t, spans())
+	var parents []string
+	for _, id := range order {
+		end := byID[id].end.Span
+		if end.Request.Purpose != brain.PurposeOther {
+			continue
+		}
+		parent := "none"
+		if end.ParentID != nil {
+			parent = *end.ParentID
+		}
+		parents = append(parents, parent)
+	}
+	if len(turns) != 3 || strings.Join(parents, " ") != strings.Join(turns, " ") {
+		t.Fatalf("addressee parents = %v, want the turns %v in order", parents, turns)
+	}
+}
+
+func TestCompactionRequestsHaveTheirOwnPurpose(t *testing.T) {
+	p, _, spans := modelRequestPipeline(t, statusServer(t, "", ""), func(c *config.Config) { c.VoiceToolsEnabled = false })
+	p.VoiceToolsEnabled = false
+	p.CompactPrompt = "Summarize the conversation."
+	if err := p.RunTurnTextMode(t.Context(), spanPrompt); err != nil {
+		t.Fatal(err)
+	}
+	_ = p.CompactConversation(t.Context())
+	byID, order := requestsByID(t, spans())
+	last := byID[order[len(order)-1]].end
+	if last.Span.Request.Purpose != brain.PurposeCompaction || last.Trace.TurnID != nil {
+		t.Fatalf("compaction request = %s in turn %v", last.Span.Request.Purpose, last.Trace.TurnID)
 	}
 }
