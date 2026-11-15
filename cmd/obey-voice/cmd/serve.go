@@ -479,6 +479,7 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 			// pin an Ollama runner, and a supervisor waiting on the ready
 			// banner does not SIGTERM a warmup that already started.
 			if w, ok := p.Brain.(brain.Warmer); ok {
+				p.ObserveModelRequests()
 				go w.Warmup(ctx)
 			}
 			if !serveNoMDNS {

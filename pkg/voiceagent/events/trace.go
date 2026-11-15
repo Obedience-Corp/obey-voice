@@ -44,6 +44,23 @@ type TraceSpan struct {
 	StartMS      *float64 `json:"start_ms"`
 	EndMS        *float64 `json:"end_ms"`
 	Status       string   `json:"status"`
+	// Request is set only on model_request spans.
+	Request *TraceModelRequest `json:"request,omitempty"`
+}
+
+// TraceModelRequest describes one request to a model provider. Wall time is
+// the span's own bounds; the durations here are the provider's report of the
+// same request. Nil means not measured. It never carries prompt or reply text.
+type TraceModelRequest struct {
+	Purpose      string   `json:"purpose"`
+	Provider     string   `json:"provider"`
+	Model        string   `json:"model"`
+	FirstTokenMS *float64 `json:"first_token_ms"`
+	PromptTokens *int     `json:"prompt_tokens"`
+	OutputTokens *int     `json:"output_tokens"`
+	LoadMS       *float64 `json:"load_ms"`
+	PrefillMS    *float64 `json:"prefill_ms"`
+	GenerationMS *float64 `json:"generation_ms"`
 }
 
 type traceKey struct{}

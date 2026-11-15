@@ -56,6 +56,22 @@ First-release source stages: turn, STT phase, admission/routing, model request, 
 
 New capture subscriptions use `ObserveBeforeFanout` with an early type allowlist and bounded copied payloads. Keep high-rate audio levels/frames outside this path. Never recursively emit bus events or perform file I/O from the observer. Existing non-capture transcript subscribers can retain their legacy ordering.
 
+### Model requests (`span.request`)
+
+Each request the engine sends to a model is its own `trace_span` with stage `model_request` and lane `model`, beside the turn's existing `model` span. `id` is opaque and unique per request; retries are separate requests. `parent_id` is the turn ID, or null for a request outside any turn, such as the startup warmup, which carries runtime scope and null turn identity like other unscoped evidence. `start` is emitted when the request is sent, `end` when it finishes, with status `completed`, `failed` or `cancelled`. The span bounds are the engine's own wall clock for that request.
+
+The optional `span.request` object appears only on these spans:
+
+| Field | Meaning |
+|---|---|
+| `purpose` | `warmup`, `skill_check`, `route`, `route_recovery`, `reply` or `other`; an open set, so show an unknown value as-is |
+| `provider`, `model` | Provider and model the request was sent to |
+| `first_token_ms` | Runtime offset of the first streamed chunk of any kind (content, thinking or tool call), or null |
+| `prompt_tokens`, `output_tokens` | Token counts as the provider reports them, or null |
+| `load_ms`, `prefill_ms`, `generation_ms` | The provider's reported model load, prompt evaluation and generation durations, or null |
+
+`start` carries `purpose`, `provider` and `model` with the rest null; `end` carries everything measured. Provider durations are reported independently of the span bounds and are never derived from them; wall time minus their sum is time the request spent waiting. Ollama omits zero metrics, so a zero is reported as null. On Ollama's MLX runner `prompt_tokens` is the whole prompt even when most of it came from cache; `prefill_ms` is the cache-miss signal. A non-streamed request delivers its first chunk with its last. The object never holds prompt, reply or reasoning text. Only the Ollama provider reports these spans; worker requests are not reported. Child requests overlap their parents and are not summed.
+
 ## Final metrics and reconciliation
 
 Preserve `timing` directly from `events.TurnTiming` and `audible_sink` directly from `TurnMetrics`. Keep the existing `segments` seconds fields and gap partitions. Append response envelope identity, and `trace.turn_start_ms` so segment offsets can be located on the common runtime axis. The model completion offset and local playback completion have different meanings in legacy flat fields; use the normalized contract when available.

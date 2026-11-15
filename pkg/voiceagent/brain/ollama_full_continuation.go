@@ -37,7 +37,11 @@ func (o *OllamaBrain) chatFullWithContinuation(ctx context.Context, req *api.Cha
 		var response api.Message
 		var reason string
 		complete := false
-		err := chat(ctx, req, func(resp api.ChatResponse) error {
+		requestCtx := ctx
+		if continued {
+			requestCtx = withModelRequestPurpose(ctx, PurposeOther)
+		}
+		err := chat(requestCtx, req, func(resp api.ChatResponse) error {
 			response, reason, complete = resp.Message, resp.DoneReason, resp.Done
 			if opts.OnUsage != nil {
 				opts.OnUsage(resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount)

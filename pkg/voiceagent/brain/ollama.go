@@ -33,6 +33,7 @@ type OllamaBrain struct {
 	audioProjection       map[string][]byte
 	// Warmup checks admission concurrently with foreground history preparation.
 	audioProjectionBlocked atomic.Bool
+	requestObserver        atomic.Pointer[ModelRequestObserver]
 	retiredDelegations     sync.WaitGroup
 	backgroundDelivered    string
 	delegation             *delegation.Runtime

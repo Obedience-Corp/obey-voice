@@ -59,6 +59,7 @@ func (p *Pipeline) bindBrainInfo() {
 	if cs, ok := p.Brain.(interface{ SetContinuitySink(func(events.Event)) }); ok {
 		cs.SetContinuitySink(func(e events.Event) { p.emit(e) })
 	}
+	p.ObserveModelRequests()
 }
 
 // toolStartHook emits ToolCallStarted for UI (stdout + TUI).

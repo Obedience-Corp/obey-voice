@@ -135,7 +135,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 		delivered := false
 		completed := false
 		var callbackErr error
-		err := o.client.Chat(ctx, req, func(resp api.ChatResponse) error {
+		err := o.clientChat(ctx, req, func(resp api.ChatResponse) error {
 			if resp.Done {
 				completed = true
 				input, output = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount

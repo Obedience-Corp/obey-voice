@@ -167,6 +167,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if finalAnswer {
 			requestCtx, cancelRequest = rounds.answerContext(ctx)
 		}
+		requestCtx = withModelRequestPurpose(requestCtx, roundPurpose(sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0, false))
 		response, responseComplete, err := o.chatFullWithContinuation(requestCtx, req, opts, responseLimit, &continuations, chat)
 		cancelRequest()
 		if err != nil {

@@ -57,6 +57,11 @@ an older turn with `[` / `]`, return to latest with `Ctrl+F`, or inspect raw and
 normalized evidence with Enter. Background jobs retain their own typed job IDs
 and causal parent turn. Viewer exit does not stop the conversation.
 
+On the Ollama provider each model request is also traced on its own, labelled by
+purpose (warmup, skill check, route, route recovery, reply), with its wall time,
+first token, token counts and Ollama's load, prefill and generation times. The
+startup warmup belongs to no turn, so it carries runtime scope only.
+
 The source-owned [trace contract](../testdata/pipeline-trace/CONTRACT.md) and
 [canonical fixtures](../testdata/pipeline-trace/README.md) define nullable clocks,
 identity and compatibility. Legacy metrics remain relative; unknown schema

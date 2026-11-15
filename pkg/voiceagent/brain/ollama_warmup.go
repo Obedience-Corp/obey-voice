@@ -77,7 +77,7 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 		KeepAlive: o.keepAlive,
 		Options:   opts,
 	}
-	_ = o.chat(ctx, req, func(api.ChatResponse) error { return nil })
+	_ = o.chat(withModelRequestPurpose(ctx, PurposeWarmup), req, func(api.ChatResponse) error { return nil })
 }
 
 // warmupMessages is the first turn's prefix followed by a throwaway user line.

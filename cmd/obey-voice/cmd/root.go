@@ -370,6 +370,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		// After the session is restored: LoadHistory resets the delegation
 		// runtime whose tools warmup sends.
 		if w, ok := p.Brain.(brain.Warmer); ok {
+			p.ObserveModelRequests()
 			go w.Warmup(ctx)
 		}
 
