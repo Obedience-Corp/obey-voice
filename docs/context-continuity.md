@@ -15,11 +15,14 @@ your next one, so a chat turn's route call and route result, any tool rounds
 and the reply are kept or archived together. History is trimmed once it holds
 more than 12 turns, back to the last 6, so the model sees between 6 and 12
 recent turns and a trim, which shifts the cached prompt prefix, happens once
-every seven turns. A smaller `max_history` lowers the high mark to that many turns,
-with the low mark at half of it. The `max_history` message marks also stay in
-force (trim past `max_history × 2` messages, back to at most `max_history`),
-which keeps a tool-heavy window below the count that starts a compaction. A
-window never opens inside a tool-call group. Explicit references to `WI-…` or `job-…`, or requests containing “earlier”,
+every seven turns. Evicted turns are archived whole, several to a note. A
+smaller `max_history` lowers the high mark to that many turns, with the low
+mark at half of it. The `max_history` message marks also stay in force (trim
+past `max_history × 2` messages, back to at most `max_history`), which keeps a
+tool-heavy window below the message count that starts a compaction. A routed
+chat turn stores four messages, so below `max_history: 24` the message marks
+are reached first. A window never opens inside a tool-call group. Explicit
+references to `WI-…` or `job-…`, or requests containing “earlier”,
 “previous”, or “what did we”, can recall matching summaries as paired tool data.
 Compaction also consumes recent archived notes when they fit the request budget.
 This is bounded recall, not semantic search or durable memory. Clearing the

@@ -624,7 +624,7 @@ func (o *OllamaBrain) trimHistory() {
 			o.audioProjectionBlocked.Store(true)
 			return
 		}
-		o.archiveMessages(o.history[:start])
+		o.archiveTurns(o.history[:start])
 		o.history = append([]api.Message(nil), o.history[start:]...)
 		if start <= len(o.working) {
 			o.working = deepCopyTurns(o.working[start:])

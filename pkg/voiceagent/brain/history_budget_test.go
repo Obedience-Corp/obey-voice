@@ -74,6 +74,10 @@ func assertWorkingAligned(t *testing.T, o *OllamaBrain) {
 	}
 }
 
+// spokenReply is a realistic spoken answer, long enough that one archive note
+// cannot hold every turn a trim evicts.
+var spokenReply = strings.Repeat("That sounds like a good plan, and here is one more thought on it. ", 5)
+
 func TestRoutedChatHistoryIsBudgetedInUserTurns(t *testing.T) {
 	const turns = 26
 	for _, tc := range []struct {
@@ -85,7 +89,7 @@ func TestRoutedChatHistoryIsBudgetedInUserTurns(t *testing.T) {
 		{"json route", true, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			fake := &jsonRouteFake{native: map[string]string{"kind": "chat"}, decide: fixedDecision(`{"kind":"chat"}`), answer: "Noted."}
+			fake := &jsonRouteFake{native: map[string]string{"kind": "chat"}, decide: fixedDecision(`{"kind":"chat"}`), answer: spokenReply}
 			srv := fake.server(t)
 			base, _ := url.Parse(srv.URL)
 			o := &OllamaBrain{client: api.NewClient(base, srv.Client()), model: "fixture", fullSystemPrompt: "You are Obey.", cfg: budgetConfig()}
@@ -96,7 +100,7 @@ func TestRoutedChatHistoryIsBudgetedInUserTurns(t *testing.T) {
 			for n := 1; n <= turns; n++ {
 				before := len(turnBlocks(o))
 				input := fmt.Sprintf("turn-%02d", n)
-				if turn := runRoutedTurn(t, o, input, opts); turn.result.Err != nil || turn.answer != "Noted." {
+				if turn := runRoutedTurn(t, o, input, opts); turn.result.Err != nil || strings.TrimSpace(turn.answer) != strings.TrimSpace(spokenReply) {
 					t.Fatalf("turn %d: answer=%q err=%v", n, turn.answer, turn.result.Err)
 				}
 				if got, want := userTurns(o.history), retainedTurns(n); got != want {
@@ -114,13 +118,13 @@ func TestRoutedChatHistoryIsBudgetedInUserTurns(t *testing.T) {
 				if len(blocks) == before {
 					continue
 				}
-				if len(blocks) != before+1 {
-					t.Fatalf("turn %d archived %d blocks", n, len(blocks)-before)
-				}
 				trims = append(trims, n)
-				got := archivedInputs(blocks[len(blocks)-1])
+				var got []string
+				for _, block := range blocks[before:] {
+					got = append(got, archivedInputs(block)...)
+				}
 				var want []string
-				for k := n - userTurns(o.history) - len(got) + 1; k <= n-userTurns(o.history); k++ {
+				for k := len(dropped) + 1; k <= n-userTurns(o.history); k++ {
 					want = append(want, fmt.Sprintf("turn-%02d", k))
 				}
 				if !slices.Equal(got, want) {

@@ -48,22 +48,56 @@ func (o *OllamaBrain) archiveMessages(messages []api.Message) {
 	}
 	var b strings.Builder
 	for _, m := range messages {
-		role, content := m.Role, m.Content
-		if role == "user" {
-			content = o.userLine(content)
-		}
-		if role == ollamaSharedRole {
-			role = "shared conversation"
-		}
-		if role == ollamaSharedToolRole {
-			role = "shared tool result"
-		}
-		b.WriteString(role + ": " + continuity.Clip(content, 512) + "\n")
+		b.WriteString(o.archiveLine(m))
 		if b.Len() >= continuity.NoteBytes {
 			break
 		}
 	}
 	o.archive.Add(continuity.Entry{Kind: "turn_block", Summary: b.String()})
+}
+
+// archiveTurns archives evicted user turns without cutting one off at the
+// note size: whole turns are packed into as few notes as fit, and only a
+// single turn larger than a note is clipped.
+func (o *OllamaBrain) archiveTurns(messages []api.Message) {
+	if o.cfg == nil || !o.cfg.ContinuityArchiveEnabled || len(messages) == 0 {
+		return
+	}
+	var note []api.Message
+	size := 0
+	for start := 0; start < len(messages); {
+		end := start + 1
+		for end < len(messages) && messages[end].Role != "user" {
+			end++
+		}
+		turn := messages[start:end]
+		n := 0
+		for _, m := range turn {
+			n += len(o.archiveLine(m))
+		}
+		if len(note) > 0 && size+n > continuity.NoteBytes {
+			o.archiveMessages(note)
+			note, size = nil, 0
+		}
+		note = append(note, turn...)
+		size += n
+		start = end
+	}
+	o.archiveMessages(note)
+}
+
+func (o *OllamaBrain) archiveLine(m api.Message) string {
+	role, content := m.Role, m.Content
+	if role == "user" {
+		content = o.userLine(content)
+	}
+	if role == ollamaSharedRole {
+		role = "shared conversation"
+	}
+	if role == ollamaSharedToolRole {
+		role = "shared tool result"
+	}
+	return role + ": " + continuity.Clip(content, 512) + "\n"
 }
 
 // ContinuityArchive exposes bounded session-local provenance for explicit
