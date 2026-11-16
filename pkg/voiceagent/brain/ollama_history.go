@@ -335,6 +335,21 @@ func (o *OllamaBrain) ImportContinuity(snapshot ContinuitySnapshot) error {
 	return nil
 }
 
+// BoundHostTurns is called after the host records added messages itself, such
+// as a spawn acknowledgement or a local reply. When those messages alone take
+// the window past the message mark, it is trimmed as after a model reply, so
+// they cannot start a compaction. A larger window that arrived with a persona
+// switch is left for the next reply to trim, as before.
+func (o *OllamaBrain) BoundHostTurns(added int) {
+	if o.cfg == nil || o.cfg.MaxHistory <= 0 {
+		return
+	}
+	high := o.cfg.MaxHistory * 2
+	if len(o.history) > high && len(o.history)-added <= high {
+		o.trimHistory()
+	}
+}
+
 func (o *OllamaBrain) loadHistoryProjection(turns []Turn, archiveProjection bool) {
 	o.loadHistoryProjectionForPersona(turns, archiveProjection, false)
 }

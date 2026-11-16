@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -117,5 +118,31 @@ func TestAppendRoutedHistoryPreservesCompactedContinuity(t *testing.T) {
 	}
 	if !reflect.DeepEqual(b.snapshot.Archive, archive) || b.snapshot.ContextHighWater != 16384 {
 		t.Fatalf("continuity metadata changed: archive=%#v highwater=%d", b.snapshot.Archive, b.snapshot.ContextHighWater)
+	}
+}
+
+type boundedHistoryBrain struct {
+	continuityHistoryBrain
+	added []int
+}
+
+func (b *boundedHistoryBrain) BoundHostTurns(added int) { b.added = append(b.added, added) }
+
+// A routed reply, such as a spawn acknowledgement, ends the turn without a
+// model reply to trim after, so it is bounded when the host records it. A
+// local reply keeps its existing behaviour.
+func TestRoutedRepliesApplyTheHistoryBound(t *testing.T) {
+	b := &boundedHistoryBrain{continuityHistoryBrain: continuityHistoryBrain{fakeBrain: &fakeBrain{}}}
+	p := &Pipeline{Brain: b, Events: events.NewBus()}
+	p.SetOutputMuted(true)
+	if err := p.appendRoutedHistory(newTurnMetrics(), "look that up", "I'll work on that and report back."); err != nil {
+		t.Fatal(err)
+	}
+	metrics := newTurnMetrics()
+	if err := p.completeLocalReply(context.Background(), "hello", "Hello.", metrics, p.newTurnConductor(metrics)); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(b.added, []int{2}) || len(b.snapshot.Working) != 4 {
+		t.Fatalf("history bound applied for additions %v over %d turns, want [2] over 4", b.added, len(b.snapshot.Working))
 	}
 }

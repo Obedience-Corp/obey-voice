@@ -55,6 +55,11 @@ func (p *Pipeline) appendRoutedHistory(metrics *turnMetrics, request, reply stri
 	switch {
 	case hasContinuity:
 		err = appendContinuityHistory(continuity, additions)
+		// A spawn or routed reply ends the turn without a model reply to
+		// trim after, so it is bounded here.
+		if bounded, ok := p.Brain.(interface{ BoundHostTurns(int) }); ok && err == nil {
+			bounded.BoundHostTurns(len(additions))
+		}
 	case hasProjection:
 		err = projection.ImportHistory(append(turns, additions...))
 	default:
