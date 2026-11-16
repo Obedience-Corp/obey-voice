@@ -91,6 +91,9 @@ func (o *OllamaBrain) archiveLine(m api.Message, t *Turn) string {
 		return ""
 	}
 	role, content := m.Role, m.Content
+	if t != nil && t.Role == "user" && len(t.Attachments) > 0 {
+		content = strings.TrimSuffix(content, agedImageNote(t.Attachments))
+	}
 	if role == "user" {
 		content = o.userLine(content)
 	}

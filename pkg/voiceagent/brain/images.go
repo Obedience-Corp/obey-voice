@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/ollama/ollama/api"
@@ -136,9 +137,10 @@ func modelImageType(ref chatmedia.Ref) string {
 	return "image/" + ref.Format
 }
 func (o *OllamaBrain) prepareImageHistory(ctx context.Context, refs []chatmedia.Ref) error {
+	keep := turnWindowStart(o.history, imageTurns-1)
 	if len(refs) == 0 {
-		for _, turn := range o.working {
-			if turn.Role == "user" && len(turn.Attachments) > 0 {
+		for i, turn := range o.working {
+			if i >= keep && turn.Role == "user" && len(turn.Attachments) > 0 {
 				refs = turn.Attachments
 				break
 			}
@@ -148,7 +150,7 @@ func (o *OllamaBrain) prepareImageHistory(ctx context.Context, refs []chatmedia.
 		return err
 	}
 	for i, t := range o.working {
-		if t.Role != "user" || len(t.Attachments) == 0 {
+		if i < keep || t.Role != "user" || len(t.Attachments) == 0 {
 			continue
 		}
 		images, err := loadImageData(t.Attachments)
@@ -159,6 +161,8 @@ func (o *OllamaBrain) prepareImageHistory(ctx context.Context, refs []chatmedia.
 			o.history[i].Images = images
 		}
 	}
+	// A turn written by the host or ended by a spawn had no reply to trim after.
+	o.retireAgedImages()
 	return nil
 }
 func (o *OllamaBrain) attachInputImages(refs []chatmedia.Ref, images []api.ImageData) {
@@ -168,4 +172,42 @@ func (o *OllamaBrain) attachInputImages(refs []chatmedia.Ref, images []api.Image
 	o.canonical[len(o.canonical)-1].Attachments = append([]chatmedia.Ref(nil), refs...)
 	o.working[len(o.working)-1].Attachments = append([]chatmedia.Ref(nil), refs...)
 	o.history[len(o.history)-1].Images = images
+}
+
+// imageTurns is how many of the most recent user turns keep their images in
+// the prompt, counting the turn being answered. An older turn keeps its text
+// and says its image is no longer attached, so an image stays about as long
+// as it did when the whole turn left the window after two or three turns.
+const imageTurns = 3
+
+// retireAgedImages takes the images off user turns that have aged past
+// imageTurns. It runs once a reply is in, so the next turn is the third.
+// Only the prompt history changes: the transcript, the working view and the
+// attachment store keep every image.
+func (o *OllamaBrain) retireAgedImages() {
+	if o.audioResolver != nil || len(o.working) != len(o.history) {
+		return
+	}
+	keep := turnWindowStart(o.history, imageTurns-1)
+	for i := range keep {
+		t := o.working[i]
+		if t.Role != "user" || len(t.Attachments) == 0 {
+			continue
+		}
+		note := agedImageNote(t.Attachments)
+		if !strings.HasSuffix(o.history[i].Content, note) {
+			o.history[i].Content += note
+		}
+		o.history[i].Images = nil
+	}
+}
+
+// agedImageNote names each image a turn no longer carries, in the words the
+// Claude replay uses for an image it leaves out.
+func agedImageNote(refs []chatmedia.Ref) string {
+	var b strings.Builder
+	for _, ref := range refs {
+		b.WriteString("\n" + attachedImageLabel(ref) + " no longer attached.")
+	}
+	return b.String()
 }

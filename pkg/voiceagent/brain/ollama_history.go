@@ -359,6 +359,7 @@ func (o *OllamaBrain) loadHistoryProjectionForPersona(turns []Turn, archiveProje
 	// Sanitization removes a prefix; keep the same source indices so later
 	// pruning never transfers a discarded tool or drops the wrong user turn.
 	o.working = deepCopyTurns(working[len(history)-len(o.history):])
+	o.retireAgedImages()
 }
 
 func (o *OllamaBrain) activePersona() string {

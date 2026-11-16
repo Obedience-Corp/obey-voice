@@ -19,11 +19,13 @@ func budgetConfig() *config.Config {
 // everything up to the high mark, then the low mark plus turns since the
 // last trim.
 func retainedTurns(n int) int {
-	if n <= archiveHistoryTurnsHigh {
-		return n
-	}
-	period := archiveHistoryTurnsHigh - archiveHistoryTurnsLow + 1
-	return archiveHistoryTurnsLow + (n-archiveHistoryTurnsHigh-1)%period
+	// Turns kept after turn n: all of them up to 12, then back to 6 after
+	// turns 13 and 20.
+	return []int{0,
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+		6, 7, 8, 9, 10, 11, 12,
+		6, 7, 8, 9, 10, 11, 12,
+	}[n]
 }
 
 func turnBlocks(o *OllamaBrain) []string {
@@ -68,7 +70,8 @@ func assertWorkingAligned(t *testing.T, o *OllamaBrain) {
 		t.Fatalf("working=%d history=%d", len(o.working), len(o.history))
 	}
 	for i, m := range o.history {
-		if o.working[i].Role != m.Role || (m.Role == "user" && o.working[i].Content != m.Content) {
+		content := strings.TrimSuffix(m.Content, agedImageNote(o.working[i].Attachments))
+		if o.working[i].Role != m.Role || (m.Role == "user" && o.working[i].Content != content) {
 			t.Fatalf("working[%d]=%s %q, history %s %q", i, o.working[i].Role, o.working[i].Content, m.Role, m.Content)
 		}
 	}
@@ -159,7 +162,7 @@ func TestRoutedChatPrefixIsStableBetweenTrims(t *testing.T) {
 	o := &OllamaBrain{client: api.NewClient(base, srv.Client()), model: "fixture", fullSystemPrompt: "You are Obey.", cfg: budgetConfig()}
 	opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly}
 
-	var routes []api.ChatRequest
+	var routes, replies []api.ChatRequest
 	for n := 1; n <= archiveHistoryTurnsHigh+1; n++ {
 		before := len(fake.sent())
 		if turn := runRoutedTurn(t, o, fmt.Sprintf("turn-%02d", n), opts); turn.result.Err != nil {
@@ -170,17 +173,21 @@ func TestRoutedChatPrefixIsStableBetweenTrims(t *testing.T) {
 			t.Fatalf("turn %d sent %d requests", n, len(sent))
 		}
 		routes = append(routes, sent[0])
+		replies = append(replies, sent[1])
 	}
-	// The last route request was built before its turn's trim, so all
-	// archiveHistoryTurnsHigh+1 requests share one growing prefix.
-	for i := 1; i < len(routes); i++ {
-		prev, next := routes[i-1].Messages, routes[i].Messages
-		p := len(prev) - 1
-		if prev[p].Role != "user" || len(next) <= p {
-			t.Fatalf("request %d: unexpected shape", i)
-		}
-		if a, b := jsonOf(t, prev[:p]), jsonOf(t, next[:p]); a != b {
-			t.Fatalf("request %d changed its first %d messages:\nprev %s\nnext %s", i+1, p, a, b)
+	// The last turn's requests were built before its trim, so all
+	// archiveHistoryTurnsHigh+1 route calls share one growing prefix, and so do
+	// the reply calls.
+	for name, requests := range map[string][]api.ChatRequest{"route": routes, "reply": replies} {
+		for i := 1; i < len(requests); i++ {
+			prev, next := requests[i-1].Messages, requests[i].Messages
+			p := lastUserIndex(prev)
+			if p < 1 || len(next) <= p {
+				t.Fatalf("%s request %d: unexpected shape", name, i)
+			}
+			if a, b := jsonOf(t, prev[:p]), jsonOf(t, next[:p]); a != b {
+				t.Fatalf("%s request %d changed its first %d messages:\nprev %s\nnext %s", name, i+1, p, a, b)
+			}
 		}
 	}
 	if userTurns(o.history) != archiveHistoryTurnsLow {
@@ -222,25 +229,41 @@ func TestToolHeavyHistoryKeepsMessageBound(t *testing.T) {
 }
 
 func TestHistoryTurnMarksFollowMaxHistory(t *testing.T) {
-	for _, tc := range []struct{ maxHistory, high, low int }{
-		{40, 12, 6},
-		{12, 12, 6},
-		{8, 8, 4},
-		{4, 4, 2},
+	routed := []api.Message{
+		{Role: "user", Content: "q"},
+		{Role: "assistant", ToolCalls: []api.ToolCall{{ID: "r", Function: api.ToolCallFunction{Name: "route"}}}},
+		{Role: "tool", ToolName: "route", ToolCallID: "r", Content: "chat"},
+		{Role: "assistant", Content: "a"},
+	}
+	plain := []api.Message{routed[0], routed[3]}
+	for _, tc := range []struct {
+		maxHistory int
+		turn       []api.Message
+		high, low  int
+	}{
+		{40, plain, 12, 6},
+		{12, plain, 12, 6},
+		{8, plain, 8, 4},
+		{4, plain, 4, 2},
+		// Four stored messages a turn: at 40 the turn marks bind; below 24
+		// the message marks do (24 then 12 messages at 12, 16 then 8 at 8).
+		{40, routed, 12, 6},
+		{12, routed, 6, 3},
+		{8, routed, 4, 2},
 	} {
 		cfg := budgetConfig()
 		cfg.MaxHistory = tc.maxHistory
 		o := &OllamaBrain{cfg: cfg}
 		trimmedAt, keptAfter := 0, 0
 		for n := 1; n <= 20 && trimmedAt == 0; n++ {
-			o.history = append(o.history, api.Message{Role: "user", Content: "q"}, api.Message{Role: "assistant", Content: "a"})
+			o.history = append(o.history, tc.turn...)
 			o.trimHistory()
 			if userTurns(o.history) < n {
 				trimmedAt, keptAfter = n, userTurns(o.history)
 			}
 		}
 		if trimmedAt != tc.high+1 || keptAfter != tc.low {
-			t.Errorf("max_history=%d: trimmed after turn %d to %d turns, want after %d to %d", tc.maxHistory, trimmedAt, keptAfter, tc.high+1, tc.low)
+			t.Errorf("max_history=%d, %d-message turns: trimmed after turn %d to %d turns, want after %d to %d", tc.maxHistory, len(tc.turn), trimmedAt, keptAfter, tc.high+1, tc.low)
 		}
 	}
 }

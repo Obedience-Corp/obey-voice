@@ -32,6 +32,7 @@ const (
 // keeps hitting; a slide-per-turn window shifted the prefix every turn and
 // forced a full re-prefill for the rest of the conversation.
 func (o *OllamaBrain) trimHistory() {
+	defer o.retireAgedImages()
 	if start := o.historyTrimStart(); start > 0 {
 		if ValidateTextProjection(o.effectiveTurns(o.working[:min(start, len(o.working))])) != nil {
 			o.audioProjectionBlocked.Store(true)
