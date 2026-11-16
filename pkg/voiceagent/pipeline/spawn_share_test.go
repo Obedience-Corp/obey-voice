@@ -41,7 +41,7 @@ func TestSpawnBriefGivesAWorkerOnlyAHostedPersonasShare(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &Agency{pipeline: &Pipeline{Brain: b}}
-	brief := spawnBrief(a.liveHistory(), "Book it.", "mira")
+	brief := spawnBrief(a.liveHistory(), "Book it.", "mira", nil, "")
 	if !strings.Contains(brief, "Mira, plan the trip.") || !strings.Contains(brief, `persona with id "mira"`) || strings.Contains(brief, "PRIVATE-4711") || strings.Contains(strings.ToLower(brief), "ember") {
 		t.Fatalf("the worker brief is not the persona's share:\n%s", brief)
 	}

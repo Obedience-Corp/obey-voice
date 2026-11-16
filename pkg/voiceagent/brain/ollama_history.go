@@ -80,14 +80,14 @@ func (o *OllamaBrain) refreshGroupHistory(turns []Turn) {
 	o.stateMu.Unlock()
 }
 
-func (o *OllamaBrain) groupUserName(speakerID string) string {
-	speakerID = strings.TrimSpace(speakerID)
-	if speakerID != "" && o.speakerNames != nil {
-		if name := strings.TrimSpace(o.speakerNames.Display(speakerID)); name != "" && name != speakerID {
-			return name
-		}
+// humanName names the author of a stored user turn from the turn's own speaker,
+// so the name never shifts with the live label of a later turn.
+func (o *OllamaBrain) humanName(speakerID string) string {
+	configured := ""
+	if o.cfg != nil {
+		configured = o.cfg.UserDisplayName
 	}
-	return "Unknown"
+	return HumanSpeakerName(speakerID, o.speakerNames, configured)
 }
 
 func encodeOllamaUser(speakerID, content string) string {
@@ -106,12 +106,22 @@ func decodeOllamaUser(stored string) (speakerID, content string) {
 }
 
 func (o *OllamaBrain) formatStoredUser(stored string) string {
-	speakerID, content := decodeOllamaUser(stored)
 	if o.groupModeEnabled() {
-		name := o.groupUserName(speakerID)
+		speakerID, content := decodeOllamaUser(stored)
+		name := o.humanName(speakerID)
+		if name == "User" {
+			return "User:\n" + content
+		}
 		return name + " user:\n" + content
 	}
-	if speakerID == "" {
+	return o.userLine(stored)
+}
+
+// userLine is a stored user message as one attributed line: "Name: text" for
+// an identified speaker, the bare text otherwise.
+func (o *OllamaBrain) userLine(stored string) string {
+	speakerID, content := decodeOllamaUser(stored)
+	if PromptSpeaker(speakerID) == "" {
 		return content
 	}
 	return FormatUserLine(speakerID, content, o.speakerNames)

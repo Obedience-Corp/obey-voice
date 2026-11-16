@@ -69,14 +69,12 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	}
 	continuation, isContinuation := continuationFromContext(ctx)
 	retry, isRetry := inputRetryFromContext(ctx)
-	speakerID := p.currentSpeakerID()
+	// Typed input has no speaker: the live label names whoever the microphone
+	// heard last, not whoever typed.
 	if isContinuation {
 		input = continuation.admission.Request
-		speakerID = ""
-	} else if background {
-		speakerID = ""
-	} else if !isRetry {
-		p.emitResponse(metrics, events.UserInput{Text: input, Speaker: speakerID})
+	} else if !background && !isRetry {
+		p.emitResponse(metrics, events.UserInput{Text: input})
 	}
 	original := input
 	var pendingDecision *decisionTurn
@@ -155,7 +153,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	requestCtx := ctx
 	var ordinary *ordinaryCompletion
 	if !isRetry && !isContinuation && admission.Discussion == nil {
-		requestCtx, ordinary, _ = p.beginOrdinaryCompletion(ctx, input, speakerID)
+		requestCtx, ordinary, _ = p.beginOrdinaryCompletion(ctx, input, "")
 	}
 	if ordinary != nil {
 		defer ordinary.close()
@@ -181,7 +179,6 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		WorkerFacts:       p.workerFacts(),
 		Identity:          metrics.responseIdentity(),
 		OriginalInput:     original,
-		Speaker:           speakerID,
 		Background:        background,
 		AgentContinuation: isContinuation,
 		ToolsEnabled:      (p.VoiceToolsEnabled || p.workerTierAvailability() != nil) && !background && !isContinuation && admission.Discussion == nil,

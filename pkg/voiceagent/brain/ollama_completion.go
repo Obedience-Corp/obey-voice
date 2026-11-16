@@ -33,7 +33,7 @@ func (o *OllamaBrain) Complete(ctx context.Context, req CompletionRequest) (Comp
 	format := json.RawMessage(`{"type":"object","required":["answer","updates"],"properties":{"answer":{"type":"string"},"updates":{"type":"array","maxItems":3,"items":{"type":"object","required":["result_id","text"],"properties":{"result_id":{"type":"string"},"text":{"type":"string"}},"additionalProperties":false}}},"additionalProperties":false}`)
 	request := &api.ChatRequest{
 		Model:    model,
-		Messages: []api.Message{{Role: "system", Content: system + o.conversationIdentityGuidance()}, {Role: "user", Content: completionPrompt(req)}},
+		Messages: []api.Message{{Role: "system", Content: system + o.conversationIdentityGuidance()}, {Role: "user", Content: completionPrompt(req, o.humanName(req.Speaker))}},
 		Tools:    nil, Stream: &stream, Format: format, Options: options, KeepAlive: keepAlive, Think: think,
 	}
 	if o.audioResolver != nil {
@@ -49,7 +49,7 @@ func (o *OllamaBrain) Complete(ctx context.Context, req CompletionRequest) (Comp
 		private := req
 		private.Conversation = nil // The excerpt is represented once, including WAVs.
 		request.Messages = append([]api.Message{request.Messages[0]}, contextMessages...)
-		request.Messages = append(request.Messages, api.Message{Role: "user", Content: completionPrompt(private)})
+		request.Messages = append(request.Messages, api.Message{Role: "user", Content: completionPrompt(private, o.humanName(private.Speaker))})
 		truncate, shift := false, false
 		request.Truncate, request.Shift = &truncate, &shift
 		if err := o.nativeMessagesBudgetError(request.Messages, nil); err != nil {

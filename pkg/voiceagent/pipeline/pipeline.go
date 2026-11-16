@@ -258,6 +258,9 @@ type Pipeline struct {
 	// in-flight user turn when live labels are active. Optional; nil/empty
 	// means ordinary single-user attribution.
 	CurrentSpeaker func() string
+	// SpeakerNames resolves live speaker ids to session renames for the
+	// human's name in worker briefs. Optional.
+	SpeakerNames brain.SpeakerNames
 
 	// BargeInSpeakerVerdict, when set, reports the live speaker analyzer's
 	// most recent window verdict to the interrupt controller (config
@@ -551,9 +554,6 @@ func (p *Pipeline) prepareNextListen() {
 func (p *Pipeline) clearPreparedCapture() {
 	p.preparedCapture.Store(false)
 }
-
-// CurrentSpeakerID is the finalized-input speaker snapshot used by admission owners.
-func (p *Pipeline) CurrentSpeakerID() string { return p.currentSpeakerID() }
 
 // HasCaptureProvider includes finalized native input as well as Standard STT.
 // It does not open a reader or imply that a hardware device is available.

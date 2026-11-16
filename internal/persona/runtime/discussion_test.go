@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
@@ -175,6 +176,49 @@ func TestGroupAllPassPersistsInputWithoutSelectionOrVoice(t *testing.T) {
 	}
 	if saved.Turns[len(saved.Turns)-1].Content != input || policy.checks != 2 || policy.nextCalls != 0 {
 		t.Fatalf("saved=%+v checks=%d next=%d", saved.Turns, policy.checks, policy.nextCalls)
+	}
+}
+func TestGroupInputTakesItsSpeakerFromTheAdmittedTurn(t *testing.T) {
+	pass := func(context.Context, discussion.Context, discussion.Persona) (discussion.Contribution, error) {
+		return discussion.Contribution{Kind: "pass", Reason: "no_contribution"}, nil
+	}
+	lastSaved := func(t *testing.T, f *selectorTestFixture) brain.Turn {
+		t.Helper()
+		saved, err := f.store.Load(f.session.ID)
+		if err != nil || len(saved.Turns) == 0 {
+			t.Fatalf("saved=%+v err=%v", saved, err)
+		}
+		return saved.Turns[len(saved.Turns)-1]
+	}
+
+	f, policy, _ := groupFixture(t)
+	policy.check = pass
+	f.pipeline.CurrentSpeaker = func() string { return "Lance" }
+	if err := f.pipeline.RunTurnTextMode(t.Context(), "Everyone, thoughts?"); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastSaved(t, f); got.Content != "Everyone, thoughts?" || got.Speaker != "" {
+		t.Fatalf("typed group input took the microphone label: %+v", got)
+	}
+
+	for label, name := range map[string]string{"unknown": "User", "Maria": "Maria"} {
+		f, policy, _ = groupFixture(t)
+		policy.check = pass
+		audience := policy.audience
+		var heard string
+		policy.audience = func(ctx context.Context, r discussion.AudienceRequest) (discussion.Audience, error) {
+			heard = r.Speaker
+			return audience(ctx, r)
+		}
+		if _, err := f.selector.Route(admission.WithSpeaker(t.Context(), label), "Everyone, views?", false); err != nil {
+			t.Fatal(err)
+		}
+		if got := lastSaved(t, f); got.Content != "Everyone, views?" || got.Speaker != label {
+			t.Fatalf("voice group input lost its label %q: %+v", label, got)
+		}
+		if heard != name {
+			t.Fatalf("audience speaker for %q = %q, want %q", label, heard, name)
+		}
 	}
 }
 func TestGroupProposalRejectsChangedRosterAndHistory(t *testing.T) {

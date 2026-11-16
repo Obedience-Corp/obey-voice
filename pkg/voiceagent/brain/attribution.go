@@ -9,11 +9,27 @@ type SpeakerNames interface {
 	Display(id string) string
 }
 
-// UserSpeakerLabel returns the left-hand role used for a user turn in prompts.
-// Empty speaker id → "User". With a rename, the human name alone is preferred
-// so the model addresses people naturally; without one, the stable id is used.
-func UserSpeakerLabel(speakerID string, names SpeakerNames) string {
+// unidentifiedSpeaker is the live analyzer's label for a voice that matched no
+// enrolled speaker. It names nobody, so a model must never read it as a name.
+const unidentifiedSpeaker = "unknown"
+
+// PromptSpeaker returns the speaker id a model may see for a user turn, or ""
+// when the speaker is absent or unidentified. Every prompt surface resolves
+// user attribution through this, so an unidentified turn reads as no speaker.
+func PromptSpeaker(speakerID string) string {
 	speakerID = strings.TrimSpace(speakerID)
+	if strings.EqualFold(speakerID, unidentifiedSpeaker) {
+		return ""
+	}
+	return speakerID
+}
+
+// UserSpeakerLabel returns the left-hand role used for a user turn in prompts.
+// No (or an unidentified) speaker → "User". With a rename, the human name alone
+// is preferred so the model addresses people naturally; without one, the
+// stable id is used.
+func UserSpeakerLabel(speakerID string, names SpeakerNames) string {
+	speakerID = PromptSpeaker(speakerID)
 	if speakerID == "" {
 		return "User"
 	}
@@ -23,6 +39,40 @@ func UserSpeakerLabel(speakerID string, names SpeakerNames) string {
 		}
 	}
 	return speakerID
+}
+
+// HumanSpeakerName names the human author of a user turn where a name is
+// always written, such as group chat headers and routing data. A renamed
+// anonymous id gives its rename and an identified speaker its own name. With
+// no identified speaker the turn belongs to the configured user, or the neutral
+// "User" when none is configured. An unrenamed anonymous id (speaker-2) names
+// nobody known and reads "Unknown".
+func HumanSpeakerName(speakerID string, names SpeakerNames, configured string) string {
+	speakerID = PromptSpeaker(speakerID)
+	if speakerID == "" {
+		if configured = strings.TrimSpace(configured); configured != "" {
+			return configured
+		}
+		return "User"
+	}
+	if names != nil {
+		if d := strings.TrimSpace(names.Display(speakerID)); d != "" && d != speakerID && !anonymousSpeakerID(d) {
+			return d
+		}
+	}
+	if anonymousSpeakerID(speakerID) {
+		return "Unknown"
+	}
+	return speakerID
+}
+
+// anonymousSpeakerID reports a diarization id (speaker-N), which carries no name.
+func anonymousSpeakerID(id string) bool {
+	n, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(id)), "speaker-")
+	if !ok || n == "" {
+		return false
+	}
+	return strings.Trim(n, "0123456789") == ""
 }
 
 // FormatUserLine builds "Label: content" for a user turn.

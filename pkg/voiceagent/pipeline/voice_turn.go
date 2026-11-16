@@ -109,6 +109,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	// and nothing will be heard until the brain and TTS finish. No-op unless
 	// enabled and unless recent turns were actually slow.
 	speakerID := p.currentSpeakerID()
+	metrics.speaker = speakerID
 	if !isContinuation && p.SpeakerGate != nil {
 		if reason := p.SpeakerGate(speakerID); reason != "" {
 			// Reuses TurnTimedOut's "no usable speech" terminal semantics;
@@ -132,7 +133,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	if isContinuation {
 		admission = continuation.admission
 		ctx = p.bindAdmission(ctx, "", admission, metrics)
-		speakerID = ""
+		speakerID, metrics.speaker = "", ""
 	} else if nativeConversation {
 		err = p.validateCapturedBinding(metrics)
 		if err == nil && p.AdmitAudio != nil {

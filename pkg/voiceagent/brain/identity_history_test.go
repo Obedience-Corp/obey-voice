@@ -226,7 +226,7 @@ func TestLegacyStackedHeadersAreNotReintroducedAfterResumeOrCompaction(t *testin
 
 func TestCompletionRetainsSpeakersWithoutHistoricalResponseIDs(t *testing.T) {
 	turns := []Turn{{Role: "assistant", Content: "[Historical assistant: Obey response internal-response]\nI chose cobalt.", PersonaID: "obey", PersonaDisplayName: "Obey", ResponseID: "internal-response"}}
-	text := completionPrompt(BuildCompletionRequest("What did Obey choose?", "", turns, nil))
+	text := completionPrompt(BuildCompletionRequest("What did Obey choose?", "", turns, nil), "User")
 	if !strings.Contains(text, "Obey agent:") || !strings.Contains(text, "cobalt") || strings.Contains(text, "internal-response") || strings.Contains(text, "Historical assistant:") {
 		t.Fatalf("completion attribution = %s", text)
 	}

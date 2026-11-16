@@ -180,7 +180,7 @@ func (s *Selector) routeAudience(ctx context.Context, input string) (pipeline.Re
 			current = k
 		}
 	}
-	request := discussion.AudienceRequest{Participants: parts, Current: current, Speaker: s.humanSpeakerName(""), Latest: input, AcousticName: admission.AcousticName(ctx)}
+	request := discussion.AudienceRequest{Participants: parts, Current: current, Speaker: s.humanSpeakerName(admission.Speaker(ctx)), Latest: input, AcousticName: admission.AcousticName(ctx)}
 	turns := s.opts.Pipeline.Brain.History()
 	s.groupMu.Lock()
 	if s.recentAudienceScope == s.opts.Pipeline.ConversationScope() && len(turns)-s.recentAudienceAt <= 8 {
@@ -318,7 +318,7 @@ func (s *Selector) recordGroupInput(ctx context.Context, input string) error {
 	}
 	before := provider.ContinuitySnapshot()
 	next := before
-	t := brain.Turn{Role: "user", Content: input, Speaker: s.opts.Pipeline.CurrentSpeakerID(), At: time.Now(), Attachments: chatmedia.Input(ctx)}
+	t := brain.Turn{Role: "user", Content: input, Speaker: admission.Speaker(ctx), At: time.Now(), Attachments: chatmedia.Input(ctx)}
 	next.Canonical = append(slices.Clone(before.Canonical), t)
 	working := before.Working
 	if working == nil {

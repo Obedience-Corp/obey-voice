@@ -1,16 +1,11 @@
 package personaruntime
 
-import "strings"
+import "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 
 func (s *Selector) humanSpeakerName(speaker string) string {
-	name := strings.TrimSpace(speaker)
-	if name != "" && !strings.EqualFold(name, "unknown") {
-		return name
-	}
+	configured := ""
 	if s.opts.Base != nil {
-		if name := strings.TrimSpace(s.opts.Base.UserDisplayName); name != "" {
-			return name
-		}
+		configured = s.opts.Base.UserDisplayName
 	}
-	return "Unknown"
+	return brain.HumanSpeakerName(speaker, s.opts.SpeakerNames, configured)
 }

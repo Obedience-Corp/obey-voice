@@ -53,7 +53,7 @@ func torpedoHistory() []brain.Turn {
 }
 
 func TestSpawnBriefCarriesTheConversationAndMarksTheTrigger(t *testing.T) {
-	brief := spawnBrief(torpedoHistory(), "Yes, please begin.", "")
+	brief := spawnBrief(torpedoHistory(), "Yes, please begin.", "", nil, "")
 
 	for _, want := range []string{
 		"lightweight homing torpedo",
@@ -73,7 +73,7 @@ func TestSpawnBriefCarriesTheConversationAndMarksTheTrigger(t *testing.T) {
 // The instruction that answers the incident: a worker that cannot tell what it
 // was asked must not go find something else to do.
 func TestSpawnBriefForbidsGoingHunting(t *testing.T) {
-	brief := spawnBrief(torpedoHistory(), "Yes.", "")
+	brief := spawnBrief(torpedoHistory(), "Yes.", "", nil, "")
 	for _, want := range []string{"Do not search for other work", "not your task"} {
 		if !strings.Contains(brief, want) {
 			t.Errorf("brief missing the no-hunting instruction %q:\n%s", want, brief)
@@ -84,7 +84,7 @@ func TestSpawnBriefForbidsGoingHunting(t *testing.T) {
 // Tool traffic is the talking brain's own bookkeeping; a different provider's
 // worker cannot use it and it only spends the budget.
 func TestSpawnBriefDropsToolTurns(t *testing.T) {
-	brief := spawnBrief(torpedoHistory(), "Do it", "")
+	brief := spawnBrief(torpedoHistory(), "Do it", "", nil, "")
 	if strings.Contains(brief, "[tool:route]") {
 		t.Errorf("brief carried tool traffic:\n%s", brief)
 	}
@@ -95,19 +95,46 @@ func TestSpawnBriefIsBounded(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		long = append(long, brain.Turn{Role: "user", Content: strings.Repeat("x", 500)})
 	}
-	brief := spawnBrief(long, "go ahead", "")
+	brief := spawnBrief(long, "go ahead", "", nil, "")
 	// The conversation block is clipped; the framing and trigger ride on top.
 	if len(brief) > spawnBriefBytes+1024 {
 		t.Fatalf("brief is %d bytes, want it bounded near %d", len(brief), spawnBriefBytes)
 	}
 }
 
-func TestSpawnBriefUsesSpeakerLabels(t *testing.T) {
-	brief := spawnBrief([]brain.Turn{
-		{Role: "user", Speaker: "speaker-2", Content: "Pull the quarterly numbers."},
-	}, "yes", "")
-	if !strings.Contains(brief, "speaker-2: Pull the quarterly numbers.") {
-		t.Errorf("brief lost the speaker label:\n%s", brief)
+type briefNames map[string]string
+
+func (n briefNames) Display(id string) string {
+	if name, ok := n[id]; ok {
+		return name
+	}
+	return id
+}
+
+func TestSpawnBriefNamesTheHuman(t *testing.T) {
+	renames := briefNames{"speaker-1": "Ana"}
+	for _, tc := range []struct {
+		label      string
+		names      brain.SpeakerNames
+		configured string
+		want       string
+	}{
+		{"", nil, "Lance", "Lance: Pull the quarterly numbers."},
+		{"", nil, "", "User: Pull the quarterly numbers."},
+		{"unknown", renames, "Lance", "Lance: Pull the quarterly numbers."},
+		{"Unknown", nil, "", "User: Pull the quarterly numbers."},
+		{"Maria", renames, "Lance", "Maria: Pull the quarterly numbers."},
+		{"Maria", nil, "", "Maria: Pull the quarterly numbers."},
+		{"speaker-1", renames, "Lance", "Ana: Pull the quarterly numbers."},
+		{"speaker-2", renames, "Lance", "Unknown: Pull the quarterly numbers."},
+	} {
+		brief := spawnBrief([]brain.Turn{{Role: "user", Speaker: tc.label, Content: "Pull the quarterly numbers."}}, "yes", "", tc.names, tc.configured)
+		if !strings.Contains(brief, tc.want) {
+			t.Errorf("speaker %q, configured %q: brief lacks %q:\n%s", tc.label, tc.configured, tc.want, brief)
+		}
+		if strings.Contains(brief, "unknown") {
+			t.Errorf("speaker %q: brief names the unidentified label:\n%s", tc.label, brief)
+		}
 	}
 }
 
@@ -248,7 +275,7 @@ func TestSpawnJobLabelStaysTheUtterance(t *testing.T) {
 // The worker learns which persona it works for, so "change your model" names
 // a profile; the admitted response decides, and the bound config backs it up.
 func TestSpawnBriefNamesTheSpeakingPersonaID(t *testing.T) {
-	if brief := spawnBrief(torpedoHistory(), "Do it", ""); strings.Contains(brief, "persona with id") {
+	if brief := spawnBrief(torpedoHistory(), "Do it", "", nil, ""); strings.Contains(brief, "persona with id") {
 		t.Fatalf("an unnamed persona got an id line:\n%s", brief)
 	}
 	for _, tc := range []struct{ name, response, bound, want string }{
@@ -286,7 +313,7 @@ func TestSpawnBriefLeavesOutTheHandoffLine(t *testing.T) {
 		{Role: "user", Content: "about temporary festivals."},
 		{Role: "assistant", Content: spawnQueuedAcknowledgement, PersonaDisplayName: "Veronica"},
 	}
-	brief := spawnBrief(history, "about temporary festivals.", "veronica")
+	brief := spawnBrief(history, "about temporary festivals.", "veronica", nil, "")
 	if strings.Contains(brief, spawnAcknowledgement) || strings.Contains(brief, spawnQueuedAcknowledgement) {
 		t.Fatalf("the brief repeats the handoff line a worker then returns as its answer:\n%s", brief)
 	}

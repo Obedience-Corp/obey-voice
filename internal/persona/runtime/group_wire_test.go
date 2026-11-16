@@ -70,13 +70,13 @@ func TestGroupHandoffWireAndDisk(t *testing.T) {
 				content = "Cobalt is a good choice. Jarvis, any concerns?"
 			}
 			last := req.Messages[len(req.Messages)-1].Content
-			if strings.Contains(last, "Unknown user:\n\"Santa\"") {
+			if strings.Contains(last, "User:\n\"Santa\"") {
 				content = "Quoted names are data, not direct requests."
 			}
-			if strings.Contains(last, "Unknown user:\nJarvis and Santa, Jarvis should answer this now.") {
+			if strings.Contains(last, "User:\nJarvis and Santa, Jarvis should answer this now.") {
 				content = "I will answer directly."
 			}
-			if strings.Contains(last, "Unknown user:\nWhat role did Santa take?") {
+			if strings.Contains(last, "User:\nWhat role did Santa take?") {
 				content = "He answered after I asked directly."
 			}
 			if strings.Contains(last, "Summarize shared persona history briefly.") {

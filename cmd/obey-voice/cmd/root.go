@@ -389,6 +389,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		speakerNames := speaker.NewNameMap()
 		speakerNames.SeedPrimary(cfg.UserDisplayName)
 		brain.AttachSpeakerNames(p.Brain, speakerNames)
+		p.SpeakerNames = speakerNames
 		if liveSpeaker != nil {
 			liveCfg := speaker.FromAppConfig(cfg).Normalize()
 			if liveCfg.LiveActive() && liveCfg.Live.Mode == speaker.LiveModeOwnerVerify {
@@ -425,7 +426,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			}
 		}
 		selector, err = personaruntime.NewSelector(personaruntime.SelectionOptions{
-			Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
+			Base: &baseCfg, SpeakerNames: speakerNames, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
 			Native: recordings.hooks(p, textMode, noVoice), InitialNative: recordings.initial,
 			UseDefaults:         sessionBindID == appTUI.StartDefaultsID,
 			Participation:       sess.Participation,

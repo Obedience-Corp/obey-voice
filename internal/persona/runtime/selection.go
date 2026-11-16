@@ -34,8 +34,10 @@ type SelectionOptions struct {
 	PersistParticipation func(discussion.Settings) error
 	// UseDefaults preserves the launcher's Settings stack until an explicit
 	// persona selection; the default profile still supplies identity/prompt.
-	UseDefaults     bool
-	Base            *config.Config
+	UseDefaults bool
+	Base        *config.Config
+	// SpeakerNames resolves live speaker ids to session renames for routing data.
+	SpeakerNames    brain.SpeakerNames
 	Catalog         persona.Catalog
 	Pipeline        *pipeline.Pipeline
 	Voices          *voiceagent.LiveTTSManager
