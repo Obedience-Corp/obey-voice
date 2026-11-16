@@ -226,7 +226,15 @@ output says “Give me a moment to gather my notes.” once before the summary
 request. A failed compact stops that incoming request and reports a degraded
 response. Model requests have a final check including tool schemas, tool-call
 arguments, archive recall and continuation instructions; the estimate remains
-approximately four bytes per token and is not an exact model tokenizer.
+approximately four bytes per token and is not an exact model tokenizer. Images
+count too, at one token per 28×28-pixel tile (up to 21,625 for a 4096×4096
+image). That is at or above what the local vision models were measured to
+spend: muse-glimmer about 3,700 tokens for a 1474×2012 photo and never more than
+about 4,100, qwen3.8 up to about 16,400, Gemma 4 up to about 1,100. A run of
+image turns is therefore trimmed or compacted before it can outgrow the context
+window, though on models that spend less, older images leave sooner than they
+need to. Room is made for a new turn's own images by trimming older history,
+but those images never cause the turn to be refused: it is sent as before.
 
 A truncated completion is marked incomplete in history. The same stream carries
 a tools-disabled continuation after an attempted compact, without a spoken
