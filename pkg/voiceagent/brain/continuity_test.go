@@ -143,11 +143,11 @@ func TestContinuityRecoveryCompletesOrExplicitlyDegrades(t *testing.T) {
 func TestContinuityBudgetArchivesAndExpandsOnlyWhenOptedIn(t *testing.T) {
 	cfg := continuityConfig()
 	o := &OllamaBrain{cfg: cfg}
-	for i := 0; i < 15; i++ {
+	for i := 0; i < archiveHistoryTurnsHigh+3; i++ {
 		o.history = append(o.history, api.Message{Role: "user", Content: "remember WI-b94dad"}, api.Message{Role: "assistant", Content: "noted"})
 		o.trimHistory()
 	}
-	if len(o.history) > 12 || len(o.ContinuityArchive()) == 0 {
+	if userTurns(o.history) > min(cfg.MaxHistory, archiveHistoryTurnsHigh) || len(o.ContinuityArchive()) == 0 {
 		t.Fatal("hot/archive bounds not enforced")
 	}
 	o.history = append(o.history, api.Message{Role: "user", Content: strings.Repeat("x", 30000)})
@@ -189,7 +189,7 @@ func TestUnsendablePromptNeverReachesServer(t *testing.T) {
 func TestEvictedWorkitemCanBeRecalledAndCompacted(t *testing.T) {
 	o := &OllamaBrain{cfg: continuityConfig()}
 	o.history = []api.Message{{Role: "user", Content: "Track WI-b94dad context continuity"}, {Role: "assistant", Content: "Its status is active."}}
-	for i := 0; i < 8; i++ {
+	for i := 0; i < archiveHistoryTurnsHigh; i++ {
 		o.history = append(o.history, api.Message{Role: "user", Content: "another turn"}, api.Message{Role: "assistant", Content: "fine."})
 		o.trimHistory()
 	}

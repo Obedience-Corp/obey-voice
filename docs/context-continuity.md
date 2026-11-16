@@ -9,9 +9,17 @@ session files, so a projected result does not become an assistant instruction.
 The original result is retained only in a session-local memory archive, capped
 at 32 KiB per entry and 50 entries. Evicted conversation blocks are archived too.
 When the archive fills, the two oldest summaries are folded into one bounded,
-lossy note and their raw payloads are discarded. Ordinary hot history is trimmed
-at 12 messages to at most 10, subject to preserving an active user/tool group.
-Explicit references to `WI-…` or `job-…`, or requests containing “earlier”,
+lossy note and their raw payloads are discarded. Ordinary hot history is
+counted in user turns: a turn is your message plus everything after it up to
+your next one, so a chat turn's route call and route result, any tool rounds
+and the reply are kept or archived together. History is trimmed once it holds
+more than 12 turns, back to the last 6, so the model sees between 6 and 12
+recent turns and a trim, which shifts the cached prompt prefix, happens once
+every seven turns. A smaller `max_history` lowers the high mark to that many turns,
+with the low mark at half of it. The `max_history` message marks also stay in
+force (trim past `max_history × 2` messages, back to at most `max_history`),
+which keeps a tool-heavy window below the count that starts a compaction. A
+window never opens inside a tool-call group. Explicit references to `WI-…` or `job-…`, or requests containing “earlier”,
 “previous”, or “what did we”, can recall matching summaries as paired tool data.
 Compaction also consumes recent archived notes when they fit the request budget.
 This is bounded recall, not semantic search or durable memory. Clearing the
@@ -227,7 +235,7 @@ degraded. Cancellation stops recovery without another fallback utterance.
 | Setting | Default | Effect |
 | --- | --- | --- |
 | `continuity_projection_enabled` | `true` | Project tool results; disabling restores raw tool history. |
-| `continuity_archive_enabled` | `true` | Keep bounded in-memory archive and cap ordinary hot history. |
+| `continuity_archive_enabled` | `true` | Keep bounded in-memory archive and cap ordinary hot history at 6 to 12 user turns. |
 | `continuity_soft_limit_ratio` | `0.80` | Token-estimate compact threshold; `0` disables this trigger. |
 | `continuity_compact_filler` | `false` | Speak before automatic compaction. |
 | `continuity_integrity_enabled` | `true` | Detect truncated completions. |
@@ -254,7 +262,10 @@ acceptance; they are not implied by these deterministic tests.
 ## Conversation memory and compaction display
 
 Ollama conversations default to a 32k window with a matching 32k ceiling and
-`max_history: 40` as its history setting. Workers use `voice_worker_num_ctx`:
+`max_history: 40` as its history setting. With the context archive on, the
+turn marks above (12 and 6) are the tighter bound at that setting for ordinary
+chat; the 80-message mark only matters when turns carry many tool rounds.
+Workers use `voice_worker_num_ctx`:
 the default `0` resolves the worker model's advertised window, with a 128k fallback
 when metadata is absent. Positive values select an independent worker window,
 including sizes above 32k. Workers compact between tool rounds at

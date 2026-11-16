@@ -603,22 +603,23 @@ func lastUserIndex(history []api.Message) int {
 	return -1
 }
 
+// With the continuity archive on, hot history is budgeted in user turns: a
+// user message plus everything after it up to the next one. A chat turn's
+// route call and result, a turn's tool rounds and its reply are kept or
+// archived together, so routing bookkeeping costs no conversation.
+const (
+	archiveHistoryTurnsHigh = 12
+	archiveHistoryTurnsLow  = 6
+)
+
 // trimHistory bounds retained history with a high/low water mark instead of
-// a per-turn sliding window: nothing is dropped until the count exceeds
-// MaxHistory*2, then it cuts down to MaxHistory (user-turn aligned). Between
+// a per-turn sliding window: nothing is dropped until the history passes its
+// high mark, then it is cut down to the low mark at a user boundary. Between
 // trims the retained prefix is byte-stable, so the server's KV prefix cache
 // keeps hitting; a slide-per-turn window shifted the prefix every turn and
 // forced a full re-prefill for the rest of the conversation.
 func (o *OllamaBrain) trimHistory() {
-	high, low := o.cfg.MaxHistory*2, o.cfg.MaxHistory
-	if o.cfg.ContinuityArchiveEnabled {
-		high = min(high, 12)
-		low = min(low, 10)
-	}
-	if len(o.history) <= high {
-		return
-	}
-	if start := historyWindowStart(o.history, low); start > 0 {
+	if start := o.historyTrimStart(); start > 0 {
 		if ValidateTextProjection(o.effectiveTurns(o.working[:min(start, len(o.working))])) != nil {
 			o.audioProjectionBlocked.Store(true)
 			return
@@ -629,6 +630,58 @@ func (o *OllamaBrain) trimHistory() {
 			o.working = deepCopyTurns(o.working[start:])
 		}
 	}
+}
+
+// historyTrimStart is the index the retained window begins at once history
+// passes its high mark, or 0 when no trim is due.
+//
+// Without the archive the marks are MaxHistory*2 and MaxHistory messages.
+// With it, the turn marks apply as well, capped by MaxHistory. The message
+// marks stay in force so a tool-heavy window never reaches the pipeline's
+// count-based compaction trigger (also MaxHistory*2 messages).
+func (o *OllamaBrain) historyTrimStart() int {
+	high, low := o.cfg.MaxHistory*2, o.cfg.MaxHistory
+	if !o.cfg.ContinuityArchiveEnabled {
+		if len(o.history) <= high {
+			return 0
+		}
+		return historyWindowStart(o.history, low)
+	}
+	highTurns := min(o.cfg.MaxHistory, archiveHistoryTurnsHigh)
+	lowTurns := min(archiveHistoryTurnsLow, max(1, highTurns/2))
+	if len(o.history) <= high && userTurns(o.history) <= highTurns {
+		return 0
+	}
+	return max(historyWindowStart(o.history, low), turnWindowStart(o.history, lowTurns))
+}
+
+func userTurns(history []api.Message) int {
+	n := 0
+	for _, m := range history {
+		if m.Role == "user" {
+			n++
+		}
+	}
+	return n
+}
+
+// turnWindowStart is the index of the user message that opens the last turns
+// user turns, or 0 when history holds no more than that.
+func turnWindowStart(history []api.Message, turns int) int {
+	if turns <= 0 {
+		return len(history)
+	}
+	seen := 0
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role != "user" {
+			continue
+		}
+		seen++
+		if seen == turns {
+			return i
+		}
+	}
+	return 0
 }
 
 // historyWindowStart returns the index where a history window of at most max
