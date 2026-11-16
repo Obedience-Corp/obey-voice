@@ -73,6 +73,9 @@ func (o *OllamaBrain) SetModelRequestObserver(fn ModelRequestObserver) {
 
 // clientChat is the single place an Ollama chat request leaves this brain.
 func (o *OllamaBrain) clientChat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
+	if modelRequestPurpose(ctx) != PurposeWarmup {
+		o.turnStarted.Store(true)
+	}
 	return observedChat(ctx, &o.requestObserver, o.client, req, fn)
 }
 

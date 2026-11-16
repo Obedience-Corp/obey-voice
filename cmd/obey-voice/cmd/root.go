@@ -365,14 +365,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			return nil, err
 		}
 
-		// Preload the model while the user reads the empty screen so their
-		// first turn isn't the cold one. Best-effort — failures are ignored.
-		// After the session is restored: LoadHistory resets the delegation
-		// runtime whose tools warmup sends.
-		if w, ok := p.Brain.(brain.Warmer); ok {
-			p.ObserveModelRequests()
-			go w.Warmup(ctx)
-		}
+		p.ObserveModelRequests()
 
 		var captureSrc speaker.CaptureSource
 		if p.Capture != nil {
@@ -476,6 +469,12 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		p.RouteHandoff = selector.RouteHandoff
 		p.EndDiscussion = selector.EndDiscussion
 		p.CompleteDiscussion = selector.RecordDiscussionResponse
+		// Preload the model while the user reads the empty screen so their
+		// first turn isn't the cold one. Best-effort — failures are ignored.
+		// After the session is restored, because LoadHistory resets the
+		// delegation runtime whose tools warmup sends, and through the
+		// selector, which gives the brain the group roster first.
+		selector.Warmup(ctx)
 
 		saveConversation := func() error {
 			if selector != nil {

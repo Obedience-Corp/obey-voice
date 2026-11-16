@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -19,6 +18,7 @@ import (
 // Implements an agent loop: if the model returns tool calls, executes them
 // and re-requests until the model produces a text response.
 func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
+	o.turnStarted.Store(true)
 	ctx = opts.workerBudget().Context(ctx)
 	responseLimit := newResponseBudget(o.cfg, opts)
 	ctx = withResponseBudget(ctx, responseLimit)
@@ -88,17 +88,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		defer func() { o.maybeEmitContinuityBudget("") }()
 
 		// Per-turn tool session: exposes skills through progressive disclosure.
-		sess := &toolSession{
-			budget:         opts.workerBudget(),
-			catalog:        o.skills,
-			routerPolicy:   opts.effectiveRouterPolicy(),
-			workerTiers:    opts.WorkerTiers,
-			delegation:     o.delegationForTurn(opts),
-			commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
-			boundary:       NewBoundary(o.cfg.WorkerBoundary),
-			onStart:        opts.OnToolStart,
-			onEnd:          opts.OnToolEnd,
-		}
+		sess := o.turnToolSession(opts)
 
 		// spoken is every delta already forwarded this turn. After a tool
 		// loop the model often restates that text; forwarding it again is

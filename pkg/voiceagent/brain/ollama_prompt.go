@@ -91,19 +91,34 @@ func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 }
 
 func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bool, options ...StreamOptions) []api.Message {
-	msgs := make([]api.Message, 0, len(o.history)+1)
-	system := o.fullSystemPrompt + o.conversationIdentityGuidance()
+	return o.buildMessagesFrom(turnView{prompt: o.fullSystemPrompt, history: o.history, working: o.working, recall: o.recallNotes()}, skillCtx, agentContinuation, options...)
+}
+
+// turnView is the conversation state a request is built from. A live turn
+// passes the brain's own; Warmup passes a snapshot, because it runs on its own
+// goroutine.
+type turnView struct {
+	prompt  string
+	history []api.Message
+	working []Turn
+	recall  string
+}
+
+func (o *OllamaBrain) buildMessagesFrom(view turnView, skillCtx string, agentContinuation bool, options ...StreamOptions) []api.Message {
+	history, working := view.history, view.working
+	msgs := make([]api.Message, 0, len(history)+1)
+	system := view.prompt + o.conversationIdentityGuidance()
 	opts := StreamOptions{AgentContinuation: agentContinuation}
 	if len(options) > 0 {
 		opts = options[0]
 	}
 	system += currentRequestContext(o.cfg, opts)
-	lastUser := lastUserIndex(o.history)
-	if o.audioResolver != nil && lastUser >= 0 && lastUser < len(o.working) && o.working[lastUser].Utterance != nil && len(o.history[lastUser].Images) > 0 {
+	lastUser := lastUserIndex(history)
+	if o.audioResolver != nil && lastUser >= 0 && lastUser < len(working) && working[lastUser].Utterance != nil && len(history[lastUser].Images) > 0 {
 		system += "\n\nThe user request is in the attached recording. Answer the speaker's request. The persona examples illustrate style; do not repeat them or claim an action unless its tool result confirms it."
 	}
 	if !agentContinuation && lastUser >= 0 {
-		_, input := decodeOllamaUser(o.history[lastUser].Content)
+		_, input := decodeOllamaUser(history[lastUser].Content)
 		if app := ApplicationRequestContext(o.cfg, providerOllama, input); app != "" {
 			system += "\n\n" + app
 		}
@@ -115,15 +130,14 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 	// shared marks the other speakers' turns and current the message being
 	// answered, both by position in msgs.
 	shared, current := map[int]bool{}, map[int]bool{}
-	recall := o.recallNotes()
-	for i, m := range o.history {
-		if i == lastUser && recall != "" {
-			msgs = append(msgs, recallMessages(recall)...)
+	for i, m := range history {
+		if i == lastUser && view.recall != "" {
+			msgs = append(msgs, recallMessages(view.recall)...)
 		}
 		if m.Role == ollamaSharedRole || m.Role == ollamaSharedToolRole {
 			shared[len(msgs)] = true
 		}
-		if i == lastUser || (agentContinuation && i == len(o.history)-1) {
+		if i == lastUser || (agentContinuation && i == len(history)-1) {
 			current[len(msgs)] = true
 		}
 		if m.Role == "user" {
@@ -139,7 +153,7 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 		// models otherwise continue the last quoted agent's voice even with a
 		// correct group roster in the leading system message. This stays on the
 		// request projection, never in canonical user text.
-		if ((i == lastUser && !agentContinuation) || (agentContinuation && i == len(o.history)-1)) && m.Role == "user" && o.groupModeEnabled() && o.cfg != nil {
+		if ((i == lastUser && !agentContinuation) || (agentContinuation && i == len(history)-1)) && m.Role == "user" && o.groupModeEnabled() && o.cfg != nil {
 			m.Content += groupReplyInstruction(o.cfg, o.cfg.AgentName)
 		}
 		// Place the human request boundary beside the actual input as well as

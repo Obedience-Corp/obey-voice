@@ -306,6 +306,12 @@ type Warmer interface {
 	Warmup(ctx context.Context)
 }
 
+// TurnWarmer is a Warmer that can be told the routing options an ordinary turn
+// will send, so the request it warms with matches the first turn's.
+type TurnWarmer interface {
+	WarmupTurn(ctx context.Context, opts StreamOptions)
+}
+
 // SessionKind values for SessionState.Kind, shared by implementers and
 // consumers so a typo cannot silently fall into the wrong display branch.
 const (

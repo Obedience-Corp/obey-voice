@@ -650,7 +650,12 @@ func TestWarmupFollowsJSONRoute(t *testing.T) {
 			o := &OllamaBrain{client: recordingStub(t, &count, &bodies), model: "m", fullSystemPrompt: "You are Samantha.", delegation: tc.rt,
 				cfg: &config.Config{OllamaNumCtx: 8192, VoiceToolsEnabled: true, VoiceRouterTools: JSONRouteSetting}}
 			o.Warmup(context.Background())
-			if count != 1 || bytes.Contains(bodies[0], []byte(`"tools":`)) != tc.tools {
+			// A warmup with tools also primes the reply round, which has none.
+			want := 1
+			if tc.tools {
+				want = 2
+			}
+			if count != want || bytes.Contains(bodies[0], []byte(`"tools":`)) != tc.tools {
 				t.Fatalf("count=%d body=%s", count, bodies[0])
 			}
 		})

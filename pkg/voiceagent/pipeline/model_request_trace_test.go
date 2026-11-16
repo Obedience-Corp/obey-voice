@@ -206,7 +206,7 @@ func TestModelRequestSpansFollowEachRequest(t *testing.T) {
 			}
 		}
 	}
-	want := "warmup:completed route:completed route_recovery:completed reply:completed route:failed"
+	want := "warmup:completed warmup:completed route:completed route_recovery:completed reply:completed route:failed"
 	if got := strings.Join(purposes, " "); got != want {
 		t.Fatalf("requests = %s\nwant       %s", got, want)
 	}

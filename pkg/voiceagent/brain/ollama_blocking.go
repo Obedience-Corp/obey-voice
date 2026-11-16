@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/ollama/ollama/api"
@@ -14,6 +12,7 @@ import (
 
 // ThinkFull sends input and waits for the complete response.
 func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOptions) (answer string, resultErr error) {
+	o.turnStarted.Store(true)
 	if opts.TransientHistory {
 		ctx = context.WithValue(ctx, disableOutageRetryKey{}, true)
 	} else {
@@ -81,17 +80,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	o.ensureContextBudget(skillCtx)
 	o.maybeEmitContinuityBudget(skillCtx)
 
-	sess := &toolSession{
-		budget:         opts.workerBudget(),
-		catalog:        o.skills,
-		routerPolicy:   opts.effectiveRouterPolicy(),
-		workerTiers:    opts.WorkerTiers,
-		delegation:     o.delegationForTurn(opts),
-		commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
-		boundary:       NewBoundary(o.cfg.WorkerBoundary),
-		onStart:        opts.OnToolStart,
-		onEnd:          opts.OnToolEnd,
-	}
+	sess := o.turnToolSession(opts)
 
 	hadThinking := false
 	hadTools := false

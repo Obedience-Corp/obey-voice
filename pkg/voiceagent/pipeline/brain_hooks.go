@@ -146,6 +146,12 @@ func (p *Pipeline) liveRouteJSON() bool {
 	return p.RouteJSON && p.liveRouterToolsPolicy() == brain.RouterToolsRouteOnly
 }
 
+// liveToolsEnabled reports whether an ordinary user turn offers the model
+// tools. Background work, continuations and discussions narrow it further.
+func (p *Pipeline) liveToolsEnabled() bool {
+	return p.VoiceToolsEnabled || p.workerTierAvailability() != nil
+}
+
 func (p *Pipeline) routeContext() RouteContext {
 	ctx := RouteContext{}
 	if p.NarrationActive != nil {

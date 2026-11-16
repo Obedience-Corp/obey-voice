@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/ollama/ollama/api"
@@ -20,6 +22,12 @@ import (
 // prompt reading is not throttled by a window-derived guess, and think so
 // qwen3-family models put CoT in Message.Thinking instead of spoken Content.
 func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *api.ChatRequest {
+	return o.chatRequest(messages, tools, o.requestOptions())
+}
+
+// chatRequest is newChatRequest with the options supplied, for a caller that
+// reads the context high-water mark from a snapshot.
+func (o *OllamaBrain) chatRequest(messages []api.Message, tools api.Tools, options map[string]any) *api.ChatRequest {
 	stream := true
 	req := &api.ChatRequest{
 		Model:     o.model,
@@ -28,7 +36,7 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 		Stream:    &stream,
 		KeepAlive: o.keepAlive,
 		Think:     o.resolvedThink(),
-		Options:   o.requestOptions(),
+		Options:   options,
 	}
 	if o.audioResolver != nil {
 		truncate, shift := false, false
@@ -36,6 +44,22 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 		req.Shift = &shift
 	}
 	return req
+}
+
+// turnToolSession is the tool session a turn's requests are offered tools
+// from.
+func (o *OllamaBrain) turnToolSession(opts StreamOptions) *toolSession {
+	return &toolSession{
+		budget:         opts.workerBudget(),
+		catalog:        o.skills,
+		routerPolicy:   opts.effectiveRouterPolicy(),
+		workerTiers:    opts.WorkerTiers,
+		delegation:     o.delegationForTurn(opts),
+		commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
+		boundary:       NewBoundary(o.cfg.WorkerBoundary),
+		onStart:        opts.OnToolStart,
+		onEnd:          opts.OnToolEnd,
+	}
 }
 
 // requestOptions carries the two settings that decide how the prompt is read.
