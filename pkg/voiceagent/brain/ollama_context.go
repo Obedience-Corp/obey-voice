@@ -1,49 +1,14 @@
 package brain
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"image"
 	"os"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/ollama/ollama/api"
 )
-
-// An image costs the model far more than its bytes suggest, and nothing
-// reports that cost before the request is sent. Vision encoders tile an image
-// into patches of 28 pixels or more and many scale large images down, so one
-// token per imagePatchPixels square bounds what each model spends without
-// knowing which encoder it has. Models that spend less only see trimming
-// start sooner.
-const (
-	imagePatchPixels   = 28
-	imageTokenOverhead = 16
-	// maxImageTokens prices the largest image the attachment store accepts,
-	// and any image whose size cannot be read.
-	maxImageTokens = (4096+imagePatchPixels-1)/imagePatchPixels*((4096+imagePatchPixels-1)/imagePatchPixels) + imageTokenOverhead
-)
-
-func estimateImageTokens(data []byte) int {
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
-		return maxImageTokens
-	}
-	tiles := func(n int) int { return (n + imagePatchPixels - 1) / imagePatchPixels }
-	return min(tiles(cfg.Width)*tiles(cfg.Height)+imageTokenOverhead, maxImageTokens)
-}
-
-// imageBytes expresses a message's images in the four-bytes-per-token units
-// the prompt estimates use.
-func imageBytes(m api.Message) int {
-	n := 0
-	for _, data := range m.Images {
-		n += estimateImageTokens(data) * 4
-	}
-	return n
-}
 
 const toolResultTruncationMarker = "... (truncated to fit context)"
 
@@ -235,10 +200,6 @@ func (o *OllamaBrain) promptBytes(skillCtx string) int {
 		if len(m.ToolCalls) > 0 {
 			encoded, _ := json.Marshal(m.ToolCalls)
 			n += len(encoded)
-		}
-		// Native audio carries recordings in Images and has its own budget.
-		if o.audioResolver == nil {
-			n += imageBytes(m)
 		}
 	}
 	return n

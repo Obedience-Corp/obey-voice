@@ -218,11 +218,6 @@ func (o *OllamaBrain) messagesBudgetError(messages []api.Message, tools api.Tool
 		return nil
 	}
 	est := estimateMessageTokens(messages, tools)
-	// The newest turn's own images are priced high to make room for them,
-	// but never stop that turn: only images the conversation kept can.
-	if i := lastUserIndex(messages); i >= 0 {
-		est -= imageBytes(messages[i]) / 4
-	}
 	if est > o.effectiveNumCtx()*9/10 {
 		return fmt.Errorf("%w (%d estimated tokens, num_ctx=%d); shorten the input or compact the conversation", ErrPromptBudget, est, o.effectiveNumCtx())
 	}
@@ -232,7 +227,7 @@ func (o *OllamaBrain) messagesBudgetError(messages []api.Message, tools api.Tool
 func estimateMessageTokens(messages []api.Message, tools api.Tools) int {
 	bytes := 0
 	for _, m := range messages {
-		bytes += len(m.Content) + 16 + imageBytes(m)
+		bytes += len(m.Content) + 16
 		if len(m.ToolCalls) > 0 {
 			encoded, _ := json.Marshal(m.ToolCalls)
 			bytes += len(encoded)
