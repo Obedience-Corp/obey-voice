@@ -138,7 +138,7 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 	if len(working) == len(before) {
 		o.working = append(append(append([]Turn(nil), working[:user+1]...), Turn{Role: "assistant", Content: notes}), working[cut:]...)
 	}
-	o.archiveMessages(before[user+1 : cut])
+	o.archiveTurns(before[user+1:cut], working[min(user+1, len(working)):min(cut, len(working))])
 	o.emitContinuity(events.Info{Message: fmt.Sprintf("continuity.worker_compact before=%d after=%d num_ctx=%d", beforeTokens, estimateMessageTokens(o.buildMessages(skillCtx), tools), o.effectiveNumCtx())})
 	return nil
 }

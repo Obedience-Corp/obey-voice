@@ -328,7 +328,7 @@ func TestBudgetShrinkPreservesProjectedUTF8(t *testing.T) {
 func TestSessionRestoreClearsArchiveWhileCompactionPreservesIt(t *testing.T) {
 	o := &OllamaBrain{cfg: continuityConfig()}
 	o.history = []api.Message{{Role: "user", Content: "Session A secret WI-private"}, {Role: "assistant", Content: "Recorded."}}
-	o.archiveMessages(o.history)
+	o.archiveTurns(o.history, nil)
 	o.ReseedContinuity([]Turn{{Role: "assistant", Content: "Summary of session A."}, {Role: "user", Content: "What did we discuss earlier?"}})
 	if !strings.Contains(o.recallNotes(), "WI-private") {
 		t.Fatal("same-session compact lost archive")

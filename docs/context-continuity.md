@@ -15,7 +15,10 @@ your next one, so a chat turn's route call and route result, any tool rounds
 and the reply are kept or archived together. History is trimmed once it holds
 more than 12 turns, back to the last 6, so the model sees between 6 and 12
 recent turns and a trim, which shifts the cached prompt prefix, happens once
-every seven turns. Evicted turns are archived whole, several to a note. A
+every seven turns. Every eviction, whether by this trim, the context guard or
+a failed summary, archives whole turns, several to a note. An archived chat turn
+reads as your line and the spoken reply: the route call adds a line only for
+text the model wrote with it, and route results are never archived. A
 smaller `max_history` lowers the high mark to that many turns, with the low
 mark at half of it. The `max_history` message marks also stay in force (trim
 past `max_history × 2` messages, back to at most `max_history`), which keeps a

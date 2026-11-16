@@ -18,13 +18,20 @@ func (o *OllamaBrain) TrimContinuity(input string) {
 		ratio = .8
 	}
 	limit := int(float64(o.effectiveNumCtx())*ratio) - (len(input)+19)/4 - 1
+	var dropped []api.Message
+	var droppedTurns []Turn
 	for len(o.history) > 0 && o.estimateTokens("") > limit {
-		// Remove a complete exchange, including any native tool calls/results.
-		start := historyWindowStart(o.history, len(o.history)-1)
-		if start <= 0 {
-			start = len(o.history)
+		// Remove the oldest complete exchange, including its tool calls and
+		// results: everything before the second user message.
+		start := len(o.history)
+		for i := 1; i < len(o.history); i++ {
+			if o.history[i].Role == "user" {
+				start = i
+				break
+			}
 		}
-		o.archiveMessages(o.history[:start])
+		dropped = append(dropped, o.history[:start]...)
+		droppedTurns = append(droppedTurns, o.working[:min(start, len(o.working))]...)
 		o.history = append([]api.Message(nil), o.history[start:]...)
 		if start < len(o.working) {
 			o.working = deepCopyTurns(o.working[start:])
@@ -32,6 +39,7 @@ func (o *OllamaBrain) TrimContinuity(input string) {
 			o.working = nil
 		}
 	}
+	o.archiveTurns(dropped, droppedTurns)
 	o.maybeEmitContinuityBudget(input)
 }
 

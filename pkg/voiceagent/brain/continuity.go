@@ -21,7 +21,8 @@ var ErrPromptBudget = errors.New("context exceeds safe prompt budget")
 // only while owning the provider conversation (as with History/LoadHistory).
 func (o *OllamaBrain) AddContinuityNote(raw string, p continuity.Provenance) string {
 	note, entry := continuity.ProjectToolResult(raw, p)
-	if o.cfg != nil && o.cfg.ContinuityArchiveEnabled {
+	// A route decision is bookkeeping; it would only crowd real notes out.
+	if o.cfg != nil && o.cfg.ContinuityArchiveEnabled && p.ToolName != "route" {
 		o.archive.Add(entry)
 	}
 	o.emitContinuity(events.Info{Message: fmt.Sprintf("continuity.projection tool=%s raw_bytes=%d projected_bytes=%d", entry.Provenance.ToolName, len(raw), len(note))})
@@ -42,51 +43,53 @@ func (o *OllamaBrain) projectedToolResult(tc api.ToolCall, raw string) api.Messa
 	return toolResultMessage(tc, raw)
 }
 
-func (o *OllamaBrain) archiveMessages(messages []api.Message) {
+// archiveTurns is the one way evicted history enters the archive. Whole user
+// turns are packed into as few notes as fit, and only a single turn larger
+// than a note is clipped. turns, when aligned with messages, identifies route
+// bookkeeping after a persona switch has quoted it as shared context.
+func (o *OllamaBrain) archiveTurns(messages []api.Message, turns []Turn) {
 	if o.cfg == nil || !o.cfg.ContinuityArchiveEnabled || len(messages) == 0 {
 		return
 	}
-	var b strings.Builder
-	for _, m := range messages {
-		b.WriteString(o.archiveLine(m))
-		if b.Len() >= continuity.NoteBytes {
-			break
+	if len(turns) != len(messages) {
+		turns = nil
+	}
+	var note strings.Builder
+	flush := func() {
+		if note.Len() > 0 {
+			o.archive.Add(continuity.Entry{Kind: "turn_block", Summary: note.String()})
+			note.Reset()
 		}
 	}
-	o.archive.Add(continuity.Entry{Kind: "turn_block", Summary: b.String()})
-}
-
-// archiveTurns archives evicted user turns without cutting one off at the
-// note size: whole turns are packed into as few notes as fit, and only a
-// single turn larger than a note is clipped.
-func (o *OllamaBrain) archiveTurns(messages []api.Message) {
-	if o.cfg == nil || !o.cfg.ContinuityArchiveEnabled || len(messages) == 0 {
-		return
-	}
-	var note []api.Message
-	size := 0
 	for start := 0; start < len(messages); {
 		end := start + 1
 		for end < len(messages) && messages[end].Role != "user" {
 			end++
 		}
-		turn := messages[start:end]
-		n := 0
-		for _, m := range turn {
-			n += len(o.archiveLine(m))
+		var turn strings.Builder
+		for i := start; i < end; i++ {
+			var t *Turn
+			if turns != nil {
+				t = &turns[i]
+			}
+			turn.WriteString(o.archiveLine(messages[i], t))
 		}
-		if len(note) > 0 && size+n > continuity.NoteBytes {
-			o.archiveMessages(note)
-			note, size = nil, 0
+		if note.Len() > 0 && note.Len()+turn.Len() > continuity.NoteBytes {
+			flush()
 		}
-		note = append(note, turn...)
-		size += n
+		note.WriteString(turn.String())
 		start = end
 	}
-	o.archiveMessages(note)
+	flush()
 }
 
-func (o *OllamaBrain) archiveLine(m api.Message) string {
+// archiveLine is one message as an archive line. A chat turn archives as the
+// user line and the spoken reply; a route call adds a line only for text the
+// model wrote alongside it, and a route result adds nothing.
+func (o *OllamaBrain) archiveLine(m api.Message, t *Turn) string {
+	if routeBookkeeping(m, t) {
+		return ""
+	}
 	role, content := m.Role, m.Content
 	if role == "user" {
 		content = o.userLine(content)
@@ -98,6 +101,36 @@ func (o *OllamaBrain) archiveLine(m api.Message) string {
 		role = "shared tool result"
 	}
 	return role + ": " + continuity.Clip(content, 512) + "\n"
+}
+
+func routeBookkeeping(m api.Message, t *Turn) bool {
+	if t != nil {
+		if t.Role == "tool" {
+			return t.ToolName == "route"
+		}
+		return strings.TrimSpace(t.Content) == "" && len(t.ToolCalls) > 0 && onlyRouteCalls(t.ToolCalls)
+	}
+	if m.Role == "tool" {
+		return m.ToolName == "route"
+	}
+	if m.Role != "assistant" || strings.TrimSpace(m.Content) != "" || len(m.ToolCalls) == 0 {
+		return false
+	}
+	for _, call := range m.ToolCalls {
+		if call.Function.Name != "route" {
+			return false
+		}
+	}
+	return true
+}
+
+func onlyRouteCalls(calls []TurnToolCall) bool {
+	for _, call := range calls {
+		if call.Name != "route" {
+			return false
+		}
+	}
+	return true
 }
 
 // ContinuityArchive exposes bounded session-local provenance for explicit
@@ -271,7 +304,7 @@ func (o *OllamaBrain) compactForContinuation(ctx context.Context) error {
 	if start < 0 {
 		start = len(before)
 	}
-	o.archiveMessages(before[:start])
+	o.archiveTurns(before[:start], o.working[:min(start, len(o.working))])
 	o.history = append([]api.Message{{Role: ollamaSharedRole, Content: "Shared conversation notes: " + continuity.Clip(summary, 4096)}}, before[start:]...)
 	workingStart := start
 	if workingStart > len(o.working) {
@@ -332,7 +365,7 @@ func recallMessages(notes string) []api.Message {
 // ReseedContinuity replaces hot history after same-session compaction. Unlike
 // LoadHistory (session restore), this intentionally keeps the session archive.
 func (o *OllamaBrain) ReseedContinuity(turns []Turn) {
-	o.archiveMessages(o.history)
+	o.archiveTurns(o.history, o.working)
 	// The synthetic summary is shared context, not a reply authored by the
 	// currently active persona. Keep the durable canonical transcript intact.
 	o.loadHistoryProjectionForPersona(turns, false, true)
