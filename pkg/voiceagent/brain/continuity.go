@@ -48,14 +48,17 @@ func (o *OllamaBrain) archiveMessages(messages []api.Message) {
 	}
 	var b strings.Builder
 	for _, m := range messages {
-		role := m.Role
+		role, content := m.Role, m.Content
+		if role == "user" {
+			content = o.userLine(content)
+		}
 		if role == ollamaSharedRole {
 			role = "shared conversation"
 		}
 		if role == ollamaSharedToolRole {
 			role = "shared tool result"
 		}
-		b.WriteString(role + ": " + continuity.Clip(m.Content, 512) + "\n")
+		b.WriteString(role + ": " + continuity.Clip(content, 512) + "\n")
 		if b.Len() >= continuity.NoteBytes {
 			break
 		}

@@ -71,7 +71,8 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 		}
 		// Keep evidence scoped to this call, out of the returned context used
 		// for brain responses, agent handoffs, and continuations.
-		admitted, err = p.AdmitInput(admissionpolicy.WithAcousticName(ctx, name), input, background)
+		admitCtx := admissionpolicy.WithSpeaker(admissionpolicy.WithAcousticName(ctx, name), metrics.speaker)
+		admitted, err = p.AdmitInput(admitCtx, input, background)
 		if err != nil {
 			return ctx, admitted, err
 		}
@@ -185,7 +186,7 @@ func (p *Pipeline) completeLocalReply(ctx context.Context, input, reply string, 
 	if identity := metrics.responseIdentity(); identity != nil {
 		response.PersonaID, response.PersonaDisplayName, response.PromptHash, response.ResponseID = identity.PersonaID, identity.PersonaDisplayName, identity.PromptHash, identity.ResponseID
 	}
-	user := brain.Turn{Role: "user", Content: input, Speaker: p.currentSpeakerID(), At: now, Utterance: metrics.input.Clone(), AudioRetained: metrics.audioRetained}
+	user := brain.Turn{Role: "user", Content: input, Speaker: metrics.speaker, At: now, Utterance: metrics.input.Clone(), AudioRetained: metrics.audioRetained}
 	additions := []brain.Turn{user, response}
 	if continuity, ok := p.Brain.(brain.ContinuityTransferProvider); ok {
 		if err := appendContinuityHistory(continuity, additions); err != nil {

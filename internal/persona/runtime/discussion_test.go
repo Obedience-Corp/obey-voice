@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
@@ -175,6 +176,38 @@ func TestGroupAllPassPersistsInputWithoutSelectionOrVoice(t *testing.T) {
 	}
 	if saved.Turns[len(saved.Turns)-1].Content != input || policy.checks != 2 || policy.nextCalls != 0 {
 		t.Fatalf("saved=%+v checks=%d next=%d", saved.Turns, policy.checks, policy.nextCalls)
+	}
+}
+func TestGroupInputTakesItsSpeakerFromTheAdmittedTurn(t *testing.T) {
+	pass := func(context.Context, discussion.Context, discussion.Persona) (discussion.Contribution, error) {
+		return discussion.Contribution{Kind: "pass", Reason: "no_contribution"}, nil
+	}
+	lastSaved := func(t *testing.T, f *selectorTestFixture) brain.Turn {
+		t.Helper()
+		saved, err := f.store.Load(f.session.ID)
+		if err != nil || len(saved.Turns) == 0 {
+			t.Fatalf("saved=%+v err=%v", saved, err)
+		}
+		return saved.Turns[len(saved.Turns)-1]
+	}
+
+	f, policy, _ := groupFixture(t)
+	policy.check = pass
+	f.pipeline.CurrentSpeaker = func() string { return "Lance" }
+	if err := f.pipeline.RunTurnTextMode(t.Context(), "Everyone, thoughts?"); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastSaved(t, f); got.Content != "Everyone, thoughts?" || got.Speaker != "" {
+		t.Fatalf("typed group input took the microphone label: %+v", got)
+	}
+
+	f, policy, _ = groupFixture(t)
+	policy.check = pass
+	if _, err := f.selector.Route(admission.WithSpeaker(t.Context(), "unknown"), "Everyone, views?", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastSaved(t, f); got.Content != "Everyone, views?" || got.Speaker != "unknown" {
+		t.Fatalf("voice group input lost its label: %+v", got)
 	}
 }
 func TestGroupProposalRejectsChangedRosterAndHistory(t *testing.T) {

@@ -133,8 +133,8 @@ func spawnBrief(history []brain.Turn, transcript, personaID string) string {
 			if t.Role == "assistant" && strings.TrimSpace(t.PersonaDisplayName) != "" {
 				speaker = t.PersonaDisplayName + " assistant"
 			}
-			if t.Role == "user" && strings.TrimSpace(t.Speaker) != "" {
-				speaker = t.Speaker
+			if name := brain.PromptSpeaker(t.Speaker); t.Role == "user" && name != "" {
+				speaker = name
 			}
 			convo.WriteString(speaker + ": " + strings.TrimSpace(t.Content) + "\n")
 		}

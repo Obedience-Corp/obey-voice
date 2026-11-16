@@ -801,9 +801,10 @@ func lostPlaceIsAnInfoLine(t *testing.T, provider, loss string) {
 	requireContains(t, last.Prompt, "What color is the car?")
 }
 
-// A line from a named speaker, addressed to Mira with an @ mention and
-// carrying an image, survives Mira's Codex thread being parked: the view it
-// comes back to extends the one the thread holds, so the thread is resumed.
+// A typed line, addressed to Mira with an @ mention and carrying an image,
+// survives Mira's Codex thread being parked: the view it comes back to extends
+// the one the thread holds, so the thread is resumed. The microphone's last
+// label belongs to whoever spoke, so typed lines carry no speaker.
 func TestCodexThreadSurvivesARoundTripOfARealisticLine(t *testing.T) {
 	c := newSessionConversation(t, "codex")
 	config.SetConfigDirForTest(t, t.TempDir())
@@ -819,7 +820,7 @@ func TestCodexThreadSurvivesARoundTripOfARealisticLine(t *testing.T) {
 			line = &turn
 		}
 	}
-	if line == nil || len(line.Attachments) != 1 || line.Speaker != "speaker-2" || line.RoutedInput != "what is in this diagram?" {
+	if line == nil || len(line.Attachments) != 1 || line.Speaker != "" || line.RoutedInput != "what is in this diagram?" {
 		t.Fatalf("the line is not as realistic as intended: %+v", line)
 	}
 	requests := c.sessionRequests()
@@ -829,6 +830,7 @@ func TestCodexThreadSurvivesARoundTripOfARealisticLine(t *testing.T) {
 	if requests[1].Resume == "" || requests[1].Resume != requests[0].Session {
 		t.Fatalf("Mira's thread was not resumed after the round trip: %+v", requests[1])
 	}
-	requireContains(t, requests[1].Prompt, `"content":"Ember here.","persona":"Ember"`, "speaker-2: Anything to add?")
+	requireContains(t, requests[1].Prompt, `"content":"Ember here.","persona":"Ember"`, "User: Anything to add?")
+	requireOmits(t, requests[1].Prompt, "speaker-2")
 	requireOmits(t, requests[1].Prompt, "what is in this diagram?", ref.ID)
 }

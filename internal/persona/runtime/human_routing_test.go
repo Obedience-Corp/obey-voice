@@ -8,7 +8,27 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
+
+func TestHumanSpeakerNameFallsBackForUnidentifiedSpeakers(t *testing.T) {
+	configured := &Selector{opts: SelectionOptions{Base: &config.Config{UserDisplayName: "Lance"}}}
+	bare := &Selector{opts: SelectionOptions{Base: &config.Config{}}}
+	for label, want := range map[string][2]string{
+		"":          {"Lance", "Unknown"},
+		"unknown":   {"Lance", "Unknown"},
+		" Unknown ": {"Lance", "Unknown"},
+		"Maria":     {"Maria", "Maria"},
+		"speaker-2": {"speaker-2", "speaker-2"},
+	} {
+		if got := configured.humanSpeakerName(label); got != want[0] {
+			t.Errorf("configured %q = %q, want %q", label, got, want[0])
+		}
+		if got := bare.humanSpeakerName(label); got != want[1] {
+			t.Errorf("unconfigured %q = %q, want %q", label, got, want[1])
+		}
+	}
+}
 
 func TestHumanSpeakerCannotBecomePersonaOnFollowup(t *testing.T) {
 	f := newSelectorTestFixture(t, testProfile("obey", "Obey", "obey"), testProfile("santa", "Santa", "santa"))

@@ -318,7 +318,7 @@ func (s *Selector) recordGroupInput(ctx context.Context, input string) error {
 	}
 	before := provider.ContinuitySnapshot()
 	next := before
-	t := brain.Turn{Role: "user", Content: input, Speaker: s.opts.Pipeline.CurrentSpeakerID(), At: time.Now(), Attachments: chatmedia.Input(ctx)}
+	t := brain.Turn{Role: "user", Content: input, Speaker: admission.Speaker(ctx), At: time.Now(), Attachments: chatmedia.Input(ctx)}
 	next.Canonical = append(slices.Clone(before.Canonical), t)
 	working := before.Working
 	if working == nil {

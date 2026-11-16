@@ -552,9 +552,6 @@ func (p *Pipeline) clearPreparedCapture() {
 	p.preparedCapture.Store(false)
 }
 
-// CurrentSpeakerID is the finalized-input speaker snapshot used by admission owners.
-func (p *Pipeline) CurrentSpeakerID() string { return p.currentSpeakerID() }
-
 // HasCaptureProvider includes finalized native input as well as Standard STT.
 // It does not open a reader or imply that a hardware device is available.
 func (p *Pipeline) HasCaptureProvider() bool { return p != nil && (p.STT != nil || p.Input != nil) }

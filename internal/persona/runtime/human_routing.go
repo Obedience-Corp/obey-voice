@@ -1,10 +1,13 @@
 package personaruntime
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+)
 
 func (s *Selector) humanSpeakerName(speaker string) string {
-	name := strings.TrimSpace(speaker)
-	if name != "" && !strings.EqualFold(name, "unknown") {
+	if name := brain.PromptSpeaker(speaker); name != "" {
 		return name
 	}
 	if s.opts.Base != nil {

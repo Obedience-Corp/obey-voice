@@ -81,7 +81,7 @@ func (o *OllamaBrain) refreshGroupHistory(turns []Turn) {
 }
 
 func (o *OllamaBrain) groupUserName(speakerID string) string {
-	speakerID = strings.TrimSpace(speakerID)
+	speakerID = PromptSpeaker(speakerID)
 	if speakerID != "" && o.speakerNames != nil {
 		if name := strings.TrimSpace(o.speakerNames.Display(speakerID)); name != "" && name != speakerID {
 			return name
@@ -106,12 +106,18 @@ func decodeOllamaUser(stored string) (speakerID, content string) {
 }
 
 func (o *OllamaBrain) formatStoredUser(stored string) string {
-	speakerID, content := decodeOllamaUser(stored)
 	if o.groupModeEnabled() {
-		name := o.groupUserName(speakerID)
-		return name + " user:\n" + content
+		speakerID, content := decodeOllamaUser(stored)
+		return o.groupUserName(speakerID) + " user:\n" + content
 	}
-	if speakerID == "" {
+	return o.userLine(stored)
+}
+
+// userLine is a stored user message as one attributed line: "Name: text" for
+// an identified speaker, the bare text otherwise.
+func (o *OllamaBrain) userLine(stored string) string {
+	speakerID, content := decodeOllamaUser(stored)
+	if PromptSpeaker(speakerID) == "" {
 		return content
 	}
 	return FormatUserLine(speakerID, content, o.speakerNames)

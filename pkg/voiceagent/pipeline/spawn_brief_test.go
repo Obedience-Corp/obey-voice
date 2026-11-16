@@ -111,6 +111,24 @@ func TestSpawnBriefUsesSpeakerLabels(t *testing.T) {
 	}
 }
 
+func TestSpawnBriefNamesOnlyIdentifiedSpeakers(t *testing.T) {
+	for label, want := range map[string]string{
+		"":          "user: Pull the quarterly numbers.",
+		"unknown":   "user: Pull the quarterly numbers.",
+		"Unknown":   "user: Pull the quarterly numbers.",
+		"Lance":     "Lance: Pull the quarterly numbers.",
+		"speaker-2": "speaker-2: Pull the quarterly numbers.",
+	} {
+		brief := spawnBrief([]brain.Turn{{Role: "user", Speaker: label, Content: "Pull the quarterly numbers."}}, "yes", "")
+		if !strings.Contains(brief, want) {
+			t.Errorf("speaker %q: brief lacks %q:\n%s", label, want, brief)
+		}
+		if strings.Contains(strings.ToLower(brief), "unknown") {
+			t.Errorf("speaker %q: brief names the unidentified label:\n%s", label, brief)
+		}
+	}
+}
+
 func TestIsBareContinuation(t *testing.T) {
 	bare := []string{
 		"Yes", "yes.", "Yeah!", "sure", "OK", "okay", "please",
