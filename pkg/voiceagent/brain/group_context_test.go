@@ -28,7 +28,7 @@ func TestOllamaGroupProjectionUsesCompactWireLabels(t *testing.T) {
 		{Role: "assistant", PersonaID: "alex", PersonaDisplayName: "Alex", Content: "checking"},
 		{Role: "assistant", PersonaID: "samantha", PersonaDisplayName: "Samantha", Content: "I can help"},
 		{Role: "tool", PersonaID: "alex", PersonaDisplayName: "Alex", ToolName: "lookup", Content: "cobalt"},
-		{Role: "user", Speaker: "speaker-unknown", Content: "anyone there?"},
+		{Role: "user", Speaker: "speaker-3", Content: "anyone there?"},
 	}
 	if err := o.ImportHistory(turns); err != nil {
 		t.Fatal(err)

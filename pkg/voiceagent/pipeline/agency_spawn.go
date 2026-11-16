@@ -101,7 +101,11 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		a.jobScopes[jobID] = scope
 		a.workMu.Unlock()
 	}
-	brief := spawnBrief(history, d.Transcript, briefPersonaID(metrics, jobCfg))
+	user := ""
+	if jobCfg != nil {
+		user = jobCfg.UserDisplayName
+	}
+	brief := spawnBrief(history, d.Transcript, briefPersonaID(metrics, jobCfg), a.pipeline.SpeakerNames, user)
 	run := a.workerRun(brief, worker, jobCfg)
 	switch {
 	case plan != nil:

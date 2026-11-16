@@ -258,6 +258,9 @@ type Pipeline struct {
 	// in-flight user turn when live labels are active. Optional; nil/empty
 	// means ordinary single-user attribution.
 	CurrentSpeaker func() string
+	// SpeakerNames resolves live speaker ids to session renames for the
+	// human's name in worker briefs. Optional.
+	SpeakerNames brain.SpeakerNames
 
 	// BargeInSpeakerVerdict, when set, reports the live speaker analyzer's
 	// most recent window verdict to the interrupt controller (config

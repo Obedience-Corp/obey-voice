@@ -180,7 +180,7 @@ func (s *Selector) routeAudience(ctx context.Context, input string) (pipeline.Re
 			current = k
 		}
 	}
-	request := discussion.AudienceRequest{Participants: parts, Current: current, Speaker: s.humanSpeakerName(""), Latest: input, AcousticName: admission.AcousticName(ctx)}
+	request := discussion.AudienceRequest{Participants: parts, Current: current, Speaker: s.humanSpeakerName(admission.Speaker(ctx)), Latest: input, AcousticName: admission.AcousticName(ctx)}
 	turns := s.opts.Pipeline.Brain.History()
 	s.groupMu.Lock()
 	if s.recentAudienceScope == s.opts.Pipeline.ConversationScope() && len(turns)-s.recentAudienceAt <= 8 {

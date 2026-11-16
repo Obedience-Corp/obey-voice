@@ -41,6 +41,40 @@ func UserSpeakerLabel(speakerID string, names SpeakerNames) string {
 	return speakerID
 }
 
+// HumanSpeakerName names the human author of a user turn where a name is
+// always written, such as group chat headers and routing data. A renamed
+// anonymous id gives its rename and an identified speaker its own name. With
+// no identified speaker the turn belongs to the configured user, or the neutral
+// "User" when none is configured. An unrenamed anonymous id (speaker-2) names
+// nobody known and reads "Unknown".
+func HumanSpeakerName(speakerID string, names SpeakerNames, configured string) string {
+	speakerID = PromptSpeaker(speakerID)
+	if speakerID == "" {
+		if configured = strings.TrimSpace(configured); configured != "" {
+			return configured
+		}
+		return "User"
+	}
+	if names != nil {
+		if d := strings.TrimSpace(names.Display(speakerID)); d != "" && d != speakerID && !anonymousSpeakerID(d) {
+			return d
+		}
+	}
+	if anonymousSpeakerID(speakerID) {
+		return "Unknown"
+	}
+	return speakerID
+}
+
+// anonymousSpeakerID reports a diarization id (speaker-N), which carries no name.
+func anonymousSpeakerID(id string) bool {
+	n, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(id)), "speaker-")
+	if !ok || n == "" {
+		return false
+	}
+	return strings.Trim(n, "0123456789") == ""
+}
+
 // FormatUserLine builds "Label: content" for a user turn.
 func FormatUserLine(speakerID, content string, names SpeakerNames) string {
 	return UserSpeakerLabel(speakerID, names) + ": " + content

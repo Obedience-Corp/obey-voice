@@ -80,14 +80,14 @@ func (o *OllamaBrain) refreshGroupHistory(turns []Turn) {
 	o.stateMu.Unlock()
 }
 
-func (o *OllamaBrain) groupUserName(speakerID string) string {
-	speakerID = PromptSpeaker(speakerID)
-	if speakerID != "" && o.speakerNames != nil {
-		if name := strings.TrimSpace(o.speakerNames.Display(speakerID)); name != "" && name != speakerID {
-			return name
-		}
+// humanName names the author of a stored user turn from the turn's own speaker,
+// so the name never shifts with the live label of a later turn.
+func (o *OllamaBrain) humanName(speakerID string) string {
+	configured := ""
+	if o.cfg != nil {
+		configured = o.cfg.UserDisplayName
 	}
-	return "Unknown"
+	return HumanSpeakerName(speakerID, o.speakerNames, configured)
 }
 
 func encodeOllamaUser(speakerID, content string) string {
@@ -108,7 +108,11 @@ func decodeOllamaUser(stored string) (speakerID, content string) {
 func (o *OllamaBrain) formatStoredUser(stored string) string {
 	if o.groupModeEnabled() {
 		speakerID, content := decodeOllamaUser(stored)
-		return o.groupUserName(speakerID) + " user:\n" + content
+		name := o.humanName(speakerID)
+		if name == "User" {
+			return "User:\n" + content
+		}
+		return name + " user:\n" + content
 	}
 	return o.userLine(stored)
 }

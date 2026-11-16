@@ -201,13 +201,24 @@ func TestGroupInputTakesItsSpeakerFromTheAdmittedTurn(t *testing.T) {
 		t.Fatalf("typed group input took the microphone label: %+v", got)
 	}
 
-	f, policy, _ = groupFixture(t)
-	policy.check = pass
-	if _, err := f.selector.Route(admission.WithSpeaker(t.Context(), "unknown"), "Everyone, views?", false); err != nil {
-		t.Fatal(err)
-	}
-	if got := lastSaved(t, f); got.Content != "Everyone, views?" || got.Speaker != "unknown" {
-		t.Fatalf("voice group input lost its label: %+v", got)
+	for label, name := range map[string]string{"unknown": "User", "Maria": "Maria"} {
+		f, policy, _ = groupFixture(t)
+		policy.check = pass
+		audience := policy.audience
+		var heard string
+		policy.audience = func(ctx context.Context, r discussion.AudienceRequest) (discussion.Audience, error) {
+			heard = r.Speaker
+			return audience(ctx, r)
+		}
+		if _, err := f.selector.Route(admission.WithSpeaker(t.Context(), label), "Everyone, views?", false); err != nil {
+			t.Fatal(err)
+		}
+		if got := lastSaved(t, f); got.Content != "Everyone, views?" || got.Speaker != label {
+			t.Fatalf("voice group input lost its label %q: %+v", label, got)
+		}
+		if heard != name {
+			t.Fatalf("audience speaker for %q = %q, want %q", label, heard, name)
+		}
 	}
 }
 func TestGroupProposalRejectsChangedRosterAndHistory(t *testing.T) {

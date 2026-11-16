@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/internal/summon"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
@@ -60,7 +61,7 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 			groupAdmission.AgentMentionControl = admitted.AgentMentionControl
 			return groupAdmission, err
 		}
-		address, err := s.resolveAddress(ctx, input, "user", s.humanSpeakerName(""), roster, participants)
+		address, err := s.resolveAddress(ctx, input, "user", s.humanSpeakerName(admission.Speaker(ctx)), roster, participants)
 		if err != nil {
 			if isIdentityRefusal(err) {
 				return admitted, wrapIdentityRefusalFailure(ctx, "route", err)

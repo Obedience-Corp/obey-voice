@@ -85,24 +85,56 @@ func TestOllamaLiveAndRestoredUserMessagesNameOnlyIdentifiedSpeakers(t *testing.
 	}
 }
 
-func TestOllamaGroupModeTreatsUnidentifiedAsNoSpeaker(t *testing.T) {
-	for _, tc := range []struct{ label, header string }{
-		{"", "Unknown user:\n"},
-		{"unknown", "Unknown user:\n"},
-		{"speaker-1", "Lance user:\n"},
-		{"speaker-2", "Unknown user:\n"},
-	} {
-		o := &OllamaBrain{cfg: &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}}
-		o.SetGroupParticipants([]GroupParticipant{{Name: "Samantha"}, {Name: "Alex"}})
-		o.SetSpeakerNames(speakerCaseNames)
-		o.LoadHistory([]Turn{{Role: "user", Speaker: tc.label, Content: "anyone there?"}})
-		got := userContents(o.buildMessages(""))
-		if len(got) != 1 || !strings.HasPrefix(got[0], tc.header+"anyone there?") {
-			t.Errorf("label %q: group user = %q, want header %q", tc.label, got, tc.header)
-		}
-		if strings.Contains(got[0], "unknown") {
-			t.Errorf("label %q: group user names the unidentified label: %q", tc.label, got[0])
-		}
+// groupHeaderCases: label, rename table, configured user name, and the header
+// a group-mode user message must carry.
+var groupHeaderCases = []struct {
+	name, label string
+	names       SpeakerNames
+	configured  string
+	header      string
+}{
+	{"none, configured", "", nil, "Lance", "Lance user:\n"},
+	{"none, unconfigured", "", nil, "", "User:\n"},
+	{"unidentified, configured", "unknown", testNames{"speaker-1": "Ana"}, "Lance", "Lance user:\n"},
+	{"unidentified, unconfigured", "Unknown", nil, "", "User:\n"},
+	{"enrolled with renames", "Maria", testNames{"speaker-1": "Ana"}, "Lance", "Maria user:\n"},
+	{"enrolled without renames", "Maria", nil, "", "Maria user:\n"},
+	{"renamed diarization", "speaker-1", testNames{"speaker-1": "Ana"}, "Lance", "Ana user:\n"},
+	{"unrenamed diarization", "speaker-2", testNames{"speaker-1": "Ana"}, "Lance", "Unknown user:\n"},
+	{"diarization without renames", "speaker-1", nil, "Lance", "Unknown user:\n"},
+}
+
+func TestOllamaGroupHeaderNamesTheHuman(t *testing.T) {
+	for _, tc := range groupHeaderCases {
+		t.Run(tc.name, func(t *testing.T) {
+			o := &OllamaBrain{cfg: &config.Config{ActivePersona: "samantha", AgentName: "Samantha", UserDisplayName: tc.configured}}
+			o.SetGroupParticipants([]GroupParticipant{{Name: "Samantha"}, {Name: "Alex"}})
+			o.SetSpeakerNames(tc.names)
+			o.LoadHistory([]Turn{{Role: "user", Speaker: tc.label, Content: "anyone there?"}})
+			got := userContents(o.buildMessages(""))
+			if len(got) != 1 || !strings.HasPrefix(got[0], tc.header+"anyone there?") {
+				t.Errorf("group user = %q, want header %q", got, tc.header)
+			}
+		})
+	}
+}
+
+// A stored turn's header comes from its own speaker, so later turns with other
+// live labels never rewrite it and the earlier prompt bytes stay put.
+func TestOllamaGroupHeaderIsStableAcrossTurns(t *testing.T) {
+	o := &OllamaBrain{cfg: &config.Config{ActivePersona: "samantha", AgentName: "Samantha", UserDisplayName: "Lance"}}
+	o.SetGroupParticipants([]GroupParticipant{{Name: "Samantha"}, {Name: "Alex"}})
+	o.LoadHistory([]Turn{{Role: "user", Speaker: "unknown", Content: "first"}, {Role: "assistant", PersonaID: "samantha", PersonaDisplayName: "Samantha", Content: "ok"}})
+	before := o.buildMessages("")
+	if err := o.appendUserInput("second", StreamOptions{Speaker: "Maria"}); err != nil {
+		t.Fatal(err)
+	}
+	after := o.buildMessages("")
+	if !strings.HasPrefix(before[1].Content, "Lance user:\nfirst") || after[1].Content != "Lance user:\nfirst" {
+		t.Fatalf("earlier header changed: before %q after %q", before[1].Content, after[1].Content)
+	}
+	if last := userContents(after); !strings.HasPrefix(last[len(last)-1], "Maria user:\nsecond") {
+		t.Fatalf("new header = %q", last[len(last)-1])
 	}
 }
 
@@ -120,16 +152,14 @@ func TestOllamaNativeCompletionNamesOnlyIdentifiedSpeakers(t *testing.T) {
 	}
 }
 
-func TestCompletionPromptNamesOnlyIdentifiedSpeakers(t *testing.T) {
-	for _, tc := range []struct{ label, line string }{
-		{"", "Current user input: Is it done?\n"},
-		{"unknown", "Current user input: Is it done?\n"},
-		{"Lance", "Current user input (Lance): Is it done?\n"},
-		{"speaker-2", "Current user input (speaker-2): Is it done?\n"},
-	} {
-		prompt := completionPrompt(BuildCompletionRequest("Is it done?", tc.label, nil, nil))
-		if !strings.Contains(prompt, tc.line) {
-			t.Errorf("label %q: prompt lacks %q:\n%s", tc.label, tc.line, prompt)
+func TestCompletionPromptNamesTheHuman(t *testing.T) {
+	for _, tc := range groupHeaderCases {
+		o := &OllamaBrain{cfg: &config.Config{UserDisplayName: tc.configured}}
+		o.SetSpeakerNames(tc.names)
+		prompt := completionPrompt(BuildCompletionRequest("Is it done?", tc.label, nil, nil), o.humanName(tc.label))
+		name := strings.TrimSuffix(strings.TrimSuffix(tc.header, ":\n"), " user")
+		if want := "Current user input (" + name + "): Is it done?\n"; !strings.Contains(prompt, want) {
+			t.Errorf("%s: prompt lacks %q:\n%s", tc.name, want, prompt)
 		}
 	}
 }

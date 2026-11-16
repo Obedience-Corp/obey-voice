@@ -114,7 +114,7 @@ func spawnableHistory(history []brain.Turn) []brain.Turn {
 // the standing instruction not to go looking for work elsewhere. personaID is
 // the speaking persona's own id, so a task about "your model" or "your voice"
 // can name the profile to change; no other persona's id is given.
-func spawnBrief(history []brain.Turn, transcript, personaID string) string {
+func spawnBrief(history []brain.Turn, transcript, personaID string, names brain.SpeakerNames, user string) string {
 	transcript = strings.TrimSpace(transcript)
 	turns := spawnableHistory(history)
 
@@ -133,8 +133,8 @@ func spawnBrief(history []brain.Turn, transcript, personaID string) string {
 			if t.Role == "assistant" && strings.TrimSpace(t.PersonaDisplayName) != "" {
 				speaker = t.PersonaDisplayName + " assistant"
 			}
-			if name := brain.PromptSpeaker(t.Speaker); t.Role == "user" && name != "" {
-				speaker = name
+			if t.Role == "user" {
+				speaker = brain.HumanSpeakerName(t.Speaker, names, user)
 			}
 			convo.WriteString(speaker + ": " + strings.TrimSpace(t.Content) + "\n")
 		}

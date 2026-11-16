@@ -37,20 +37,28 @@ type speakerTrace struct {
 	brain                    []string
 }
 
-func runSpeakerTurn(t *testing.T, voice, localReply bool, mic string) speakerTrace {
+// turnPaths are the ways a user turn reaches history: a brain reply, a local
+// reply from admission, and a deterministic route that skips the brain.
+var turnPaths = []string{"brain", "local", "routed"}
+
+func runSpeakerTurn(t *testing.T, voice bool, path, mic string) speakerTrace {
 	t.Helper()
 	transcript := &recordedTranscript{}
+	input := "what's for dinner"
+	if path == "routed" {
+		input = "search the web for rust"
+	}
 	b := &speakerRecordingBrain{fakeBrain: fakeBrain{chunks: []string{"Soup tonight."}}}
-	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript, CurrentSpeaker: func() string { return mic }}
+	p := &Pipeline{Brain: b, Events: events.NewBus(), Transcript: transcript, CurrentSpeaker: func() string { return mic }, OnRoute: func(RouteDecision) {}}
 	if voice {
-		p.STT, p.VAD, p.Capture = &fakeSTT{text: "what's for dinner"}, &fakeVAD{}, newFakeCapture()
+		p.STT, p.VAD, p.Capture = &fakeSTT{text: input}, &fakeVAD{}, newFakeCapture()
 	}
 	var trace speakerTrace
 	events.Subscribe(p.Events, func(e events.UserInput) { trace.event = e.Speaker })
 	p.AdmitInput = func(ctx context.Context, input string, _ bool) (ResponseAdmission, error) {
 		trace.admission = admissionpolicy.Speaker(ctx)
 		envelope := events.ResponseEnvelope{SessionID: "s", ResponseID: "r", PersonaID: "mira", DisplayName: "Mira"}
-		if localReply {
+		if path == "local" {
 			return ResponseAdmission{LocalReply: "Mira here.", Envelope: envelope}, nil
 		}
 		return ResponseAdmission{Request: input, Envelope: envelope}, nil
@@ -59,28 +67,31 @@ func runSpeakerTurn(t *testing.T, voice, localReply bool, mic string) speakerTra
 	if voice {
 		_, err = p.RunTurn(t.Context())
 	} else {
-		err = p.RunTurnTextMode(t.Context(), "what's for dinner")
+		err = p.RunTurnTextMode(t.Context(), input)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
 	turns := transcript.Turns()
-	if len(turns) != 2 || turns[0].Role != "user" {
+	if len(turns) == 0 || turns[0].Role != "user" || turns[0].Content != input {
 		t.Fatalf("transcript = %+v", turns)
 	}
 	trace.stored = turns[0].Speaker
 	b.mu.Lock()
 	trace.brain = append([]string(nil), b.speakers...)
 	b.mu.Unlock()
+	if path != "brain" && len(trace.brain) != 0 {
+		t.Fatalf("%s path reached the brain", path)
+	}
 	return trace
 }
 
 func TestTypedTurnNeverInheritsTheMicrophoneLabel(t *testing.T) {
 	for _, mic := range []string{"Lance", "unknown", "speaker-2"} {
-		for _, localReply := range []bool{false, true} {
-			trace := runSpeakerTurn(t, false, localReply, mic)
+		for _, path := range turnPaths {
+			trace := runSpeakerTurn(t, false, path, mic)
 			if trace.event != "" || trace.admission != "" || trace.stored != "" {
-				t.Errorf("mic %q, local reply %v: typed turn took a speaker: %+v", mic, localReply, trace)
+				t.Errorf("mic %q, %s path: typed turn took a speaker: %+v", mic, path, trace)
 			}
 			for _, s := range trace.brain {
 				if s != "" {
@@ -93,12 +104,12 @@ func TestTypedTurnNeverInheritsTheMicrophoneLabel(t *testing.T) {
 
 func TestVoiceTurnKeepsItsLabelOnEveryRecord(t *testing.T) {
 	for _, mic := range []string{"Lance", "unknown", "speaker-2"} {
-		for _, localReply := range []bool{false, true} {
-			trace := runSpeakerTurn(t, true, localReply, mic)
+		for _, path := range turnPaths {
+			trace := runSpeakerTurn(t, true, path, mic)
 			if trace.event != mic || trace.admission != mic || trace.stored != mic {
-				t.Errorf("mic %q, local reply %v: voice label changed: %+v", mic, localReply, trace)
+				t.Errorf("mic %q, %s path: voice label changed: %+v", mic, path, trace)
 			}
-			if !localReply && (len(trace.brain) != 1 || trace.brain[0] != mic) {
+			if path == "brain" && (len(trace.brain) != 1 || trace.brain[0] != mic) {
 				t.Errorf("mic %q: brain speakers = %q", mic, trace.brain)
 			}
 		}
