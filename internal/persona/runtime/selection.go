@@ -419,15 +419,39 @@ func (s *Selector) Admit(ctx context.Context) (events.ResponseEnvelope, error) {
 	if err != nil {
 		return events.ResponseEnvelope{}, err
 	}
-	if s.fixedResponder() {
-		return responseEnvelope(selected), nil
-	}
-	if _, participants, err := s.conversationRoster(); err == nil {
-		s.setGroupParticipants(participants)
-	} else {
+	if err := s.publishRoster(); err != nil {
 		return events.ResponseEnvelope{}, err
 	}
 	return responseEnvelope(selected), nil
+}
+
+// publishRoster gives the responder the group roster its response is written
+// in. A fixed responder keeps none.
+func (s *Selector) publishRoster() error {
+	if s.fixedResponder() {
+		return nil
+	}
+	_, participants, err := s.conversationRoster()
+	if err != nil {
+		return err
+	}
+	s.setGroupParticipants(participants)
+	return nil
+}
+
+// Warmup starts preloading the responder's model in the background. It first
+// publishes the roster, as admission does for every response, so the warmup
+// primes the same prompt the first response sends.
+func (s *Selector) Warmup(ctx context.Context) {
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
+	if s.closed {
+		return
+	}
+	// The warmup is best-effort; a roster that cannot be read fails the
+	// first admission instead.
+	_ = s.publishRoster()
+	s.opts.Pipeline.StartWarmup(ctx)
 }
 
 func (s *Selector) setGroupParticipants(participants []brain.GroupParticipant) {

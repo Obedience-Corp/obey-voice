@@ -478,10 +478,8 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 			// Warm after the listener is up so a bind/config failure cannot
 			// pin an Ollama runner, and a supervisor waiting on the ready
 			// banner does not SIGTERM a warmup that already started.
-			if w, ok := p.Brain.(brain.Warmer); ok {
-				p.ObserveModelRequests()
-				go w.Warmup(ctx)
-			}
+			p.ObserveModelRequests()
+			switcher.selector.Warmup(ctx)
 			if !serveNoMDNS {
 				if disc, err := netapi.StartDiscovery(listenAddr, creds.Fingerprint, cfg.AgentName); err != nil {
 					fmt.Fprintf(serveHumanOut, "  warning: mDNS advertise failed: %v\n", err)

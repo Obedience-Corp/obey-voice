@@ -34,12 +34,15 @@ type OllamaBrain struct {
 	// Warmup checks admission concurrently with foreground history preparation.
 	audioProjectionBlocked atomic.Bool
 	requestObserver        atomic.Pointer[ModelRequestObserver]
-	retiredDelegations     sync.WaitGroup
-	backgroundDelivered    string
-	delegation             *delegation.Runtime
-	delegationBorrowed     bool
-	client                 *api.Client
-	continuityMu           sync.Mutex
+	// turnStarted is set once a turn or any other request reaches this brain;
+	// from then on a warmup request would only queue ahead of real work.
+	turnStarted         atomic.Bool
+	retiredDelegations  sync.WaitGroup
+	backgroundDelivered string
+	delegation          *delegation.Runtime
+	delegationBorrowed  bool
+	client              *api.Client
+	continuityMu        sync.Mutex
 	// continuitySink receives this instance's continuity events (integrity.go).
 	continuitySink func(events.Event)
 	infoMu         sync.Mutex

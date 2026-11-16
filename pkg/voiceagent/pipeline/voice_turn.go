@@ -238,7 +238,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		AgentContinuation: isContinuation,
 		VoiceMode:         true,
 		Speaker:           speakerID,
-		ToolsEnabled:      !nativeConversation && admission.Discussion == nil && !isContinuation && (p.VoiceToolsEnabled || p.workerTierAvailability() != nil),
+		ToolsEnabled:      !nativeConversation && admission.Discussion == nil && !isContinuation && p.liveToolsEnabled(),
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		RouteJSON:         p.liveRouteJSON(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
