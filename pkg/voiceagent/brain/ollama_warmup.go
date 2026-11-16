@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -101,16 +102,28 @@ func (o *OllamaBrain) WarmupTurn(ctx context.Context, opts StreamOptions) {
 	// where to start if that reload is ever worth closing.
 	options["num_ctx"] = o.warmupNumCtx(highWater)
 	req := o.chatRequest(messages, tools, options)
-	stream := false
-	req.Stream = &stream
+	req.Stream = new(false)
 	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%v num_batch=%v prefix_chars=%d tools=%d\n", o.model, options["num_ctx"], options["num_batch"], len(messages[0].Content), len(tools))
-	o.sendWarmup(ctx, req)
-}
-
-func (o *OllamaBrain) sendWarmup(ctx context.Context, req *api.ChatRequest) {
-	if o.turnStarted.Load() {
-		fmt.Fprintln(os.Stderr, "obey-voice: warmup skipped: a turn reached the model first")
+	if err := o.sendWarmup(ctx, req); err != nil || len(req.Tools) == 0 {
 		return
 	}
-	_ = o.chat(withModelRequestPurpose(ctx, PurposeWarmup), req, func(api.ChatResponse) error { return nil })
+	// The reply round sends the same prefix without tools. On Ollama's MLX
+	// runner, which resumes only from saved cache points, the routed request
+	// alone left no point the first reply could resume from once the prefix
+	// grew past about 1,800 tokens, and the reply re-read the whole prompt.
+	reply := *req
+	reply.Tools = nil
+	_ = o.sendWarmup(ctx, &reply)
 }
+
+func (o *OllamaBrain) sendWarmup(ctx context.Context, req *api.ChatRequest) error {
+	if o.turnStarted.Load() {
+		fmt.Fprintln(os.Stderr, "obey-voice: warmup skipped: a turn reached the model first")
+		return errWarmupSkipped
+	}
+	// An outage retry would resend after a wait, when a turn may have started.
+	ctx = context.WithValue(withModelRequestPurpose(ctx, PurposeWarmup), disableOutageRetryKey{}, true)
+	return o.chat(ctx, req, func(api.ChatResponse) error { return nil })
+}
+
+var errWarmupSkipped = errors.New("warmup skipped: a turn started")

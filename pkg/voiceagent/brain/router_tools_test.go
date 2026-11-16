@@ -38,8 +38,8 @@ func TestTieredWarmupAndLiveRequestsHaveIdenticalRoutingPrefix(t *testing.T) {
 			if result := <-stream.Done; result.Err != nil {
 				t.Fatal(result.Err)
 			}
-			if count != 3 {
-				t.Fatalf("requests %d, want warmup, live routing, and chat answer", count)
+			if count != 4 {
+				t.Fatalf("requests %d, want two warmups, live routing, and chat answer", count)
 			}
 			type request struct {
 				Messages []api.Message   `json:"messages"`
@@ -49,7 +49,7 @@ func TestTieredWarmupAndLiveRequestsHaveIdenticalRoutingPrefix(t *testing.T) {
 			if err := json.Unmarshal(bodies[0], &warm); err != nil {
 				t.Fatal(err)
 			}
-			if err := json.Unmarshal(bodies[1], &live); err != nil {
+			if err := json.Unmarshal(bodies[2], &live); err != nil {
 				t.Fatal(err)
 			}
 			if !bytes.Equal(warm.Tools, live.Tools) || !bytes.Contains(warm.Tools, []byte(`"tier"`)) {

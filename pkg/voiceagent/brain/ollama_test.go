@@ -840,8 +840,11 @@ func TestWarmupPrimesTheFirstTurnPrefix(t *testing.T) {
 
 	o.Warmup(context.Background())
 
-	if count != 1 {
-		t.Fatalf("want 1 warmup request, got %d", count)
+	if count != 2 {
+		t.Fatalf("want a routed and a reply warmup request, got %d", count)
+	}
+	if bytes.Contains(bodies[1], []byte(`"tools":`)) {
+		t.Fatalf("the reply warmup must carry no tools, as the reply round does; body=%s", bodies[1])
 	}
 	var sent struct {
 		Messages []api.Message   `json:"messages"`
