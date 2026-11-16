@@ -182,3 +182,23 @@ func TestAgedImageTurnKeepsItsTextEverywhereElse(t *testing.T) {
 		t.Fatalf("archive note = %q", note)
 	}
 }
+
+// Taking an aged image off changes that one older message once: consecutive
+// requests share their prefix except across the turn where it ages out.
+func TestAgingAnImageBreaksThePrefixOnce(t *testing.T) {
+	_, fake, _ := runImageConversation(t, 6, func(n int) bool { return n == 1 })
+	sent := fake.sent()
+	for call, name := range []string{"route", "reply"} {
+		var breaks []int
+		for n := 2; n <= 6; n++ {
+			prev, next := sent[2*(n-2)+call].Messages, sent[2*(n-1)+call].Messages
+			p := lastUserIndex(prev)
+			if jsonOf(t, prev[:p]) != jsonOf(t, next[:p]) {
+				breaks = append(breaks, n)
+			}
+		}
+		if !slices.Equal(breaks, []int{4}) {
+			t.Fatalf("%s calls changed their prefix at turns %v, want only at turn 4", name, breaks)
+		}
+	}
+}

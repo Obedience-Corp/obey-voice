@@ -20,9 +20,10 @@ mark to that many turns, with the low mark at half of it. The `max_history`
 message marks also stay in force (trim past `max_history × 2` messages, back to
 at most `max_history`), which keeps a tool-heavy window below the message count
 that starts a compaction. A routed chat turn stores four messages, so below
-`max_history: 24` the message marks are reached first. Replies the host writes
-itself, such as a spawn acknowledgement or a local reply, are bounded the same
-way. A window never opens inside a tool-call group.
+`max_history: 24` the message marks are reached first. A spawn or other routed
+acknowledgement the host writes itself is trimmed the same way when its own
+messages take the window past the message mark, so it cannot start a
+compaction. A window never opens inside a tool-call group.
 
 Images stay attached only to the three most recent turns, counting the one
 being answered. When a turn ages past that, once a reply is in, its images are
