@@ -158,7 +158,7 @@ func DiscussionPersona(cfg *config.Config, key string, working []Turn) (discussi
 	if err != nil {
 		return discussion.Persona{}, err
 	}
-	p := discussion.Persona{Key: key, Prompt: assembleSystemPrompt(prompt, config.WorkDirFrom(cfg), nil, "", cfg), Model: cfg.OllamaModel}
+	p := discussion.Persona{Key: key, Prompt: assembleSystemPrompt(prompt, config.WorkDirFrom(cfg), nil, "", cfg, nil), Model: cfg.OllamaModel}
 	for _, t := range working {
 		if t.Role != "user" && t.Role != "assistant" {
 			continue

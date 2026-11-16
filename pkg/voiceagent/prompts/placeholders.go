@@ -53,6 +53,11 @@ func PlaceholderNames() []string {
 	return out
 }
 
+// DateLayout is how today's date is written wherever a prompt states it. Day
+// granularity is deliberate: the text changes once a day, so a provider's
+// prompt cache is cold at most once a day.
+const DateLayout = "Monday, 2 January 2006"
+
 // PlaceholderEnv carries the values that are not derived from the persona.
 // Zero fields fall back to the host, so callers that do not care (tests,
 // previews) get production behaviour rather than blanks.
@@ -82,7 +87,7 @@ func PlaceholderValues(agentName string, env PlaceholderEnv) map[string]string {
 	}
 	return map[string]string{
 		"agent_name": agentName,
-		"date":       now.Format("Monday, 2 January 2006"),
+		"date":       now.Format(DateLayout),
 		"user_name":  userName,
 		"os":         osName,
 	}

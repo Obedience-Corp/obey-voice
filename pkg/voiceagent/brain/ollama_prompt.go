@@ -56,7 +56,7 @@ func (o *OllamaBrain) refreshSystemPrompt(onWarn func(message string)) {
 	}
 	// Equal content preserves the provider's prefix cache. Application YAML is
 	// resolved separately for relevant requests by buildMessagesForTurn.
-	o.setFullSystemPrompt(assembleSystemPrompt(o.systemPrompt, o.workDir, o.skills, o.turnInstruction, o.cfg))
+	o.setFullSystemPrompt(assembleSystemPrompt(o.systemPrompt, o.workDir, o.skills, o.turnInstruction, o.cfg, o.installed))
 }
 
 // setFullSystemPrompt publishes a rebuilt prompt to a Warmup that may be
@@ -69,14 +69,15 @@ func (o *OllamaBrain) setFullSystemPrompt(prompt string) {
 
 // assembleSystemPrompt combines the resolved persona, application YAML,
 // environment and skill catalog. Unchanged inputs yield byte-identical output.
-func assembleSystemPrompt(personaPrompt, workDir string, catalog []skills.Skill, turn string, cfg *config.Config) string {
+func assembleSystemPrompt(personaPrompt, workDir string, catalog []skills.Skill, turn string, cfg *config.Config, installed []InstalledModel) string {
 	return AssembleSystemPrompt(SystemPromptInput{
-		Provider: providerOllama,
-		Persona:  personaPrompt,
-		WorkDir:  workDir,
-		Skills:   catalog,
-		Turn:     turn,
-		Cfg:      cfg,
+		Provider:  providerOllama,
+		Persona:   personaPrompt,
+		WorkDir:   workDir,
+		Skills:    catalog,
+		Turn:      turn,
+		Cfg:       cfg,
+		Installed: installed,
 	})
 }
 

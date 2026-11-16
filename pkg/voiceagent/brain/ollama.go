@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,6 +21,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 	"github.com/ollama/ollama/api"
+	"github.com/ollama/ollama/types/model"
 )
 
 // OllamaBrain implements Provider using the Ollama API with tool calling.
@@ -72,7 +74,9 @@ type OllamaBrain struct {
 	// on the next reply. The assembled prompt is only rebuilt when the document
 	// actually changed, which keeps the server's prefix cache intact on the
 	// overwhelmingly common no-change path.
-	personaReloader   *promptReloader
+	personaReloader *promptReloader
+	// installed is the server's model list as listed at construction.
+	installed         []InstalledModel
 	keepAlive         *api.Duration
 	skills            []skills.Skill
 	skillRouter       *semanticSkillRouter
@@ -196,6 +200,7 @@ func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probe
 		return nil, err
 	}
 	keepAlive := keepAliveOrDefault(cfg.OllamaKeepAlive)
+	installed := installedModels(models.Models)
 
 	embedCtx, embedCancel := context.WithTimeout(parent, 10*time.Second)
 	router, routerErr := newSharedSemanticSkillRouter(embedCtx, cfg.OllamaHost, client, cfg.OllamaEmbeddingModel, cfg.SkillsSimilarityThreshold, catalog, keepAlive)
@@ -214,16 +219,31 @@ func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probe
 		workDir:          workDir,
 		cfg:              cfg,
 		systemPrompt:     systemPrompt,
-		fullSystemPrompt: assembleSystemPrompt(systemPrompt, workDir, catalog, turn, cfg),
+		fullSystemPrompt: assembleSystemPrompt(systemPrompt, workDir, catalog, turn, cfg, installed),
 		turnInstruction:  turn,
 		personaReloader: newPromptReloader(prompts.KindPersona, cfg.Persona, systemPrompt, func(hash string) {
 			fmt.Fprintf(os.Stderr, "obey-voice: persona prompt changed (hash %s)\n", hash)
 		}),
+		installed:         installed,
 		keepAlive:         keepAlive,
 		skills:            catalog,
 		skillRouter:       router,
 		skillRouterWarned: routerErr != nil,
 	}, nil
+}
+
+// installedModels keeps what /api/tags already says. A server that reports no
+// capabilities for a model leaves it listed rather than guessed away.
+func installedModels(listed []api.ListModelResponse) []InstalledModel {
+	out := make([]InstalledModel, 0, len(listed))
+	for _, m := range listed {
+		out = append(out, InstalledModel{
+			Name:     m.Name,
+			Modified: m.ModifiedAt,
+			Chat:     len(m.Capabilities) == 0 || slices.Contains(m.Capabilities, model.CapabilityCompletion),
+		})
+	}
+	return out
 }
 
 func init() {

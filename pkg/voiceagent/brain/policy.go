@@ -3,8 +3,10 @@ package brain
 import (
 	"cmp"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
@@ -14,7 +16,8 @@ type PromptElement string
 const (
 	// ElemPersona is the persona system prompt — who the agent is.
 	ElemPersona PromptElement = "persona"
-	// ElemEnvironment is machine grounding: user, working directory, host, OS.
+	// ElemEnvironment is grounding: user, working directory, host, OS, the
+	// brain's model, installed models and today's date.
 	ElemEnvironment PromptElement = "environment"
 	// ElemBoundary is a worker's fence: stay under this campaign root.
 	ElemBoundary PromptElement = "boundary"
@@ -129,6 +132,45 @@ type SystemPromptInput struct {
 	// its *presence* is policy.
 	Turn string
 	Cfg  *config.Config
+	// Installed is the brain's snapshot of its server's models, taken once
+	// at construction. Re-listing per turn would let a pull or a reordered
+	// response change the prompt prefix mid-conversation.
+	Installed []InstalledModel
+	// Now dates the block; zero asks the clock.
+	Now time.Time
+}
+
+// groundingFor decides which date, brain and installed-model lines the
+// environment block carries.
+func groundingFor(in SystemPromptInput, env Env) grounding {
+	var g grounding
+	if !env.OmitDate {
+		now := in.Now
+		if now.IsZero() {
+			now = time.Now()
+		}
+		if env.Location != nil {
+			now = now.In(env.Location)
+		}
+		g.date = now.Format(prompts.DateLayout)
+	}
+	if !env.OmitBrain {
+		g.brain = brainLine(in.Provider, in.Cfg)
+	}
+	switch {
+	case normalizeProvider(in.Provider) != providerOllama:
+		// Hosted providers' models are not installed anywhere to list.
+	case in.Cfg != nil && in.Cfg.IsWorker:
+		// A worker carries out one task; the live conversation is where model
+		// choice is discussed, and a worker's context is the smaller one.
+	case in.Cfg != nil && in.Cfg.RuntimeEnvSupplied:
+		for _, name := range env.Models {
+			g.models = append(g.models, InstalledModel{Name: name, Chat: true})
+		}
+	default:
+		g.models = in.Installed
+	}
+	return g
 }
 
 // AssembleSystemPrompt builds a provider's system prompt from the shared policy,
@@ -144,12 +186,16 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 			env := Env{}
 			if in.Cfg != nil {
 				env = Env{
-					User:     cmp.Or(strings.TrimSpace(in.Cfg.UserDisplayName), in.Cfg.RuntimeEnvUser),
-					Hostname: in.Cfg.RuntimeEnvHostname,
-					OS:       in.Cfg.RuntimeEnvOS,
+					User:      cmp.Or(strings.TrimSpace(in.Cfg.UserDisplayName), in.Cfg.RuntimeEnvUser),
+					Hostname:  in.Cfg.RuntimeEnvHostname,
+					OS:        in.Cfg.RuntimeEnvOS,
+					Models:    in.Cfg.RuntimeEnvModels,
+					Location:  in.Cfg.RuntimeEnvLocation,
+					OmitDate:  in.Cfg.RuntimeEnvOmitDate,
+					OmitBrain: in.Cfg.RuntimeEnvOmitBrain,
 				}
 			}
-			b.WriteString(EnvironmentContextFrom(in.WorkDir, env))
+			b.WriteString(environmentContext(in.WorkDir, env, groundingFor(in, env)))
 		case ElemBoundary:
 			b.WriteString("\n")
 			b.WriteString(BoundaryContext(workerBoundary(in.Cfg)))
