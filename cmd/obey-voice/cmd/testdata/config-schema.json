@@ -1084,7 +1084,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Machine context",
-      "help": "Tells the model your user name, host and OS so it can answer questions about this machine.",
+      "help": "Tells the model your user name, host and OS, today's date, which model it runs on and, on Ollama, the models you have installed.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,

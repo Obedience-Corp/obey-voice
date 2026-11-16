@@ -76,7 +76,7 @@ func TestSkillContextTruncatesLongDescription(t *testing.T) {
 func TestAssembledSystemPromptIncludesSkillsCatalog(t *testing.T) {
 	t.Parallel()
 
-	sys := assembleSystemPrompt("You are Samantha.", "/work", fixtureCatalog(), "", nil)
+	sys := assembleSystemPrompt("You are Samantha.", "/work", fixtureCatalog(), "", nil, nil)
 	if !strings.Contains(sys, "- hello: A friendly greeting skill for tests.") {
 		t.Fatalf("system prompt missing advertised skill: %q", sys)
 	}
@@ -94,7 +94,7 @@ func TestActivatedSkillBodiesRideTheUserMessage(t *testing.T) {
 	o := &OllamaBrain{
 		workDir:          "/work",
 		cfg:              &config.Config{AgentName: "Samantha", MaxHistory: 10},
-		fullSystemPrompt: assembleSystemPrompt("You are Samantha.", "/work", fixtureCatalog(), "", nil),
+		fullSystemPrompt: assembleSystemPrompt("You are Samantha.", "/work", fixtureCatalog(), "", nil, nil),
 		skills:           fixtureCatalog(),
 		history:          []api.Message{{Role: "user", Content: "greet me"}},
 	}
@@ -113,7 +113,7 @@ func TestActivatedSkillBodiesRideTheUserMessage(t *testing.T) {
 func TestAssembledSystemPromptOmitsSkillsWhenEmpty(t *testing.T) {
 	t.Parallel()
 
-	sys := assembleSystemPrompt("You are Samantha.", "/work", nil, "", nil)
+	sys := assembleSystemPrompt("You are Samantha.", "/work", nil, "", nil, nil)
 	if strings.Contains(sys, "Available skills") {
 		t.Fatalf("system prompt should omit skills block when catalog empty: %q", sys)
 	}
@@ -291,7 +291,7 @@ func TestLoadSkillsCatalogOmitsDisabled(t *testing.T) {
 
 	// The disabled skill has no menu entry. App capabilities can still mention
 	// Calibre independently of a user-provided skill with that name.
-	sys := assembleSystemPrompt("You are Samantha.", root, catalog, "", nil)
+	sys := assembleSystemPrompt("You are Samantha.", root, catalog, "", nil, nil)
 	if strings.Contains(sys, "- calibre:") {
 		t.Fatalf("system prompt must omit the disabled skill: %q", sys)
 	}

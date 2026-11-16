@@ -34,7 +34,7 @@ func TestSkillsCatalogDoesNotAdvertiseSharedGlobalSkills(t *testing.T) {
 		if foundLocal != (dir == work) {
 			t.Fatalf("working-directory scope incorrect for %q: %+v", dir, catalog)
 		}
-		prompt := assembleSystemPrompt("You are a helpful assistant.", dir, catalog, "", cfg)
+		prompt := assembleSystemPrompt("You are a helpful assistant.", dir, catalog, "", cfg, nil)
 		if strings.Contains(prompt, "GLOBAL_SKILL_LEAK") {
 			t.Fatal("global skill metadata consumed prompt tokens")
 		}

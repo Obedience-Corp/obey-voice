@@ -18,6 +18,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -110,8 +111,10 @@ type Options struct {
 	// Env describes the machine the agent tells the model it is running on. A
 	// zero Env falls back to the host, which is what the CLI wants. A server
 	// answering for many users should set it: telling the model it is running as
-	// whoever started the process is worse than saying nothing. Only reaches a
-	// brain New builds from Config — rejected with an injected Brain.
+	// whoever started the process is worse than saying nothing. A supplied Env
+	// also replaces the host's installed-model list with Env.Models, empty
+	// unless set. Only reaches a brain New builds from Config — rejected with
+	// an injected Brain.
 	Env brain.Env
 
 	// PromptsDir is where user prompt documents are read from. Empty falls back
@@ -189,7 +192,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	// combination keeps both options impossible to set-and-ignore — the same
 	// contract as an injected Capture requiring an injected STT.
 	if opts.Brain != nil {
-		if opts.Env != (brain.Env{}) {
+		if !opts.Env.IsZero() {
 			return nil, nil, fmt.Errorf("voiceagent: Options.Env cannot reach an injected Brain — give the brain its environment context directly")
 		}
 		if opts.PromptsDir != "" {
@@ -219,7 +222,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	// built from, so a copy is taken rather than mutating the caller's config —
 	// a host that reuses one *Config across agents must not have it rewritten
 	// underneath.
-	if opts.PromptsDir != "" || opts.WorkDir != "" || opts.Env != (brain.Env{}) {
+	if opts.PromptsDir != "" || opts.WorkDir != "" || !opts.Env.IsZero() {
 		local := *cfg
 		if opts.PromptsDir != "" {
 			local.PromptsDir = opts.PromptsDir
@@ -230,6 +233,13 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		local.RuntimeEnvUser = opts.Env.User
 		local.RuntimeEnvHostname = opts.Env.Hostname
 		local.RuntimeEnvOS = opts.Env.OS
+		if !opts.Env.IsZero() {
+			local.RuntimeEnvSupplied = true
+			local.RuntimeEnvModels = slices.Clone(opts.Env.Models)
+			local.RuntimeEnvLocation = opts.Env.Location
+			local.RuntimeEnvOmitDate = opts.Env.OmitDate
+			local.RuntimeEnvOmitBrain = opts.Env.OmitBrain
+		}
 		cfg = &local
 	}
 

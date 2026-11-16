@@ -392,7 +392,7 @@ func brainKeys() []KeySpec {
 		{
 			Key: "environment_context_enabled", Type: TypeBool, Default: true,
 			Group: GroupBrain, Title: "Machine context",
-			Help: "Tells the model your user name, host and OS so it can answer questions about this machine.",
+			Help: "Tells the model your user name, host and OS, today's date, which model it runs on and, on Ollama, the models you have installed.",
 		},
 		{
 			Key: "max_history", Type: TypeInt, Default: 40, Min: num(1), Max: num(100),

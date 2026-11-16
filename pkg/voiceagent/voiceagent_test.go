@@ -548,7 +548,7 @@ func TestOptionsEnvReachesBrainConstructedByNew(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/tags":
-			_, _ = io.WriteString(w, `{"models":[{"name":"test-model"}]}`)
+			_, _ = io.WriteString(w, `{"models":[{"name":"test-model"},{"name":"host-only-model"}]}`)
 		case "/api/chat":
 			body, _ := io.ReadAll(r.Body)
 			systemPrompt = string(body)
@@ -583,13 +583,61 @@ func TestOptionsEnvReachesBrainConstructedByNew(t *testing.T) {
 			t.Errorf("Options.Env did not reach New's brain: want %q in request %s", want, systemPrompt)
 		}
 	}
-	if cfg.RuntimeEnvUser != "" || cfg.RuntimeEnvHostname != "" || cfg.RuntimeEnvOS != "" {
+	// A supplied Env that leaves Models unset lists none: the host's
+	// inventory must not reach a prompt the embedder is answering for.
+	if strings.Contains(systemPrompt, "host-only-model") {
+		t.Errorf("a supplied Env leaked the host's installed models: %s", systemPrompt)
+	}
+	if cfg.RuntimeEnvUser != "" || cfg.RuntimeEnvHostname != "" || cfg.RuntimeEnvOS != "" || cfg.RuntimeEnvSupplied {
 		t.Fatal("New mutated the caller's config with runtime environment values")
 	}
 	// The caller's config must not be rewritten underneath it: a host reusing
 	// one *Config across agents would otherwise find it mutated.
 	if cfg.PromptsDir != "" {
 		t.Errorf("New mutated the caller's Config.PromptsDir to %q", cfg.PromptsDir)
+	}
+}
+
+// installedModelsPrompt runs one text turn through a brain New builds against
+// a fake Ollama that has two models installed, and returns the chat request.
+func installedModelsPrompt(t *testing.T, env brain.Env) string {
+	t.Helper()
+	var request string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_, _ = io.WriteString(w, `{"models":[{"name":"test-model","capabilities":["completion"]},{"name":"host-only-model","capabilities":["completion"]}]}`)
+		case "/api/chat":
+			body, _ := io.ReadAll(r.Body)
+			request = string(body)
+			_, _ = io.WriteString(w, `{"model":"test-model","message":{"role":"assistant","content":"ok"},"done":true}`+"\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cfg := &config.Config{AgentName: "Test", BrainProvider: "ollama", OllamaModel: "test-model", OllamaHost: srv.URL, EnvironmentContextEnabled: true}
+	agent, cleanup, err := New(context.Background(), Options{Config: cfg, Events: events.NewBus(), TextOnly: true, Silent: true, Env: env, PromptsDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer cleanup()
+	if err := agent.SendText(context.Background(), "hello"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	return request
+}
+
+func TestInstalledModelsReachPromptOnlyFromTheHostOrTheEmbedder(t *testing.T) {
+	if got := installedModelsPrompt(t, brain.Env{}); !strings.Contains(got, "Installed local models: host-only-model, test-model") {
+		t.Errorf("without an Env the brain's own installed list is missing: %s", got)
+	}
+	got := installedModelsPrompt(t, brain.Env{User: "svc", Models: []string{"served-model"}, OmitBrain: true})
+	if !strings.Contains(got, "Installed local models: served-model") || strings.Contains(got, "host-only-model") {
+		t.Errorf("a supplied Env must list its own models and never the host's: %s", got)
+	}
+	if strings.Contains(got, "Running on:") {
+		t.Errorf("OmitBrain still named the brain: %s", got)
 	}
 }
 

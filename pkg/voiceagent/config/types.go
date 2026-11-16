@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 // Config holds all application configuration.
 type Config struct {
 	// PersonaWorkerTiers is a runtime binding, persisted only in persona.yaml.
@@ -364,6 +366,13 @@ type Config struct {
 	RuntimeEnvUser     string `mapstructure:"-"`
 	RuntimeEnvHostname string `mapstructure:"-"`
 	RuntimeEnvOS       string `mapstructure:"-"`
+	// RuntimeEnvSupplied marks an embedder-supplied environment; the
+	// installed-model line then shows RuntimeEnvModels and never the host's.
+	RuntimeEnvSupplied  bool           `mapstructure:"-"`
+	RuntimeEnvModels    []string       `mapstructure:"-"`
+	RuntimeEnvLocation  *time.Location `mapstructure:"-"`
+	RuntimeEnvOmitDate  bool           `mapstructure:"-"`
+	RuntimeEnvOmitBrain bool           `mapstructure:"-"`
 
 	// IsWorker marks the config WorkerBrainConfig hands to a spawned worker,
 	// so a brain can tell a background job from the live conversation.

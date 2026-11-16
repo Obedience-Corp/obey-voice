@@ -146,6 +146,9 @@ var promptsShowCmd = &cobra.Command{
 				Turn:     turn,
 				Cfg:      cfg,
 			})
+			if strings.EqualFold(provider, "ollama") && cfg.EnvironmentContextEnabled {
+				text += "\n\n[the Ollama brain also lists the server's installed chat models in the Environment block, read once when it starts]"
+			}
 			if !brain.TurnGoesInSystemPrompt(provider) {
 				text += "\n\n[turn instruction is appended to the user message on this provider, not the system prompt]\n" + turn
 			}

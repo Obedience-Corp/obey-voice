@@ -1,10 +1,13 @@
 package brain
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
@@ -100,10 +103,30 @@ func resolvePrompt(cfg *config.Config, kind prompts.Kind, name string) (string, 
 // and GOARCH. That keeps the CLI's behaviour identical while letting an embedder
 // state its own environment — a server answering for many users has no business
 // telling the model it is running as whoever started the process.
+//
+// The block also states today's date, the brain the model runs on and, for an
+// Ollama brain, the chat models installed on its server. Without an Env the
+// installed list is the brain's own snapshot. Once an embedder supplies an Env,
+// the list is Models and nothing else: a field left empty must never put the
+// host's model inventory into a remote user's prompt.
 type Env struct {
 	User     string
 	Hostname string
 	OS       string // e.g. "darwin/arm64"
+
+	// Models are the installed models an Ollama brain lists for this Env.
+	Models []string
+	// Location is the zone today's date is reckoned in; nil is the host's.
+	Location *time.Location
+	// OmitDate and OmitBrain drop the date line and the running-on line.
+	OmitDate  bool
+	OmitBrain bool
+}
+
+// IsZero reports whether no embedder value is set, the CLI's case.
+func (e Env) IsZero() bool {
+	return e.User == "" && e.Hostname == "" && e.OS == "" && e.Models == nil &&
+		e.Location == nil && !e.OmitDate && !e.OmitBrain
 }
 
 // resolve fills empty fields from the host.
@@ -128,8 +151,37 @@ func EnvironmentContext(workDir string) string {
 // EnvironmentContextFrom renders the grounding block from an explicit Env, with
 // empty fields falling back to the host.
 func EnvironmentContextFrom(workDir string, env Env) string {
+	return environmentContext(workDir, env, grounding{})
+}
+
+// grounding is what the block says about the moment and the model rather than
+// the machine. Empty fields render no line.
+type grounding struct {
+	date   string
+	brain  string
+	models []InstalledModel
+}
+
+// InstalledModel is one model a brain's server reports as installed.
+type InstalledModel struct {
+	Name     string
+	Modified time.Time
+	// Chat is false when the server reports capabilities that exclude chat.
+	Chat bool
+}
+
+const (
+	maxGroundingModels    = 20
+	maxGroundingModelName = 40
+)
+
+// environmentContext renders the block. Every line is a pure function of its
+// inputs, and the date has day granularity, so a prompt cache keyed on these
+// bytes survives every turn of a day.
+func environmentContext(workDir string, env Env, g grounding) string {
 	env = env.resolve()
-	return fmt.Sprintf(`
+	var b strings.Builder
+	fmt.Fprintf(&b, `
 Environment:
 - User: %s
 - Working directory: %s
@@ -137,6 +189,67 @@ Environment:
 - Hostname: %s
 - OS: %s
 - All file paths are relative to the working directory unless absolute`, env.User, workDir, campaignLine(workDir), env.Hostname, env.OS)
+	if g.brain != "" {
+		fmt.Fprintf(&b, "\n- Running on: %s", g.brain)
+	}
+	models := installedModelsLine(g.models)
+	if models != "" {
+		fmt.Fprintf(&b, "\n- Installed local models: %s", models)
+	}
+	if g.date != "" {
+		fmt.Fprintf(&b, "\n- Today's date: %s", g.date)
+	}
+	trusted := "the facts given here"
+	switch {
+	case models != "" && g.date != "":
+		trusted = "today's date and the installed models listed here"
+	case models != "":
+		trusted = "the installed models listed here"
+	case g.date != "":
+		trusted = "today's date as given here"
+	}
+	fmt.Fprintf(&b, "\n- Your built-in knowledge stops at your training cutoff, so trust %s over what you remember, and for anything newer than your training say you may be out of date instead of presenting old information as current.", trusted)
+	return b.String()
+}
+
+// installedModelsLine lists chat models newest first, then by name, so the
+// same installed set renders the same bytes whatever order the server
+// returned it in. The cap keeps the most recently pulled models, the ones a
+// question about current models is most likely about.
+func installedModelsLine(models []InstalledModel) string {
+	chat := make([]InstalledModel, 0, len(models))
+	for _, m := range models {
+		if m.Chat && strings.TrimSpace(m.Name) != "" {
+			chat = append(chat, m)
+		}
+	}
+	if len(chat) == 0 {
+		return ""
+	}
+	slices.SortFunc(chat, func(a, b InstalledModel) int {
+		return cmp.Or(b.Modified.Compare(a.Modified), cmp.Compare(a.Name, b.Name))
+	})
+	names := make([]string, 0, min(len(chat), maxGroundingModels))
+	for _, m := range chat[:min(len(chat), maxGroundingModels)] {
+		names = append(names, skills.TruncateRunes(strings.TrimSpace(m.Name), maxGroundingModelName))
+	}
+	line := strings.Join(names, ", ")
+	if more := len(chat) - len(names); more > 0 {
+		line += fmt.Sprintf(", and %d more", more)
+	}
+	return line
+}
+
+// brainLine names the provider and model this prompt is sent to.
+func brainLine(provider string, cfg *config.Config) string {
+	provider = normalizeProvider(provider)
+	if provider == "" {
+		return ""
+	}
+	if model := config.BrainModelFor(cfg, provider); model != "" {
+		return model + " via " + provider
+	}
+	return provider + " with its default model"
 }
 
 // ToolSurfaceContext is the ollama-only tool list. Claude, Cursor, and Grok
