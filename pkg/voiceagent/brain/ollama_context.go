@@ -57,6 +57,9 @@ func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
 
 func (o *OllamaBrain) dropOldestBeforeLastUser(skillCtx string, limit int) bool {
 	trimmed := false
+	var dropped []api.Message
+	var droppedTurns []Turn
+	defer func() { o.archiveTurns(dropped, droppedTurns) }()
 	for len(o.history) > 2 && o.estimateTokens(skillCtx) > limit {
 		lastUser := lastUserIndex(o.history)
 		if lastUser < 0 {
@@ -70,7 +73,8 @@ func (o *OllamaBrain) dropOldestBeforeLastUser(skillCtx string, limit int) bool 
 			o.audioProjectionBlocked.Store(true)
 			break
 		}
-		o.archiveMessages(o.history[:start])
+		dropped = append(dropped, o.history[:start]...)
+		droppedTurns = append(droppedTurns, o.working[:min(start, len(o.working))]...)
 		o.history = append([]api.Message(nil), o.history[start:]...)
 		if start < len(o.working) {
 			o.working = append([]Turn(nil), o.working[start:]...)

@@ -191,7 +191,7 @@ func TestArchiveNotesWriteTheAttributedLine(t *testing.T) {
 		o := &OllamaBrain{cfg: continuityConfig()}
 		o.SetSpeakerNames(speakerCaseNames)
 		o.history = []api.Message{{Role: "user", Content: encodeOllamaUser(tc.label, "I'm doing good.")}, {Role: "assistant", Content: "Glad to hear it."}}
-		o.archiveMessages(o.history)
+		o.archiveTurns(o.history, nil)
 		archive := o.ContinuityArchive()
 		if len(archive) != 1 {
 			t.Fatalf("archive = %+v", archive)

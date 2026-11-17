@@ -2,10 +2,10 @@ package brain
 
 import (
 	"encoding/json"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
@@ -335,6 +335,21 @@ func (o *OllamaBrain) ImportContinuity(snapshot ContinuitySnapshot) error {
 	return nil
 }
 
+// BoundHostTurns is called after the host records added messages itself, such
+// as a spawn acknowledgement or a local reply. When those messages alone take
+// the window past the message mark, it is trimmed as after a model reply, so
+// they cannot start a compaction. A larger window that arrived with a persona
+// switch is left for the next reply to trim, as before.
+func (o *OllamaBrain) BoundHostTurns(added int) {
+	if o.cfg == nil || o.cfg.MaxHistory <= 0 {
+		return
+	}
+	high := o.cfg.MaxHistory * 2
+	if len(o.history) > high && len(o.history)-added <= high {
+		o.trimHistory()
+	}
+}
+
 func (o *OllamaBrain) loadHistoryProjection(turns []Turn, archiveProjection bool) {
 	o.loadHistoryProjectionForPersona(turns, archiveProjection, false)
 }
@@ -359,6 +374,7 @@ func (o *OllamaBrain) loadHistoryProjectionForPersona(turns []Turn, archiveProje
 	// Sanitization removes a prefix; keep the same source indices so later
 	// pruning never transfers a discarded tool or drops the wrong user turn.
 	o.working = deepCopyTurns(working[len(history)-len(o.history):])
+	o.retireAgedImages()
 }
 
 func (o *OllamaBrain) activePersona() string {
@@ -366,125 +382,6 @@ func (o *OllamaBrain) activePersona() string {
 		return ""
 	}
 	return strings.TrimSpace(o.cfg.ActivePersona)
-}
-
-func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned bool) api.Message {
-	return o.projectTurnWithAudio(t, all, index, sharedUnowned, o.audioProjection)
-}
-
-func (o *OllamaBrain) projectTurnWithAudio(t Turn, all []Turn, index int, sharedUnowned bool, projection map[string][]byte) api.Message {
-	t = o.effectiveTurn(t)
-	role := t.Role
-	if role == "samantha" {
-		role = "assistant"
-	}
-	if role == "user" {
-		content := t.Content
-		if t.RoutedInput != "" {
-			content = t.RoutedInput
-		}
-		if strings.TrimSpace(t.Speaker) != "" {
-			content = encodeOllamaUser(t.Speaker, content)
-		}
-		images, _ := loadImageData(t.Attachments) // Validated before a model request; assets are immutable.
-		if t.Utterance != nil && t.Utterance.Audio != nil {
-			if data := projection[t.Utterance.Audio.ID]; data != nil {
-				images = []api.ImageData{data}
-				content = t.TypedInput
-			}
-			if len(images) == 0 && t.Utterance.Transcript.State == utterance.Ready {
-				content = audioTranscriptProjection(t)
-			}
-		}
-		return api.Message{Role: "user", Content: content, Images: images}
-	}
-	owner, name := strings.TrimSpace(t.PersonaID), strings.TrimSpace(t.PersonaDisplayName)
-	legacy := role == "assistant" && legacyHistoricalAssistantHeader.MatchString(t.Content)
-	if role == "tool" && owner == "" {
-		owner, name, legacy = precedingToolOwner(all, index)
-	} else if role == "tool" {
-		_, _, legacy = precedingToolOwner(all, index)
-	}
-	current := o.activePersona()
-	// Unbound providers cannot claim an attributed reply as their own.
-	own := owner == current
-	if current == "" && o.groupModeEnabled() {
-		own = false
-	}
-	// Contaminated replies and synthetic summaries are always quoted.
-	shared := !own || legacy || (sharedUnowned && index == 0 && owner == "")
-	content := modelTurnContent(t)
-	if role == "assistant" {
-		content = stripLegacyHistoricalHeader(content)
-	}
-	if shared && role == "assistant" {
-		for _, tc := range t.ToolCalls {
-			content += "\nTool call: " + tc.Name + "(" + tc.Arguments + ")"
-		}
-		if sharedUnowned && owner == "" {
-			return api.Message{Role: ollamaSharedRole, Content: sharedContextContent(content)}
-		}
-		return api.Message{Role: ollamaSharedRole, Content: attributedAssistantContent(name, content)}
-	}
-	if shared && role == "tool" {
-		return api.Message{Role: ollamaSharedToolRole, Content: attributedToolContent(name, t.ToolName, content)}
-	}
-	m := api.Message{Role: role, Content: content, ToolName: t.ToolName, ToolCallID: t.ToolCallID}
-	for _, tc := range t.ToolCalls {
-		args := api.NewToolCallFunctionArguments()
-		if strings.TrimSpace(tc.Arguments) != "" {
-			_ = json.Unmarshal([]byte(tc.Arguments), &args)
-		}
-		m.ToolCalls = append(m.ToolCalls, api.ToolCall{ID: tc.ID, Function: api.ToolCallFunction{Name: tc.Name, Arguments: args}})
-	}
-	return m
-}
-
-func precedingToolOwner(turns []Turn, index int) (string, string, bool) {
-	for i := index - 1; i >= 0; i-- {
-		if turns[i].Role == "user" {
-			break
-		}
-		if turns[i].Role == "assistant" || turns[i].Role == "samantha" {
-			for _, call := range turns[i].ToolCalls {
-				if call.ID == turns[index].ToolCallID {
-					return turns[i].PersonaID, turns[i].PersonaDisplayName, legacyHistoricalAssistantHeader.MatchString(turns[i].Content)
-				}
-			}
-		}
-	}
-	return "", "", false
-}
-
-func attributedAssistantContent(name, content string) string {
-	if strings.TrimSpace(name) == "" {
-		return "Unknown agent:\n" + content
-	}
-	return strings.TrimSpace(name) + " agent:\n" + content
-}
-
-func attributedToolContent(name, tool, content string) string {
-	prefix := "Unknown agent tool"
-	if tool != "" {
-		prefix += " (" + tool + ")"
-	}
-	if strings.TrimSpace(name) != "" {
-		prefix = strings.TrimSpace(name) + " tool"
-		if tool != "" {
-			prefix += " (" + tool + ")"
-		}
-	}
-	return prefix + ":\n" + content
-}
-
-func sharedContextContent(content string) string { return "Shared conversation context:\n" + content }
-
-// Remove complete attribution markers only from assistant output/projections.
-// User quotations and the canonical transcript are left untouched.
-var legacyHistoricalAssistantHeader = regexp.MustCompile(`\[Historical assistant: [^\]\r\n]+\](?:\r?\n)?`)
-
-func stripLegacyHistoricalHeader(content string) string {
-	return legacyHistoricalAssistantHeader.ReplaceAllString(content, "")
 }
 
 func deepCopyTurns(in []Turn) []Turn {
@@ -591,114 +488,4 @@ func toolResultMessage(tc api.ToolCall, result string) api.Message {
 		ToolName:   tc.Function.Name,
 		ToolCallID: tc.ID,
 	}
-}
-
-// lastUserIndex is the most recent user turn, or -1 if the history has none.
-func lastUserIndex(history []api.Message) int {
-	for i := len(history) - 1; i >= 0; i-- {
-		if history[i].Role == "user" {
-			return i
-		}
-	}
-	return -1
-}
-
-// trimHistory bounds retained history with a high/low water mark instead of
-// a per-turn sliding window: nothing is dropped until the count exceeds
-// MaxHistory*2, then it cuts down to MaxHistory (user-turn aligned). Between
-// trims the retained prefix is byte-stable, so the server's KV prefix cache
-// keeps hitting; a slide-per-turn window shifted the prefix every turn and
-// forced a full re-prefill for the rest of the conversation.
-func (o *OllamaBrain) trimHistory() {
-	high, low := o.cfg.MaxHistory*2, o.cfg.MaxHistory
-	if o.cfg.ContinuityArchiveEnabled {
-		high = min(high, 12)
-		low = min(low, 10)
-	}
-	if len(o.history) <= high {
-		return
-	}
-	if start := historyWindowStart(o.history, low); start > 0 {
-		if ValidateTextProjection(o.effectiveTurns(o.working[:min(start, len(o.working))])) != nil {
-			o.audioProjectionBlocked.Store(true)
-			return
-		}
-		o.archiveMessages(o.history[:start])
-		o.history = append([]api.Message(nil), o.history[start:]...)
-		if start <= len(o.working) {
-			o.working = deepCopyTurns(o.working[start:])
-		}
-	}
-}
-
-// historyWindowStart returns the index where a history window of at most max
-// messages begins. A window must not open in the middle of a tool-call group:
-// stranded tool results (or a tool-call assistant without its user) make
-// Ollama 0.32.14 500 with "no user query found in messages" (ollama#17778).
-//
-// If the tail would open on a tool result, the window advances to the next
-// user. If it would open on an assistant tool-call, it walks back to the
-// user that started that exchange — slightly over max, rather than dropping
-// the query the in-flight tools belong to.
-func historyWindowStart(history []api.Message, max int) int {
-	if max <= 0 {
-		return len(history)
-	}
-	start := 0
-	if len(history) > max {
-		start = len(history) - max
-	}
-	if start == 0 {
-		return start
-	}
-	if history[start].Role == "assistant" && len(history[start].ToolCalls) > 0 {
-		for i := start - 1; i >= 0; i-- {
-			if history[i].Role == "user" {
-				return i
-			}
-		}
-	}
-	if history[start].Role == "user" {
-		return start
-	}
-	for i := start + 1; i < len(history); i++ {
-		if history[i].Role == "user" {
-			return i
-		}
-	}
-	return len(history)
-}
-
-// HistoryWindow retains a bounded suffix starting at a user boundary. A
-// complete current tool exchange may exceed the limit when its call starts at
-// the boundary; a cut through results discards that exchange in full.
-func HistoryWindow(turns []Turn, max int) []Turn {
-	shape := make([]api.Message, len(turns))
-	for i, t := range turns {
-		shape[i].Role = t.Role
-		if len(t.ToolCalls) > 0 {
-			shape[i].ToolCalls = make([]api.ToolCall, len(t.ToolCalls))
-		}
-	}
-	return deepCopyTurns(turns[historyWindowStart(shape, max):])
-}
-
-// sanitizeOllamaHistory repairs a session that was saved before ToolCalls
-// round-tripped: empty assistant + tool results with no user, which Ollama
-// rejects as "no user query found in messages". Compact seeds (a non-empty
-// assistant summary) stay.
-func sanitizeOllamaHistory(in []api.Message) []api.Message {
-	i := 0
-	for i < len(in) {
-		m := in[i]
-		if m.Role == "user" || m.Role == ollamaSharedRole || m.Role == ollamaSharedToolRole {
-			break
-		}
-		if m.Role == "assistant" && strings.TrimSpace(m.Content) != "" && len(m.ToolCalls) == 0 {
-			break
-		}
-		i++
-	}
-	in = in[i:]
-	return in
 }

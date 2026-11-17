@@ -92,13 +92,7 @@ func (o *OllamaBrain) prepareAudioHistory(ctx context.Context, opts StreamOption
 	}
 	o.audioProjectionBlocked.Store(false)
 	if o.cfg != nil {
-		high, low := o.cfg.MaxHistory*2, o.cfg.MaxHistory
-		if o.cfg.ContinuityArchiveEnabled {
-			high = min(high, 12)
-			low = min(low, 10)
-		}
-		if len(o.history) > high {
-			start := historyWindowStart(o.history, low)
+		if start := o.historyTrimStart(); start > 0 {
 			if err := ValidateTextProjection(o.effectiveTurns(o.working[:min(start, len(o.working))])); err != nil {
 				return err
 			}

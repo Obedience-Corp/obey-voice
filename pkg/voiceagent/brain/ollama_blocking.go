@@ -275,7 +275,11 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		} else if opts.Background && !opts.TransientHistory {
 			o.markBackgroundDelivered(req.Messages)
 		}
-		o.trimHistory()
+		// A transient request's history is rolled back; trimming it would
+		// archive turns that are about to return.
+		if !opts.TransientHistory {
+			o.trimHistory()
+		}
 		return text, nil
 	}
 
