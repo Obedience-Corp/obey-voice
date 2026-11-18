@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -436,8 +437,10 @@ func TestFallbackLatchesAcrossWorkers(t *testing.T) {
 			t.Fatalf("primary was asked for %q after the turn had already switched voices", text)
 		}
 	}
+	// The latch sets only once Alpha's fallback succeeds, so Alpha is always
+	// first; Bravo and Charlie then race each other into the fallback.
 	spoken, _ := fallback.snapshot()
-	if len(spoken) < 2 || spoken[0] != segments[0] || spoken[len(spoken)-1] != segments[2] {
+	if len(spoken) < 2 || spoken[0] != segments[0] || !slices.Contains(spoken, segments[2]) {
 		t.Fatalf("fallback spoke %q, want the failed segment and everything admitted after it", spoken)
 	}
 }
