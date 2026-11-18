@@ -30,9 +30,10 @@ mkdir -p "$licensedir"
 cp LICENSE "$stage/LICENSE"
 cp NOTICE "$stage/NOTICE"
 cp "$module_dir/LICENSE" "$licensedir/sherpa-onnx-go-macos-LICENSE"
-onnxruntime_base="https://raw.githubusercontent.com/microsoft/onnxruntime/v${onnxruntime_version}"
-curl -fsSL "$onnxruntime_base/LICENSE" -o "$licensedir/onnxruntime-LICENSE"
-curl -fsSL "$onnxruntime_base/ThirdPartyNotices.txt" -o "$licensedir/onnxruntime-ThirdPartyNotices.txt"
+# Upstream copies are checked in: microsoft/onnxruntime left GitHub on 2026-11-18.
+onnxruntime_notices="${ONNXRUNTIME_NOTICES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/packaging/licenses/onnxruntime-${onnxruntime_version}}"
+cp "$onnxruntime_notices/LICENSE" "$licensedir/onnxruntime-LICENSE"
+cp "$onnxruntime_notices/ThirdPartyNotices.txt" "$licensedir/onnxruntime-ThirdPartyNotices.txt"
 (
     cd "$licensedir"
     printf '%s  %s\n' \

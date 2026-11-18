@@ -24,14 +24,8 @@ class PackageMacOSNoticesTest(unittest.TestCase):
         (self.module / "LICENSE").write_text("module fixture license")
         (self.root / "LICENSE").write_text("project fixture license")
         (self.root / "NOTICE").write_text("project fixture notice")
-        fakebin = self.root / "bin"
-        fakebin.mkdir()
-        # Downloaded content must match the real pinned digests, even after HTTP
-        # succeeds. This stub prevents all network access and supplies bad bytes.
-        curl = fakebin / "curl"
-        curl.write_text('#!/bin/sh\nprintf "unexpected upstream content" > "$4"\n')
-        curl.chmod(0o755)
-        self.env = dict(os.environ, PATH=str(fakebin) + os.pathsep + os.environ["PATH"])
+        self.env = dict(os.environ)
+        self.env.pop("ONNXRUNTIME_NOTICES_DIR", None)
 
     def run_packaging(self):
         return subprocess.run(["bash", str(SCRIPT), str(self.stage), str(self.module)],
@@ -55,7 +49,18 @@ class PackageMacOSNoticesTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("LICENSE", result.stderr)
 
-    def test_downloaded_notice_digest_drift_fails(self):
+    def test_checked_in_notices_match_pinned_digests(self):
+        result = self.run_packaging()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        for name in ("onnxruntime-LICENSE", "onnxruntime-ThirdPartyNotices.txt"):
+            self.assertTrue((self.stage / "licenses" / name).is_file(), name)
+
+    def test_notice_digest_drift_fails(self):
+        notices = self.root / "notices"
+        notices.mkdir()
+        (notices / "LICENSE").write_text("unexpected upstream content")
+        (notices / "ThirdPartyNotices.txt").write_text("unexpected upstream content")
+        self.env["ONNXRUNTIME_NOTICES_DIR"] = str(notices)
         result = self.run_packaging()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("FAILED", result.stdout)
