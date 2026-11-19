@@ -21,6 +21,8 @@ import (
 // user asks what is happening.
 const workNarrationMilestones = "milestones"
 
+var errNoImageDelivered = errors.New("the worker returned text without an image attachment")
+
 func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Config) func(context.Context) (string, error) {
 	return a.workerRunWithBudget(brief, worker, cfg, legacyWorkerBudget(a.workEnabled(), cfg))
 }
@@ -79,8 +81,24 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		if err != nil {
 			return result, err
 		}
-		cleaned, attached, importErr := finalizeProviderReply(worker, result, workDir, warn)
-		if importErr == nil || len(attached) > 0 || chatmedia.ReplyProse(result) != "" {
+		finalize := func(result string) (string, error) {
+			cleaned, attached, err := finalizeProviderReply(worker, result, workDir, warn)
+			if len(attached) > 0 {
+				return cleaned, nil
+			}
+			if err != nil {
+				if chatmedia.ReplyProse(result) != "" {
+					return cleaned, nil
+				}
+				return cleaned, err
+			}
+			if expected, _ := ctx.Value(imageDeliveryKey{}).(bool); expected {
+				return cleaned, errNoImageDelivered
+			}
+			return cleaned, nil
+		}
+		cleaned, importErr := finalize(result)
+		if importErr == nil {
 			return cleaned, nil
 		}
 		if err := ctx.Err(); err != nil {
@@ -108,8 +126,8 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		if err != nil {
 			return result, err
 		}
-		cleaned, attached, importErr = finalizeProviderReply(worker, result, workDir, warn)
-		if importErr != nil && len(attached) == 0 && chatmedia.ReplyProse(result) == "" {
+		cleaned, importErr = finalize(result)
+		if importErr != nil {
 			return cleaned, fmt.Errorf("could not attach the worker's images: %w", importErr)
 		}
 		return cleaned, nil

@@ -2,6 +2,8 @@ package pipeline
 
 import (
 	"testing"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 )
 
 func TestClassifySpawnIntent(t *testing.T) {
@@ -178,6 +180,24 @@ func TestPictureDeliveryRequiresLegacyWorkerAndExplicitRequest(t *testing.T) {
 	for _, input := range []string{"You just showed me a cat.", "Can you show me what the monkey in this picture is holding?", "What does this picture of a monkey mean?", "Don't show me a picture of a monkey."} {
 		if kind, _, _ := classifyTurn(input, ctx); kind == RouteSpawn {
 			t.Errorf("unexpected image dispatch for %q", input)
+		}
+	}
+}
+
+func TestPictureDeliveryFollowups(t *testing.T) {
+	history := []brain.Turn{{Role: "user", Content: "Can you show me a picture of a monkey?"}, {Role: "assistant", Content: "I can't fetch a monkey picture directly in this chat."}}
+	for _, tc := range []struct {
+		input string
+		want  bool
+	}{
+		{"Yeah, so show me a monkey.", true},
+		{"You need to add them to the chat, please.", true},
+		{"Can you show me a command?", false},
+		{"Don't add them to the chat.", false},
+		{"Why can't you add them to the chat?", false},
+	} {
+		if got := requestsChatImage(tc.input, history); got != tc.want {
+			t.Errorf("%q = %v", tc.input, got)
 		}
 	}
 }

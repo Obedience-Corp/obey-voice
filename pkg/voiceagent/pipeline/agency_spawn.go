@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -106,6 +107,14 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		user = jobCfg.UserDisplayName
 	}
 	brief := spawnBrief(history, d.Transcript, briefPersonaID(metrics, jobCfg), a.pipeline.SpeakerNames, user)
+	imageTask := requestsChatImage(task, history)
+	if imageTask {
+		instruction, err := prompts.RenderSystem(config.PromptsDirFrom(jobCfg), "worker-image-delivery", nil)
+		if err != nil {
+			a.pipeline.emit(events.Info{Message: err.Error()})
+		}
+		brief += "\n" + instruction
+	}
 	run := a.workerRun(brief, worker, jobCfg)
 	switch {
 	case plan != nil:
@@ -114,9 +123,14 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		run = a.ownWorkRun(brief, jobCfg, ownTier)
 	}
 	refs := chatmedia.Input(ctx)
-	if len(refs) > 0 {
+	if len(refs) > 0 || imageTask {
 		originalRun := run
-		run = func(jobCtx context.Context) (string, error) { return originalRun(chatmedia.WithInput(jobCtx, refs)) }
+		run = func(jobCtx context.Context) (string, error) {
+			if imageTask {
+				jobCtx = context.WithValue(jobCtx, imageDeliveryKey{}, true)
+			}
+			return originalRun(chatmedia.WithInput(jobCtx, refs))
+		}
 	}
 	run = withLiveSkills(a.pipeline.Brain, run)
 	var runtimeBudget time.Duration

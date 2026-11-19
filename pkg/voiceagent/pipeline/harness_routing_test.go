@@ -233,3 +233,27 @@ func TestMonkeyPictureAfterCatDispatchesOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestPictureJobTextAloneCannotAnnounceDelivery(t *testing.T) {
+	for _, reply := range []string{
+		"I can't actually fetch or display images in this chat mode. I can only show you files that already exist here.",
+		"I found some nice monkey pictures for you. Here you go.",
+	} {
+		p, b, _ := harnessPipeline(t, false)
+		b.turns = []brain.Turn{{Role: "user", Content: "Show me an image of a monkey please"}, {Role: "assistant", Content: "I found some monkey pictures."}}
+		p.Agency.ReplaceWorker(&lifecycleWorker{reply: reply}, p.Agency.currentConfig(), nil)
+		failed := make(chan events.JobFailed, 1)
+		events.Subscribe(p.Events, func(e events.JobFailed) { failed <- e })
+		if err := p.RunTurnTextMode(t.Context(), "You need to add them to the chat, please."); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case e := <-failed:
+			if !strings.Contains(e.Err, errNoImageDelivered.Error()) {
+				t.Fatal(e.Err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("attachment-free reply was accepted")
+		}
+	}
+}

@@ -2,8 +2,10 @@ package pipeline
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -117,6 +119,61 @@ func classifyTurn(transcript string, ctx RouteContext) (RouteKind, string, bool)
 // Match an explicit request for a new picture. A question about a picture
 // already in the conversation still belongs to the ordinary router.
 var pictureDeliveryRequest = regexp.MustCompile(`^(?:(?:can|could|would|will) you )?(?:please )?(?:show|send) me (?:a picture|a photo|an image) of .+`)
+
+type imageDeliveryKey struct{}
+
+var imageNoun = regexp.MustCompile(`\b(images?|photos?|pictures?|pngs?|jpe?gs?|gifs?)\b`)
+var showSubject = regexp.MustCompile(`^(?:yeah,? so )?(?:(?:can|could|would) you )?(?:please )?show me (?:a|an) ([a-z]+)$`)
+var addToChat = regexp.MustCompile(`^(?:(?:please|just|you need to|can you|could you) )*(?:add|attach|send|put) (?:it|them|that|those|the (?:images?|photos?|pictures?)) (?:here|(?:in|to) (?:the|this) chat)\b`)
+
+func requestsChatImage(task string, history []brain.Turn) bool {
+	s := normalizeUtterance(task)
+	if pictureDeliveryRequest.MatchString(s) {
+		return true
+	}
+	if match := showSubject.FindStringSubmatch(s); match != nil {
+		for _, turn := range slices.Backward(spawnableHistory(history)) {
+			if turn.Role == "user" && pictureDeliveryRequest.MatchString(normalizeUtterance(turn.Content)) {
+				previous := normalizeUtterance(turn.Content)
+				return strings.HasSuffix(previous, " of a "+match[1]) || strings.HasSuffix(previous, " of an "+match[1])
+			}
+		}
+		return false
+	}
+	if !addToChat.MatchString(s) {
+		return false
+	}
+	if imageNoun.MatchString(s) {
+		return true
+	}
+	// Resolve "add them to the chat" against the most recent substantive
+	// exchange. Do not revive an image task from before a change of subject.
+	for _, turn := range slices.Backward(spawnableHistory(history)) {
+		if turn.Content == task {
+			continue
+		}
+		if len(turn.Attachments) > 0 || imageNoun.MatchString(strings.ToLower(turn.Content)) {
+			return true
+		}
+		if turn.Role == "user" {
+			break
+		}
+	}
+	return false
+}
+
+// Only consult conversation history for a follow-up that refers to a deliverable.
+func (p *Pipeline) classifyUserTurn(input string) (RouteKind, string, bool) {
+	ctx := p.routeContext()
+	if kind, source, ok := classifyTurn(input, ctx); ok {
+		return kind, source, true
+	}
+	s := normalizeUtterance(input)
+	if ctx.LegacyImageWorker && (showSubject.MatchString(s) || addToChat.MatchString(s)) && requestsChatImage(input, p.Agency.liveHistory()) {
+		return RouteSpawn, "intent", true
+	}
+	return RouteNone, "", false
+}
 
 // spawnIntents are user-utterance prefixes that mean "do this", not "talk".
 // Kept tight so trivia ("what's the capital of Australia") stays chat.
