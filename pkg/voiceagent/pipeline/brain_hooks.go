@@ -162,6 +162,10 @@ func (p *Pipeline) routeContext() RouteContext {
 	}
 	if p.Agency != nil {
 		ctx.TieredWorkers = tieredWorkers(p.Agency.currentConfig())
+		if !ctx.TieredWorkers && p.VoiceToolsEnabled && p.WorkersEnabled() {
+			_, err := p.Agency.workerProvider()
+			ctx.LegacyImageWorker = err == nil
+		}
 	}
 	return ctx
 }

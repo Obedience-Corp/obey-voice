@@ -166,3 +166,18 @@ func TestClassifyPhraseEmptyNoOp(t *testing.T) {
 		t.Fatalf("empty = %q, true; want no match", kind)
 	}
 }
+
+func TestPictureDeliveryRequiresLegacyWorkerAndExplicitRequest(t *testing.T) {
+	const request = "Please show me an image of a monkey."
+	for _, ctx := range []RouteContext{{}, {TieredWorkers: true, LegacyImageWorker: true}} {
+		if kind, _, _ := classifyTurn(request, ctx); kind == RouteSpawn {
+			t.Fatalf("unexpected image dispatch with %+v", ctx)
+		}
+	}
+	ctx := RouteContext{LegacyImageWorker: true}
+	for _, input := range []string{"You just showed me a cat.", "Can you show me what the monkey in this picture is holding?", "What does this picture of a monkey mean?", "Don't show me a picture of a monkey."} {
+		if kind, _, _ := classifyTurn(input, ctx); kind == RouteSpawn {
+			t.Errorf("unexpected image dispatch for %q", input)
+		}
+	}
+}

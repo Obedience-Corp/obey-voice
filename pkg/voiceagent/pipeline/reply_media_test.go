@@ -22,7 +22,7 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-func imageWorkerFixture(t *testing.T) (*config.Config, *brain.OllamaBrain, chatmedia.Ref, string, <-chan struct{}, chan<- struct{}) {
+func imageWorkerFixture(t *testing.T, expectInputImage bool) (*config.Config, *brain.OllamaBrain, chatmedia.Ref, string, <-chan struct{}, chan<- struct{}) {
 	t.Helper()
 	root := t.TempDir()
 	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
@@ -56,8 +56,8 @@ func imageWorkerFixture(t *testing.T) (*config.Config, *brain.OllamaBrain, chatm
 					}
 				}
 			}
-			if !found {
-				t.Error("worker request did not contain actual image bytes")
+			if found != expectInputImage {
+				t.Errorf("worker received input image = %v, want %v", found, expectInputImage)
 			}
 			started <- struct{}{}
 			select {
@@ -80,7 +80,7 @@ func imageWorkerFixture(t *testing.T) (*config.Config, *brain.OllamaBrain, chatm
 	return cfg, worker, ref, output, started, release
 }
 func TestWorkerImagesSurviveAdmissionAndPersistReply(t *testing.T) {
-	cfg, worker, ref, output, started, release := imageWorkerFixture(t)
+	cfg, worker, ref, output, started, release := imageWorkerFixture(t, true)
 	p := &Pipeline{Brain: worker, Events: events.NewBus()}
 	if err := p.BeginConversationIdentity("images"); err != nil {
 		t.Fatal(err)
@@ -153,7 +153,7 @@ func TestWorkerImagesSurviveAdmissionAndPersistReply(t *testing.T) {
 	}
 }
 func TestForegroundImageReplyBecomesGroupCompletion(t *testing.T) {
-	_, provider, ref, _, _, release := imageWorkerFixture(t)
+	_, provider, ref, _, _, release := imageWorkerFixture(t, true)
 	close(release)
 	p := &Pipeline{Brain: provider, Events: events.NewBus()}
 	var response events.ResponseReady

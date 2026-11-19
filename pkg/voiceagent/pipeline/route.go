@@ -25,9 +25,10 @@ const (
 
 // RouteContext supplies mode guards for Layer 1 phrase routing.
 type RouteContext struct {
-	NarrationActive bool
-	JobActive       bool
-	TieredWorkers   bool
+	NarrationActive   bool
+	JobActive         bool
+	TieredWorkers     bool
+	LegacyImageWorker bool
 }
 
 // RouteDecision records how a turn was classified.
@@ -107,11 +108,15 @@ func classifyTurn(transcript string, ctx RouteContext) (RouteKind, string, bool)
 	if kind, ok := classifyPhrase(transcript, ctx); ok {
 		return kind, "phrase", true
 	}
-	if !ctx.TieredWorkers && classifySpawnIntent(transcript) {
+	if !ctx.TieredWorkers && (classifySpawnIntent(transcript) || (ctx.LegacyImageWorker && pictureDeliveryRequest.MatchString(normalizeUtterance(transcript)))) {
 		return RouteSpawn, "intent", true
 	}
 	return RouteNone, "", false
 }
+
+// Match an explicit request for a new picture. A question about a picture
+// already in the conversation still belongs to the ordinary router.
+var pictureDeliveryRequest = regexp.MustCompile(`^(?:(?:can|could|would|will) you )?(?:please )?(?:show|send) me (?:a picture|a photo|an image) of .+`)
 
 // spawnIntents are user-utterance prefixes that mean "do this", not "talk".
 // Kept tight so trivia ("what's the capital of Australia") stays chat.
