@@ -140,6 +140,10 @@ func outOfTimeText(elapsed time.Duration, err error) string {
 	if errors.As(err, &cut) && cut.Partial != "" {
 		text += " Partial answer: " + cut.Partial
 	}
+	var imageErr *imageFailure
+	if errors.As(err, &imageErr) {
+		text += imageErr.notes
+	}
 	return text
 }
 

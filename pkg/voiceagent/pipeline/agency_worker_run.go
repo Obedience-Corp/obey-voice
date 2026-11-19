@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"unicode"
 
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
-
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
@@ -19,6 +20,8 @@ import (
 // line per closed fold row. The default, status_only, speaks nothing until the
 // user asks what is happening.
 const workNarrationMilestones = "milestones"
+
+var errNoImageDelivered = errors.New("the worker returned text without an image attachment")
 
 func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Config) func(context.Context) (string, error) {
 	return a.workerRunWithBudget(brief, worker, cfg, legacyWorkerBudget(a.workEnabled(), cfg))
@@ -71,14 +74,90 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		start, end := opts.OnToolStart, opts.OnToolEnd
 		opts.OnToolStart = func(call brain.ToolCall) { a.captureWorkerThread(id, worker); start(call) }
 		opts.OnToolEnd = func(result brain.ToolResult) { end(result); a.captureWorkerThread(id, worker) }
-		result, err := worker.ThinkFull(ctx, brief, opts)
-		if err == nil {
-			result, _ = finalizeProviderReply(worker, result, config.WorkDirFrom(cfg), func(message string) { a.pipeline.emit(events.Info{Message: message}) })
+		workDir := config.WorkDirFrom(cfg)
+		warn := func(message string) { a.pipeline.emit(events.Info{Message: message}) }
+		defer a.captureWorkerThread(id, worker)
+		firstReply, err := worker.ThinkFull(ctx, brief, opts)
+		if err != nil {
+			return firstReply, err
 		}
-		a.captureWorkerThread(id, worker)
-		return result, err
+		required, _ := ctx.Value(imageDeliveryKey{}).(bool)
+		finalize := func(result string) (string, error) {
+			cleaned, attached, err := finalizeProviderReply(worker, result, workDir, warn)
+			if len(attached) > 0 {
+				return cleaned, nil
+			}
+			if required && err == nil {
+				err = errNoImageDelivered
+			}
+			if !required && err != nil && chatmedia.ReplyProse(result) != "" {
+				return cleaned, nil
+			}
+			return cleaned, err
+		}
+		cleaned, importErr := finalize(firstReply)
+		if importErr == nil {
+			return cleaned, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		attachmentErr := workerImageFailure(importErr, firstReply)
+		remaining, limited := budget.RemainingRequests()
+		// An opaque paid dispatch has a single admission and no per-request budget.
+		if !tools || budget == nil || (limited && remaining == 0) {
+			return cleaned, attachmentErr
+		}
+		input, promptErr := prompts.RenderSystem(config.PromptsDirFrom(cfg), "worker-image-repair", map[string]string{
+			"brief": brief, "work_dir": workDir, "import_error": fmt.Sprintf("%.512s", importErr.Error()),
+		})
+		if promptErr != nil {
+			warn(promptErr.Error())
+			if strings.TrimSpace(input) == "" {
+				return cleaned, attachmentErr
+			}
+		}
+		retryReply, err := worker.ThinkFull(ctx, input, opts)
+		if errors.Is(err, brain.ErrWorkerBudgetExceeded) {
+			return cleaned, attachmentErr
+		}
+		if err != nil {
+			return retryReply, workerImageFailure(err, firstReply, retryReply)
+		}
+		cleaned, importErr = finalize(retryReply)
+		if importErr != nil {
+			return cleaned, workerImageFailure(importErr, firstReply, retryReply)
+		}
+		return cleaned, nil
 	}
 }
+
+// Failed jobs publish the error to chat. Keep the worker's explanation from
+// each attempt there, even when the repair produced no answer of its own.
+func workerImageFailure(cause error, replies ...string) error {
+	var notes strings.Builder
+	var previous string
+	for _, reply := range replies {
+		prose := chatmedia.ReplyProse(reply)
+		if prose != "" && prose != previous {
+			notes.WriteString("\nWorker reply: ")
+			notes.WriteString(prose)
+			previous = prose
+		}
+	}
+	return &imageFailure{cause: cause, notes: notes.String()}
+}
+
+type imageFailure struct {
+	cause error
+	notes string
+}
+
+func (e *imageFailure) Error() string {
+	return "could not attach the worker's images: " + e.cause.Error() + e.notes
+}
+
+func (e *imageFailure) Unwrap() error { return e.cause }
 
 // freshWorker gives a job a conversation of its own: no history and no CLI
 // session from the job before it, and nothing shared with a job running

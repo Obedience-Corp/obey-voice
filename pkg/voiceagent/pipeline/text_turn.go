@@ -135,7 +135,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	thinkingStarted := metrics.tEOU()
 
 	if !isRetry && !background && !isContinuation && admission.Discussion == nil && len(chatmedia.Input(ctx)) == 0 {
-		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
+		if kind, source, ok := p.classifyUserTurn(input); ok && routeKindSkipsBrain(kind) {
 			return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		}
 	}

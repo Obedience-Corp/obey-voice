@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -189,5 +190,71 @@ func TestHarnessExplicitSearchDoesNotDoubleDispatch(t *testing.T) {
 	}
 	if len(b.requests) != 0 || len(b.chat) != 0 || len(jobs.Status()) != 1 {
 		t.Fatal("deterministic route was classified or dispatched twice")
+	}
+}
+
+func TestMonkeyPictureAfterCatDispatchesOnce(t *testing.T) {
+	for _, mode := range []string{"text", "voice"} {
+		t.Run(mode, func(t *testing.T) {
+			p, b, jobs := harnessPipeline(t, false)
+			cfg, worker, _, _, _, release := imageWorkerFixture(t, false)
+			close(release)
+			p.Agency.ReplaceWorker(worker, cfg, nil)
+			finished := make(chan events.JobFinished, 1)
+			events.Subscribe(p.Events, func(e events.JobFinished) { finished <- e })
+			b.turns = []brain.Turn{
+				{Role: "assistant", Content: "I can't fetch or show images directly in this chat."},
+				{Role: "assistant", Content: "Cat picture", Attachments: []chatmedia.Ref{{Name: "cat.jpg"}}},
+			}
+			const query = "Can you show me a picture of a monkey?"
+			var route RouteDecision
+			p.OnRoute = func(d RouteDecision) { route = d }
+			var err error
+			if mode == "voice" {
+				p.STT = &fakeSTT{text: query}
+				_, err = p.RunTurn(t.Context())
+			} else {
+				err = p.RunTurnTextMode(t.Context(), query)
+			}
+			if err != nil || route.Transcript != query || route.Kind != RouteSpawn || len(jobs.Status()) != 1 || len(b.requests) != 0 || len(b.chat) != 0 {
+				t.Fatalf("route=%+v jobs=%v classifiers=%d chat=%d err=%v", route, jobs.Status(), len(b.requests), len(b.chat), err)
+			}
+			select {
+			case result := <-finished:
+				if len(result.Attachments) != 1 {
+					t.Fatalf("worker returned no image: %+v", result)
+				}
+				if _, err := chatmedia.DefaultStore().Preview(result.Attachments[0]); err != nil {
+					t.Fatalf("cannot display returned image: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("image worker did not finish")
+			}
+		})
+	}
+}
+
+func TestPictureJobTextAloneCannotAnnounceDelivery(t *testing.T) {
+	for _, reply := range []string{
+		"I can't actually fetch or display images in this chat mode. I can only show you files that already exist here.",
+		"I found some nice monkey pictures for you. Here you go.",
+		"I tried both image sources. Neither was online.",
+	} {
+		p, b, _ := harnessPipeline(t, false)
+		b.turns = []brain.Turn{{Role: "user", Content: "Show me an image of a monkey please"}, {Role: "assistant", Content: "I found some monkey pictures."}}
+		p.Agency.ReplaceWorker(&lifecycleWorker{reply: reply}, p.Agency.currentConfig(), nil)
+		failed := make(chan events.JobFailed, 1)
+		events.Subscribe(p.Events, func(e events.JobFailed) { failed <- e })
+		if err := p.RunTurnTextMode(t.Context(), "You need to add them to the chat, please."); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case e := <-failed:
+			if !strings.Contains(e.Err, errNoImageDelivered.Error()) || strings.Count(e.Err, reply) != 1 {
+				t.Fatal(e.Err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("attachment-free reply was accepted")
+		}
 	}
 }

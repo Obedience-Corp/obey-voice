@@ -191,7 +191,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 
 	// Layer 1 — deterministic phrase and work-intent routing before the live
 	// brain runs, so tool work never occupies the talking context window.
-	if kind, source, ok := classifyTurn(text, p.routeContext()); !isContinuation && !nativeConversation && admission.Discussion == nil && ok && routeKindSkipsBrain(kind) {
+	if kind, source, ok := p.classifyUserTurn(text); !isContinuation && !nativeConversation && admission.Discussion == nil && ok && routeKindSkipsBrain(kind) {
 		return original, p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
 	}
 
