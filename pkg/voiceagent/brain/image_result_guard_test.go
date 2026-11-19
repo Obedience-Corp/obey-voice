@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/ollama/ollama/api"
@@ -224,6 +226,51 @@ func TestImageClaimAfterChatRoute(t *testing.T) {
 					t.Fatalf("valid answer rejected: reply=%q error=%v", reply, err)
 				}
 			})
+		}
+	}
+}
+
+func TestImageRouteGuidanceRequiresAvailableWorker(t *testing.T) {
+	for _, tiers := range []*WorkerTierAvailability{nil, {}, {Simple: true}, {Medium: true}, {Complex: true}} {
+		want := tiers == nil || *tiers != (WorkerTierAvailability{})
+		description := liveRouterTools(tiers)[0].Function.Description
+		if strings.Contains(description, "attach a new picture") != want {
+			t.Errorf("tiers=%+v description=%q", tiers, description)
+		}
+	}
+}
+
+func TestPictureDiscussionStaysInChat(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	ref, err := chatmedia.DefaultStore().Import("dog.png", testmedia.PNG())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		input, answer string
+		attachments   []chatmedia.Ref
+	}{
+		{"What color is the dog in the picture I attached?", "The dog is brown.", []chatmedia.Ref{ref}},
+		{"That picture reminds me of home.", "What does it remind you of?", nil},
+	} {
+		fake := &jsonRouteFake{native: map[string]string{"kind": "chat"}, answer: tc.answer}
+		fake.intercept = func(w http.ResponseWriter, r *http.Request, req api.ChatRequest) bool {
+			if r.URL.Path == "/api/show" {
+				_, _ = w.Write([]byte(`{"capabilities":["vision","tools"]}`))
+				return true
+			}
+			if hasTool(req.Tools, "route") && len(tc.attachments) > 0 {
+				images := req.Messages[len(req.Messages)-1].Images
+				if len(images) != 1 || !bytes.Equal(images[0], testmedia.PNG()) {
+					t.Error("route request omitted the attached picture")
+				}
+			}
+			return false
+		}
+		o := jsonRouteTestBrain(t, fake.server(t))
+		turn := runRoutedTurn(t, o, tc.input, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly, Attachments: tc.attachments})
+		if turn.result.Err != nil || turn.result.Route != "" || turn.answer != tc.answer || len(turn.tools) != 1 || turn.tools[0].Summary != "chat" {
+			t.Errorf("%q: answer=%q result=%+v tools=%+v", tc.input, turn.answer, turn.result, turn.tools)
 		}
 	}
 }

@@ -24,7 +24,10 @@ func TestLiveImageRequestsRouteToWorker(t *testing.T) {
 	for _, tc := range []struct {
 		name, input string
 		history     []Turn
+		chat        bool
 	}{
+		{name: "picture_discussion", input: "That picture reminds me of home.", chat: true},
+		{name: "about_picture", input: "What color did we say the dog in the picture was?", history: []Turn{{Role: "assistant", Content: "The dog in the picture is brown."}}, chat: true},
 		{name: "cat_picture", input: "Hey, Bay, can you show me a picture of a cat?"},
 		{name: "cat_followup", input: "No, I want you to add the picture of the cat to the chat.", history: []Turn{{Role: "user", Content: "Can you show me a picture of a cat?"}, {Role: "assistant", Content: "I can't pull up a picture of a cat right here. Want me to describe one instead?"}}},
 		{name: "direct", input: "Can you show me an image of a dog?"},
@@ -60,6 +63,12 @@ func TestLiveImageRequestsRouteToWorker(t *testing.T) {
 			spoken, _ := drainStream(t, stream)
 			result := <-stream.Done
 			t.Logf("route=%q tier=%q spoken=%q error=%v", result.Route, result.RouteTier, spoken, result.Err)
+			if tc.chat {
+				if result.Err != nil || result.Route == "spawn" || spoken == "" {
+					t.Fatalf("picture discussion did not stay in chat: %+v", result)
+				}
+				return
+			}
 			if result.Err != nil || result.Route != "spawn" || (opts.WorkerTiers != nil && result.RouteTier == "") || spoken != "" {
 				t.Fatalf("image request did not reach worker routing: %+v", result)
 			}

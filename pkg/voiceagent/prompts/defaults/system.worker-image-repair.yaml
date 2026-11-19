@@ -1,0 +1,12 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: worker-image-repair
+  kind: system
+  system_prompt: |-
+    Original task: {brief}
+    The image references could not be attached. Import errors: {import_error}
+    Use your tools to obtain and verify the requested image files inside {work_dir}.
+    Return each as ![Caption](<local-path>) on its own line. If you cannot obtain the images, explain why.
+metadata:
+  version: 1
+  description: Retry an image-only worker reply with the original brief, work directory and bounded import diagnostic.

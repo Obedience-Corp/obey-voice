@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"unicode"
 
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
-
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
@@ -74,25 +75,44 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		workDir := config.WorkDirFrom(cfg)
 		warn := func(message string) { a.pipeline.emit(events.Info{Message: message}) }
 		defer a.captureWorkerThread(id, worker)
-		input := brief
-		for attempt := 0; ; attempt++ {
-			result, err := worker.ThinkFull(ctx, input, opts)
-			if err != nil {
-				return result, err
-			}
-			cleaned, attached, importErr := finalizeProviderReply(worker, result, workDir, warn)
-			if importErr == nil || len(attached) > 0 {
-				return cleaned, nil
-			}
-			if attempt > 0 || !tools {
-				return cleaned, fmt.Errorf("could not attach the worker's images: %w", importErr)
-			}
-			if err := ctx.Err(); err != nil {
-				return "", err
-			}
-			input = fmt.Sprintf("None of your image references could be attached. Import errors: %v. Use your tools to obtain and verify the requested local image files inside %q, then return each as ![Caption](<local-path>) on its own line. If you cannot obtain the images, explain why.", importErr, workDir)
-			opts.Attachments = nil
+		result, err := worker.ThinkFull(ctx, brief, opts)
+		if err != nil {
+			return result, err
 		}
+		cleaned, attached, importErr := finalizeProviderReply(worker, result, workDir, warn)
+		if importErr == nil || len(attached) > 0 || chatmedia.ReplyProse(result) != "" {
+			return cleaned, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		attachmentErr := fmt.Errorf("could not attach the worker's images: %w", importErr)
+		remaining, limited := budget.RemainingRequests()
+		// An opaque paid dispatch has a single admission and no per-request budget.
+		if !tools || budget == nil || (limited && remaining == 0) {
+			return cleaned, attachmentErr
+		}
+		input, promptErr := prompts.RenderSystem(config.PromptsDirFrom(cfg), "worker-image-repair", map[string]string{
+			"brief": brief, "work_dir": workDir, "import_error": fmt.Sprintf("%.512s", importErr.Error()),
+		})
+		if promptErr != nil {
+			warn(promptErr.Error())
+			if strings.TrimSpace(input) == "" {
+				return cleaned, attachmentErr
+			}
+		}
+		result, err = worker.ThinkFull(ctx, input, opts)
+		if errors.Is(err, brain.ErrWorkerBudgetExceeded) {
+			return cleaned, attachmentErr
+		}
+		if err != nil {
+			return result, err
+		}
+		cleaned, attached, importErr = finalizeProviderReply(worker, result, workDir, warn)
+		if importErr != nil && len(attached) == 0 && chatmedia.ReplyProse(result) == "" {
+			return cleaned, fmt.Errorf("could not attach the worker's images: %w", importErr)
+		}
+		return cleaned, nil
 	}
 }
 
