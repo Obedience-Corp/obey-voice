@@ -12,11 +12,11 @@ per-file SHA-256 manifest:
 | `licenses/onnxruntime-ThirdPartyNotices.txt` | Pinned ONNX Runtime v1.28.2 upstream notices |
 
 The current macOS module v1.13.8 contains its Apache license but omits the ONNX
-redistribution files. The helper `scripts/package-macos-notices.sh` fetches
-[LICENSE](https://github.com/microsoft/onnxruntime/blob/v1.28.2/LICENSE) and
-[ThirdPartyNotices.txt](https://github.com/microsoft/onnxruntime/blob/v1.28.2/ThirdPartyNotices.txt)
-using the same URLs and SHA-256 values as the Linux recipe. It fails on fetch or
-digest errors, a changed embedded runtime version, missing source notices, or an
+redistribution files. Upstream's v1.28.2 `LICENSE` and `ThirdPartyNotices.txt`
+are checked in under `packaging/licenses/onnxruntime-1.28.2/`, because
+`microsoft/onnxruntime` was removed from GitHub on 2026-11-18. The helper
+`scripts/package-macos-notices.sh` copies them and checks the same SHA-256 values
+as the Linux recipe. It fails on a missing file or digest error, a changed embedded runtime version, missing source notices, or an
 unrecognized bundled dylib. Review and update the notice set with dependency
 upgrades; do not bypass these checks.
 
