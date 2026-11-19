@@ -77,34 +77,32 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		workDir := config.WorkDirFrom(cfg)
 		warn := func(message string) { a.pipeline.emit(events.Info{Message: message}) }
 		defer a.captureWorkerThread(id, worker)
-		result, err := worker.ThinkFull(ctx, brief, opts)
+		firstReply, err := worker.ThinkFull(ctx, brief, opts)
 		if err != nil {
-			return result, err
+			return firstReply, err
 		}
+		required, _ := ctx.Value(imageDeliveryKey{}).(bool)
 		finalize := func(result string) (string, error) {
 			cleaned, attached, err := finalizeProviderReply(worker, result, workDir, warn)
 			if len(attached) > 0 {
 				return cleaned, nil
 			}
-			if err != nil {
-				if chatmedia.ReplyProse(result) != "" {
-					return cleaned, nil
-				}
-				return cleaned, err
+			if required && err == nil {
+				err = errNoImageDelivered
 			}
-			if expected, _ := ctx.Value(imageDeliveryKey{}).(bool); expected {
-				return cleaned, errNoImageDelivered
+			if !required && err != nil && chatmedia.ReplyProse(result) != "" {
+				return cleaned, nil
 			}
-			return cleaned, nil
+			return cleaned, err
 		}
-		cleaned, importErr := finalize(result)
+		cleaned, importErr := finalize(firstReply)
 		if importErr == nil {
 			return cleaned, nil
 		}
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		attachmentErr := fmt.Errorf("could not attach the worker's images: %w", importErr)
+		attachmentErr := workerImageFailure(importErr, firstReply)
 		remaining, limited := budget.RemainingRequests()
 		// An opaque paid dispatch has a single admission and no per-request budget.
 		if !tools || budget == nil || (limited && remaining == 0) {
@@ -119,20 +117,47 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 				return cleaned, attachmentErr
 			}
 		}
-		result, err = worker.ThinkFull(ctx, input, opts)
+		retryReply, err := worker.ThinkFull(ctx, input, opts)
 		if errors.Is(err, brain.ErrWorkerBudgetExceeded) {
 			return cleaned, attachmentErr
 		}
 		if err != nil {
-			return result, err
+			return retryReply, workerImageFailure(err, firstReply, retryReply)
 		}
-		cleaned, importErr = finalize(result)
+		cleaned, importErr = finalize(retryReply)
 		if importErr != nil {
-			return cleaned, fmt.Errorf("could not attach the worker's images: %w", importErr)
+			return cleaned, workerImageFailure(importErr, firstReply, retryReply)
 		}
 		return cleaned, nil
 	}
 }
+
+// Failed jobs publish the error to chat. Keep the worker's explanation from
+// each attempt there, even when the repair produced no answer of its own.
+func workerImageFailure(cause error, replies ...string) error {
+	var notes strings.Builder
+	var previous string
+	for _, reply := range replies {
+		prose := chatmedia.ReplyProse(reply)
+		if prose != "" && prose != previous {
+			notes.WriteString("\nWorker reply: ")
+			notes.WriteString(prose)
+			previous = prose
+		}
+	}
+	return &imageFailure{cause: cause, notes: notes.String()}
+}
+
+type imageFailure struct {
+	cause error
+	notes string
+}
+
+func (e *imageFailure) Error() string {
+	return "could not attach the worker's images: " + e.cause.Error() + e.notes
+}
+
+func (e *imageFailure) Unwrap() error { return e.cause }
 
 // freshWorker gives a job a conversation of its own: no history and no CLI
 // session from the job before it, and nothing shared with a job running

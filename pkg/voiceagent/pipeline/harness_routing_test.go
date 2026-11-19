@@ -238,6 +238,7 @@ func TestPictureJobTextAloneCannotAnnounceDelivery(t *testing.T) {
 	for _, reply := range []string{
 		"I can't actually fetch or display images in this chat mode. I can only show you files that already exist here.",
 		"I found some nice monkey pictures for you. Here you go.",
+		"I tried both image sources. Neither was online.",
 	} {
 		p, b, _ := harnessPipeline(t, false)
 		b.turns = []brain.Turn{{Role: "user", Content: "Show me an image of a monkey please"}, {Role: "assistant", Content: "I found some monkey pictures."}}
@@ -249,7 +250,7 @@ func TestPictureJobTextAloneCannotAnnounceDelivery(t *testing.T) {
 		}
 		select {
 		case e := <-failed:
-			if !strings.Contains(e.Err, errNoImageDelivered.Error()) {
+			if !strings.Contains(e.Err, errNoImageDelivered.Error()) || strings.Count(e.Err, reply) != 1 {
 				t.Fatal(e.Err)
 			}
 		case <-time.After(3 * time.Second):

@@ -19,11 +19,12 @@ import (
 
 type imageRepairWorker struct {
 	fakeBrain
-	answers []string
-	inputs  []string
-	refs    []chatmedia.Ref
-	options []brain.StreamOptions
-	cancel  context.CancelFunc
+	answers   []string
+	inputs    []string
+	refs      []chatmedia.Ref
+	options   []brain.StreamOptions
+	cancel    context.CancelFunc
+	repairErr error
 }
 
 func (*imageRepairWorker) ValidateImages(context.Context, []chatmedia.Ref) error { return nil }
@@ -41,6 +42,9 @@ func (w *imageRepairWorker) ThinkFull(ctx context.Context, input string, opts br
 	if len(w.inputs) > len(w.answers) {
 		return "", errors.New("unexpected worker call")
 	}
+	if len(w.inputs) == 2 && w.repairErr != nil {
+		return "", w.repairErr
+	}
 	return w.answers[len(w.inputs)-1], nil
 }
 
@@ -57,16 +61,27 @@ func TestWorkerRepairsRejectedImageReferences(t *testing.T) {
 	}
 	const bad = "![Example](https://example.invalid/page)"
 	const good = "![Example](fixture.png)"
+	const offline = "I tried the image search, but it was offline."
+	const retryFailed = "The backup source had no matching image."
+	const claimed = "I attached the picture."
 	for _, tc := range []struct {
-		name                   string
-		answers                []string
-		wantRefs               int
-		wantErr                bool
-		requests, outputTokens int
-		noTools, cancel        bool
-		wantText               string
+		name                      string
+		answers                   []string
+		wantRefs                  int
+		wantErr                   bool
+		requests, outputTokens    int
+		noTools, cancel, required bool
+		repairErr                 error
+		wantDetails               []string
+		wantText                  string
 	}{
 		{name: "recovered", answers: []string{bad, good}, wantRefs: 1},
+		{name: "required image repaired", answers: []string{offline, good}, required: true, wantRefs: 1},
+		{name: "required image has broken link with prose", answers: []string{claimed + "\n" + bad}, required: true, requests: 1, wantErr: true, wantDetails: []string{claimed, "remote image URLs"}},
+		{name: "required image repair returns an explanation", answers: []string{offline, retryFailed}, required: true, wantErr: true, wantDetails: []string{offline, retryFailed}},
+		{name: "required image repair hits output cap", answers: []string{offline, good}, required: true, outputTokens: 1, wantErr: true, wantDetails: []string{offline, errNoImageDelivered.Error()}},
+		{name: "required image repair loses connection", answers: []string{offline, ""}, required: true, repairErr: errors.New("connection closed"), wantErr: true, wantDetails: []string{offline, "connection closed"}},
+		{name: "required image repair times out", answers: []string{offline, ""}, required: true, repairErr: &brain.WorkerOutOfTimeError{Partial: "Backup search started."}, wantErr: true, wantDetails: []string{offline, "Backup search started."}},
 		{name: "still invalid", answers: []string{bad, bad}, wantErr: true, wantText: "[Image unavailable: Example]"},
 		{name: "partial success", answers: []string{bad + "\n" + good}, wantRefs: 1},
 		{name: "honest failure", answers: []string{bad, "I couldn't obtain the file."}, wantText: "I couldn't obtain the file."},
@@ -78,7 +93,7 @@ func TestWorkerRepairsRejectedImageReferences(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &config.Config{WorkDir: dir, VoiceToolsEnabled: !tc.noTools}
-			w := &imageRepairWorker{answers: tc.answers}
+			w := &imageRepairWorker{answers: tc.answers, repairErr: tc.repairErr}
 			jobs := job.NewTable(t.Context())
 			defer jobs.Close()
 			a := NewAgency(&Pipeline{Events: events.NewBus()}, jobs, w, cfg, nil)
@@ -90,6 +105,9 @@ func TestWorkerRepairsRejectedImageReferences(t *testing.T) {
 			if tc.cancel {
 				w.cancel = cancel
 			}
+			if tc.required {
+				ctx = context.WithValue(ctx, imageDeliveryKey{}, true)
+			}
 			text, err := a.workerRunWithBudget(brief, w, cfg, budget)(ctx)
 			if tc.wantText != "" && text != tc.wantText {
 				t.Fatalf("reply = %q", text)
@@ -100,6 +118,22 @@ func TestWorkerRepairsRejectedImageReferences(t *testing.T) {
 			if tc.wantErr && !tc.cancel && (err == nil || !strings.Contains(err.Error(), "could not attach the worker's images")) {
 				t.Fatalf("attachment error = %v", err)
 			}
+			for _, detail := range tc.wantDetails {
+				if err == nil || !strings.Contains(err.Error(), detail) {
+					t.Fatalf("job error %v is missing %q", err, detail)
+				}
+			}
+			if tc.repairErr != nil && !errors.Is(err, tc.repairErr) {
+				t.Fatalf("lost repair error: %v", err)
+			}
+			if errors.Is(tc.repairErr, brain.ErrWorkerOutOfTime) {
+				outcome := outOfTimeText(0, err)
+				for _, detail := range tc.wantDetails {
+					if !strings.Contains(outcome, detail) {
+						t.Fatalf("timeout outcome %q is missing %q", outcome, detail)
+					}
+				}
+			}
 			for _, opts := range w.options {
 				if opts.WorkerBudget != budget || !slices.Equal(opts.Attachments, refs) {
 					t.Fatal("worker lost budget or attachments")
@@ -108,8 +142,14 @@ func TestWorkerRepairsRejectedImageReferences(t *testing.T) {
 			if (err != nil) != tc.wantErr || len(w.refs) != tc.wantRefs || len(w.inputs) != len(tc.answers) {
 				t.Fatalf("inputs=%v refs=%v err=%v", w.inputs, w.refs, err)
 			}
-			if len(w.inputs) > 1 && (!strings.Contains(w.inputs[1], "remote image URLs") || !strings.Contains(w.inputs[1], brief)) {
-				t.Fatalf("missing import reason: %q", w.inputs[1])
+			if len(w.inputs) > 1 {
+				reason := errNoImageDelivered.Error()
+				if strings.Contains(tc.answers[0], bad) {
+					reason = "remote image URLs"
+				}
+				if !strings.Contains(w.inputs[1], reason) || !strings.Contains(w.inputs[1], brief) {
+					t.Fatalf("repair prompt lost its cause or brief: %q", w.inputs[1])
+				}
 			}
 			for _, ref := range w.refs {
 				if _, err := chatmedia.DefaultStore().Preview(ref); err != nil {
