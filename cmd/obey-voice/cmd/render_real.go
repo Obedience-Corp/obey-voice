@@ -428,7 +428,7 @@ func synthIdentityFor(cfg *config.Config) string {
 		if config.NativePhononSelected(cfg) {
 			o, err := config.NativePhononOptions(cfg)
 			if err == nil {
-				id += "/native=" + phonon.SourceRevision + "/backend=" + o.Backend + "/model-revision=" + phonon.ModelRevision + "/voices=" + phonon.CatalogRevision + "/binary=" + o.Binary
+				id += "/native=" + phonon.SourceRevision + "/backend=" + o.Backend + "/model-revision=" + o.Revision() + "/voices=" + phonon.CatalogRevision + "/binary=" + o.Binary
 			}
 		}
 	}

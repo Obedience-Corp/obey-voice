@@ -66,3 +66,19 @@ func TestSpeechSetupCancellationAndStaleCompletion(t *testing.T) {
 		t.Fatal("closing Settings did not cancel setup")
 	}
 }
+
+func TestFailedMultilingualInstallKeepsPreviousCatalog(t *testing.T) {
+	m, _, _ := openaiSpeechSettings(t, "default")
+	saves := recordSaves(&m)
+	m.speechSetup.ensure = func(_ context.Context, cfg *config.Config, _ config.AssetRequest, _ func(config.AssetProgress)) error {
+		if !cfg.OpenAISpeechMultilingual {
+			t.Fatal("did not provision multilingual model")
+		}
+		return errors.New("model download interrupted")
+	}
+	done := m.installSpeechCatalog(true)().(tea.BatchMsg)[1]()
+	m, _ = m.Update(done)
+	if m.cfg.OpenAISpeechMultilingual || len(saves) != 0 {
+		t.Fatal("failed install changed the active catalog")
+	}
+}

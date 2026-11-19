@@ -37,6 +37,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("voice_fallback_provider", "kokoro")
 	v.SetDefault("tts_voice", DefaultKokoroVoice)
 	v.SetDefault("openai_speech_url", DefaultOpenAISpeechURL)
+	v.SetDefault("openai_speech_multilingual", false)
 	v.SetDefault("openai_speech_model", DefaultOpenAISpeechModel)
 	v.SetDefault("openai_speech_voice", DefaultOpenAISpeechVoice)
 	v.SetDefault("openai_speech_api_key", "")

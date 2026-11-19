@@ -116,7 +116,8 @@ func (m settingsModel) sectionRows() []settingRow {
 	case sectionTools:
 		return m.toolRows()
 	case sectionVoice:
-		rows := append(m.ttsRows(), m.voiceFilterRows()...)
+		rows := append(m.ttsRows(), m.speechCatalogRows()...)
+		rows = append(rows, m.voiceFilterRows()...)
 		rows = append(rows, m.voiceRows()...)
 		rows = append(rows, m.speechSetupRows()...)
 		return append(rows, m.languageRows()...)

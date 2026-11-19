@@ -198,7 +198,10 @@ impl VoiceApp {
                     ),
                 }
             }
-            Operation::Install | Operation::Catalog => self.setup_models(false),
+            Operation::Install | Operation::Catalog => {
+                self.speech_catalog = Default::default();
+                self.setup_models(false)
+            }
             Operation::Start => {
                 self.active = true;
                 self.starting = false;

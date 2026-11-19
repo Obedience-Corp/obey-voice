@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -40,11 +41,17 @@ func Start(ctx context.Context, o Options, offline bool) (*Process, error) {
 	}
 	addr := l.Addr().String()
 	_ = l.Close()
-	cmd := exec.Command(o.binary(), "--addr", addr, "--lang", "en", "--device", o.Backend,
-		"--model", "hf://"+Model+"@"+ModelRevision,
+	lang := "en"
+	if o.Multilingual {
+		// The server loads all catalog languages with --lang none.
+		lang = "none"
+	}
+	cmd := exec.Command(o.binary(), "--addr", addr, "--lang", lang, "--device", o.Backend,
+		"--model", "hf://"+o.ModelID()+"@"+o.Revision(),
 		"--voice-catalog", "hf://gradium/phonon-voices@"+CatalogRevision)
 	configureCommand(cmd)
-	vars := map[string]string{"HF_HOME": o.cache(), "HF_HUB_OFFLINE": "0", "RUST_LOG": "ptts_openai_server=info", "NO_COLOR": "1"}
+	// Scope model files to our cache while preserving the user's Hub login for gated weights.
+	vars := map[string]string{"HF_HUB_CACHE": filepath.Join(o.cache(), "hub"), "HF_HUB_OFFLINE": "0", "RUST_LOG": "ptts_openai_server=info", "NO_COLOR": "1"}
 	if offline {
 		vars["HF_HUB_OFFLINE"] = "1"
 	}
@@ -88,7 +95,7 @@ func Start(ctx context.Context, o Options, offline bool) (*Process, error) {
 				continue
 			}
 			for _, model := range doc.Data {
-				if model.ID == Model {
+				if model.ID == o.ModelID() {
 					p.Device = deviceFromLog(p.logs.String())
 					if p.Device == "" {
 						p.Close()

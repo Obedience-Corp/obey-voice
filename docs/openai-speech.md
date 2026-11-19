@@ -8,6 +8,36 @@ The server owns the model. When the server is Ollama, obey-voice
 installs it there and fetches Phonon's voice catalog file (see
 [Install](#install)).
 
+## Choose the full Phonon catalog
+
+The standard English pack has 37 named voices. The multilingual pack has **102
+named voices plus `default`**, including English, French, German, Spanish,
+Portuguese and character voices. The English model uses Apache 2.0. The
+multilingual model uses **CC BY-NC 4.0** for noncommercial use.
+[Gradium model licenses](https://huggingface.co/gradium/phonon-40m-multilingual#the-phonon-family)
+
+In the terminal choose **Settings → Voice → Full Phonon catalog (102 voices)**.
+Setup installs the model and refreshes the voice list. Use the language filter
+to narrow the list. In desktop speech setup, enable **Full Phonon catalog**,
+save the choice, check and install the speech models, then click **Browse
+available voices**. The same picker is available in Settings and the persona
+editor.
+
+```sh
+obey-voice config set tts_provider openai-speech
+obey-voice config set openai_speech_multilingual true
+obey-voice models ensure --tts
+obey-voice voices --provider openai-speech
+```
+
+Ollama pulls [phonon:40m-multilingual](https://ollama.com/library/phonon:40m-multilingual).
+Managed native Phonon uses Gradium's pinned 40M multilingual weights. For the
+native download, request access on the [model page](https://huggingface.co/gradium/phonon-40m-multilingual)
+and authenticate with `hf auth login` or `HF_TOKEN`. Once installed, native
+speech works offline. Setting `openai_speech_multilingual` to `false` restores
+the configured speech model. When returning to English, choose a voice that
+pack serves. Start a new conversation to apply a model change.
+
 ## Linux: managed native Phonon
 
 With `openai_speech_runtime: auto` (the default), an unconfigured Linux Phonon
@@ -54,7 +84,7 @@ that cache check from the device verification performed at startup. All native
 assets live below `<models_dir>/phonon/native`; model cleaning protects that
 tree while an OpenAI speech provider/persona references it.
 
-The managed model is `gradium/phonon-31m-en`. Harper, Juniper, Edwin and Zoey
+The default managed model is `gradium/phonon-31m-en`. Harper, Juniper, Edwin and Zoey
 remain their existing Phonon voices. Setup also verifies Fennick the Young Elf,
 the catalog voice Dylan uses. The server fetches every English voice in the
 pinned catalog during setup, so this adds no separate download. Optional
@@ -124,13 +154,13 @@ On that path, explicit setup performs these additional voice-readiness checks:
    through `POST /api/pull`; layer bytes are summed into the same `download`
    progress ticks every other asset reports, then `verify`, `install` and
    `done`; the percentage never runs backwards when a layer is announced
-   late. For the official `phonon` / `phonon:latest` tag, setup also checks
+   late. For the English and full multilingual packs, setup also checks
    `/api/show`. An installed model with no named voices is refreshed once on
    Ollama 0.40.11+. An older runtime gets an update/restart message before any
-   download. A ready model reports `skipped`. Custom models and pinned tags
+   download. A ready model reports `skipped`. Custom models and other pinned tags
    are never refreshed automatically. A failed voice-list request stops setup
    rather than triggering a download. After a pull, setup verifies named
-   voices before reporting `done`; a still-empty catalog fails explicitly.
+   voices (at least 102 distinct named voices for the multilingual pack) before reporting `done`; a still-empty catalog fails explicitly.
    Only a listing that answered can prove the model absent: when both
    `/api/tags` and `/v1/models` fail, ensure stops with "could not check
    whether phonon is installed" and the reasons, nothing is pulled, and
@@ -208,7 +238,7 @@ The catalog comes from the first of these that answers, and
 | `catalog` | Where the names came from |
 |---|---|
 | `server` | `GET /v1/audio/voices`, which Gradium's `ptts-openai-server` publishes for the voice files it loaded |
-| `ollama` | Ollama's `/api/show` `voices` list, shipped in [Ollama 0.40.11](https://github.com/ollama/ollama/releases/tag/v0.40.11) (the English catalog baked into `phonon`) |
+| `ollama` | Ollama's `/api/show` `voices` list, shipped in [Ollama 0.40.11](https://github.com/ollama/ollama/releases/tag/v0.40.11) (voices bundled with the selected model) |
 | `configured` | Nothing was published: the configured voice plus `default` |
 
 When the target is the official Phonon model and no named voices are listed,

@@ -165,6 +165,7 @@ func ResolveAudioConfig(base *config.Config, p *Profile) (*config.Config, Audio,
 	snap.OpenAISpeechRuntime = "external"
 	snap.OpenAISpeechExternal = true
 	snap.OpenAISpeechURL = effective.Endpoint + "/v1"
+	snap.OpenAISpeechMultilingual = false
 	snap.OpenAISpeechModel = effective.Model
 	snap.OpenAISpeechVoice = effective.Voice // blank means runtime default
 	// The current Ollama brain uses no configurable bearer credentials. Never

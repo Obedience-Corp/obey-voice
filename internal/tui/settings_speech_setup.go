@@ -27,8 +27,9 @@ type speechSetupProgressMsg struct {
 }
 
 type speechSetupDoneMsg struct {
-	seq int64
-	err error
+	multilingual bool
+	seq          int64
+	err          error
 }
 
 func (s *speechSetup) stop() {
@@ -43,6 +44,10 @@ func (s *speechSetup) stop() {
 // Browsing Settings remains read-only; choosing the engine or the explicit
 // refresh action starts the download and verifies the returned voice list.
 func (m *settingsModel) startSpeechSetup() tea.Cmd {
+	return m.installSpeechCatalog(m.cfg.OpenAISpeechMultilingual)
+}
+
+func (m *settingsModel) installSpeechCatalog(multilingual bool) tea.Cmd {
 	if m.speechSetup.running {
 		return nil
 	}
@@ -56,13 +61,14 @@ func (m *settingsModel) startSpeechSetup() tea.Cmd {
 		ensure = config.EnsureRuntimeAssetsProgress
 	}
 	cfg := *m.cfg
+	cfg.OpenAISpeechMultilingual = multilingual
 	m.message = "Checking speech server and installing voices…"
 	install := func() tea.Msg {
 		defer cancel()
 		err := ensure(ctx, &cfg, config.AssetRequest{NeedTTS: true, NeedVoiceCatalog: true}, func(p config.AssetProgress) {
 			events.send(speechSetupProgressMsg{seq: seq, progress: p})
 		})
-		return speechSetupDoneMsg{seq: seq, err: err}
+		return speechSetupDoneMsg{seq: seq, multilingual: multilingual, err: err}
 	}
 	return tea.Batch(events.waitContext(ctx), install)
 }
@@ -85,6 +91,14 @@ func (m *settingsModel) applySpeechSetup(msg tea.Msg) tea.Cmd {
 			m.message = fmt.Sprintf("Voice setup failed: %v", msg.err)
 			return nil
 		}
+		if msg.multilingual != m.cfg.OpenAISpeechMultilingual {
+			if err := m.save("openai_speech_multilingual", msg.multilingual); err != nil {
+				m.message = fmt.Sprintf("Could not save voice catalog: %v", err)
+				return nil
+			}
+			m.cfg.OpenAISpeechMultilingual = msg.multilingual
+			m.voiceLocale = ""
+		}
 		m.message = "Voice setup complete"
 		m.voices.reset()
 		return m.loadVoiceCatalog()
@@ -101,5 +115,18 @@ func (m settingsModel) speechSetupRows() []settingRow {
 		help:     "Checks the speech server and downloads or refreshes Phonon's named voices, with progress.",
 		disabled: m.speechSetup.running, reason: "Voice setup is running…",
 		run: func(m *settingsModel) tea.Cmd { return m.startSpeechSetup() },
+	}}
+}
+
+func (m settingsModel) speechCatalogRows() []settingRow {
+	if activeTTSProvider(m.cfg) != config.OpenAISpeechProviderName {
+		return nil
+	}
+	return []settingRow{{
+		key: "openai_speech_multilingual", name: "Full Phonon catalog (102 voices)", kind: rowToggle,
+		value: onOff(m.cfg.OpenAISpeechMultilingual), applies: appliesNextConversation,
+		help:     "Downloads Phonon 40M multilingual for noncommercial use (CC BY-NC 4.0). Turn off to use your configured speech model.",
+		disabled: m.speechSetup.running, reason: "Voice setup is running…",
+		run: func(m *settingsModel) tea.Cmd { return m.installSpeechCatalog(!m.cfg.OpenAISpeechMultilingual) },
 	}}
 }

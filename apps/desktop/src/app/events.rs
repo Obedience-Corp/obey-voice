@@ -147,6 +147,10 @@ impl VoiceApp {
             self.complete_obey_catalog(id, key.clone(), result);
             return;
         }
+        if matches!(purpose, Purpose::SpeechVoices) {
+            self.speech_catalog.complete(id, result);
+            return;
+        }
         if let Purpose::OllamaCatalog(key) = &purpose {
             self.ollama_catalog_result(id, key.clone(), result);
             return;
@@ -201,6 +205,7 @@ impl VoiceApp {
         };
         match purpose {
             Purpose::ObeyCatalog(_)
+            | Purpose::SpeechVoices
             | Purpose::OllamaCatalog(_)
             | Purpose::Setup(_)
             | Purpose::PersonaDirectories
@@ -235,6 +240,13 @@ impl VoiceApp {
                 self.drafts
                     .retain(|key, value| *value != display(&before[key]["value"]));
                 let route_before = self.obey_route_key();
+                if v["values"].as_object().is_some_and(|values| {
+                    values.iter().any(|(key, new)| {
+                        super::speech_catalog::affects_speech_catalog(key) && before[key] != *new
+                    })
+                }) {
+                    self.speech_catalog = Default::default();
+                }
                 self.values = v["values"].clone();
                 if route_before != self.obey_route_key()
                     || self.values["brain_provider"]["value"] != "obey"
@@ -258,6 +270,9 @@ impl VoiceApp {
                 }
             }
             Purpose::SettingSave(key) => {
+                if super::speech_catalog::affects_speech_catalog(&key) {
+                    self.speech_catalog = Default::default();
+                }
                 self.setup.invalidate();
                 self.obey_catalog = Value::Null;
                 self.obey_catalog_request = None;

@@ -113,7 +113,8 @@ when you select it.
 | `openai_speech_backend` | `auto` | `OPENAI_SPEECH_BACKEND` | Native Phonon device: `auto`, `cpu`, `vulkan`, `cuda`, or `metal`; startup checks the actual device |
 | `openai_speech_native_binary` | empty | `OPENAI_SPEECH_NATIVE_BINARY` | Optional absolute path to a compatible native server; otherwise setup builds pinned source |
 | `openai_speech_url` | `http://localhost:11434/v1` | `OPENAI_SPEECH_URL` | External speech API base URL; explicit URLs/models prevent automatic native selection |
-| `openai_speech_model` | `phonon` | `OPENAI_SPEECH_MODEL` | External server's model ID (`phonon` on Ollama). The managed native runtime uses pinned `gradium/phonon-31m-en` |
+| `openai_speech_multilingual` | `false` | `OPENAI_SPEECH_MULTILINGUAL` | Use the [full Phonon catalog](openai-speech.md#choose-the-full-phonon-catalog) on Ollama or managed native Phonon (102 named voices, noncommercial CC BY-NC 4.0) |
+| `openai_speech_model` | `phonon` | `OPENAI_SPEECH_MODEL` | External server's model ID (`phonon` on Ollama). By default the managed native runtime uses pinned `gradium/phonon-31m-en` |
 | `openai_speech_voice` | `default` | `OPENAI_SPEECH_VOICE` | Voice name on that server. Phonon on Ollama 0.40.11+ offers named voices after setup; `default` remains available. Settings → Voice and the Personas form list the server's catalog when it publishes one (see [Voices and personas](openai-speech.md#voices-and-personas)); a name it does not list can still be set here and stays listed in both. `obey-voice voices` lists what the server has. Persona-overridable |
 | `openai_speech_api_key` | empty | `OPENAI_SPEECH_API_KEY` | Bearer token for a speech API that needs one. Ollama does not |
 | `openai_speech_timeout` | `60` | `OPENAI_SPEECH_TIMEOUT` | Seconds one speech request may take before it is abandoned |

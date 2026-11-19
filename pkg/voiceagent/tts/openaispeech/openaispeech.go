@@ -18,6 +18,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -102,7 +103,8 @@ func NewWithContext(ctx context.Context, cfg *config.Config, client *http.Client
 			return nil, nil, err
 		}
 		next := *cfg
-		next.OpenAISpeechRuntime, next.OpenAISpeechURL, next.OpenAISpeechModel = "external", native.URL, phonon.Model
+		next.OpenAISpeechRuntime, next.OpenAISpeechURL, next.OpenAISpeechModel = "external", native.URL, o.ModelID()
+		next.OpenAISpeechMultilingual = false // Use the native server's advertised model ID.
 		cfg = &next
 	}
 	p := &Provider{
@@ -673,6 +675,9 @@ func modelIDs(body []byte) []string {
 
 // hasModel matches "phonon" against "phonon" and "phonon:latest".
 func hasModel(ids []string, model string) bool {
+	if config.IsDefaultPhononModel(model) {
+		return slices.ContainsFunc(ids, config.IsDefaultPhononModel)
+	}
 	model = strings.ToLower(strings.TrimSpace(model))
 	for _, id := range ids {
 		id = strings.ToLower(id)

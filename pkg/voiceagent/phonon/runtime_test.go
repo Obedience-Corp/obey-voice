@@ -43,7 +43,12 @@ func TestRuntimeChild(t *testing.T) {
 	if os.Getenv("PTTS_QUANT") != "" {
 		os.Exit(3)
 	}
-	if arg("--model") != "hf://"+Model+"@"+ModelRevision {
+	opts := Options{Multilingual: os.Getenv("PHONON_TEST_MULTILINGUAL") == "1"}
+	wantLang := "en"
+	if opts.Multilingual {
+		wantLang = "none"
+	}
+	if arg("--lang") != wantLang || arg("--model") != "hf://"+opts.ModelID()+"@"+opts.Revision() {
 		os.Exit(4)
 	}
 	if !strings.Contains(arg("--voice-catalog"), CatalogRevision) {
@@ -64,7 +69,7 @@ func TestRuntimeChild(t *testing.T) {
 	fmt.Println("model loaded device=CPU weights=f32")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
-		model := Model
+		model := opts.ModelID()
 		if os.Getenv("PHONON_TEST_NOT_READY") == "1" {
 			model = "different-model"
 		}
@@ -83,6 +88,9 @@ func TestRuntimeChild(t *testing.T) {
 	})
 	mux.HandleFunc("/v1/audio/voices", func(w http.ResponseWriter, r *http.Request) {
 		voices := namedVoices
+		if opts.Multilingual {
+			voices = multilingualTestNames()
+		}
 		if os.Getenv("PHONON_TEST_MISSING_VOICE") == "1" {
 			voices = []string{"default"}
 		}
@@ -253,7 +261,7 @@ func TestStartRejectsSilentDeviceFallback(t *testing.T) {
 
 func cacheFixture(t *testing.T, o Options) {
 	t.Helper()
-	model := filepath.Join(o.cache(), "hub", "models--gradium--phonon-31m-en", "snapshots", ModelRevision)
+	model := filepath.Join(o.cache(), "hub", "models--"+strings.ReplaceAll(o.ModelID(), "/", "--"), "snapshots", o.Revision())
 	voices := filepath.Join(o.cache(), "hub", "models--gradium--phonon-voices", "snapshots", CatalogRevision)
 	for dir, files := range map[string][]string{
 		model:  {"config.json", "tokenizer.json", "model.safetensors", "default-voice.safetensors"},
@@ -405,5 +413,57 @@ func TestExtractRejectsEscapingPathsAndSymlinks(t *testing.T) {
 				t.Fatal("unsafe entry extracted")
 			}
 		})
+	}
+}
+
+func multilingualTestNames() []string {
+	names := []string{"Alba"}
+	for i := 1; i < MultilingualVoiceCount; i++ {
+		names = append(names, fmt.Sprintf("Voice %d", i))
+	}
+	return names
+}
+
+func TestMultilingualNativeInstallRequiresEveryVoiceAndPreservesEnglish(t *testing.T) {
+	english := childOptions(t)
+	cacheFixture(t, english)
+	if err := Ensure(t.Context(), english, nil); err != nil {
+		t.Fatal(err)
+	}
+	multi := english
+	multi.Multilingual = true
+	if Installed(multi) {
+		t.Fatal("English installation reported as multilingual")
+	}
+	cacheFixture(t, multi)
+	snapshot := filepath.Join(multi.cache(), "hub", "models--gradium--phonon-voices", "snapshots", CatalogRevision)
+	var catalog bytes.Buffer
+	for i, name := range multilingualTestNames() {
+		file := fmt.Sprintf("voices/%d.safetensors", i)
+		if err := os.WriteFile(filepath.Join(snapshot, file), []byte("embedding"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&catalog, "{\"name\":%q,\"filename\":%q}\n", name, file)
+	}
+	if err := os.WriteFile(filepath.Join(snapshot, "voices.jsonl"), catalog.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PHONON_TEST_MULTILINGUAL", "1")
+	t.Setenv("PHONON_TEST_DROP_VOICE", "Alba")
+	if err := Ensure(t.Context(), multi, nil); err == nil || !strings.Contains(err.Error(), "Alba") {
+		t.Fatalf("missing server voice: %v", err)
+	}
+	t.Setenv("PHONON_TEST_DROP_VOICE", "")
+	if err := Ensure(t.Context(), multi, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !Installed(english) || !Installed(multi) {
+		t.Fatal("expected both models to be ready")
+	}
+	if err := os.Remove(filepath.Join(snapshot, "voices", "0.safetensors")); err != nil {
+		t.Fatal(err)
+	}
+	if Installed(multi) || !Installed(english) {
+		t.Fatal("missing multilingual embedding was not isolated to the full pack")
 	}
 }

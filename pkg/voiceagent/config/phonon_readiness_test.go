@@ -130,3 +130,21 @@ func TestPhononRefreshCancellationBeforeVerification(t *testing.T) {
 		}
 	}
 }
+
+func TestIncompleteMultilingualPackDoesNotReportReady(t *testing.T) {
+	voices := []string{"default", "Alba"}
+	for i := 1; i < 101; i++ {
+		voices = append(voices, fmt.Sprintf("Voice %d", i))
+	}
+	voices = append(voices, "alba", "DEFAULT", " ")
+	fake := &fakeOllama{version: "0.40.11", tags: []string{MultilingualPhononTag}, voices: voices}
+	cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
+	cfg.OpenAISpeechMultilingual = true
+	row := statusRows(t, cfg)[OpenAISpeechModelAssetID]
+	if row.Installed || row.License != "CC BY-NC 4.0" {
+		t.Fatalf("incomplete pack status: %+v", row)
+	}
+	if err := installTTS(t.Context(), cfg, &tickLog{}); err == nil || !strings.Contains(err.Error(), "fewer than 102") {
+		t.Fatalf("incomplete pack install: %v", err)
+	}
+}

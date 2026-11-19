@@ -256,6 +256,7 @@ pub enum Purpose {
     SettingsValues,
     ObeyCatalog(String),
     OllamaCatalog(String),
+    SpeechVoices,
     SettingSave(String),
     Mutation(String),
     Library,

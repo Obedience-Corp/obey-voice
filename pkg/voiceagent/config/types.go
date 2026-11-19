@@ -33,6 +33,7 @@ type Config struct {
 	TTSVoice            string `mapstructure:"tts_voice"`
 	Audio8Voice         string `mapstructure:"audio8_voice"`
 	// OpenAI-compatible speech client (Phonon via Ollama by default); see openaispeech.go.
+	OpenAISpeechMultilingual bool   `mapstructure:"openai_speech_multilingual"`
 	OpenAISpeechURL          string `mapstructure:"openai_speech_url"`
 	OpenAISpeechModel        string `mapstructure:"openai_speech_model"`
 	OpenAISpeechVoice        string `mapstructure:"openai_speech_voice"`

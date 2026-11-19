@@ -13,6 +13,7 @@ mod resident;
 #[cfg(test)]
 mod resident_tests;
 mod setup;
+mod speech_catalog;
 mod view;
 
 use crate::backend::Backend;
@@ -26,6 +27,7 @@ pub struct VoiceApp {
     pub setup: crate::setup::Setup,
     pub obey_catalog: Value,
     pub obey_catalog_request: Option<u64>,
+    pub(crate) speech_catalog: speech_catalog::SpeechCatalog,
     pub ollama_catalog: Value,
     pub ollama_catalog_key: Option<String>,
     pub ollama_catalog_request: Option<(u64, String)>,
@@ -125,6 +127,7 @@ impl VoiceApp {
             setup: crate::setup::Setup::default(),
             obey_catalog: Value::Null,
             obey_catalog_request: None,
+            speech_catalog: Default::default(),
             ollama_catalog: Value::Null,
             ollama_catalog_key: None,
             ollama_catalog_request: None,

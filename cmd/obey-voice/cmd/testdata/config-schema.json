@@ -212,6 +212,20 @@
       "editable": true
     },
     {
+      "key": "openai_speech_multilingual",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Full Phonon catalog (102 voices, noncommercial)",
+      "help": "Use the Phonon 40M multilingual model (CC BY-NC 4.0) on Ollama or managed native Phonon. Turning this off restores the configured speech model.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_MULTILINGUAL",
+      "editable": true
+    },
+    {
       "key": "openai_speech_native_binary",
       "type": "string",
       "default": "",

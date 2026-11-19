@@ -1,12 +1,12 @@
 package openaispeech
 
 import (
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
@@ -183,5 +183,12 @@ func TestOllamaCatalogCallsCarryTheAPIKey(t *testing.T) {
 	}
 	if p.CatalogSource() != CatalogOllama || names(p.ListVoices("", "")) != "default,Zoey" {
 		t.Fatalf("source %q voices %s", p.CatalogSource(), names(p.ListVoices("", "")))
+	}
+}
+
+func TestMultilingualModelDoesNotStandInForEnglish(t *testing.T) {
+	ids := []string{config.MultilingualPhononTag}
+	if hasModel(ids, "phonon") || !hasModel(ids, config.MultilingualPhononTag) || !hasModel([]string{"phonon:latest"}, "phonon") {
+		t.Fatal("speech probe confused the English and multilingual model tags")
 	}
 }

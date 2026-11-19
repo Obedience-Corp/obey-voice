@@ -334,6 +334,10 @@
       "value": "phonon",
       "source": "default"
     },
+    "openai_speech_multilingual": {
+      "value": false,
+      "source": "default"
+    },
     "openai_speech_native_binary": {
       "value": "",
       "source": "default"
