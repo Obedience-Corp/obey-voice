@@ -212,7 +212,7 @@ func setDefaults(v *viper.Viper) {
 	// false (config key or env) still wins. Remote serve stays default-deny
 	// via remote_tools_enabled.
 	v.SetDefault("voice_tools_enabled", true)
-	v.SetDefault("voice_router_tools", "route_only")
+	v.SetDefault("voice_router_tools", "direct")
 	// Silence until asked: a worker that talks over the conversation is worse
 	// than one that is quiet about what it did.
 	v.SetDefault("voice_work_narration", "status_only")

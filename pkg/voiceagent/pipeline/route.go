@@ -30,7 +30,8 @@ type RouteContext struct {
 	NarrationActive   bool
 	JobActive         bool
 	TieredWorkers     bool
-	LegacyImageWorker bool
+	DirectTools       bool
+	LegacyImageWorker bool // A non-tiered worker is available to take background tasks.
 }
 
 // RouteDecision records how a turn was classified.
@@ -104,13 +105,19 @@ var phraseRoutes = []phraseEntry{
 	{phrase: "do it now", kind: RouteJobStatus, requireJob: true},
 }
 
-// classifyTurn is Layer 1: exact phrases, then work-intent spawn. Work must
-// skip the live brain so the talking window is not spent on tool tasks.
+// classifyTurn handles conversation controls and background-work shortcuts before
+// the model receives the turn. Direct turns handle ordinary tool requests inline.
 func classifyTurn(transcript string, ctx RouteContext) (RouteKind, string, bool) {
 	if kind, ok := classifyPhrase(transcript, ctx); ok {
 		return kind, "phrase", true
 	}
-	if !ctx.TieredWorkers && (classifySpawnIntent(transcript) || (ctx.LegacyImageWorker && pictureDeliveryRequest.MatchString(normalizeUtterance(transcript)))) {
+	if ctx.TieredWorkers {
+		return RouteNone, "", false
+	}
+	if ctx.LegacyImageWorker && pictureDeliveryRequest.MatchString(normalizeUtterance(transcript)) {
+		return RouteSpawn, "intent", true
+	}
+	if classifyWorkIntent(transcript, ctx) {
 		return RouteSpawn, "intent", true
 	}
 	return RouteNone, "", false
@@ -175,11 +182,17 @@ func (p *Pipeline) classifyUserTurn(input string) (RouteKind, string, bool) {
 	return RouteNone, "", false
 }
 
-// spawnIntents are user-utterance prefixes that mean "do this", not "talk".
-// Kept tight so trivia ("what's the capital of Australia") stays chat.
-var spawnIntents = []string{
+// These longer requests retain background execution when a worker is available.
+var backgroundIntents = []string{
 	"search the web",
 	"search web",
+	"build this",
+	"implement this",
+	"implement a",
+}
+
+// Routed mode also sends ordinary tool operations to a worker.
+var spawnIntents = []string{
 	"search for",
 	"look up",
 	"look this up",
@@ -189,20 +202,22 @@ var spawnIntents = []string{
 	"write this to",
 	"run this command",
 	"run a command",
-	"build this",
-	"implement this",
-	"implement a",
 	"filter design",
 	"filter the work",
 	"filter work items",
 }
 
-func classifySpawnIntent(transcript string) bool {
+func classifyWorkIntent(transcript string, ctx RouteContext) bool {
 	s := normalizeUtterance(transcript)
-	if s == "" {
-		return false
+	if ctx.DirectTools {
+		// Keep long-running work off the mic when a worker can take it.
+		return ctx.LegacyImageWorker && hasIntentPrefix(s, backgroundIntents)
 	}
-	for _, prefix := range spawnIntents {
+	return hasIntentPrefix(s, backgroundIntents) || hasIntentPrefix(s, spawnIntents)
+}
+
+func hasIntentPrefix(s string, prefixes []string) bool {
+	for _, prefix := range prefixes {
 		if s == prefix || strings.HasPrefix(s, prefix+" ") || strings.HasPrefix(s, prefix+",") {
 			return true
 		}

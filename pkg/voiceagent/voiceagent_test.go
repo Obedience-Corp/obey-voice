@@ -160,10 +160,11 @@ func TestNewWiresTheRouterSetting(t *testing.T) {
 		policy  brain.RouterToolsPolicy
 		json    bool
 	}{
-		{"", brain.RouterToolsRouteOnly, false},
+		{"", brain.RouterToolsDirect, false},
+		{"direct", brain.RouterToolsDirect, false},
 		{"route_only", brain.RouterToolsRouteOnly, false},
 		{"json_route", brain.RouterToolsRouteOnly, true},
-		{"legacy", brain.RouterToolsLegacy, false},
+		{"legacy", brain.RouterToolsDirect, false},
 	} {
 		t.Run(tc.setting, func(t *testing.T) {
 			agent, cleanup, err := New(context.Background(), Options{

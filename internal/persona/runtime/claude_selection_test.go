@@ -429,7 +429,7 @@ func (c *claudeConversation) start(id string, turns []brain.Turn, contexts brain
 	if len(turns) > 0 {
 		initial.LoadHistory(turns)
 	}
-	p := &pipeline.Pipeline{Brain: initial, Events: events.NewBus()}
+	p := &pipeline.Pipeline{Brain: initial, Events: events.NewBus(), RouterToolsPolicy: brain.NormalizeRouterToolsPolicy(c.base.VoiceRouterTools)}
 	events.Subscribe(p.Events, func(e events.Error) {
 		c.mu.Lock()
 		c.errors = append(c.errors, e)

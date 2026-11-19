@@ -207,6 +207,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			return "", fmt.Errorf("tools are disabled for group discussion")
 		}
 		if len(response.ToolCalls) > 0 {
+			if !opts.ToolsEnabled {
+				return "", fmt.Errorf("tools are disabled for this turn")
+			}
 			hadTools = true
 			hadThinking = hadThinking || messageHadThinking(response)
 			if sess.routerPolicy == RouterToolsRouteOnly {

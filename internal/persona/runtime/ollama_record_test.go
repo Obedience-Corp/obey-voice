@@ -58,6 +58,11 @@ type localConversation struct {
 // "id=provider"; a bare id is on Ollama.
 func newLocalConversation(t *testing.T, maxHistory int, personas ...string) *localConversation {
 	t.Helper()
+	return newLocalConversationWithTools(t, maxHistory, "route_only", personas...)
+}
+
+func newLocalConversationWithTools(t *testing.T, maxHistory int, routerTools string, personas ...string) *localConversation {
+	t.Helper()
 	c := &localConversation{t: t, stalled: make(chan struct{}, 1)}
 	c.root, _ = filepath.EvalSymlinks(t.TempDir())
 	// Attachments are stored under the install directory.
@@ -84,7 +89,7 @@ func newLocalConversation(t *testing.T, maxHistory int, personas ...string) *loc
 	}
 	start, _, _ := strings.Cut(personas[0], "=")
 	c.base = &config.Config{ActivePersona: start, BrainProvider: "ollama", OllamaModel: "fixture:latest", OllamaHost: server.URL,
-		PromptsDir: promptDir, WorkDir: c.root, MaxHistory: maxHistory, OllamaNumCtx: 8192,
+		VoiceRouterTools: routerTools, PromptsDir: promptDir, WorkDir: c.root, MaxHistory: maxHistory, OllamaNumCtx: 8192,
 		ContinuityProjectionEnabled: true, ContinuityArchiveEnabled: true}
 	if c.mixedLog != "" {
 		c.base.ObeyProvider, c.base.ObeyModel, c.base.ObeyToolPolicy = "fixture", "fixture", "daemon"
@@ -184,7 +189,7 @@ func (c *localConversation) start(id string, turns []brain.Turn, contexts brain.
 	if len(turns) > 0 {
 		initial.LoadHistory(turns)
 	}
-	p := &pipeline.Pipeline{Brain: initial, Events: events.NewBus(), VoiceToolsEnabled: true}
+	p := &pipeline.Pipeline{Brain: initial, Events: events.NewBus(), VoiceToolsEnabled: true, RouterToolsPolicy: brain.NormalizeRouterToolsPolicy(c.base.VoiceRouterTools)}
 	events.Subscribe(p.Events, func(e events.Error) {
 		c.mu.Lock()
 		c.errors = append(c.errors, e)

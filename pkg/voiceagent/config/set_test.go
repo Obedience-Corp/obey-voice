@@ -110,6 +110,14 @@ func TestSetKeyFileRejectsNotEditableKey(t *testing.T) {
 	}
 }
 
+func TestLegacyRouterSettingSavesAsDirect(t *testing.T) {
+	newInstall(t, commentedConfig)
+	result := mustSet(t, "voice_router_tools", "legacy")
+	if result.Value != "direct" {
+		t.Fatalf("value = %v, want direct", result.Value)
+	}
+}
+
 func TestSetKeyFileEnumRejectsUnknownValue(t *testing.T) {
 	newInstall(t, commentedConfig)
 

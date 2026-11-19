@@ -28,7 +28,7 @@ func TestClassifySpawnIntent(t *testing.T) {
 		"search your feelings",
 	}
 	for _, s := range chats {
-		if classifySpawnIntent(s) {
+		if classifyWorkIntent(s, RouteContext{}) {
 			t.Errorf("classifySpawnIntent(%q) = true, want chat", s)
 		}
 	}
@@ -141,7 +141,7 @@ func TestClassifyPhraseIgnoresEndPunctuation(t *testing.T) {
 			t.Errorf("%q = %q, %v; want %q, true", tc.in, kind, ok, tc.want)
 		}
 	}
-	if !classifySpawnIntent("Google the weather.") {
+	if !classifyWorkIntent("Google the weather.", RouteContext{}) {
 		t.Error("a trailing period must not hide a spawn intent")
 	}
 }

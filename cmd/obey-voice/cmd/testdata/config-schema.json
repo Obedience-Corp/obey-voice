@@ -1892,16 +1892,16 @@
     {
       "key": "voice_router_tools",
       "type": "enum",
-      "default": "route_only",
+      "default": "direct",
       "enum": [
+        "direct",
         "route_only",
-        "json_route",
-        "legacy"
+        "json_route"
       ],
       "allows_empty": false,
       "group": "tools",
       "title": "Live router tools",
-      "help": "route_only exposes only the route tool on the microphone brain; json_route (experimental, Ollama) asks for the same route as JSON without tools so routing and the reply share one prompt prefix; legacy keeps the full tool list for comparison.",
+      "help": "Direct gives the speaking model its enabled tools. Tiered workers use routing for admission. Select route_only to route ordinary requests to workers, or json_route for experimental Ollama JSON routing. The old legacy value is an alias for direct.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,

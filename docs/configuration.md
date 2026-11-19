@@ -632,9 +632,9 @@ The selection instructions, activated-skill wrapper, and live/worker tool
 guidance are editable system YAML documents named `skill-selection`,
 `activated-skills`, `tool-surface-live` and `tool-surface-legacy` under
 `<prompts_dir>/system/`. Inspect one with
-`obey-voice prompts show system --name tool-surface-live`. Live Ollama conversations use `route` to delegate
-current-information questions such as today's weather to a worker, which has
-`web_search` and `fetch_url`; a dedicated weather tool is unnecessary.
+`obey-voice prompts show system --name tool-surface-live`. With direct tools, live Ollama conversations can use `web_search` and
+`fetch_url` to answer questions about current information. Routed conversations
+can send those questions to a worker.
 
 Pull the default embedding model once with `ollama pull nomic-embed-text`.
 If matching or confirmation is unavailable or invalid, automatic activation is
@@ -678,16 +678,24 @@ Say hello to the user.
 
 ## Live routing (`voice_router_tools`)
 
-With voice tools on, a live Ollama turn first decides whether the request is
+Ordinary speaking turns can use their enabled tools directly. For example, when
+asked what is in the workspace, Ollama can list the directory, read a relevant
+file and answer from the result. Direct tool calls run as part of the current turn.
+The local and remote tool switches still control access. Tiered worker mode uses
+routing to apply the configured admission policy and limits.
+
+In routed mode, a live Ollama turn first decides whether the request is
 conversation (`chat`), work for a worker (`spawn`) or reading aloud (`narrate`).
 Other brains decide the same question with a private classifier; for them
 `json_route` behaves exactly like `route_only`.
 
 | Value | What a live Ollama turn does |
 | --- | --- |
-| `route_only` (default) | Offers only the `route` tool. A chat decision is followed by a tools-free reply. |
+| `direct` (default) | Offers file, command and lookup tools on the first request. |
+| `route_only` | Offers only the `route` tool. A chat decision is followed by a tools-free reply. |
 | `json_route` (experimental) | Asks for the same route as a JSON object, with no tools, on the reply's own messages. |
-| `legacy` | Offers the full worker tool list, for comparison. |
+
+Existing configurations that select `legacy` use the same direct tool execution path.
 
 `json_route` is about prompt-cache reuse. Under `route_only` the route request
 carries the route tool schema and the reply does not. Ollama renders tool schemas
@@ -772,7 +780,7 @@ The run ends with a `router_summary` line of these means for each mode and run
 position. The mode that runs second on a case can reuse the prompt the first
 one just read, so compare modes at the same position.
 
-Keep `route_only` unless routing accuracy holds on the models you use.
+When comparing the two routed modes, keep `route_only` unless routing accuracy holds on the models you use.
 
 ## STT schema migration
 

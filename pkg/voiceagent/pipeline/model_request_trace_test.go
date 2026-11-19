@@ -102,7 +102,7 @@ func modelRequestPipeline(t *testing.T, server *httptest.Server, configure ...fu
 			mu.Unlock()
 		}
 	})
-	p := &Pipeline{Brain: provider, Events: bus, VoiceToolsEnabled: true}
+	p := &Pipeline{Brain: provider, Events: bus, VoiceToolsEnabled: true, RouterToolsPolicy: brain.NormalizeRouterToolsPolicy(cfg.VoiceRouterTools)}
 	if err := p.BeginConversationIdentity("model-requests"); err != nil {
 		t.Fatal(err)
 	}

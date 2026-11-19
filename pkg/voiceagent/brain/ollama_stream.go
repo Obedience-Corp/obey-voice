@@ -475,6 +475,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 			// If model made tool calls, execute them and loop.
 			if len(toolCalls) > 0 {
+				if !opts.ToolsEnabled {
+					done <- StreamResult{Err: fmt.Errorf("tools are disabled for this turn"), Recovered: true}
+					return
+				}
 				hadTools = true
 				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
 					tier, reason := routeMetadata(toolCalls)

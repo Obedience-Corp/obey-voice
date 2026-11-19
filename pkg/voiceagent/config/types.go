@@ -313,9 +313,8 @@ type Config struct {
 	ClaudeSessionWarnTokens int `mapstructure:"claude_session_warn_tokens"`
 
 	VoiceToolsEnabled bool `mapstructure:"voice_tools_enabled"`
-	// VoiceRouterTools selects the live-brain tool surface: route_only (default),
-	// json_route (route_only decided by a tools-free JSON request on Ollama) or
-	// legacy (full worker tool list for A/B).
+	// VoiceRouterTools defaults to direct tool use. route_only and json_route
+	// select worker routing. Older configurations may spell direct as legacy.
 	VoiceRouterTools string `mapstructure:"voice_router_tools"`
 	// VoiceWorkNarration is how much a background worker narrates itself:
 	// status_only (default) speaks only when asked, milestones speaks one short

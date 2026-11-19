@@ -160,7 +160,7 @@ type Pipeline struct {
 	BargeInVAD        VoiceDetector
 	Events            *events.Bus
 	VoiceToolsEnabled bool
-	// RouterToolsPolicy is the live-brain tool surface (route_only vs legacy).
+	// RouterToolsPolicy is the live-brain tool surface (direct or routed).
 	RouterToolsPolicy brain.RouterToolsPolicy
 	// RouteJSON has route_only turns decide with a tools-free JSON request
 	// instead of the route tool (voice_router_tools: json_route).
