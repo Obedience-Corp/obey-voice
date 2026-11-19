@@ -17,7 +17,9 @@ cleanup() { docker rm -f "$container" >/dev/null; }
 trap cleanup EXIT
 docker start "$container" >/dev/null
 status=0
-docker exec "$container" timeout --signal=TERM --kill-after=10s 600 bash /voice/tests/obeydaemon/verify.sh || status=$?
+# Named, not valued, so the token never sits in docker's argv; verify.sh hands
+# it to the festival installer alone.
+GITHUB_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}" docker exec -e GITHUB_TOKEN "$container" timeout --signal=TERM --kill-after=10s 600 bash /voice/tests/obeydaemon/verify.sh || status=$?
 out=${VOICE_OBEY_EVIDENCE:-$PWD/.test-output/obey-daemon}
 mkdir -p "$out"
 # Stream from owned scratch; Docker's archive API may miss tmpfs-mounted files.
