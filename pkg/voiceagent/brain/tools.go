@@ -457,6 +457,7 @@ func liveRouterTools(availability ...*WorkerTierAvailability) api.Tools {
 		properties["tier"] = api.ToolProperty{Type: api.PropertyType{"string"}, Description: fmt.Sprintf("Required effort tier. Availability now: simple=%t, medium=%t, complex=%t.", tiers.Simple, tiers.Medium, tiers.Complex), Enum: []any{"simple", "medium", "complex"}}
 		properties["reason_code"] = api.ToolProperty{Type: api.PropertyType{"string"}, Description: "Optional reason for the selected tier.", Enum: []any{"bounded_action", "dependent_steps", "broad_scope", "explicit_request"}}
 	}
+	description += " The chat can display image attachments. When the user asks to show a picture or add an image to the chat, choose spawn. The worker can obtain the image file and attach it to the conversation. Questions about the contents of an already attached image can use chat."
 	return api.Tools{
 		{
 			Type: "function",
