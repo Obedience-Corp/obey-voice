@@ -22,31 +22,31 @@ func validateProviderImages(ctx context.Context, provider brain.Provider, refs [
 	}
 	return validator.ValidateImages(ctx, refs)
 }
-func finalizeProviderReply(provider brain.Provider, text, workDir string, warn func(string)) (string, []chatmedia.Ref) {
+func finalizeProviderReply(provider brain.Provider, text, workDir string, warn func(string)) (string, []chatmedia.Ref, error) {
 	if !strings.Contains(text, "![") {
-		return text, nil
+		return text, nil, nil
 	}
 	cleaned, refs, err := chatmedia.DefaultStore().ImportReply(text, workDir)
 	if err != nil && warn != nil {
 		warn(err.Error())
 	}
 	if cleaned == text && len(refs) == 0 {
-		return text, nil
+		return text, nil, nil
 	}
 	writer, ok := provider.(brain.ReplyMediaWriter)
 	if !ok {
 		if warn != nil {
 			warn("This provider cannot persist image replies")
 		}
-		return text, nil
+		return text, nil, nil
 	}
 	if err := writer.SetReplyMedia(cleaned, refs); err != nil {
 		if warn != nil {
 			warn(err.Error())
 		}
-		return text, nil
+		return text, nil, nil
 	}
-	return cleaned, refs
+	return cleaned, refs, err
 }
 func (p *Pipeline) finalizeMedia(metrics *turnMetrics, response string) events.ResponseReady {
 	if metrics == nil {
@@ -58,7 +58,7 @@ func (p *Pipeline) finalizeMedia(metrics *turnMetrics, response string) events.R
 	e := events.ResponseReady{Response: response}
 	if !metrics.degraded {
 		warn := func(message string) { p.emit(events.Info{Message: message}) }
-		e.Response, e.Attachments = finalizeProviderReply(p.Brain, response, brain.ReplyWorkDir(p.Brain), warn)
+		e.Response, e.Attachments, _ = finalizeProviderReply(p.Brain, response, brain.ReplyWorkDir(p.Brain), warn)
 		if t := p.transcriptFor(p.Brain); t != nil && len(e.Attachments) > 0 {
 			if reply := metrics.recording.recordedReply(); reply == nil {
 				warn("This reply's images were not saved: the reply was not recorded")
