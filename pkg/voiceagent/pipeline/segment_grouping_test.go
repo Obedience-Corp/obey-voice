@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -218,17 +219,32 @@ func TestIdleFlushSpeaksCompleteSentencesOnly(t *testing.T) {
 	}
 }
 
-// The timer and the follower the group is waiting for can become ready in the
-// same round, and select has no priority. The loop must take the follower:
-// flushing on the timer there is the two-contour defect with a race in front of
-// it. Repeated because one run can take the right branch by luck.
+// A ready follower wins even when select picks the idle timer first. Repeat
+// the tie because select can also pick the sentence directly.
 func TestIdleFlushLosesToAFollowerAtTheDeadline(t *testing.T) {
-	for i := 0; i < 8; i++ {
-		provider := &groupingFakeTTS{joins: true}
-		calls := speakTimed(t, provider, time.Nanosecond, 0, "Wait. Wait, you what? ")
-		if len(calls) != 1 {
-			t.Fatalf("run %d Synthesize calls = %q, want the follower merged", i, calls)
-		}
+	for range 8 {
+		synctest.Test(t, func(t *testing.T) {
+			provider := &holdRaceTTS{groupingFakeTTS: groupingFakeTTS{joins: true}, block: make(chan struct{})}
+			player := newFakePlayer(time.Millisecond)
+			defer player.Close()
+			p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus(), openingHold: time.Hour}
+
+			speakPaced(t, p, func(chunks chan<- string) {
+				chunks <- "Wait. "
+				synctest.Wait() // First sentence admitted, idle timer armed.
+				provider.armed.Store(true)
+				// Park the turn in the filler's readiness check while the
+				// segmenter queues the follower from that same chunk.
+				chunks <- "Hmm. Wait, you what? "
+				synctest.Wait()
+				time.Sleep(idleFlushAfter)
+				close(provider.block)
+				synctest.Wait() // Resolve the tie before ending the stream.
+			})
+			if got := provider.Texts(); len(got) != 1 || got[0] != "Wait. Wait, you what?" {
+				t.Fatalf("Synthesize calls = %q, want the follower merged", got)
+			}
+		})
 	}
 }
 
