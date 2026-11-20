@@ -241,3 +241,40 @@ func TestVoiceReplyImageSurvivesPlaybackInterruption(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A worker runs unattended, so a picture job is refused before it starts when
+// the worker's model cannot view images. The brain no longer refuses a
+// picture on its own.
+func TestTextOnlyWorkerRefusesAPictureJobBeforeItStarts(t *testing.T) {
+	root := t.TempDir()
+	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
+	ref, err := chatmedia.DefaultStore().Import("input.png", testmedia.PNG())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_ = json.NewEncoder(w).Encode(map[string]any{"models": []map[string]string{{"name": "fixture"}}})
+		case "/api/show":
+			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion", "tools"}})
+		default:
+			t.Errorf("a refused picture job reached %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	cfg := &config.Config{MaxHistory: 20, OllamaHost: server.URL, OllamaModel: "fixture", VoiceWorkerProvider: "ollama", VoiceToolsEnabled: true, WorkDir: root, PromptsDir: filepath.Join(root, "prompts"), AgentName: "Obey"}
+	worker, err := brain.NewOllama(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Pipeline{Brain: worker, Events: events.NewBus()}
+	jobs := job.NewTable(t.Context())
+	defer jobs.Close()
+	a := NewAgency(p, jobs, worker, cfg, nil)
+	_, err = a.workerRun("Describe the picture", worker, cfg)(chatmedia.WithInput(t.Context(), []chatmedia.Ref{ref}))
+	if err == nil || !strings.Contains(err.Error(), "does not support images") {
+		t.Fatalf("picture job on a text-only worker: %v", err)
+	}
+}
