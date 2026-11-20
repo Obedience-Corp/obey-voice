@@ -110,9 +110,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		rounds := newToolRounds(o.cfg, opts)
 		for i := 0; rounds.more(i); i++ {
 			finalAnswer, finalInstruction := rounds.final(ctx, i)
+			handoff := i == 0 && opts.canHandOff()
 			var tools api.Tools
 			if opts.ToolsEnabled && !routedChat && !finalAnswer {
 				tools = sess.tools()
+				if handoff {
+					tools = withBackgroundWork(tools)
+				}
 			}
 
 			// The route is chosen from what the user said, not from a skill's
@@ -495,7 +499,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// If model made tool calls, execute them and loop.
 			if len(toolCalls) > 0 {
 				hadTools = true
-				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
+				kind := LiveRouterDecision(sess.routerPolicy, toolCalls)
+				if handoff && directWorkerHandoff(toolCalls) {
+					kind = "spawn"
+				}
+				if kind != "" {
 					tier, reason := routeMetadata(toolCalls)
 					if !jsonRouting && (sess.onStart != nil || sess.onEnd != nil) {
 						decision := sess.describe("route", kind, "")

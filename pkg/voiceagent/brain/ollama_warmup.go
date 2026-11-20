@@ -76,6 +76,9 @@ func (o *OllamaBrain) WarmupTurn(ctx context.Context, opts StreamOptions) {
 	if opts.ToolsEnabled {
 		sess = o.turnToolSession(opts)
 		tools = sess.tools()
+		if opts.canHandOff() {
+			tools = withBackgroundWork(tools)
+		}
 	}
 	// Ollama rejects a chat with no user message (ollama#17778). The line sits
 	// after the prefix the first turn restores, so its words do not matter.

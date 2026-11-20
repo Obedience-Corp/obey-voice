@@ -244,6 +244,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		ToolsEnabled:      !nativeConversation && admission.Discussion == nil && !isContinuation && p.liveToolsEnabled(),
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		RouteJSON:         p.liveRouteJSON(),
+		BackgroundWorker:  p.liveRouterToolsPolicy() == brain.RouterToolsDirect && p.backgroundWorkerAvailable(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
 		OnToolEnd:         p.toolEndHook(ctx),
 		OnUsage:           p.usageHook(),

@@ -18,6 +18,7 @@ func (p *Pipeline) StartWarmup(ctx context.Context) {
 			ToolsEnabled:      p.liveToolsEnabled(),
 			RouterToolsPolicy: p.liveRouterToolsPolicy(),
 			RouteJSON:         p.liveRouteJSON(),
+			BackgroundWorker:  p.liveRouterToolsPolicy() == brain.RouterToolsDirect && p.backgroundWorkerAvailable(),
 		}
 		go b.WarmupTurn(ctx, opts)
 	case brain.Warmer:

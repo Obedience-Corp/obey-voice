@@ -184,6 +184,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		ToolsEnabled:      p.liveToolsEnabled() && !background && !isContinuation && admission.Discussion == nil,
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		RouteJSON:         p.liveRouteJSON(),
+		BackgroundWorker:  p.liveRouterToolsPolicy() == brain.RouterToolsDirect && p.backgroundWorkerAvailable(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
 		OnToolEnd:         p.toolEndHook(ctx),
 		OnUsage:           p.usageHook(),

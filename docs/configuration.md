@@ -701,6 +701,14 @@ The CLI rejects unknown mode names on write. An unrecognized value loaded from
 a file or environment variable (for example, `route-only`) logs a warning once
 and uses `route_only`.
 
+When a built-in worker is available, the live Ollama model can choose
+`start_background_work` on its first tool round. Choosing `web_search` or
+`fetch_url` on that round also hands the entire request to the worker before
+any tool in the batch runs. The conversation can then accept another message
+or persona while the job runs. Once a turn starts executing tools inline, it
+keeps ownership to avoid repeating completed actions. With workers disabled
+or unavailable, lookup tools run inline.
+
 With direct tools, accepted microphone transcripts have the same tool access as
 typed requests. A transcription mistake or another voice within microphone range
 can trigger a command. Direct calls run with the speaking provider’s permissions

@@ -162,16 +162,20 @@ func (p *Pipeline) routeContext() RouteContext {
 	}
 	if p.Agency != nil {
 		ctx.TieredWorkers = tieredWorkers(p.Agency.currentConfig())
-		if !ctx.TieredWorkers && p.VoiceToolsEnabled && p.WorkersEnabled() {
-			if decision := p.Agency.resolveWork(); decision.own != nil {
-				ctx.LegacyImageWorker = decision.refused == nil
-			} else {
-				_, err := p.Agency.workerProvider()
-				ctx.LegacyImageWorker = err == nil
-			}
-		}
+		ctx.LegacyImageWorker = !ctx.TieredWorkers && p.backgroundWorkerAvailable()
 	}
 	return ctx
+}
+
+func (p *Pipeline) backgroundWorkerAvailable() bool {
+	if !p.VoiceToolsEnabled || !p.WorkersEnabled() {
+		return false
+	}
+	if decision := p.Agency.resolveWork(); decision.own != nil {
+		return decision.refused == nil
+	}
+	_, err := p.Agency.workerProvider()
+	return err == nil
 }
 
 // routedSpeechContext admits the routed acknowledgement after the turn stopped
