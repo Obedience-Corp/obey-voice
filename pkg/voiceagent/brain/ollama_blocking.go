@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain/ollama"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/ollama/ollama/api"
@@ -271,7 +272,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if fallbackEmptyContent(text, hadTools, hadThinking) {
 			text = spokenOrFallback(text)
 		}
-		if opts.Discussion != nil && priorGroupReply != "" && strings.HasPrefix(normalizeReplyPrefix(text), priorGroupReply) {
+		if opts.Discussion != nil && priorGroupReply != "" && strings.HasPrefix(ollama.NormalizeReplyPrefix(text), priorGroupReply) {
 			return "", fmt.Errorf("group reply repeated a prior answer")
 		}
 		recorded := text

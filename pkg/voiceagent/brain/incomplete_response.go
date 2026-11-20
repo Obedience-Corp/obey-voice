@@ -4,7 +4,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain/ollama"
 )
+
+// ErrResponseRepetition identifies a model stopped for runaway repetition.
+var ErrResponseRepetition = ollama.ErrResponseRepetition
 
 // IncompleteDisposition names why an assistant response ended unfinished.
 func IncompleteDisposition(err error) string {
