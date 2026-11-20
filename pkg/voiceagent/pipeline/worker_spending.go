@@ -65,7 +65,7 @@ func (a *Agency) paidWorkerRun(ctx context.Context, brief string, worker brain.P
 		return "", fmt.Errorf("checking worker allowance: %w", err)
 	}
 	a.emitChargeState(job.IDFromContext(ctx), requestID, "dispatched")
-	result, runErr := a.workerRunWithBudget(brief, worker, cfg, nil)(ctx)
+	result, runErr := a.workerRunWithBudget(brief, worker, cfg, nil, false)(ctx)
 	cleanup, finish := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer finish()
 	settleErr := ledger.MarkUncertain(cleanup, requestID)

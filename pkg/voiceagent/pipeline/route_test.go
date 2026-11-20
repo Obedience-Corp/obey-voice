@@ -219,3 +219,19 @@ func TestDirectWorkIntentUsesAnAvailableBackgroundWorkerForLongTasks(t *testing.
 		}
 	}
 }
+
+func TestCompoundWorkerImageDeliveryAcrossAssent(t *testing.T) {
+	history := []brain.Turn{
+		{Role: "user", Content: "No, I mean show me a picture of a dog from the internet."},
+		{Role: "assistant", Content: "Let me find one."},
+		{Role: "user", Content: "I'll do it."},
+	}
+	task := "You need to search the internet and find one and add it to the chat"
+	if !requestsChatImage(task, history) {
+		t.Fatal("lost the requested image deliverable")
+	}
+	history = append(history, brain.Turn{Role: "user", Content: "Write a shopping list for dinner."})
+	if requestsChatImage(task, history) {
+		t.Fatal("revived an image after a new task")
+	}
+}

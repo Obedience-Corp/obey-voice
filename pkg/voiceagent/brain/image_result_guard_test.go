@@ -3,6 +3,7 @@ package brain
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -354,6 +355,55 @@ func TestDirectImageComplaintChecksVolunteeredPicture(t *testing.T) {
 		messages := (*requests)[1].Messages
 		if msg := messages[len(messages)-1].Content; !strings.Contains(msg, "valid.png") || !strings.Contains(msg, "cat.jpg") {
 			t.Fatalf("missing repair feedback: %q", msg)
+		}
+	}
+}
+
+func TestRepeatedChatDeliveryPromiseEndsWithError(t *testing.T) {
+	const promise = "I’m adding it now."
+	for _, streaming := range []bool{false, true} {
+		o, requests := imageClaimBrain(t, []api.Message{{Role: "assistant", Content: promise}, {Role: "assistant", Content: promise}})
+		if err := o.ImportHistory([]Turn{
+			{Role: "user", Content: "Find a picture of a dog."},
+			{Role: "assistant", Content: "Let me add it to the chat.", ResponseID: "work-first"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect}
+		var answer string
+		var err error
+		if streaming {
+			turn := runRoutedTurn(t, o, "Where is it then?", opts)
+			answer, err = turn.answer, turn.result.Err
+		} else {
+			answer, err = o.ThinkFull(t.Context(), "Where is it then?", opts)
+		}
+		if !errors.Is(err, errDeliveryPromise) || answer != "" || len(*requests) != 2 {
+			t.Fatalf("streaming=%t answer=%q err=%v requests=%d", streaming, answer, err, len(*requests))
+		}
+		for _, turn := range o.History() {
+			if turn.Content == promise {
+				t.Fatal("unfulfilled promise was published as an assistant reply")
+			}
+		}
+	}
+}
+
+func TestPendingChatDeliveryEndsWithNewSubjectOrAttachment(t *testing.T) {
+	history := []Turn{{Role: "assistant", Content: "Let me add it to the chat."}}
+	for _, last := range []Turn{
+		{Role: "assistant", Content: "Your shopping list is ready."},
+		{Role: "assistant", Content: "Here it is.", Attachments: []chatmedia.Ref{{ID: "delivered"}}},
+		{Role: "user", Content: "Tell me a story."},
+	} {
+		if awaitingChatDelivery(append(history, last)) {
+			t.Fatalf("reopened a delivery after %+v", last)
+		}
+	}
+	o := &OllamaBrain{}
+	for _, reply := range []string{"I couldn't find a matching file.", "I'm adding it to my calendar.", "The phrase “I’m adding it now” is a promise."} {
+		if err := o.imageReplyError(reply, "Where is it?", pendingChatDelivery); err != nil {
+			t.Errorf("rejected %q: %v", reply, err)
 		}
 	}
 }

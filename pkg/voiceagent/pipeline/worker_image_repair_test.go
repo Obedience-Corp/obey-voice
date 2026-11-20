@@ -108,7 +108,7 @@ func TestWorkerRepairsRejectedImageReferences(t *testing.T) {
 			if tc.required {
 				ctx = context.WithValue(ctx, imageDeliveryKey{}, true)
 			}
-			text, err := a.workerRunWithBudget(brief, w, cfg, budget)(ctx)
+			text, err := a.workerRunWithBudget(brief, w, cfg, budget, true)(ctx)
 			if tc.wantText != "" && text != tc.wantText {
 				t.Fatalf("reply = %q", text)
 			}
@@ -169,5 +169,23 @@ func TestPaidWorkerCannotRetryRejectedImage(t *testing.T) {
 	text, err := a.paidWorkerRun(t.Context(), "show image", worker, cfg, spendingPlan(), "req-image")
 	if err == nil || !strings.Contains(err.Error(), "remote image URLs") || text != "[Image unavailable: Example]" || len(worker.inputs) != 1 {
 		t.Fatalf("calls=%d reply=%q err=%v", len(worker.inputs), text, err)
+	}
+}
+
+func TestUnbudgetedOllamaWorkerRepairsPromiseBeforePublication(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dog.png"), testmedia.PNG(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{VoiceToolsEnabled: true, VoiceWorkerProvider: "ollama", WorkDir: dir}
+	w := &imageRepairWorker{answers: []string{"I found a dog. Let me add it to the chat.", "![Dog](dog.png)"}}
+	jobs := job.NewTable(t.Context())
+	defer jobs.Close()
+	a := NewAgency(&Pipeline{Events: events.NewBus()}, jobs, w, cfg, nil)
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	reply, err := a.workerRun("Get a dog photo and add it to the chat", w, cfg)(ctx)
+	if err != nil || len(w.refs) != 1 || len(w.inputs) != 2 || reply != "Dog" {
+		t.Fatalf("worker result=%q refs=%v calls=%d error=%v", reply, w.refs, len(w.inputs), err)
 	}
 }

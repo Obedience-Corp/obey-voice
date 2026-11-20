@@ -147,7 +147,13 @@ func requestsChatImage(task string, history []brain.Turn) bool {
 		}
 		return false
 	}
-	if !addToChat.MatchString(s) {
+	// A compound task can end with "and add it to the chat" even when
+	// the lookup that precedes it has no image noun.
+	delivery := s
+	if i := strings.LastIndex(s, " and "); i >= 0 {
+		delivery = s[i+len(" and "):]
+	}
+	if !addToChat.MatchString(s) && !addToChat.MatchString(delivery) {
 		return false
 	}
 	if imageNoun.MatchString(s) {
@@ -163,6 +169,10 @@ func requestsChatImage(task string, history []brain.Turn) bool {
 			return true
 		}
 		if turn.Role == "user" {
+			line := normalizeUtterance(turn.Content)
+			if isBareContinuation(line) || line == "i'll do it" || line == "i’ll do it" {
+				continue
+			}
 			break
 		}
 	}

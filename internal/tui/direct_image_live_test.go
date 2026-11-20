@@ -20,6 +20,15 @@ import (
 
 // An installed local model uses its direct tools in a disposable workspace.
 func TestLiveDirectImageReachesTerminal(t *testing.T) {
+	runLiveImageConversation(t, false)
+}
+
+func TestLivePendingImageReachesTerminal(t *testing.T) {
+	runLiveImageConversation(t, true)
+}
+
+func runLiveImageConversation(t *testing.T, pending bool) {
+	t.Helper()
 	model := os.Getenv("OBEY_VOICE_IMAGE_ROUTING_MODEL")
 	if model == "" {
 		t.Skip("set OBEY_VOICE_IMAGE_ROUTING_MODEL to an installed local model")
@@ -43,6 +52,17 @@ func TestLiveDirectImageReachesTerminal(t *testing.T) {
 	m.cfg = cfg
 	init := m.startConversation(conversationDeps{runner: p, ctx: ctx, bus: bus})
 	m.input.SetValue("Show me a picture in this chat. Use the existing picture.png in the working directory.")
+	if pending {
+		if err := live.ImportHistory([]brain.Turn{
+			{Role: "user", Content: "Show me the test image picture.png from the working directory."},
+			{Role: "assistant", Content: "I found it. Let me add it to the chat.", ResponseID: "work-first"},
+			{Role: "user", Content: "I'm waiting for you to add to the chat."},
+			{Role: "assistant", Content: "I’m adding it now."},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		m.input.SetValue("Where is it then? It should be in your next response.")
+	}
 	h := &imageRepairTerminal{model: m, initial: init, wantImages: 1, stopOnTurnEnd: true}
 	var output bytes.Buffer
 	if _, err := tea.NewProgram(h, tea.WithContext(ctx), tea.WithoutSignalHandler(), tea.WithInput(nil), tea.WithOutput(&output)).Run(); err != nil {

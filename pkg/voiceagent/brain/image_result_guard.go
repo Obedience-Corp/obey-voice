@@ -14,6 +14,11 @@ import (
 var imageResultNoun = regexp.MustCompile(`(?i)\b(?:images?|pictures?|photos?|png|jpe?g|gifs?)\b`)
 var imageResultClaim = regexp.MustCompile(`(?i)\b(?:i(?: have|'ve|’ve)?|we(?: have|'ve|’ve)?) (?:attached|included|uploaded|sent)\b|\b(?:they(?: are|'re|’re)|it(?: is|'s|’s)|(?:the |these |those )?(?:images?|pictures?|photos?|files?)(?: are| is)?) attached\b`)
 var imageResultPromise = regexp.MustCompile(`(?i)\bi(?: will|'ll|’ll| am going to) (?:get|find|fetch|download|attach|send|share|pull)\b`)
+
+// Require an object for progress language: "adding a feature" is ordinary
+// conversation, while "I'm adding it now" is a promise about the deliverable.
+var deliveryProgress = regexp.MustCompile(`(?i)(?:^|[.!?,]\s*)(?:(?:i(?: am|'m|’m) )?(?:adding|attaching|uploading|sending)|(?:let me|i(?: will|'ll|’ll)) (?:add|attach|upload|send)) (?:it|them|that|those|(?:the |this |your |an? )?(?:image|photo|picture|file)s?)\b(?: (?:to|in) (?:this|the) chat| now| here|[.!?,]|$)`)
+var chatDestination = regexp.MustCompile(`(?i)\b(?:in|to) (?:this|the) chat\b`)
 var imageResultQuotation = regexp.MustCompile("`[^`\\n]*`|\"[^\"\\n]*\"|“[^”\\n]*”")
 var imageResultEarlier = regexp.MustCompile(`(?i)\b(?:earlier|above|previously|already|last (?:reply|message))\b`)
 
@@ -34,6 +39,11 @@ func (o *OllamaBrain) unsupportedImageResult(text, request string) bool {
 	if chatmedia.ReplyProse(text) != strings.TrimSpace(text) {
 		return false // Explicit references are validated by the existing importer.
 	}
+	text = deliveryProse(text)
+	return (imageResultNoun.MatchString(text) || imageResultNoun.MatchString(request)) && (imageResultClaim.MatchString(text) || imageResultPromise.MatchString(text) || deliveryProgress.MatchString(text))
+}
+
+func deliveryProse(text string) string {
 	var prose []string
 	fenced := false
 	for _, line := range strings.Split(text, "\n") {
@@ -46,11 +56,14 @@ func (o *OllamaBrain) unsupportedImageResult(text, request string) bool {
 			prose = append(prose, line)
 		}
 	}
-	text = imageResultQuotation.ReplaceAllString(strings.Join(prose, "\n"), "")
-	return (imageResultNoun.MatchString(text) || imageResultNoun.MatchString(request)) && (imageResultClaim.MatchString(text) || imageResultPromise.MatchString(text))
+	return imageResultQuotation.ReplaceAllString(strings.Join(prose, "\n"), "")
 }
 
 var errUnattachedImage = errors.New("the model claimed image delivery without a file reference")
+var errDeliveryPromise = errors.New("the reply promised to add something to chat but delivered nothing")
+
+const pendingChatDelivery = "pending chat delivery"
+
 var errMissingImageReference = errors.New("the reply contained no standalone image reference")
 
 // Require a file for explicit delivery requests. Mentions such as "how do I
@@ -69,6 +82,12 @@ func (o *OllamaBrain) directImageRequest(input string, opts StreamOptions) strin
 	}
 	if imageResultNoun.MatchString(input) {
 		return input
+	}
+	// Follow a live exchange about a missing chat item even if both parties
+	// refer to it by pronoun. Do not infer the item is an arbitrary local image.
+	if len(o.canonical) > 1 && (imageFollowup.MatchString(input) || chatDestination.MatchString(input)) &&
+		awaitingChatDelivery(o.canonical[:len(o.canonical)-1]) {
+		return pendingChatDelivery
 	}
 	for i := len(o.canonical) - 2; i >= 0; i-- {
 		turn := o.canonical[i]
@@ -91,6 +110,37 @@ func (o *OllamaBrain) directImageRequest(input string, opts StreamOptions) strin
 	return ""
 }
 
+func awaitingChatDelivery(history []Turn) bool {
+	// Follow the consecutive progress replies back to their chat destination.
+	// An actual attachment or an unrelated reply ends the chain.
+	progress := false
+	for i := len(history) - 1; i >= 0; i-- {
+		turn := history[i]
+		if len(turn.Attachments) > 0 || len(turn.ToolCalls) > 0 {
+			break
+		}
+		switch turn.Role {
+		case "assistant", "samantha":
+			prose := deliveryProse(turn.Content)
+			if !deliveryProgress.MatchString(prose) {
+				return false
+			}
+			progress = true
+			if chatDestination.MatchString(prose) {
+				return true
+			}
+		case "user":
+			if progress && (chatDestination.MatchString(turn.Content) || imageResultNoun.MatchString(turn.Content)) {
+				return true
+			}
+			if !imageFollowup.MatchString(turn.Content) {
+				return false
+			}
+		}
+	}
+	return false
+}
+
 func requestsPictureDelivery(input string) bool {
 	return requestPicture.MatchString(input) || requestPictureInChat.MatchString(input)
 }
@@ -100,6 +150,14 @@ func (o *OllamaBrain) imageReplyError(text, input, directRequest string) error {
 		protected := chatmedia.ProtectImageExamples(text)
 		if chatmedia.ReplyProse(protected) != strings.TrimSpace(protected) {
 			return chatmedia.DefaultStore().CheckReplyFiles(protected, ReplyWorkDir(o))
+		}
+		if directRequest == pendingChatDelivery {
+			if deliveryProgress.MatchString(deliveryProse(text)) {
+				return errDeliveryPromise
+			}
+			// The item might also be text. A substantive reply or an
+			// explanation is valid on an ambiguous follow-up.
+			return nil
 		}
 		if requestsPictureDelivery(input) {
 			return errMissingImageReference
@@ -113,6 +171,9 @@ func (o *OllamaBrain) imageReplyError(text, input, directRequest string) error {
 }
 
 func (o *OllamaBrain) imageRepairPrompt(ctx context.Context, directRequest string, issue error) string {
+	if directRequest == pendingChatDelivery {
+		return systemPrompt(o.cfg, "pending-chat-delivery", nil)
+	}
 	if directRequest == "" {
 		return systemPrompt(o.cfg, "image-result-repair", nil)
 	}

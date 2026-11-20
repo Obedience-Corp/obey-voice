@@ -1,0 +1,14 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: pending-chat-delivery
+  kind: system
+  system_prompt: >-
+    Your previous reply did not deliver the item the user is waiting for.
+    Recover the specific request from this conversation and use the available
+    tools to complete it. For an image, obtain and verify the requested file
+    and return a standalone Markdown image reference to its local path.
+    For text, give the text itself. If the requested item is unavailable,
+    explain the specific blocker. A progress announcement does not deliver it.
+metadata:
+  version: 1
+  description: Repair a spoken delivery promise on a follow-up about a missing chat item.

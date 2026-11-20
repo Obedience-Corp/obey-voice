@@ -40,8 +40,14 @@ func TestDirectImageRepairReachesTerminal(t *testing.T) {
 	runImageClaimTerminal(t, "direct")
 }
 
+func TestPendingChatAttachmentReachesTerminal(t *testing.T) {
+	t.Setenv("OBEY_VOICE_TUI_IMAGES", "blocks")
+	runImageClaimTerminal(t, "pending")
+}
+
 func runImageClaimTerminal(t *testing.T, mode string) {
 	postChat := mode == "chat"
+	direct := mode == "direct" || mode == "pending"
 	root := t.TempDir()
 	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
 	for name, data := range map[string][]byte{"result.png": testmedia.PNG(), "result.gif": testmedia.GIF()} {
@@ -49,7 +55,7 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 			t.Fatal(err)
 		}
 	}
-	if mode == "direct" {
+	if direct {
 		oversize := testmedia.GIF()
 		binary.LittleEndian.PutUint16(oversize[6:8], 2048)
 		binary.LittleEndian.PutUint16(oversize[8:10], 2048)
@@ -74,12 +80,18 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 			msg := api.Message{Role: "assistant"}
 			if req.Model == "live" {
 				first := liveCalls.Add(1) == 1
-				if mode == "direct" {
-					if first {
+				if direct {
+					if first && mode == "pending" {
+						msg.Content = "I’m adding it now. Just wait."
+					} else if first {
 						msg.Content = "Here's an image from the workspace.\n![tui](oversize.gif)"
 					} else {
 						repair := req.Messages[len(req.Messages)-1].Content
-						if !strings.Contains(repair, "16 megapixels") || !strings.Contains(repair, "oversize.gif") || !strings.Contains(repair, "result.png") || len(req.Tools) == 0 {
+						if mode == "pending" {
+							if !strings.Contains(repair, "did not deliver") || len(req.Tools) == 0 {
+								t.Error("missing correction for an unfulfilled chat delivery")
+							}
+						} else if !strings.Contains(repair, "16 megapixels") || !strings.Contains(repair, "oversize.gif") || !strings.Contains(repair, "result.png") || len(req.Tools) == 0 {
 							t.Error("direct repair omitted the import error or the tools")
 						}
 						msg.Content = "Here are the pictures from the docs:\n![Still](result.png)\n![Animation](result.gif)"
@@ -121,7 +133,7 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 	defer cancel()
 	bus := events.NewBus()
 	p := &pipeline.Pipeline{Brain: live, Events: bus, VoiceToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsRouteOnly}
-	if mode == "direct" {
+	if direct {
 		p.RouterToolsPolicy = brain.RouterToolsDirect
 		cfg.ContinuityIntegrityEnabled = true
 	}
@@ -132,13 +144,24 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 	m.cfg = cfg
 	initial := m.startConversation(conversationDeps{runner: p, ctx: ctx, bus: bus})
 	m.input.SetValue("Find a PNG and GIF and show them in this chat.")
-	h := &imageRepairTerminal{model: m, initial: initial, stopOnError: postChat, wantImages: 2, stopOnTurnEnd: mode == "direct"}
+	if mode == "pending" {
+		if err := live.ImportHistory([]brain.Turn{
+			{Role: "user", Content: "Find a picture of a dog."},
+			{Role: "assistant", Content: "I found a dog. Let me add it to the chat.", ResponseID: "work-first"},
+			{Role: "user", Content: "I'm waiting for you to add to the chat."},
+			{Role: "assistant", Content: "I’m adding it now. Just wait."},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		m.input.SetValue("Where is it then?")
+	}
+	h := &imageRepairTerminal{model: m, initial: initial, stopOnError: postChat, wantImages: 2, stopOnTurnEnd: direct}
 	var output bytes.Buffer
 	if _, err := tea.NewProgram(h, tea.WithContext(ctx), tea.WithoutSignalHandler(), tea.WithInput(nil), tea.WithOutput(&output)).Run(); err != nil {
 		t.Fatalf("terminal did not receive the result: %v\n%s", err, stripANSI(output.String()))
 	}
 	wantWorkers := int32(1)
-	if postChat || mode == "direct" {
+	if postChat || direct {
 		wantWorkers = 0
 	}
 	if liveCalls.Load() != 2 || workerCalls.Load() != wantWorkers {
@@ -155,7 +178,7 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 			t.Fatalf("missing %s preview: %s", name, view)
 		}
 	}
-	if mode == "direct" {
+	if direct {
 		if !strings.Contains(view, "▀") {
 			t.Fatalf("reply has no rendered image pixels: %s", view)
 		}
@@ -168,7 +191,7 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 			t.Fatalf("stored image differs from the delivered PNG: %v", err)
 		}
 	}
-	if strings.Contains(stripANSI(output.String()), claim) {
+	if strings.Contains(stripANSI(output.String()), claim) || strings.Contains(stripANSI(output.String()), "I’m adding it now") {
 		t.Fatal("unsupported attachment claim reached the terminal")
 	}
 }
