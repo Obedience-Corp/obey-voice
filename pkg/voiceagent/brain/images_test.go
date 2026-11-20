@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
@@ -71,16 +72,20 @@ func TestOllamaImagesReachModelAndSurviveHistory(t *testing.T) {
 		t.Fatal("missing asset was silently omitted")
 	}
 }
-func TestOllamaRejectsTextOnlyModelBeforeHistoryChanges(t *testing.T) {
+
+// A new picture is refused before its turn is sent, while the draft can still
+// be changed. Once a turn is in the conversation the model answers it without
+// the picture: see TestTextOnlyModelKeepsANewPictureOnTheRecord.
+func TestOllamaRefusesANewPictureForATextOnlyModelBeforeItIsSent(t *testing.T) {
 	o := repetitionBrain(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/show" {
-			t.Error("incompatible input reached model")
+			t.Error("a refused picture reached the model")
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion"}})
 	})
 	n := len(o.History())
-	_, err := o.ThinkFull(t.Context(), "look", StreamOptions{Attachments: []chatmedia.Ref{{ID: "image"}}})
-	if err == nil || len(o.History()) != n {
-		t.Fatal("rejected image mutated history")
+	err := o.ValidateImages(t.Context(), []chatmedia.Ref{{ID: "image"}})
+	if err == nil || !strings.Contains(err.Error(), "does not support images") || len(o.History()) != n {
+		t.Fatalf("admission of a picture for a text-only model: %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -33,6 +34,12 @@ func (b *streamClock) ThinkStream(_ context.Context, input string, _ brain.Strea
 	done <- brain.StreamResult{}
 	close(done)
 	return &brain.Stream{Chunks: out, Done: done}, nil
+}
+
+// ValidateImages fails every picture: this provider views images, and the
+// file behind the one a test gives it is gone.
+func (b *streamClock) ValidateImages(context.Context, []chatmedia.Ref) error {
+	return errors.New("image gone.png is missing")
 }
 
 // Every notice, the first and one that widens the share, is an info line

@@ -29,7 +29,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	if err := o.prepareAudioHistory(ctx, opts); err != nil {
 		return "", err
 	}
-	if err := o.prepareImageHistory(ctx, opts.Attachments); err != nil {
+	if err := o.prepareImageHistory(ctx, opts); err != nil {
 		return "", err
 	}
 	priorGroupReply := ""

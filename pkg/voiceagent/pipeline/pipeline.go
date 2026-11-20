@@ -113,6 +113,11 @@ type Pipeline struct {
 	identityRetired bool
 	traceOrigin     time.Time
 
+	// withheldImages is the pictures the user has been told a persona was not
+	// shown, so each is said once.
+	withheldMu     sync.Mutex
+	withheldImages map[string]bool
+
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.
 	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)

@@ -19,13 +19,19 @@ import (
 type visionFake struct {
 	mu       sync.Mutex
 	requests []api.ChatRequest
+	// textOnly serves a model that cannot view images.
+	textOnly bool
 }
 
 func (f *visionFake) brain(t *testing.T, cfg *config.Config, system string) *OllamaBrain {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/show" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion", "vision", "tools"}})
+			capabilities := []string{"completion", "vision", "tools"}
+			if f.textOnly {
+				capabilities = []string{"completion", "tools"}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": capabilities})
 			return
 		}
 		var req api.ChatRequest

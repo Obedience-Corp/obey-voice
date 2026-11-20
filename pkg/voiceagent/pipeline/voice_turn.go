@@ -174,7 +174,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		return original, p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
 	}
 	text = admission.Request
-	if err := p.validateRetainedImages(ctx); err != nil {
+	if err := p.validateRetainedImages(ctx, metrics); err != nil {
 		turn.finish(TurnFailed)
 		return original, err
 	}
@@ -250,6 +250,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
+		OnImagesWithheld:  p.imagesWithheldHook(metrics),
 	}
 	if admission.Discussion != nil {
 		streamOpts.WorkerTiers = nil
