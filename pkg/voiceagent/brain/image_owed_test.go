@@ -41,6 +41,8 @@ func TestOwedImageFollowsRequestsAndAttachments(t *testing.T) {
 		{"pressing is not a withdrawal", after(user("why don't you just add it to the chat")...), request, 0},
 		{"pressing is not a withdrawal", after(user("don't stop until you add it to the chat")...), request, 0},
 		{"naming the subject asks after it", after(user("where are the dogs")...), request, 0},
+		{"asking for the picture again keeps its subject", after(user("Tell me another story.", "Send me the picture already.")...), request, 0},
+		{"a picture of something else replaces it", after(user("Send me the picture of a cat.")...), "Send me the picture of a cat.", 0},
 		{"a correction replaces the request", after(user("no don't get me a cartoon find me a real photo of a dog")...), "no don't get me a cartoon find me a real photo of a dog", 0},
 		{"text for the chat is something else", after(user("Put the weather summary in the chat.")...), request, 2},
 		{"a delivery with its own clause is something else", after(user("Write a shopping list and put it in the chat.")...), request, 2},
@@ -94,5 +96,31 @@ func TestOwedImageAskedAfter(t *testing.T) {
 	}
 	if (OwedImage{}).AskedAfter("Where is it then?") {
 		t.Error("nothing is owed")
+	}
+}
+
+// A picture request and an unrelated turn share plenty of ordinary words.
+func TestOwedImageSubjectIsNotAFunctionWord(t *testing.T) {
+	owed, ok := FindOwedImage([]Turn{
+		{Role: "user", Content: "Show me a picture of what a quokka looks like."},
+		{Role: "assistant", Content: "I can't browse for images right now."},
+	})
+	if !ok {
+		t.Fatal("no picture is owed")
+	}
+	for _, line := range []string{
+		"look up what time the game starts and add it to the chat",
+		"Tell me what you think and put it in the chat.",
+		"don't you think it looks like rain? look that up and add it to the chat",
+		"Where is what I asked about?",
+	} {
+		if owed.AskedAfter(line) {
+			t.Errorf("%q asks after the picture", line)
+		}
+	}
+	for _, line := range []string{"where's the quokka", "find a quokka and add it to the chat", "Where is it then?"} {
+		if !owed.AskedAfter(line) {
+			t.Errorf("%q does not ask after the picture", line)
+		}
 	}
 }

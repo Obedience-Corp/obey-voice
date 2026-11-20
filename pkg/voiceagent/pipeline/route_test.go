@@ -250,6 +250,10 @@ func TestCompoundTaskIsAnImageOnlyWhileAPictureIsOwed(t *testing.T) {
 		{Role: "user", Content: "Show me a picture of the Eiffel Tower."},
 		{Role: "assistant", Content: "I can't browse for images right now."},
 	}
+	described := []brain.Turn{
+		{Role: "user", Content: "Show me a picture of what a quokka looks like."},
+		{Role: "assistant", Content: "I can't browse for images right now."},
+	}
 	const find = "You need to search the internet find a nice pair of dogs and add it to the chat"
 	const weather = "search the web for today's weather and add it to the chat"
 	for _, tc := range []struct {
@@ -276,6 +280,7 @@ func TestCompoundTaskIsAnImageOnlyWhileAPictureIsOwed(t *testing.T) {
 		{"a withdrawal is not a task", asked, "search the internet and don't add it to the chat", false},
 		{"another lookup while the picture is owed", asked, weather, false},
 		{"another lookup after a refusal", refused, "find the population of paris and put it in the chat", false},
+		{"ordinary words are not a shared subject", described, "look up what time the game starts and add it to the chat", false},
 		// Only the shared subject ties this task to the owed picture, so a
 		// different lookup about the same subject is held to an image too.
 		{"another lookup about the same subject", asked, "search the web for prices of dogs and add it to the chat", true},

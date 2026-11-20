@@ -475,6 +475,12 @@ func TestOwedPictureDoesNotFollowACancelADeliveryOrANewSubject(t *testing.T) {
 		{Role: "user", Content: "What's the weather in Paris?"},
 		{Role: "assistant", Content: "Sunny, twenty degrees."},
 	}
+	quokka := []Turn{
+		{Role: "user", Content: "Show me a picture of what a quokka looks like."},
+		{Role: "assistant", Content: "I can't browse for images right now."},
+		{Role: "user", Content: "Fine. What do you make of the new schedule?"},
+		{Role: "assistant", Content: "It looks tight."},
+	}
 	haiku := append(slices.Clone(promised),
 		Turn{Role: "user", Content: "Actually forget that, write me a haiku instead."},
 		Turn{Role: "assistant", Content: "Let me add it to the chat."})
@@ -492,6 +498,7 @@ func TestOwedPictureDoesNotFollowACancelADeliveryOrANewSubject(t *testing.T) {
 		{"text for the chat", weather, "Put the weather summary in the chat.", "Sunny, twenty degrees."},
 		{"text for the chat", stalledImageConversation(), "Put the weather summary in the chat.", "Sunny, twenty degrees."},
 		{"its own clause", stalledImageConversation(), "Write a shopping list and put it in the chat.", "Eggs, milk and bread."},
+		{"its own clause", quokka, "Tell me what you think and put it in the chat.", "I think it will hold."},
 		{"waiting for something else", stalledImageConversation(), "I'm still waiting for my pizza.", "It should arrive soon."},
 		{"replaced request", haiku, "Where is it then?", "Autumn moonlight, a worm digs silently into the chestnut."},
 		{"already delivered", delivered, "Where is it then?", "It's right above in the chat."},

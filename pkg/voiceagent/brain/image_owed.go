@@ -43,29 +43,47 @@ var (
 	pronounLookup = regexp.MustCompile(`(?i)\b(?:find|get|fetch|grab|show|send|download|look for|search for)(?: me| us)? (?:one|it|them|that|those|some)\b`)
 	owedPronoun   = regexp.MustCompile(`^(?:it|them|they|that|those|one|that one|this one)$`)
 	owedPicture   = regexp.MustCompile(`^(?:(?:the|my|that|those|an?|some) )?` + pictureWord + `$`)
-	subjectWord   = regexp.MustCompile(`[a-z0-9]+`)
+	// "Send me the picture already" asks again. "Send me the picture of a cat" asks for another.
+	samePicture = regexp.MustCompile(`(?i)\b(?:the|that|those|my) ` + pictureWord + `\b(\s+of\b)?`)
 )
 
 // Words a picture request and an unrelated turn can share without being
-// about the same thing.
+// about the same thing: function words, the verbs and places of any request,
+// and words for a picture.
 var notASubject = func() map[string]bool {
 	words := map[string]bool{}
-	for _, word := range strings.Fields("the and for you your can could would will please show send give get got find fetch grab download search look pull add attach put post share drop need want mean like some any another more few nice good new old big little real pair one ones from with into onto that this those these them they internet web online google chat here now right just then also too not image images picture pictures photo photos png pngs jpg jpgs jpeg jpegs gif gifs pic pics") {
+	for _, word := range strings.Fields(`
+		a about above after again all already also am an and any are as at be because been before being both but by
+		can could did do does doing done down each else ever few for from get got had has have having he her here
+		hers him his how i if in into is it its just let like many may me might more most much must my need never
+		no nor not now of off on once one ones only or other our out over own please really right same say see
+		shall she should so some something still such take tell than that the their them then there these they
+		thing things think this those through time to too under until up us use very want was way we well were
+		what when where which while who whom why will with would yet you your yours
+		dont wont cant didnt doesnt isnt arent wasnt whats thats heres theres youre ive ill
+		show send give find fetch grab download search look pull add attach put post share drop mean make
+		nice good new old big little real pair another different today tomorrow yesterday tonight
+		internet web online google chat image picture photo png jpg jpeg gif pic`) {
 		words[word] = true
 	}
 	return words
 }()
 
+var (
+	subjectWord = regexp.MustCompile(`[a-z0-9]+`)
+	contraction = regexp.MustCompile(`n?['’](?:t|s|re|ll|ve|m|d)\b`)
+)
+
+// subjectWords are the words of a turn that could name what it is about.
 func subjectWords(text string) map[string]bool {
 	words := map[string]bool{}
-	for _, word := range subjectWord.FindAllString(strings.ToLower(text), -1) {
-		if len(word) < 3 || notASubject[word] {
-			continue
-		}
+	for _, word := range subjectWord.FindAllString(contraction.ReplaceAllString(strings.ToLower(text), ""), -1) {
 		if len(word) > 3 {
 			word = strings.TrimSuffix(word, "s")
 		}
-		words[word] = true
+		if len(word) >= 3 && !notASubject[word] {
+			words[word] = true
+		}
 	}
 	return words
 }
@@ -110,7 +128,7 @@ func (o OwedImage) deliveryClause(text string, re *regexp.Regexp) bool {
 }
 
 func (o OwedImage) refersTo(text string) bool {
-	if askedNext.MatchString(text) || o.deliveryClause(text, askedInChat) || o.deliveryClause(text, askedBare) {
+	if o.asksAgain(text) || askedNext.MatchString(text) || o.deliveryClause(text, askedInChat) || o.deliveryClause(text, askedBare) {
 		return true
 	}
 	if at := askedWhere.FindStringSubmatch(text); at != nil && o.names(at[1]) {
@@ -119,6 +137,26 @@ func (o OwedImage) refersTo(text string) bool {
 	if at := askedWaiting.FindStringSubmatch(text); at != nil {
 		object := strings.ToLower(strings.TrimSpace(at[1]))
 		return object == "you" || strings.HasPrefix(object, "you to ") || o.names(object)
+	}
+	return false
+}
+
+// asksAgain reports a turn that names "the picture" without saying which:
+// it is the one already owed, and its subject stays on record.
+func (o OwedImage) asksAgain(text string) bool {
+	if o.Request == "" {
+		return false
+	}
+	at := samePicture.FindStringSubmatch(text)
+	return at != nil && at[1] == "" && !o.namesAnotherSubject(text)
+}
+
+func (o OwedImage) namesAnotherSubject(text string) bool {
+	subject := subjectWords(o.Request)
+	for word := range subjectWords(text) {
+		if !subject[word] {
+			return true
+		}
 	}
 	return false
 }
@@ -153,7 +191,7 @@ func FindOwedImage(history []Turn) (OwedImage, bool) {
 				owed = OwedImage{}
 			}
 			switch {
-			case AsksForPicture(text):
+			case AsksForPicture(text) && !owed.asksAgain(text):
 				owed = OwedImage{Request: text}
 			case owed.Request == "":
 			case owed.refersTo(text):
