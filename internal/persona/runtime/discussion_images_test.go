@@ -76,6 +76,18 @@ func (b *textOnlyGroupReply) ThinkStream(ctx context.Context, input string, opts
 	return b.groupReplyBrain.ThinkStream(ctx, input, opts)
 }
 
+// noImageShare stands in for a Muse Spark or Obey persona in a group: no image
+// input, and a working view of other personas' lines without attachments.
+type noImageShare struct{ *groupReplyBrain }
+
+func (b *noImageShare) ContextHistory() []brain.Turn {
+	view := b.History()
+	for i := range view {
+		view[i].Attachments = nil
+	}
+	return view
+}
+
 func TestGroupAnswersAPictureWhenOnePersonaCannotViewIt(t *testing.T) {
 	for name, tc := range map[string]struct {
 		samantha func(*groupReplyBrain) brain.Provider
@@ -85,7 +97,9 @@ func TestGroupAnswersAPictureWhenOnePersonaCannotViewIt(t *testing.T) {
 			samantha: func(b *groupReplyBrain) brain.Provider { return &textOnlyGroupReply{b} },
 			notice:   "Samantha was not shown input.png, because fixture cannot view images.",
 		},
-		"provider without image input": {
+		// Its view holds no picture, so there is none to tell the user about.
+		"provider without image input": {samantha: func(b *groupReplyBrain) brain.Provider { return &noImageShare{b} }},
+		"provider without image input holding the whole record": {
 			samantha: func(b *groupReplyBrain) brain.Provider { return b },
 			notice:   "Samantha was not shown input.png, because this provider cannot view images.",
 		},
@@ -137,7 +151,11 @@ func TestGroupAnswersAPictureWhenOnePersonaCannotViewIt(t *testing.T) {
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			if !slices.Equal(notices, []string{tc.notice}) {
+			var want []string
+			if tc.notice != "" {
+				want = []string{tc.notice}
+			}
+			if !slices.Equal(notices, want) {
 				t.Fatalf("notices = %q", notices)
 			}
 		})

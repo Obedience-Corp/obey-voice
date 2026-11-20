@@ -118,33 +118,43 @@ func (b *noImageInput) ThinkStream(context.Context, string, brain.StreamOptions)
 // The user is told with the request that goes out, not with a turn that sends
 // the provider nothing.
 func TestProviderWithoutImageInputAnswersAndSaysSoWithItsRequest(t *testing.T) {
-	b := &noImageInput{}
-	b.history = []brain.Turn{{Role: "user", Content: "Look.", Attachments: []chatmedia.Ref{{ID: "a", Name: "desk.png", Format: "png"}}}}
-	bus := events.NewBus()
-	var infos []string
-	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
-	p := &Pipeline{Brain: b, Events: bus}
-	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
-		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", DisplayName: "Mira"}}, nil
-	}
 	const notice = "Mira was not shown desk.png, because this provider cannot view images."
+	for _, voice := range []bool{false, true} {
+		t.Run(map[bool]string{true: "voice", false: "text"}[voice], func(t *testing.T) {
+			b := &noImageInput{}
+			b.history = []brain.Turn{{Role: "user", Content: "Look.", Attachments: []chatmedia.Ref{{ID: "a", Name: "desk.png", Format: "png"}}}}
+			bus := events.NewBus()
+			said := 0
+			events.Subscribe(bus, func(e events.Info) {
+				if e.Message == notice {
+					said++
+				}
+			})
+			p := &Pipeline{Brain: b, Events: bus}
+			p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+				return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "mira", DisplayName: "Mira"}}, nil
+			}
+			say := func(text string) error {
+				if !voice {
+					return p.RunTurnTextMode(t.Context(), text)
+				}
+				p.STT = &fakeSTT{text: text}
+				_, err := p.RunTurn(t.Context())
+				return err
+			}
 
-	_ = p.RunTurnTextMode(t.Context(), "tell me a long story")
-	if b.requests != 0 || slices.Contains(infos, notice) {
-		t.Fatalf("a routed turn sent %d requests and gave notices %q", b.requests, infos)
-	}
-	for range 2 {
-		if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	said := 0
-	for _, info := range infos {
-		if info == notice {
-			said++
-		}
-	}
-	if b.requests != 2 || said != 1 {
-		t.Fatalf("requests %d, notice said %d times in %q", b.requests, said, infos)
+			_ = say("tell me a long story")
+			if b.requests != 0 || said != 0 {
+				t.Fatalf("a routed turn sent %d requests and gave the notice %d times", b.requests, said)
+			}
+			for range 2 {
+				if err := say("hello"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if b.requests != 2 || said != 1 {
+				t.Fatalf("requests %d, notice said %d times", b.requests, said)
+			}
+		})
 	}
 }
