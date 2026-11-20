@@ -14,8 +14,12 @@ func Thumbnail(src image.Image, w, h int) image.Image {
 		return image.NewRGBA(image.Rect(0, 0, 1, 1))
 	}
 	w = max(1, min(w, b.Dx()))
-	h = max(1, min(h, max(1, b.Dy()*w/b.Dx())))
-	w = max(1, min(w, b.Dx()*h/b.Dy()))
+	h = max(1, min(h, b.Dy()))
+	if int64(w)*int64(b.Dy()) <= int64(h)*int64(b.Dx()) {
+		h = max(1, int(int64(w)*int64(b.Dy())/int64(b.Dx())))
+	} else {
+		w = max(1, int(int64(h)*int64(b.Dx())/int64(b.Dy())))
+	}
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
 		y0, y1 := b.Min.Y+y*b.Dy()/h, b.Min.Y+(y+1)*b.Dy()/h

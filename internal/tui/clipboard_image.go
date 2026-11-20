@@ -48,7 +48,7 @@ end run`
 			return nil, err
 		}
 		defer file.Close()
-		return io.ReadAll(io.LimitReader(file, chatmedia.MaxBytes+1))
+		return io.ReadAll(io.LimitReader(file, chatmedia.MaxSourceBytes+1))
 	}
 	for _, args := range [][]string{{"wl-paste", "--no-newline", "--type", "image/png"}, {"xclip", "-selection", "clipboard", "-t", "image/png", "-o"}} {
 		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
@@ -59,7 +59,7 @@ end run`
 		if err = cmd.Start(); err != nil {
 			continue
 		}
-		data, readErr := io.ReadAll(io.LimitReader(pipe, chatmedia.MaxBytes+1))
+		data, readErr := io.ReadAll(io.LimitReader(pipe, chatmedia.MaxSourceBytes+1))
 		_ = pipe.Close()
 		err = cmd.Wait()
 		if readErr == nil && err == nil && len(data) > 0 {
