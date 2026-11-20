@@ -76,11 +76,17 @@ func (o *OllamaBrain) WarmupTurn(ctx context.Context, opts StreamOptions) {
 	if opts.ToolsEnabled {
 		sess = o.turnToolSession(opts)
 		tools = sess.tools()
+		if opts.canHandOff() {
+			tools = withBackgroundWork(tools)
+		}
 	}
 	// Ollama rejects a chat with no user message (ollama#17778). The line sits
 	// after the prefix the first turn restores, so its words do not matter.
 	user := api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, "hi")}
 	messages := o.buildMessagesFrom(turnView{prompt: prompt, history: []api.Message{user}}, "", false, opts)
+	if opts.canHandOff() {
+		messages[0].Content += "\n\n" + systemPrompt(o.cfg, "live-background-work", nil)
+	}
 	// json_route asks for the route on the reply's own messages, without tools.
 	if sess != nil && sess.routerPolicy == RouterToolsRouteOnly && opts.RouteJSON && jsonRouteEligible(tools, messages) {
 		tools = nil

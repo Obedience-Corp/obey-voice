@@ -87,6 +87,46 @@ func routerToolsForSession(policy RouterToolsPolicy, catalog []skills.Skill, tie
 	return voiceAssistantTools(catalog)
 }
 
+const backgroundWorkTool = "start_background_work"
+
+// The worker receives the original request and its conversation context. Offer
+// ownership while the task can still be run without repeating side effects.
+func (opts StreamOptions) canHandOff() bool {
+	return opts.BackgroundWorker && opts.ToolsEnabled && opts.RouterToolsPolicy == RouterToolsDirect &&
+		!opts.Background && !opts.AgentContinuation && opts.Discussion == nil && !opts.OmitTurnInstruction && !opts.TransientHistory && !opts.RetryInput
+}
+
+func withBackgroundWork(tools api.Tools) api.Tools {
+	return append(tools, api.Tool{Type: "function", Function: api.ToolFunction{
+		Name:        backgroundWorkTool,
+		Description: "Start the user's current request on a background worker so the conversation can continue. Choose this for multi-step investigations, downloads, long-running commands, or an explicit request to work in the background. Use direct tools for quick local operations. The worker receives the original request.",
+		Parameters:  api.ToolFunctionParameters{Type: "object", Properties: orderedProps(nil)},
+	}})
+}
+
+func directWorkerHandoff(calls []api.ToolCall) bool {
+	for _, call := range calls {
+		switch call.Function.Name {
+		case backgroundWorkTool, "web_search", "fetch_url":
+			return true
+		}
+	}
+	return false
+}
+
+// A second tool round after inspecting local state is multi-step work. Any
+// other completed tool might have changed state and must not be replayed.
+func onlyLocalInspection(calls []api.ToolCall) bool {
+	for _, call := range calls {
+		switch call.Function.Name {
+		case "list_files", "read_file", "read_skill":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // LiveRouterDecision reports whether live route_only tool calls should leave
 // the conversational loop. spawn/narrate from the route tool, or any worker
 // tool the live schema does not expose, become pipeline routes. Chat (or no

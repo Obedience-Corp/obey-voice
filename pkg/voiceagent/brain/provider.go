@@ -31,6 +31,9 @@ type StreamOptions struct {
 	// WorkerTiers is the live, policy-only availability snapshot for the route
 	// tool. It contains no provider, model, or pricing information.
 	WorkerTiers *WorkerTierAvailability
+	// BackgroundWorker lets an ordinary live Ollama turn hand its original
+	// request to the host before performing side effects.
+	BackgroundWorker bool
 	// WorkerFacts are bounded identifiers for existing jobs, supplied for
 	// grounded status references. They contain no task text or provider data.
 	WorkerFacts []WorkerFact

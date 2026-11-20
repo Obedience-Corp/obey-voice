@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -42,17 +45,17 @@ func (s *admissionTimingSession) Close() error {
 }
 
 type admissionTimingSTT struct {
-	starts atomic.Int32
-	next   chan time.Time
+	transcripts []string
+	starts      atomic.Int32
+	next        chan time.Time
 }
 
 func (*admissionTimingSTT) Available() bool { return true }
 func (s *admissionTimingSTT) Start(context.Context) (stt.Session, error) {
 	session := &admissionTimingSession{events: make(chan stt.Event, 2)}
 	session.events <- stt.PhaseEvent{Phase: "listening"}
-	if s.starts.Add(1) == 1 {
-		// Drive the real pipeline's deterministic work routing from STT.
-		session.events <- stt.FinalTranscript{Text: "Look up the weather in Denver"}
+	if index := int(s.starts.Add(1)) - 1; index < len(s.transcripts) {
+		session.events <- stt.FinalTranscript{Text: s.transcripts[index]}
 	} else {
 		select {
 		case s.next <- time.Now():
@@ -90,15 +93,59 @@ func measureAdmissionCapture(t *testing.T, iteration int) time.Duration {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	cfg := &config.Config{BrainProvider: "ollama", OllamaModel: "fixture", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "fixture", VoiceWorkEnabled: true}
+	p := &pipeline.Pipeline{Brain: &acceptanceHistoryBrain{}, Events: events.NewBus()}
+	return measureCaptureDuringWork(t, ctx, p, cfg, fmt.Sprintf("admission-timing-%d", iteration), []string{"Look up the weather in Denver"})
+}
+
+// Exercise direct routing with an installed model. Hold the worker open so the
+// second utterance can only complete if the first released the conversation.
+func TestLiveDirectWorkerKeepsConversationOpen(t *testing.T) {
+	model := os.Getenv("OBEY_VOICE_WORKER_ROUTING_MODEL")
+	if model == "" {
+		t.Skip("set OBEY_VOICE_WORKER_ROUTING_MODEL to an installed Ollama model")
+	}
+	root := t.TempDir()
+	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
+	cfg := &config.Config{
+		BrainProvider: "ollama", OllamaHost: "http://localhost:11434", OllamaModel: model, OllamaNumCtx: 32768,
+		VoiceWorkerProvider: "ollama", VoiceWorkerModel: model, VoiceWorkEnabled: true, VoiceToolsEnabled: true,
+		AgentName: "Obey", WorkDir: root, WorkerBoundary: root, PromptsDir: filepath.Join(root, "prompts"), SkillsDir: filepath.Join(root, "skills"),
+	}
+	live, err := brain.NewOllama(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &pipeline.Pipeline{Brain: live, Events: events.NewBus(), VoiceToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsDirect}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	events.Subscribe(p.Events, func(e events.ToolCallStarted) { t.Logf("tool %s job=%q", e.Name, e.JobID) })
+	events.Subscribe(p.Events, func(e events.ResponseReady) { t.Logf("reply %q", e.Response) })
+	measureCaptureDuringWork(t, ctx, p, cfg, "live-handoff", []string{
+		"Can you just get a new photo from the internet of a dog and not a cat and show me that?",
+		"What is two plus two?",
+	})
+	history := live.History()
+	if len(history) < 2 || history[len(history)-2].Role != "user" || history[len(history)-2].Content != "What is two plus two?" {
+		t.Fatalf("second question missing from conversation: %+v", history)
+	}
+	if reply := history[len(history)-1]; reply.Role != "assistant" || strings.TrimSpace(reply.Content) == "" || len(reply.ToolCalls) != 0 {
+		t.Fatalf("missing second reply: %+v", history)
+	}
+	t.Logf("foreground reply while worker was running: %q", history[len(history)-1].Content)
+}
+
+func measureCaptureDuringWork(t *testing.T, parent context.Context, p *pipeline.Pipeline, cfg *config.Config, session string, inputs []string) time.Duration {
+	t.Helper()
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
 	jobs := job.NewTable(ctx)
 	defer jobs.Close()
 	worker := &admissionTimingWorker{started: make(chan struct{})}
-	capture := &admissionTimingSTT{next: make(chan time.Time, 1)}
-	cfg := &config.Config{BrainProvider: "ollama", OllamaModel: "fixture", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "fixture", VoiceWorkEnabled: true}
-	p := &pipeline.Pipeline{Brain: &acceptanceHistoryBrain{}, STT: capture, Events: events.NewBus()}
-	p.Agency = pipeline.NewAgency(p, jobs, worker, cfg, nil)
-	p.Agency.Wire()
-	if err := p.EnableConversationWork(fmt.Sprintf("admission-timing-%d", iteration), nil, cfg); err != nil {
+	capture := &admissionTimingSTT{transcripts: inputs, next: make(chan time.Time, 1)}
+	p.STT = capture
+	pipeline.NewAgency(p, jobs, worker, cfg, nil).Wire()
+	if err := p.EnableConversationWork(session, nil, cfg); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
@@ -131,14 +178,14 @@ func measureAdmissionCapture(t *testing.T, iteration int) time.Duration {
 	}()
 	var admitted, available time.Time
 	select {
-	case admitted = <-accepted:
-	case <-ctx.Done():
-		t.Fatal("production Agency never accepted work")
-	}
-	select {
 	case available = <-capture.next:
 	case <-ctx.Done():
 		t.Fatal("next capture depended on blocked worker completion")
+	}
+	select {
+	case admitted = <-accepted:
+	default:
+		t.Fatal("conversation completed the inputs without admitting a background job")
 	}
 	select {
 	case <-worker.started:
