@@ -15,10 +15,11 @@ import (
 const OpenAISpeechProviderName = "openai-speech"
 
 // Defaults for the OpenAI-compatible speech client: Ollama on this computer
-// serving Phonon's one shipped voice.
+// serving the English Phonon pack.
 const (
 	DefaultOpenAISpeechURL     = "http://localhost:11434/v1"
 	DefaultOpenAISpeechModel   = "phonon"
+	MultilingualPhononTag      = "phonon:40m-multilingual"
 	DefaultOpenAISpeechVoice   = "default"
 	DefaultOpenAISpeechTimeout = 60
 )
@@ -51,9 +52,12 @@ func OpenAISpeechURL(cfg *Config) string {
 // OpenAISpeechModel is the configured model id, defaulting to phonon.
 func OpenAISpeechModel(cfg *Config) string {
 	if NativePhononSelected(cfg) {
-		return phonon.Model
+		return nativePhononModel(cfg)
 	}
 	if cfg != nil {
+		if cfg.OpenAISpeechMultilingual {
+			return MultilingualPhononTag
+		}
 		if m := strings.TrimSpace(cfg.OpenAISpeechModel); m != "" {
 			return m
 		}
@@ -85,12 +89,25 @@ func nativePhononFor(cfg *Config, goos string) bool {
 	return false
 }
 
+func nativePhononModel(cfg *Config) string {
+	model := strings.TrimSpace(cfg.OpenAISpeechModel)
+	switch {
+	case cfg.OpenAISpeechMultilingual || strings.EqualFold(model, MultilingualPhononTag):
+		return phonon.MultilingualModel
+	case model == "" || IsDefaultPhononModel(model):
+		return phonon.Model
+	default:
+		return model
+	}
+}
+
 func NativePhononOptions(cfg *Config) (phonon.Options, error) {
 	if cfg == nil {
 		return phonon.Options{}, fmt.Errorf("native Phonon: nil configuration")
 	}
-	if model := strings.TrimSpace(cfg.OpenAISpeechModel); model != "" && !IsDefaultPhononModel(model) && model != phonon.Model {
-		return phonon.Options{}, fmt.Errorf("native Phonon manages %s; use openai_speech_runtime external for custom model %q", phonon.Model, model)
+	model := nativePhononModel(cfg)
+	if model != phonon.Model && model != phonon.MultilingualModel {
+		return phonon.Options{}, fmt.Errorf("native Phonon manages %s and %s; use openai_speech_runtime external for custom model %q", phonon.Model, phonon.MultilingualModel, model)
 	}
 	if url := strings.TrimRight(strings.TrimSpace(cfg.OpenAISpeechURL), "/"); url != "" && url != DefaultOpenAISpeechURL {
 		return phonon.Options{}, fmt.Errorf("native Phonon owns its local endpoint; use openai_speech_runtime external for openai_speech_url %q", url)
@@ -107,7 +124,7 @@ func NativePhononOptions(cfg *Config) (phonon.Options, error) {
 	if err != nil {
 		return phonon.Options{}, fmt.Errorf("native Phonon models directory: %w", err)
 	}
-	o := phonon.Options{ModelsDir: dir, Backend: backend, Binary: binary}
+	o := phonon.Options{ModelsDir: dir, Backend: backend, Binary: binary, Multilingual: model == phonon.MultilingualModel}
 	return o, phonon.Validate(o)
 }
 

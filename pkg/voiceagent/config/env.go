@@ -17,6 +17,7 @@ var envBindings = map[string]string{
 	"tts_voice":                   "TTS_VOICE",
 	"audio8_voice":                "AUDIO8_VOICE",
 	"openai_speech_url":           "OPENAI_SPEECH_URL",
+	"openai_speech_multilingual":  "OPENAI_SPEECH_MULTILINGUAL",
 	"openai_speech_model":         "OPENAI_SPEECH_MODEL",
 	"openai_speech_voice":         "OPENAI_SPEECH_VOICE",
 	"openai_speech_api_key":       "OPENAI_SPEECH_API_KEY",

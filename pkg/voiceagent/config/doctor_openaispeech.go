@@ -114,10 +114,10 @@ func ollamaVoicesDiagnostic(ctx context.Context, t OpenAISpeechTarget, apiKey st
 			Name: "openai-speech-voices", Severity: SeverityWarn,
 			Detail: fmt.Sprintf("could not read %s's voices from /api/show: %v", t.Model, err),
 		}
-	case t.usesPhononCatalog() && !HasNamedVoices(names):
+	case t.usesPhononCatalog() && !PhononCatalogReady(t.Model, names):
 		return Diagnostic{
 			Name: "openai-speech-voices", Severity: SeverityWarn,
-			Detail:      fmt.Sprintf("Ollama %s lists no voices for %s; only the configured voice and default can be chosen", t.Version, t.Model),
+			Detail:      fmt.Sprintf("Ollama %s lists %s for %s", t.Version, phononCatalogProblem(t.Model), t.Model),
 			Remediation: PhononVoicesRemedy(t.Version),
 		}
 	default:

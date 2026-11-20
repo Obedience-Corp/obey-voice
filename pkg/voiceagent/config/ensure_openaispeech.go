@@ -66,6 +66,9 @@ func ensureOpenAISpeechAssetsProgress(ctx context.Context, cfg *Config, req Asse
 	if !target.Reachable {
 		return fmt.Errorf("openai-speech: %s", target.Problem())
 	}
+	if err := target.externalPackError(); err != nil {
+		return fmt.Errorf("openai-speech: %w", err)
+	}
 	if target.Ollama {
 		if err := ensureOllamaModel(ctx, target, openAISpeechAPIKey(cfg), req.NeedVoiceCatalog, onProgress); err != nil {
 			return err
@@ -176,11 +179,11 @@ func ensureOllamaModel(ctx context.Context, target OpenAISpeechTarget, apiKey st
 		if target.VoicesErr != nil {
 			return fmt.Errorf("openai-speech: could not check Phonon's voices: %w", target.VoicesErr)
 		}
-		if !HasNamedVoices(target.Voices) && !ollamaAtLeast(target.Version, MinPhononVoicesOllama) {
+		if !PhononCatalogReady(target.Model, target.Voices) && !ollamaAtLeast(target.Version, MinPhononVoicesOllama) {
 			return fmt.Errorf("openai-speech: Ollama %s at %s cannot list Phonon's named voices; %s", target.Version, target.Root, PhononVoicesRemedy(target.Version))
 		}
 	}
-	if target.ModelListed && (!requireVoices || HasNamedVoices(target.Voices)) {
+	if target.ModelListed && (!requireVoices || PhononCatalogReady(target.Model, target.Voices)) {
 		emit(assetPhaseSkipped, 0, 0)
 		return nil
 	}
@@ -210,8 +213,8 @@ func ensureOllamaModel(ctx context.Context, target OpenAISpeechTarget, apiKey st
 		if err != nil {
 			return fmt.Errorf("openai-speech: verify Phonon's voices after download: %w", err)
 		}
-		if !HasNamedVoices(names) {
-			return fmt.Errorf("openai-speech: refreshed %s at %s but Ollama %s still lists no named voices; check the server's model registry and retry setup", target.Model, target.Root, target.Version)
+		if !PhononCatalogReady(target.Model, names) {
+			return fmt.Errorf("openai-speech: refreshed %s at %s but Ollama %s still lists %s; check the server's model registry and retry setup", target.Model, target.Root, target.Version, phononCatalogProblem(target.Model))
 		}
 		emit(assetPhaseDone, doneBytes, doneTotal)
 	}

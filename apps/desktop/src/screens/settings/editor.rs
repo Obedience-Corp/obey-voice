@@ -25,7 +25,12 @@ impl VoiceApp {
                 }
                 let value = self.drafts.entry(spec.key.clone()).or_insert(saved.clone());
                 setting_input(ui, spec, value);
+                let load = spec.key == "openai_speech_voice"
+                    && self.speech_catalog.picker(ui, value, !self.demo);
                 let draft = value.clone();
+                if load {
+                    self.load_speech_voices();
+                }
                 if ui
                     .add_enabled(draft != saved, egui::Button::new("Save choice"))
                     .clicked()
@@ -80,8 +85,13 @@ impl VoiceApp {
                 } else {
                     &current
                 });
-                let changed = *value != saved;
+                let load = spec.key == "openai_speech_voice"
+                    && self.speech_catalog.picker(ui, value, !self.demo);
                 let draft = value.clone();
+                let changed = draft != saved;
+                if load {
+                    self.load_speech_voices();
+                }
                 ui.horizontal(|ui| {
                     if ui.add_enabled(changed, egui::Button::new("Save")).clicked() {
                         self.cli(

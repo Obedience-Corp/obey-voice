@@ -128,14 +128,48 @@ func ProbeOpenAISpeech(ctx context.Context, cfg *Config) OpenAISpeechTarget {
 	return t
 }
 
-// IsDefaultPhononModel scopes automatic refresh to the official default tag.
-// Custom models and pinned tags may intentionally offer only one voice.
+// IsDefaultPhononModel matches the English default and its :latest alias.
 func IsDefaultPhononModel(model string) bool {
 	return ollamaTagged(model) == ollamaTagged(DefaultOpenAISpeechModel)
 }
 
 func (t OpenAISpeechTarget) usesPhononCatalog() bool {
-	return t.Ollama && IsDefaultPhononModel(t.Model)
+	return t.Ollama && IsOllamaPhononModel(t.Model)
+}
+
+// IsOllamaPhononModel identifies the official packs managed by voice setup.
+func IsOllamaPhononModel(model string) bool {
+	return IsDefaultPhononModel(model) || ollamaTagged(model) == MultilingualPhononTag
+}
+
+// PhononCatalogReady checks the catalog advertised by the selected Ollama pack.
+func PhononCatalogReady(model string, names []string) bool {
+	if ollamaTagged(model) != MultilingualPhononTag {
+		return HasNamedVoices(names)
+	}
+	distinct := make(map[string]bool, len(names))
+	for _, name := range names {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name != "" && name != "default" {
+			distinct[name] = true
+		}
+	}
+	return len(distinct) >= phonon.MultilingualVoiceCount
+}
+
+func phononCatalogProblem(model string) string {
+	if ollamaTagged(model) == MultilingualPhononTag {
+		return fmt.Sprintf("fewer than %d named voices", phonon.MultilingualVoiceCount)
+	}
+	return "no named voices"
+}
+
+// externalPackError reports when a non-Ollama server cannot supply the requested pack.
+func (t OpenAISpeechTarget) externalPackError() error {
+	if !t.Native && !t.Ollama && t.Reachable && ollamaTagged(t.Model) == MultilingualPhononTag && !t.ModelListed {
+		return fmt.Errorf("%s does not advertise %s; install the full catalog with Ollama or managed native Phonon", t.Base, t.Model)
+	}
+	return nil
 }
 
 // HasNamedVoices rejects empty/default-only catalogs, including blank names.
@@ -213,6 +247,9 @@ func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStat
 	switch {
 	case t.Native:
 		row := AssetStatus{ID: OpenAISpeechModelAssetID, Name: t.Base, Provider: OpenAISpeechProviderName, Mode: t.NativeBackend, Kind: AssetKindTTS, Installed: t.ModelListed}
+		if t.Model == phonon.MultilingualModel {
+			row.License, row.Source = "CC BY-NC 4.0", "https://huggingface.co/"+t.Model
+		}
 		if t.Err != nil {
 			row.Detail = t.Err.Error()
 		} else {
@@ -227,6 +264,8 @@ func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStat
 		}
 		if ollamaTagged(t.Model) == ollamaTagged(DefaultOpenAISpeechModel) {
 			row.License, row.Source = "Apache-2.0", "https://ollama.com/library/phonon"
+		} else if ollamaTagged(t.Model) == MultilingualPhononTag {
+			row.License, row.Source = "CC BY-NC 4.0", "https://ollama.com/library/"+MultilingualPhononTag
 		}
 		switch {
 		case t.TooOld():
@@ -239,7 +278,7 @@ func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStat
 		case t.usesPhononCatalog() && t.VoicesErr != nil:
 			row.Installed = false
 			row.Detail = fmt.Sprintf("could not check Phonon's voices: %v; retry setup", t.VoicesErr)
-		case t.usesPhononCatalog() && !HasNamedVoices(t.Voices):
+		case t.usesPhononCatalog() && !PhononCatalogReady(t.Model, t.Voices):
 			row.Installed = false
 			row.Detail = "Phonon's named voices are not ready; " + PhononVoicesRemedy(t.Version)
 		}
@@ -257,6 +296,8 @@ func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStat
 		}
 		if !t.Reachable {
 			row.Detail = t.Problem()
+		} else if err := t.externalPackError(); err != nil {
+			row.Installed, row.Detail = false, err.Error()
 		}
 		rows = append(rows, row)
 	}

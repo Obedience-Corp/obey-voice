@@ -42,8 +42,9 @@ var namedVoiceFiles = []string{
 }
 
 type Options struct {
-	ModelsDir string
-	Backend   string
+	Multilingual bool
+	ModelsDir    string
+	Backend      string
 	// Binary is an optional externally supplied native server. Empty uses the
 	// pinned, managed build. It never changes the model or catalog pins.
 	Binary string
@@ -104,11 +105,11 @@ func Installed(o Options) bool {
 	if err != nil || info.IsDir() || info.Mode()&0111 == 0 {
 		return false
 	}
-	b, err := os.ReadFile(filepath.Join(o.installDir(), "ready.json"))
-	if err != nil || string(b) != readyRecord() {
+	b, err := os.ReadFile(o.readyFile())
+	if err != nil || string(b) != o.readyRecord() {
 		return false
 	}
-	snapshot := filepath.Join(o.cache(), "hub", "models--gradium--phonon-31m-en", "snapshots", ModelRevision)
+	snapshot := filepath.Join(o.cache(), "hub", "models--"+strings.ReplaceAll(o.ModelID(), "/", "--"), "snapshots", o.Revision())
 	for _, name := range []string{"config.json", "tokenizer.json", "model.safetensors", "default-voice.safetensors"} {
 		if st, err := os.Stat(filepath.Join(snapshot, name)); err != nil || st.Size() == 0 {
 			return false
@@ -116,7 +117,11 @@ func Installed(o Options) bool {
 	}
 	// Include catalog embeddings in readiness, not only descriptive metadata.
 	voices := filepath.Join(o.cache(), "hub", "models--gradium--phonon-voices", "snapshots", CatalogRevision)
-	for _, name := range append([]string{"voices.jsonl"}, namedVoiceFiles...) {
+	_, files, err := o.requiredVoices()
+	if err != nil {
+		return false
+	}
+	for _, name := range append([]string{"voices.jsonl"}, files...) {
 		if st, err := os.Stat(filepath.Join(voices, name)); err != nil || st.Size() == 0 {
 			return false
 		}
@@ -124,8 +129,8 @@ func Installed(o Options) bool {
 	return true
 }
 
-func readyRecord() string {
-	return SourceRevision + "\n" + ModelRevision + "\n" + CatalogRevision + "\n"
+func (o Options) readyRecord() string {
+	return SourceRevision + "\n" + o.Revision() + "\n" + CatalogRevision + "\n"
 }
 
 // Ensure compiles the pinned Rust server once and provisions its pinned model
@@ -161,10 +166,14 @@ func Ensure(ctx context.Context, o Options, progress func(string)) error {
 		return err
 	}
 	defer p.Close()
-	if err := p.checkVoices(ctx, namedVoices); err != nil {
+	voices, _, err := o.requiredVoices()
+	if err != nil {
 		return err
 	}
-	if err := atomicWrite(filepath.Join(o.installDir(), "ready.json"), strings.NewReader(readyRecord()), 0644); err != nil {
+	if err := p.checkVoices(ctx, voices); err != nil {
+		return err
+	}
+	if err := atomicWrite(o.readyFile(), strings.NewReader(o.readyRecord()), 0644); err != nil {
 		return err
 	}
 	if !Installed(o) {

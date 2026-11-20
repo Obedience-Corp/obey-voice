@@ -51,6 +51,7 @@ pub(super) fn speech_fields(provider: &str) -> &'static [&'static str] {
         "openai-speech" => &[
             "openai_speech_url",
             "openai_speech_model",
+            "openai_speech_multilingual",
             "openai_speech_voice",
             "openai_speech_api_key",
             "openai_speech_timeout",
@@ -102,6 +103,7 @@ mod tests {
     fn speech_setup_uses_provider_specific_keys() {
         let fields = speech_fields("openai-speech");
         assert!(fields.contains(&"openai_speech_voice"));
+        assert!(fields.contains(&"openai_speech_multilingual"));
         assert!(fields.contains(&"openai_speech_url"));
         assert!(!fields.contains(&"tts_voice"));
         assert!(speech_fields("unknown-provider").is_empty());

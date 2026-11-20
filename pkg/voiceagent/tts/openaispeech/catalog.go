@@ -58,14 +58,16 @@ func (p *Provider) catalogNames(ctx context.Context) (names []string, source, no
 	}
 	names, answered := p.ollamaVoices(ctx, root)
 	switch {
-	case len(names) > 0 && (!config.IsDefaultPhononModel(p.model) || config.HasNamedVoices(names)):
+	case config.IsOllamaPhononModel(p.model) && config.HasNamedVoices(names) && !config.PhononCatalogReady(p.model, names):
+		return names, CatalogOllama, "Incomplete multilingual voice catalog; " + config.PhononVoicesRemedy(version)
+	case len(names) > 0 && (!config.IsOllamaPhononModel(p.model) || config.HasNamedVoices(names)):
 		return names, CatalogOllama, ""
 	case !answered:
 		// A failed or timed-out /api/show says nothing about the release;
 		// blaming it would send a user on a current Ollama to upgrade.
 		return nil, CatalogConfigured, ""
 	}
-	if !config.IsDefaultPhononModel(p.model) {
+	if !config.IsOllamaPhononModel(p.model) {
 		return nil, CatalogConfigured, ""
 	}
 	return nil, CatalogConfigured, fmt.Sprintf(

@@ -82,6 +82,11 @@ func voiceKeys() []KeySpec {
 			Help: "Optional absolute path to a compatible ptts-openai-server. Empty builds the pinned native runtime during model setup.",
 		},
 		{
+			Key: "openai_speech_multilingual", Type: TypeBool, Default: false,
+			Group: GroupVoice, Title: "Full Phonon catalog (102 voices, noncommercial)",
+			Help: "Use the Phonon 40M multilingual model (CC BY-NC 4.0) on Ollama or managed native Phonon. Turning this off restores the configured speech model.",
+		},
+		{
 			Key: "openai_speech_model", Type: TypeString, Default: DefaultOpenAISpeechModel,
 			Group: GroupVoice, Title: "Speech API model",
 			Help: "The model id the speech API synthesizes with. phonon on Ollama; `ollama pull phonon` installs it.",

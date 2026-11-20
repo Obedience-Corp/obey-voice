@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +24,7 @@ type phononSetupTerminalState struct {
 	ready bool
 }
 type phononSetupTerminalHarness struct {
+	voice  string
 	model  settingsModel
 	states chan phononSetupTerminalState
 }
@@ -35,7 +37,7 @@ func (h *phononSetupTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := msg.(settingsVoicesMsg); ok {
 		// Select the named voice through normal key handling once setup has
 		// refreshed the real provider's catalog.
-		if i := voiceIndex(m.shownVoiceItems(), "Zoey"); i >= 0 && !m.speechSetup.running {
+		if i := voiceIndex(m.shownVoiceItems(), h.voice); i >= 0 && !m.speechSetup.running {
 			h.model.cursor = m.voiceLine(i)
 			h.states <- phononSetupTerminalState{view: m.View(), ready: true}
 		}
@@ -50,20 +52,39 @@ func (h *phononSetupTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // persistence. Only Ollama is replaced by an HTTP fixture; no speakers or
 // personal config are used.
 func TestPhononTerminalSelectionInstallsRefreshesAndPersists(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		t.Run(fmt.Sprintf("multilingual=%t", full), func(t *testing.T) { testPhononSelection(t, full) })
+	}
+}
+
+func testPhononSelection(t *testing.T, full bool) {
 	config.SetConfigDirForTest(t, t.TempDir())
+	model, chosen := "phonon", "Zoey"
+	voices := []string{"default", "Zoey", "Easton"}
+	if full {
+		model, chosen = config.MultilingualPhononTag, "Alba"
+		voices = []string{"default", chosen}
+		for i := 1; i < 102; i++ {
+			voices = append(voices, fmt.Sprintf("Voice %03d", i))
+		}
+	}
 	var pulls atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"version":"0.40.11"}`) })
-	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"models":[{"name":"phonon:latest"}]}`) })
-	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"data":[{"id":"phonon"}]}`) })
+	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintf(w, `{"models":[{"name":%q}]}`, model) })
+	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintf(w, `{"data":[{"id":%q}]}`, model) })
 	mux.HandleFunc("/api/show", func(w http.ResponseWriter, _ *http.Request) {
 		if pulls.Load() > 0 {
-			fmt.Fprint(w, `{"voices":["default","Zoey","Easton"]}`)
+			_ = json.NewEncoder(w).Encode(map[string]any{"voices": voices})
 		} else {
 			fmt.Fprint(w, `{}`)
 		}
 	})
-	mux.HandleFunc("/api/pull", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/pull", func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Model string }
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Model != model {
+			t.Errorf("pull model %q, expected %q (%v)", req.Model, model, err)
+		}
 		pulls.Add(1)
 		fmt.Fprintln(w, `{"status":"success"}`)
 	})
@@ -77,21 +98,29 @@ func TestPhononTerminalSelectionInstallsRefreshesAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{TTSProvider: "kokoro", OpenAISpeechURL: srv.URL + "/v1", ModelsDir: models}
+	if full {
+		if err := config.SetAndSave("tts_provider", config.OpenAISpeechProviderName); err != nil {
+			t.Fatal(err)
+		}
+		cfg.TTSProvider = config.OpenAISpeechProviderName
+	}
 	m := newSettings(cfg, nil)
 	m.section, m.width, m.height = sectionVoice, 120, 45
 	found := false
 	for i := range m.sectionLines() {
 		m.cursor = i
 		row, line, _ := m.focused()
-		if row.key == "tts_provider" && line.option >= 0 && strings.HasPrefix(row.options[line.option], "openai-speech") {
+		choosesPack := full && row.key == "openai_speech_multilingual"
+		choosesEngine := !full && row.key == "tts_provider" && line.option >= 0 && strings.HasPrefix(row.options[line.option], "openai-speech")
+		if choosesPack || choosesEngine {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatal("Phonon engine absent from picker")
+		t.Fatal("Phonon selection absent from settings")
 	}
-	h := &phononSetupTerminalHarness{model: m, states: make(chan phononSetupTerminalState, 8)}
+	h := &phononSetupTerminalHarness{voice: chosen, model: m, states: make(chan phononSetupTerminalState, 8)}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	p := tea.NewProgram(h, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithContext(ctx), tea.WithoutSignalHandler())
@@ -105,7 +134,7 @@ func TestPhononTerminalSelectionInstallsRefreshesAndPersists(t *testing.T) {
 			if !state.ready {
 				continue
 			}
-			if !strings.Contains(state.view, "Zoey") || !strings.Contains(state.view, "Install / refresh voices") {
+			if !strings.Contains(state.view, chosen) {
 				t.Fatalf("voices missing from terminal:\n%s", state.view)
 			}
 			goto ready
@@ -127,7 +156,7 @@ ready:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.TTSProvider != config.OpenAISpeechProviderName || loaded.OpenAISpeechVoice != "Zoey" {
+	if loaded.TTSProvider != config.OpenAISpeechProviderName || loaded.OpenAISpeechVoice != chosen || loaded.OpenAISpeechMultilingual != full {
 		t.Fatalf("persisted provider/voice = %s/%s", loaded.TTSProvider, loaded.OpenAISpeechVoice)
 	}
 }

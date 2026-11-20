@@ -106,7 +106,7 @@ func TestAudioValidation(t *testing.T) {
 func TestNativeCandidatePreservesStandardAndWorkers(t *testing.T) {
 	setConfigDir(t, t.TempDir())
 	base := &config.Config{BrainProvider: "ollama", OllamaModel: "global-chat", OllamaHost: "http://localhost:11434", STTProvider: "whisper",
-		TTSProvider: "qwen3-tts", TTSVoice: "af_bella", OpenAISpeechVoice: "old", OpenAISpeechModel: "phonon", OpenAISpeechRuntime: "native",
+		TTSProvider: "qwen3-tts", TTSVoice: "af_bella", OpenAISpeechVoice: "old", OpenAISpeechModel: "phonon", OpenAISpeechMultilingual: true, OpenAISpeechRuntime: "native",
 		OpenAISpeechAPIKey: "unrelated-key", TTSPlace: config.TTSPlaceLAN, TTSWorkerURL: "https://speech.example", TTSWorkerToken: "unrelated-token", TTSFallbackProvider: "kokoro",
 		STTCustomWords: []string{"example"}, VoiceWorkers: config.DefaultVoiceWorkers()}
 	// Exercise legacy inheritance separately from the tiered policy below.
@@ -131,7 +131,7 @@ func TestNativeCandidatePreservesStandardAndWorkers(t *testing.T) {
 	if worker.BrainProvider != "ollama" || worker.OllamaModel != "standard-chat" || worker.OllamaHost != base.OllamaHost {
 		t.Fatalf("worker inherited native routing: %s %s %s", worker.BrainProvider, worker.OllamaModel, worker.OllamaHost)
 	}
-	if candidate.TTSProvider != config.OpenAISpeechProviderName || candidate.OpenAISpeechRuntime != "external" || !candidate.OpenAISpeechExternal || candidate.OpenAISpeechURL != "https://native.example/proxy/v1" || candidate.OpenAISpeechModel != DefaultAudioModel || candidate.OpenAISpeechVoice != "" {
+	if candidate.TTSProvider != config.OpenAISpeechProviderName || candidate.OpenAISpeechRuntime != "external" || !candidate.OpenAISpeechExternal || candidate.OpenAISpeechURL != "https://native.example/proxy/v1" || config.OpenAISpeechModel(candidate) != DefaultAudioModel || candidate.OpenAISpeechVoice != "" {
 		t.Fatal("speech did not use native model/origin/default voice")
 	}
 	if candidate.OpenAISpeechAPIKey != "" || candidate.TTSWorkerURL != "" || candidate.TTSWorkerToken != "" || candidate.TTSPlace != config.TTSPlaceLocal || candidate.OpenAISpeechBackend != "" || candidate.TTSFallbackProvider != "disabled" {

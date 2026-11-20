@@ -97,6 +97,7 @@ impl VoiceApp {
         let f = &mut self.persona_form;
         let previous_voice = (f.tts.clone(), f.voice.clone(), f.tier.clone());
         let mut preview_clicked = false;
+        let mut load_voices = false;
         ui.label(RichText::new("Name").strong());
         ui.add(
             egui::TextEdit::singleline(&mut f.name)
@@ -124,6 +125,11 @@ impl VoiceApp {
                         .hint_text("Use engine default")
                         .desired_width(f32::INFINITY),
                 );
+                if f.tts == "openai-speech"
+                    || (f.tts.is_empty() && self.values["tts_provider"]["value"] == "openai-speech")
+                {
+                    load_voices = self.speech_catalog.picker(ui, &mut f.voice, !self.demo);
+                }
                 if f.tts.is_empty() || f.tts == "qwen3-tts" {
                     label(ui, "Qwen model tier");
                     super::combo(ui, "persona_tier", &mut f.tier, &["", "0.6b", "1.7b"]);
@@ -177,6 +183,9 @@ impl VoiceApp {
             "Custom folder"
         };
         let voice_changed = previous_voice != (f.tts.clone(), f.voice.clone(), f.tier.clone());
+        if load_voices {
+            self.load_speech_voices();
+        }
         if voice_changed {
             self.stop_persona_preview();
             self.persona_form.preview_notice.clear();

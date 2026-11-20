@@ -156,6 +156,7 @@ fn priority(key: &str) -> usize {
         | "tts_voice"
         | "qwen_tts_voice"
         | "audio8_voice"
+        | "openai_speech_multilingual"
         | "openai_speech_voice"
         | "output_device" => 1,
         "codex_reasoning_effort" | "qwen_tts_language" | "playback_volume" => 2,
