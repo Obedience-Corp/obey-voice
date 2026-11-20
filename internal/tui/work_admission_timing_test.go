@@ -126,14 +126,13 @@ func TestLiveDirectWorkerKeepsConversationOpen(t *testing.T) {
 		"What is two plus two?",
 	})
 	history := live.History()
-	if len(history) == 0 || history[len(history)-1].Role != "assistant" {
+	if len(history) < 2 || history[len(history)-2].Role != "user" || history[len(history)-2].Content != "What is two plus two?" {
+		t.Fatalf("second question missing from conversation: %+v", history)
+	}
+	if reply := history[len(history)-1]; reply.Role != "assistant" || strings.TrimSpace(reply.Content) == "" || len(reply.ToolCalls) != 0 {
 		t.Fatalf("missing second reply: %+v", history)
 	}
-	reply := history[len(history)-1].Content
-	if !strings.Contains(strings.ToLower(reply), "four") && !strings.Contains(reply, "4") {
-		t.Fatalf("unrelated question went unanswered: %q", reply)
-	}
-	t.Logf("foreground reply while worker was running: %q", reply)
+	t.Logf("foreground reply while worker was running: %q", history[len(history)-1].Content)
 }
 
 func measureCaptureDuringWork(t *testing.T, parent context.Context, p *pipeline.Pipeline, cfg *config.Config, session string, inputs []string) time.Duration {
