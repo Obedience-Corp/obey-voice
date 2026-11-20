@@ -105,7 +105,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		repetitionAllowed := false
 		directImage := o.directImageRequest(input, opts)
 		sess.imageDelivery = directImage != "" && requestsPictureDelivery(input)
-		var imageIssue error
+		var imageRepair string
 
 		rounds := newToolRounds(o.cfg, opts)
 		for i := 0; rounds.more(i); i++ {
@@ -133,8 +133,12 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// reply re-reads only this line.
 				appendToNewestUser(messages, "\n"+chatRouteAnswerInstruction)
 			}
-			if imageIssue != nil {
-				messages[0].Content += "\n\n" + o.imageRepairPrompt(input, directImage, imageIssue)
+			if imageRepair != "" {
+				if directImage != "" {
+					appendToNewestUser(messages, "\n\n"+imageRepair)
+				} else {
+					messages[0].Content += "\n\n" + imageRepair
+				}
 			}
 			if opts.Discussion != nil {
 				messages[0].Content += opts.Discussion.Prompt()
@@ -236,8 +240,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
 			// json_route decides on the reply's own messages without tools. A
 			// retry after a rejected decision is the existing recovery call.
-			jsonRouting := routing && opts.RouteJSON && imageIssue == nil && jsonRouteEligible(tools, messages)
-			checkImageResult := directImage != "" || routing || imageIssue != nil || (routedChat && imageResultNoun.MatchString(input))
+			jsonRouting := routing && opts.RouteJSON && imageRepair == "" && jsonRouteEligible(tools, messages)
+			checkImageResult := directImage != "" || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
 			var routeText []string
 			emitText := func(text string) error {
 				if checkImageResult || finalAnswer {
@@ -250,7 +254,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			promptEstimate := o.estimateTokens(skillCtx)
 			generatedBytes, lastBudget := 0, promptEstimate
 			chat := o.chat
-			if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && imageIssue == nil {
+			if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && imageRepair == "" {
 				chat = o.chatRouteRecovery
 			} else if jsonRouting {
 				chat = o.chatJSONRoute
@@ -413,8 +417,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					return
 				}
 				routeRetried = true
-				imageIssue = invalidImage
 				if invalidImage != nil {
+					imageRepair = o.imageRepairPrompt(ctx, directImage, invalidImage)
 					if routing {
 						skillCtx += "\n" + missingRouteInstruction
 					}

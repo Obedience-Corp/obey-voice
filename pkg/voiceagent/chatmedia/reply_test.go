@@ -68,3 +68,26 @@ func TestReplyImportBoundsAndProtectsExamples(t *testing.T) {
 		t.Fatal("cleanup activated fenced example")
 	}
 }
+
+func TestReplyCandidatesOnlyOffersDecodableWorkspaceFiles(t *testing.T) {
+	root := t.TempDir()
+	for name, data := range map[string][]byte{"cat.jpg": []byte("File not found"), "cat2.jpg": []byte("<html>Error</html>"), "photo.png": testmedia.PNG(), ".private.png": testmedia.PNG()} {
+		if err := os.WriteFile(filepath.Join(root, name), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	external := filepath.Join(t.TempDir(), "outside.png")
+	if err := os.WriteFile(external, testmedia.PNG(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, filepath.Join(root, "external.png")); err != nil {
+		t.Fatal(err)
+	}
+	store := Store{Dir: filepath.Join(t.TempDir(), "attachments")}
+	if files := store.ReplyCandidates(t.Context(), root); len(files) != 1 || files[0] != "photo.png" {
+		t.Fatalf("candidates = %q", files)
+	}
+	if _, err := os.Stat(store.Dir); !os.IsNotExist(err) {
+		t.Fatalf("discovery wrote to the store: %v", err)
+	}
+}

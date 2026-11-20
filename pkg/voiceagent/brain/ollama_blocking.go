@@ -87,7 +87,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	routedChat := false
 	directImage := o.directImageRequest(input, opts)
 	sess.imageDelivery = directImage != "" && requestsPictureDelivery(input)
-	var imageIssue error
+	var imageRepair string
 	routeRetried := false
 	continuations := 0
 	rounds := newToolRounds(o.cfg, opts)
@@ -108,8 +108,12 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			return "", err
 		}
 		messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil, opts)
-		if imageIssue != nil {
-			messages[0].Content += "\n\n" + o.imageRepairPrompt(input, directImage, imageIssue)
+		if imageRepair != "" {
+			if directImage != "" {
+				appendToNewestUser(messages, "\n\n"+imageRepair)
+			} else {
+				messages[0].Content += "\n\n" + imageRepair
+			}
 		}
 		if opts.Discussion != nil {
 			messages[0].Content += opts.Discussion.Prompt()
@@ -151,7 +155,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 
 		chat := o.chat
-		if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && imageIssue == nil {
+		if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && imageRepair == "" {
 			chat = o.chatRouteRecovery
 		}
 		requestCtx, cancelRequest := ctx, context.CancelFunc(func() {})
@@ -185,7 +189,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 		routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
 		missingRoute := routing && len(response.ToolCalls) == 0
-		checkImageResult := directImage != "" || routing || imageIssue != nil || (routedChat && imageResultNoun.MatchString(input))
+		checkImageResult := directImage != "" || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
 		var invalidImage error
 		if checkImageResult && len(response.ToolCalls) == 0 {
 			invalidImage = o.imageReplyError(speakable+tail, input, directImage)
@@ -198,8 +202,8 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				return "", fmt.Errorf("model did not select a route; no work was dispatched")
 			}
 			routeRetried = true
-			imageIssue = invalidImage
 			if invalidImage != nil {
+				imageRepair = o.imageRepairPrompt(ctx, directImage, invalidImage)
 				if routing {
 					skillCtx += "\n" + missingRouteInstruction
 				}

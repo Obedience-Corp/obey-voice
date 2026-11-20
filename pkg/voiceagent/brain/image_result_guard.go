@@ -1,6 +1,8 @@
 package brain
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -53,10 +55,10 @@ var errMissingImageReference = errors.New("the reply contained no standalone ima
 
 // Require a file for explicit delivery requests. Mentions such as "how do I
 // share a picture?" and "did you put an image in the chat?" remain discussion.
-const imageRequestStart = `(?i)(?:^|[.!?,]\s*)\s*(?:now )?(?:(?:can|could|would|will) you )?(?:please )?`
+const imageRequestStart = `(?i)(?:^|[.!?,]\s*)\s*(?:now )?(?:(?:can|could|would|will) you |i (?:really )?(?:need|want) you to )?(?:please )?`
 
 var requestPicture = regexp.MustCompile(imageRequestStart + `(?:show me|send me|attach|put|post|share) (?:an? |the |some |another )?(?:images?|photos?|pictures?|pngs?|jpe?gs?|gifs?)\b`)
-var requestPictureInChat = regexp.MustCompile(imageRequestStart + `(?:put|send|post|attach|share)\b[^.!?\n]{0,80}\b(?:in|to) (?:the|this) chat\b`)
+var requestPictureInChat = regexp.MustCompile(imageRequestStart + `(?:show me|put|send|post|attach|share)\b[^.!?\n]{0,80}\b(?:in|to) (?:the|this) chat\b`)
 var imageFollowup = regexp.MustCompile(`(?i)\b(?:it|them|one|those|that)\b`)
 
 // An immediate follow-up such as "find one online and put it in the chat"
@@ -68,16 +70,19 @@ func (o *OllamaBrain) directImageRequest(input string, opts StreamOptions) strin
 	if imageResultNoun.MatchString(input) {
 		return input
 	}
-	if !imageFollowup.MatchString(input) {
-		return ""
-	}
 	for i := len(o.canonical) - 2; i >= 0; i-- {
 		turn := o.canonical[i]
 		if turn.Role != "user" && turn.Role != "assistant" && turn.Role != "samantha" || len(turn.ToolCalls) != 0 {
 			continue
 		}
 		if imageResultNoun.MatchString(turn.Content) || len(turn.Attachments) != 0 {
-			return "image"
+			if imageFollowup.MatchString(input) {
+				return "image"
+			}
+			// The very next turn may be a complaint without an image noun
+			// or pronoun. Validate any file the agent volunteers, but let
+			// ordinary replies stand without requiring an attachment.
+			return input
 		}
 		if turn.Role == "user" {
 			break
@@ -107,11 +112,16 @@ func (o *OllamaBrain) imageReplyError(text, input, directRequest string) error {
 	return nil
 }
 
-func (o *OllamaBrain) imageRepairPrompt(input, directRequest string, issue error) string {
+func (o *OllamaBrain) imageRepairPrompt(ctx context.Context, directRequest string, issue error) string {
 	if directRequest == "" {
 		return systemPrompt(o.cfg, "image-result-repair", nil)
 	}
-	return systemPrompt(o.cfg, "worker-image-repair", map[string]string{
-		"brief": input, "work_dir": o.workDir, "import_error": fmt.Sprintf("%.512s", issue.Error()),
+	paths := []string{}
+	if NewBoundary(workerBoundary(o.cfg)).CheckPath(o.workDir, ".") == nil {
+		paths = append(paths, chatmedia.DefaultStore().ReplyCandidates(ctx, o.workDir)...)
+	}
+	candidates, _ := json.Marshal(paths)
+	return systemPrompt(o.cfg, "direct-image-repair", map[string]string{
+		"work_dir": o.workDir, "import_error": fmt.Sprintf("%.512s", issue.Error()), "candidates": string(candidates),
 	})
 }

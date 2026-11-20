@@ -318,3 +318,42 @@ func TestPictureDiscussionStaysInChat(t *testing.T) {
 		}
 	}
 }
+
+func TestDirectImageComplaintChecksVolunteeredPicture(t *testing.T) {
+	const complaint = "What the hell's going on with you? You're not doing anything."
+	const request = "Show me a picture in the chat."
+	const bad = "Alright, here you go.\n![cat photo](cat.jpg)"
+	for _, streaming := range []bool{true, false} {
+		o, requests := imageClaimBrain(t, []api.Message{{Role: "assistant", Content: bad}, {Role: "assistant", Content: "Here is the picture.\n![Picture](valid.png)"}})
+		root := t.TempDir()
+		o.workDir, o.cfg.WorkDir = root, root
+		for name, data := range map[string][]byte{"cat.jpg": []byte("Bad gateway"), "valid.png": testmedia.PNG()} {
+			if err := os.WriteFile(filepath.Join(root, name), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := o.ImportHistory([]Turn{{Role: "user", Content: request}}); err != nil {
+			t.Fatal(err)
+		}
+		opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect}
+		var reply string
+		var err error
+		if streaming {
+			stream, startErr := o.ThinkStream(t.Context(), complaint, opts)
+			if startErr != nil {
+				t.Fatal(startErr)
+			}
+			reply, _ = drainStream(t, stream)
+			err = (<-stream.Done).Err
+		} else {
+			reply, err = o.ThinkFull(t.Context(), complaint, opts)
+		}
+		if err != nil || !strings.Contains(reply, "valid.png") || strings.Contains(reply, "cat.jpg") || len(*requests) != 2 {
+			t.Fatalf("streaming=%t reply=%q requests=%d err=%v", streaming, reply, len(*requests), err)
+		}
+		messages := (*requests)[1].Messages
+		if msg := messages[len(messages)-1].Content; !strings.Contains(msg, "valid.png") || !strings.Contains(msg, "cat.jpg") {
+			t.Fatalf("missing repair feedback: %q", msg)
+		}
+	}
+}

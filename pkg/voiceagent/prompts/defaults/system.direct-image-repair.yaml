@@ -1,0 +1,17 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: direct-image-repair
+  kind: system
+  system_prompt: |-
+    The host could not attach the image in your last reply.
+    Error: {import_error}
+    Working directory: {work_dir}
+    Local filenames that the host successfully decoded (JSON): {candidates}
+    For a request to see any picture, choose one of these verified files and
+    put ![Picture](<filename>) on a separate line, replacing filename with
+    the actual name. For a specific subject, file or format, preserve that
+    requirement. If none of these files fits, use the available tools to
+    obtain it. Do not reuse a rejected file unless you have repaired it.
+metadata:
+  version: 1
+  description: Retry a direct speaking agent's failed image reply with verified local alternatives.

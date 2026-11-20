@@ -77,7 +77,10 @@ Speaking agents with direct Ollama tools can obtain and attach an image on the
 same turn. For explicit picture requests the host checks the reply before
 speech. If a file is missing, invalid, or over the animation limit, or the
 agent only returns prose, the agent gets one correction with the reason and
-can use its tools to produce a usable file. If that fails, the chat reports
+can use its tools to produce a usable file. For a direct reply, this correction
+names the rejected path and lists up to four decodable files in the top level
+of the work directory. The agent can choose one that fits the request or
+obtain a different image. If that fails, the chat reports
 the error. Once the model finishes, stopping voice playback preserves the
 picture in the conversation.
 
