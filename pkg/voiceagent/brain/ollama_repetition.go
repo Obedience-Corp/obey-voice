@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain/ollama"
 	"github.com/ollama/ollama/api"
 )
 
@@ -16,43 +17,6 @@ const repetitionRetryInstruction = "Your previous attempt repeated your earlier 
 // Only a whole, substantial previous answer is a candidate. Short agreements,
 // recurring names and shared opening phrases are ordinary conversation.
 const repetitionMinRunes = 200
-
-// replyPrefixGate holds only while the new response could be a replay. Once
-// it diverges, it streams unchanged. Matching is exact apart from whitespace;
-// this deliberately does not guess whether paraphrases or quotations are bad.
-type replyPrefixGate struct {
-	prior   string
-	pending strings.Builder
-	repeat  bool
-}
-
-func normalizeReplyPrefix(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-func (g *replyPrefixGate) feed(s string) string {
-	if g.prior == "" {
-		return s
-	}
-	g.pending.WriteString(s)
-	if g.repeat {
-		return ""
-	}
-	text := normalizeReplyPrefix(g.pending.String())
-	if strings.HasPrefix(text, g.prior) {
-		g.repeat = true
-		return ""
-	}
-	if strings.HasPrefix(g.prior, text) {
-		return ""
-	}
-	return g.release()
-}
-
-func (g *replyPrefixGate) release() string {
-	text := g.pending.String()
-	g.pending.Reset()
-	g.prior = ""
-	return text
-}
 
 // Native assistant roles already encode current-persona ownership. Shared
 // agents are projected with a different role and must never be candidates.
@@ -65,7 +29,7 @@ func (o *OllamaBrain) previousReplyForRepetition(opts StreamOptions) string {
 		if m.Role != "assistant" || len(m.ToolCalls) > 0 {
 			continue
 		}
-		text := normalizeReplyPrefix(m.Content)
+		text := ollama.NormalizeReplyPrefix(m.Content)
 		if strings.HasPrefix(text, "[incomplete response]") || utf8.RuneCountInString(text) < repetitionMinRunes {
 			return ""
 		}

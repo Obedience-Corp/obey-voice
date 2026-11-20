@@ -2,15 +2,14 @@ package brain
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain/ollama"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/ollama/ollama/api"
 )
 
@@ -90,10 +89,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		// Per-turn tool session: exposes skills through progressive disclosure.
 		sess := o.turnToolSession(opts)
 
-		// spoken is every delta already forwarded this turn. After a tool
-		// loop the model often restates that text; forwarding it again is
-		// how Veronica said the same sentence twice (2026-08-28).
-		var spoken strings.Builder
+		stream := ollama.Stream{
+			Speak: func(text string) error { return sendChunk(ctx, out, text) },
+			Think: func(text string) error { return sendChunk(ctx, thinking, text) },
+		}
 		hadThinking := false
 		hadTools := false
 		routedChat := false
@@ -194,76 +193,27 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 
-			// Accumulate the full response (text + tool calls).
-			var textBuf strings.Builder
-			var toolCalls []api.ToolCall
-			var prefillTokens, genTokens int
-			var doneReason string
-			responseComplete := false
-			strip := newLabelStripper(o.cfg.AgentName)
-			markers := new(historicalAssistantMarkerFilter)
-			var split textclean.ThinkFilter
-			var toolMarkup textclean.ToolMarkupFilter
-			gate := replyPrefixGate{}
-			if spoken.Len() == 0 && continuation == "" && !repetitionAllowed {
-				gate.prior = priorReply
-			}
-			var emitted strings.Builder
-			outputChecked := false
-			runaway := newRunawayTextGuard(latestMessage)
-			deliver := func(text string) error {
-				if opts.Discussion != nil {
-					if err := opts.Discussion.State.Context().Err(); err != nil {
-						return err
-					}
-				}
-				if text == "" {
-					return nil
-				}
-				if !outputChecked && opts.Discussion != nil && opts.Discussion.BeforeOutput != nil {
-					if err := opts.Discussion.BeforeOutput(ctx); err != nil {
-						return err
-					}
-					outputChecked = true
-				}
-				if err := sendChunk(ctx, out, text); err != nil {
-					return err
-				}
-				spoken.WriteString(text)
-				emitted.WriteString(text)
-				return nil
-			}
-			forward := func(text string) error {
-				text, err := runaway.feed(text)
-				if sendErr := deliver(text); sendErr != nil {
-					return sendErr
-				}
-				return err
-			}
-			// Until a live routing response finishes, its content might be
-			// untagged planning followed by a tool call. It cannot be taken
-			// back once spoken. The final tool-limit answer is also held until
-			// completion so a rejected or truncated recovery cannot reach speech.
-			// Post-chat answers to image requests also wait for claim validation.
-			// Ordinary chat and worker responses retain incremental streaming.
 			routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
 			// json_route decides on the reply's own messages without tools. A
 			// retry after a rejected decision is the existing recovery call.
 			jsonRouting := routing && opts.RouteJSON && imageRepair == "" && jsonRouteEligible(tools, messages)
 			checkImageResult := directImage != "" || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
-			var routeText []string
-			emitText := func(text string) error {
-				if checkImageResult || finalAnswer {
-					routeText = append(routeText, text)
-					return nil
-				}
-				return forward(gate.feed(text))
+			// Hold routing, image and final-answer text until the complete reply is validated.
+			prior := priorReply
+			if continuation != "" || repetitionAllowed {
+				prior = ""
 			}
-
-			promptEstimate := o.estimateTokens(skillCtx)
-			generatedBytes, lastBudget := 0, promptEstimate
+			output := stream.NewRound(ctx, ollama.RoundOptions{
+				Labels:        newLabelStripper(o.cfg.AgentName),
+				Markers:       new(historicalAssistantMarkerFilter),
+				Input:         latestMessage,
+				PreviousReply: prior,
+				Discussion:    opts.Discussion,
+				Hold:          checkImageResult || finalAnswer,
+			})
+			receive := output.Receiver(o.estimateTokens(skillCtx), responseLimit.observe, o.emitContinuityBudget)
 			chat := o.chat
-			if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && imageRepair == "" {
+			if routing && routeRetried && imageRepair == "" {
 				chat = o.chatRouteRecovery
 			} else if jsonRouting {
 				chat = o.chatJSONRoute
@@ -274,148 +224,21 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 			requestCtx = withModelRequestPurpose(requestCtx, roundPurpose(routing, continuation != ""))
 			roundStarted := time.Now()
-			err := chat(requestCtx, req, func(resp api.ChatResponse) error {
-				if resp.Done {
-					prefillTokens, genTokens = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
-					doneReason = resp.DoneReason
-				}
-				if err := responseLimit.observe(resp); err != nil {
-					return err
-				}
-				generatedBytes += len(resp.Message.Content) + len(resp.Message.Thinking)
-				estimate := promptEstimate + (generatedBytes+3)/4
-				// Bound telemetry volume while keeping long replies visibly live.
-				if estimate-lastBudget >= 64 {
-					o.emitContinuityBudget(estimate)
-					lastBudget = estimate
-				}
-				responseComplete = responseComplete || resp.Done
-				fieldThink := resp.Message.Thinking
-				if fieldThink != "" {
-					hadThinking = true
-					if err := sendChunk(ctx, thinking, fieldThink); err != nil {
-						return err
-					}
-				}
-				if resp.Message.Content != "" {
-					textBuf.WriteString(resp.Message.Content)
-					speakable, inner := split.FeedSplit(resp.Message.Content)
-					if inner != "" && fieldThink == "" {
-						hadThinking = true
-						if err := sendChunk(ctx, thinking, inner); err != nil {
-							return err
-						}
-					}
-					// emitText holds live routing content until its role is
-					// known; ordinary replies and worker preambles stream.
-					speakable = toolMarkup.Feed(speakable)
-					if err := toolMarkup.Err(); err != nil {
-						return err
-					}
-					emit := strip.Feed(markers.Feed(speakable))
-					if restatementSkip(spoken.String(), textBuf.String()) {
-						return nil
-					}
-					if emit != "" {
-						if err := emitText(emit); err != nil {
-							return err
-						}
-					}
-				}
-				if len(resp.Message.ToolCalls) > 0 {
-					toolCalls = append(toolCalls, resp.Message.ToolCalls...)
-				}
-				return nil
-			})
+			err := chat(requestCtx, req, receive)
 			cancelRequest()
-			var routeRejected error
-			if jsonRouting && errors.Is(err, errRouteRejected) {
-				routeRejected, err = err, nil
-			}
-			if err == nil && routing && !responseComplete {
-				err = fmt.Errorf("routing response ended before completion")
-			}
-			if jsonRouting && ctx.Err() == nil {
-				failure := routeRejected
-				if failure == nil {
-					failure = err
-				}
-				sess.reportRoute(toolCalls, failure, time.Since(roundStarted))
-			}
-			heldSpeak, heldThink := split.FlushSplit()
-			if heldThink != "" {
-				hadThinking = true
-				if sendErr := sendChunk(ctx, thinking, heldThink); sendErr != nil && err == nil {
-					err = sendErr
-				}
-			}
-			heldSpeak = toolMarkup.Feed(heldSpeak) + toolMarkup.Flush()
-			if toolErr := toolMarkup.Err(); toolErr != nil && err == nil {
-				err = toolErr
-			}
-			if heldSpeak != "" {
-				emit := strip.Feed(markers.Feed(heldSpeak))
-				if emit != "" && !restatementSkip(spoken.String(), textBuf.String()) {
-					if sendErr := emitText(emit); sendErr != nil && err == nil {
-						err = sendErr
-					}
-				}
-			}
-			if held := markers.Flush(); held != "" {
-				emit := strip.Feed(held)
-				if emit != "" && !restatementSkip(spoken.String(), textBuf.String()) {
-					if sendErr := emitText(emit); sendErr != nil && err == nil {
-						err = sendErr
-					}
-				}
-			}
-			// Anything the label check still holds is real reply text; release
-			// it whether the turn ends, errors, or loops into tools.
-			if held := strip.Flush(); held != "" && !restatementSkip(spoken.String(), textBuf.String()) {
-				if sendErr := emitText(held); sendErr != nil && err == nil {
-					err = sendErr
-				}
-			}
+			toolCalls := output.ToolCalls
+			err = sess.checkStreamRoute(ctx, routing, jsonRouting, output.Usage.Complete, toolCalls, roundStarted, err)
+			err = output.FlushFilters(err)
 			missingRoute := err == nil && routing && len(toolCalls) == 0
 			var invalidImage error
 			if checkImageResult && err == nil && len(toolCalls) == 0 {
-				invalidImage = o.imageReplyError(strings.Join(routeText, ""), input, directImage)
+				invalidImage = o.imageReplyError(output.HeldText(), input, directImage)
 			}
-			if checkImageResult || finalAnswer {
-				if len(toolCalls) > 0 {
-					// Tool preambles belong to the thinking surface,
-					// never the speech stream or canonical reply history.
-					textBuf.Reset()
-					if text := strings.Join(routeText, ""); text != "" {
-						hadThinking = true
-						if sendErr := sendChunk(ctx, thinking, text); sendErr != nil && err == nil {
-							err = sendErr
-						}
-					}
-				} else if err == nil && !missingRoute && invalidImage == nil && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
-					for _, text := range routeText {
-						if sendErr := forward(gate.feed(text)); sendErr != nil {
-							err = sendErr
-							break
-						}
-					}
-				}
-			}
-			if opts.OnUsage != nil {
-				opts.OnUsage(prefillTokens, genTokens)
-			}
-			if opts.OnWorkerUsage != nil {
-				u := WorkerUsage{}
-				if prefillTokens > 0 {
-					in := prefillTokens
-					u.InputTokens = &in
-				}
-				if genTokens > 0 {
-					out := genTokens
-					u.OutputTokens = &out
-				}
-				opts.OnWorkerUsage(u)
-			}
+
+			finalReady := !finalAnswer || (output.Usage.Complete && output.Usage.DoneReason != "length" && hasSpeakableContent(cleanForVoice(output.HeldText())))
+			err = output.ReleaseHeld(!missingRoute && invalidImage == nil && finalReady, err)
+			hadThinking = hadThinking || output.HadThinking
+			opts.reportStreamUsage(output.Usage.InputTokens, output.Usage.OutputTokens)
 			if missingRoute || invalidImage != nil {
 				if routeRetried || routedChat || finalAnswer {
 					err := fmt.Errorf("model did not select a route; no work was dispatched")
@@ -435,7 +258,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				continue
 			}
-			if err == nil && gate.repeat {
+			if err == nil && output.Repeated() {
 				if opts.Discussion != nil {
 					done <- StreamResult{Err: fmt.Errorf("group reply repeated a prior answer"), Recovered: true}
 					return
@@ -458,28 +281,21 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				repetitionAllowed = true
 			}
-			if err == nil {
-				err = forward(gate.release())
-			}
-			if tail := runaway.flush(); tail != "" {
-				if sendErr := deliver(tail); err == nil {
-					err = sendErr
-				}
-			}
+			err = output.FinishSpeech(err)
 			if err != nil {
 				if finalAnswer {
-					if cut := rounds.cutOff(ctx, requestCtx, strings.Join(routeText, "")); cut != nil {
+					if cut := rounds.cutOff(ctx, requestCtx, output.HeldText()); cut != nil {
 						err = cut
 					}
 				}
 				// Preserve only genuine text already sent to the user. Report
 				// failure separately, never as a synthetic assistant utterance.
-				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, emitted.String())); partial != "" {
+				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, output.EmittedText())); partial != "" {
 					o.appendMessage(api.Message{Role: "assistant", Content: partial}, opts.Identity, IncompleteDisposition(err))
-					o.stopped.reply, o.stopped.sent = true, emitted.String()
+					o.stopped.reply, o.stopped.sent = true, output.EmittedText()
 					o.trimHistory()
 				}
-				o.retainFailedInput(ctx, input, opts, baseSkillCtx, err, emitted.Len() > 0 || hadThinking || hadTools || len(toolCalls) > 0)
+				o.retainFailedInput(ctx, input, opts, baseSkillCtx, err, output.EmittedText() != "" || hadThinking || hadTools || len(toolCalls) > 0)
 				done <- StreamResult{Err: fmt.Errorf("ollama stream: %w", err), Recovered: ctx.Err() == nil}
 				return
 			}
@@ -492,7 +308,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// A tool-only response to an ordinary chat turn would otherwise
 				// end in silence. Give the model one final text-only round.
 				ordinary := !rounds.worker && !opts.Background && !opts.AgentContinuation && !opts.OmitTurnInstruction && !opts.TransientHistory
-				if ordinary && i == 0 && !hasSpeakableContent(emitted.String()) {
+				if ordinary && i == 0 && !hasSpeakableContent(output.EmittedText()) {
 					rounds.stop = "tools are disabled for this turn"
 					rounds.instruction = systemPrompt(o.cfg, "tools-disabled-answer", nil)
 					continue
@@ -513,36 +329,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					kind = "spawn"
 				}
 				if kind != "" {
-					tier, reason := routeMetadata(toolCalls)
-					if !jsonRouting && (sess.onStart != nil || sess.onEnd != nil) {
-						decision := sess.describe("route", kind, "")
-						begun := time.Now()
-						if sess.onStart != nil {
-							sess.onStart(decision)
-						}
-						if sess.onEnd != nil {
-							elapsed := time.Since(begun)
-							sess.onEnd(ToolResult{ToolCall: decision, Preview: kind, Elapsed: elapsed, Outcome: &events.ToolOutcome{
-								Status: events.ToolOutcomeSucceeded, InputSummary: kind, OutputPreview: kind, Elapsed: elapsed,
-							}})
-						}
-					}
-					// The routed history writer owns an untouched user line.
-					// After a local inspection, keep its user/tool exchange
-					// intact; the writer appends only the acknowledgment.
-					if n := len(o.history); n > 0 && !inspectedLocally {
-						if len(o.canonical) > 0 && len(o.working) > 0 {
-							o.stopped.routed = &ollamaRoutedLine{canonical: o.canonical[len(o.canonical)-1], working: o.working[len(o.working)-1], message: o.history[n-1]}
-						}
-						o.history = o.history[:n-1]
-						if len(o.canonical) > 0 {
-							o.canonical = o.canonical[:len(o.canonical)-1]
-						}
-						if len(o.working) > 0 {
-							o.working = o.working[:len(o.working)-1]
-						}
-					}
-					done <- StreamResult{Route: kind, RouteTier: tier, RouteReasonCode: reason}
+					done <- o.finishStreamRoute(sess, toolCalls, kind, jsonRouting, inspectedLocally)
 					return
 				}
 				if sess.routerPolicy == RouterToolsRouteOnly && hasRouteCall(toolCalls) {
@@ -565,7 +352,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// Add the assistant's tool-calling message to history.
 				o.appendMessage(api.Message{
 					Role:      "assistant",
-					Content:   stripReplyConventions(o.cfg.AgentName, textBuf.String()),
+					Content:   stripReplyConventions(o.cfg.AgentName, output.RawText()),
 					ToolCalls: toolCalls,
 				}, opts.Identity)
 
@@ -598,9 +385,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// tool-only or fully empty turns: thinking-only empty stays
 			// empty so the operator-facing thought is not replaced by a
 			// spoken recovery line.
-			raw := stripReplyConventions(o.cfg.AgentName, textBuf.String())
+			raw := stripReplyConventions(o.cfg.AgentName, output.RawText())
 			cleaned := cleanForVoice(stripHistoricalAssistantMarkers(raw))
-			if finalAnswer && (!responseComplete || doneReason == "length" || !hasSpeakableContent(cleaned)) {
+			if finalAnswer && (!output.Usage.Complete || output.Usage.DoneReason == "length" || !hasSpeakableContent(cleaned)) {
 				done <- StreamResult{Err: rounds.stopErr("model returned an empty or incomplete final answer"), Recovered: ctx.Err() == nil}
 				return
 			}
@@ -626,9 +413,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			var integrity IntegrityResult
 			if o.continuityIntegrityEnabled() {
 				integrity = evaluateStreamIntegrity(IntegrityInput{
-					DoneReason:   doneReason,
-					PromptTokens: prefillTokens,
-					GenTokens:    genTokens,
+					DoneReason:   output.Usage.DoneReason,
+					PromptTokens: output.Usage.InputTokens,
+					GenTokens:    output.Usage.OutputTokens,
 					NumCtx:       o.effectiveNumCtx(),
 					Speakable:    response,
 				})
@@ -636,7 +423,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					o.emitContinuityTruncated(integrity)
 				}
 			}
-			if opts.Discussion != nil && (doneReason == "length" || integrity.Truncated) {
+			if opts.Discussion != nil && (output.Usage.DoneReason == "length" || integrity.Truncated) {
 				o.appendMessage(api.Message{Role: "assistant", Content: "[incomplete response] " + recorded}, opts.Identity)
 				done <- StreamResult{Integrity: integrity, Err: fmt.Errorf("group reply exceeded output budget"), Recovered: true}
 				return
@@ -674,7 +461,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				continue
 			}
 			o.appendMessage(api.Message{Role: "assistant", Content: recorded}, opts.Identity)
-			o.stopped.reply, o.stopped.sent = true, emitted.String()
+			o.stopped.reply, o.stopped.sent = true, output.EmittedText()
 			if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
 				o.ackDelegationResults(req.Messages)
 			} else if opts.Background {
