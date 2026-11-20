@@ -36,7 +36,7 @@ func inspectReplyFile(path string) (Ref, error) {
 	if err != nil {
 		return Ref{}, err
 	}
-	ref, err := Inspect(filepath.Base(path), data)
+	ref, _, err := decodeImage(filepath.Base(path), data, true)
 	if err == nil && ref.Format == "gif" {
 		// Inspect checks the animation bounds and decodes the first frame.
 		// A later frame must also be decodable for the preview to succeed.

@@ -18,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
+const maxSide = 4096
 const MaxBytes = 8 << 20
 const MaxPixels = 16 << 20
 const MaxAttachments = 4
@@ -66,10 +67,13 @@ func readImageFile(path string) ([]byte, error) {
 	if !st.Mode().IsRegular() {
 		return nil, errors.New("attachment must be a regular file")
 	}
-	return io.ReadAll(io.LimitReader(f, MaxBytes+1))
+	if st.Size() > MaxSourceBytes {
+		return nil, fmt.Errorf("source image exceeds %d MiB", MaxSourceBytes>>20)
+	}
+	return io.ReadAll(io.LimitReader(f, MaxSourceBytes+1))
 }
 func (s Store) Import(name string, data []byte) (Ref, error) {
-	r, err := Inspect(name, data)
+	r, data, err := prepareAttachment(name, data)
 	if err != nil {
 		return Ref{}, err
 	}
@@ -99,35 +103,48 @@ func (s Store) Import(name string, data []byte) (Ref, error) {
 	return r, nil
 }
 func Inspect(name string, data []byte) (Ref, error) {
-	if len(data) == 0 || len(data) > MaxBytes {
-		return Ref{}, errors.New("image must be between 1 byte and 8 MiB")
+	ref, _, err := decodeImage(name, data, false)
+	return ref, err
+}
+
+func decodeImage(name string, data []byte, allowResize bool) (Ref, image.Image, error) {
+	if len(data) == 0 || len(data) > MaxSourceBytes {
+		return Ref{}, nil, errors.New("image must be between 1 byte and 32 MiB")
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return Ref{}, fmt.Errorf("decode image: %w", err)
+		return Ref{}, nil, fmt.Errorf("decode image: %w", err)
 	}
 	if format != "png" && format != "jpeg" && format != "gif" {
-		return Ref{}, errors.New("use a PNG, JPEG or GIF image")
+		return Ref{}, nil, errors.New("use a PNG, JPEG or GIF image")
 	}
-	if cfg.Width < 1 || cfg.Height < 1 || cfg.Width > 4096 || cfg.Height > 4096 || int64(cfg.Width)*int64(cfg.Height) > MaxPixels {
-		return Ref{}, errors.New("image exceeds 4096 pixels per side or 16 megapixels")
+	if !allowResize || format == "gif" {
+		if len(data) > MaxBytes {
+			return Ref{}, nil, errors.New("image exceeds 8 MiB")
+		}
+		if cfg.Width < 1 || cfg.Height < 1 || max(cfg.Width, cfg.Height) > maxSide {
+			return Ref{}, nil, errors.New("image exceeds 4096 pixels per side or 16 megapixels")
+		}
+	} else if cfg.Width < 1 || cfg.Height < 1 || max(cfg.Width, cfg.Height) > maxSourceSide || int64(cfg.Width)*int64(cfg.Height) > maxSourcePixels {
+		return Ref{}, nil, fmt.Errorf("source image is %dx%d and exceeds the import limit of %d pixels per side or %d megapixels", cfg.Width, cfg.Height, maxSourceSide, maxSourcePixels>>20)
 	}
 	frames := 1
 	if format == "gif" {
 		frames, err = checkGIF(data)
 		if err != nil {
-			return Ref{}, err
+			return Ref{}, nil, err
 		}
 	}
 	// Validate the complete image before accepting it into durable history.
-	if _, _, err = image.Decode(bytes.NewReader(data)); err != nil {
-		return Ref{}, fmt.Errorf("decode image: %w", err)
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return Ref{}, nil, fmt.Errorf("decode image: %w", err)
 	}
 	name = filepath.Base(name)
 	if name == "." || name == "" {
 		name = "clipboard." + format
 	}
-	return Ref{Name: name, Format: format, Width: cfg.Width, Height: cfg.Height, Frames: frames}, nil
+	return Ref{Name: name, Format: format, Width: cfg.Width, Height: cfg.Height, Frames: frames}, img, nil
 }
 func (s Store) Read(r Ref) ([]byte, error) {
 	path := s.Path(r)

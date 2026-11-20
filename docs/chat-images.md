@@ -116,7 +116,11 @@ so deleting the source screenshot does not remove it from a resumed conversation
 Missing or changed stored assets produce an explicit error. Attachment storage is local;
 sending a message supplies its images to the configured Ollama server, Codex or Claude provider.
 
-Limits: four images per message, 8 MiB per image, 4096 pixels per side, 16 megapixels.
+Each message can carry four images. Stored images fit within 8 MiB and 4096 pixels
+per side. When you drop a larger PNG or JPEG file, or an agent returns one, Obey
+Voice resizes a copy to fit. Smaller images keep their original bytes. The importer
+accepts source photos and screenshots up to 32 MiB, 32,768 pixels per side and
+64 megapixels. The source file on disk stays intact.
 The size limit applies to an image as it is sent, so a GIF is measured as the PNG of
 its first frame, which can be larger than the file. Claude takes at most 7.5 MiB per
 image (10 MiB once encoded for the API); a larger image is refused before the request.
