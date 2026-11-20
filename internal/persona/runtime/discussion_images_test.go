@@ -62,12 +62,29 @@ func (b *textOnlyGroupReply) ValidateAdmittedImages(context.Context, []chatmedia
 	return nil
 }
 
+// Like the Ollama provider, it reports the pictures it leaves out of a request.
+func (b *textOnlyGroupReply) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	var unseen []chatmedia.Ref
+	for _, turn := range b.History() {
+		if turn.Role == "user" {
+			unseen = append(unseen, turn.Attachments...)
+		}
+	}
+	if len(unseen) > 0 && opts.OnImagesWithheld != nil {
+		opts.OnImagesWithheld("fixture", unseen)
+	}
+	return b.groupReplyBrain.ThinkStream(ctx, input, opts)
+}
+
 func TestGroupAnswersAPictureWhenOnePersonaCannotViewIt(t *testing.T) {
 	for name, tc := range map[string]struct {
 		samantha func(*groupReplyBrain) brain.Provider
 		notice   string
 	}{
-		"text-only model": {samantha: func(b *groupReplyBrain) brain.Provider { return &textOnlyGroupReply{b} }},
+		"text-only model": {
+			samantha: func(b *groupReplyBrain) brain.Provider { return &textOnlyGroupReply{b} },
+			notice:   "Samantha was not shown input.png, because fixture cannot view images.",
+		},
 		"provider without image input": {
 			samantha: func(b *groupReplyBrain) brain.Provider { return b },
 			notice:   "Samantha was not shown input.png, because this provider cannot view images.",
@@ -120,7 +137,7 @@ func TestGroupAnswersAPictureWhenOnePersonaCannotViewIt(t *testing.T) {
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			if tc.notice == "" && len(notices) != 0 || tc.notice != "" && !slices.Equal(notices, []string{tc.notice}) {
+			if !slices.Equal(notices, []string{tc.notice}) {
 				t.Fatalf("notices = %q", notices)
 			}
 		})

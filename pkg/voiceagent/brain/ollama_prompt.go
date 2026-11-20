@@ -120,6 +120,9 @@ func (o *OllamaBrain) buildMessagesFrom(view turnView, skillCtx string, agentCon
 	}
 	if !agentContinuation && lastUser >= 0 {
 		_, input := decodeOllamaUser(history[lastUser].Content)
+		if lastUser < len(working) {
+			input = withoutImageNotes(input, working[lastUser].Attachments)
+		}
 		if app := ApplicationRequestContext(o.cfg, providerOllama, input); app != "" {
 			system += "\n\n" + app
 		}

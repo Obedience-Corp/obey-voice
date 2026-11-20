@@ -174,7 +174,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		return original, p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
 	}
 	text = admission.Request
-	if err := p.validateRetainedImages(ctx, metrics); err != nil {
+	if err := p.validateRetainedImages(ctx); err != nil {
 		turn.finish(TurnFailed)
 		return original, err
 	}
@@ -206,6 +206,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		turn.finish(TurnInterrupted)
 		return original, err
 	}
+	p.noteUnviewedImages(metrics)
 
 	// turnCtx scopes the whole turn so the playback watchdog can abort the brain
 	// stream too — not just the derived playback context. Brain work is further

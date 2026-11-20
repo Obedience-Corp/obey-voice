@@ -225,14 +225,22 @@ func (o *OllamaBrain) attachInputImages(refs []chatmedia.Ref, images []api.Image
 // working view and the attachment store keep every picture.
 func (o *OllamaBrain) withholdImages() {
 	o.imagesWithheld = true
-	for i, t := range o.working {
-		if i >= len(o.history) || t.Role != "user" || o.history[i].Role != "user" || len(t.Attachments) == 0 {
+	for i := range o.history {
+		m := &o.history[i]
+		if m.Role != "user" {
 			continue
 		}
-		m := &o.history[i]
-		// A recording rides in the same field as a picture.
-		if t.Utterance == nil {
+		var t Turn
+		if i < len(o.working) {
+			t = o.working[i]
+		}
+		// A recording rides in the same field as a picture. Past the working
+		// view only a native-audio model can hold one.
+		if t.Utterance == nil && (i < len(o.working) || o.audioResolver == nil) {
 			m.Images = nil
+		}
+		if t.Role != "user" || len(t.Attachments) == 0 {
+			continue
 		}
 		note := unseenImageNote(t.Attachments)
 		if !strings.HasSuffix(m.Content, note) && !strings.HasSuffix(m.Content, agedImageNote(t.Attachments)) {
@@ -249,6 +257,25 @@ func unseenImageNote(refs []chatmedia.Ref) string {
 		b.WriteString("\n" + attachedImageLabel(ref) + " not shown, because this model cannot view images.")
 	}
 	return b.String()
+}
+
+// withoutImageNotes is what the user said in a turn. A note about its pictures
+// carries a file name and is not theirs.
+func withoutImageNotes(content string, refs []chatmedia.Ref) string {
+	if len(refs) == 0 {
+		return content
+	}
+	content = strings.TrimSuffix(content, unseenImageNote(refs))
+	return strings.TrimSuffix(content, agedImageNote(refs))
+}
+
+// unviewedTurn is a turn as a provider with no image input receives it: its
+// text says the model was not shown the pictures the record names.
+func unviewedTurn(t Turn) Turn {
+	if t.Role == "user" && len(t.Attachments) > 0 {
+		t.Content += unseenImageNote(t.Attachments)
+	}
+	return t
 }
 
 // imageTurns is how many of the most recent user turns keep their images in

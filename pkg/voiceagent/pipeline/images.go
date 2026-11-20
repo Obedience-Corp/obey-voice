@@ -50,34 +50,53 @@ func (p *Pipeline) validateAdmittedImages(ctx context.Context, refs []chatmedia.
 	return p.ValidateImages(ctx, refs)
 }
 
-// Validate retained user media after persona admission, on the serialized turn
-// goroutine. This also protects continuations and resumed group discussions.
-// A persona that cannot view a picture someone else was shown still answers.
-func (p *Pipeline) validateRetainedImages(ctx context.Context, metrics *turnMetrics) error {
-	if brain.ReplaysImagesBestEffort(p.Brain) {
-		return nil
-	}
-	turns := p.Brain.History()
+// retainedTurns is the history the live provider builds its next request from.
+func (p *Pipeline) retainedTurns() []brain.Turn {
 	if working, ok := p.Brain.(brain.ContextHistoryProvider); ok {
-		turns = working.ContextHistory()
+		return working.ContextHistory()
 	}
-	_, views := p.Brain.(interface {
+	return p.Brain.History()
+}
+
+// viewsImages reports whether the live provider takes image input at all.
+func (p *Pipeline) viewsImages() bool {
+	_, ok := p.Brain.(interface {
 		ValidateImages(context.Context, []chatmedia.Ref) error
 	})
-	var unseen []chatmedia.Ref
-	for _, turn := range turns {
-		if turn.Role != "user" || len(turn.Attachments) == 0 {
-			continue
-		}
-		if views {
+	return ok
+}
+
+// Validate retained user media after persona admission, on the serialized turn
+// goroutine. This also protects continuations and resumed group discussions.
+// A provider with no image input is sent no picture, so it has none to check.
+func (p *Pipeline) validateRetainedImages(ctx context.Context) error {
+	if brain.ReplaysImagesBestEffort(p.Brain) || !p.viewsImages() {
+		return nil
+	}
+	for _, turn := range p.retainedTurns() {
+		if turn.Role == "user" && len(turn.Attachments) > 0 {
 			return p.validateAdmittedImages(ctx, turn.Attachments)
 		}
-		unseen = append(unseen, turn.Attachments...)
+	}
+	return nil
+}
+
+// noteUnviewedImages tells the user which pictures of the conversation a
+// provider with no image input answers without. It runs just before the
+// request, after every exit that sends the provider nothing.
+func (p *Pipeline) noteUnviewedImages(metrics *turnMetrics) {
+	if p.viewsImages() {
+		return
+	}
+	var unseen []chatmedia.Ref
+	for _, turn := range p.retainedTurns() {
+		if turn.Role == "user" {
+			unseen = append(unseen, turn.Attachments...)
+		}
 	}
 	if len(unseen) > 0 {
 		p.imagesWithheldHook(metrics)("", unseen)
 	}
-	return nil
 }
 
 // imagesWithheldHook tells the user, once for each picture and persona, that

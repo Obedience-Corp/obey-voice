@@ -7,6 +7,8 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
+	"github.com/ollama/ollama/api"
 )
 
 const cannotViewNote = "(desk.png): not shown, because this model cannot view images."
@@ -138,6 +140,77 @@ func TestTextOnlyModelKeepsANewPictureOnTheRecord(t *testing.T) {
 			assertWorkingAligned(t, o)
 			if first := o.History()[0]; first.Content != "Venessa, what is on my screen?" || len(first.Attachments) != 1 || first.Attachments[0] != refs[0] {
 				t.Fatalf("the conversation record lost the picture: %+v", first)
+			}
+		})
+	}
+}
+
+// The note is for the model. What the user said stays the text that the
+// archive keeps and that an archive lookup reads.
+func TestPictureNoteIsNotReadAsTheUsersWords(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	refs := photos(t, 1, 32, 32)
+	refs[0].Name = "earlier-draft.png"
+	fake := &visionFake{textOnly: true}
+	o := fake.brain(t, budgetConfig(), "You are Venessa.")
+	o.archive.Add(continuity.Entry{Kind: "tool", Summary: "an unrelated archived note"})
+	if _, err := o.ThinkFull(t.Context(), "Venessa, what is this?", StreamOptions{Attachments: refs}); err != nil {
+		t.Fatal(err)
+	}
+	last := lastUserIndex(o.history)
+	if !strings.Contains(o.history[last].Content, "(earlier-draft.png): not shown") {
+		t.Fatalf("the picture turn reads %q", o.history[last].Content)
+	}
+	o.history, o.working = o.history[:last+1], o.working[:last+1]
+	if notes := o.recallNotes(); notes != "" {
+		t.Fatalf("a file name recalled archived notes: %q", notes)
+	}
+	o.archiveTurns(o.history, o.working)
+	entries := o.ContinuityArchive()
+	if note := entries[len(entries)-1].Summary; note != "user: Venessa, what is this?\n" {
+		t.Fatalf("archive note = %q", note)
+	}
+}
+
+// No user message keeps picture bytes, even one the working view has lost.
+func TestTextOnlyModelIsSentNoPictureWhenTheViewsDisagree(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	refs := photos(t, 1, 32, 32)
+	fake := &visionFake{textOnly: true}
+	o := fake.brain(t, budgetConfig(), "You are Venessa.")
+	o.history = []api.Message{
+		{Role: "user", Content: "Look.", Images: []api.ImageData{{1}}},
+		{Role: "assistant", Content: "Seen."},
+		{Role: "user", Content: "And this.", Images: []api.ImageData{{2}}},
+	}
+	o.working = []Turn{{Role: "user", Content: "Look.", Attachments: refs}}
+	if err := o.prepareImageHistory(t.Context(), StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := imageTurnsIn(o.history); len(got) != 0 {
+		t.Fatalf("user messages %v still carry picture bytes", got)
+	}
+}
+
+// Muse Spark and Obey take no image input. Their record of a picture turn
+// names the file and says the model was not shown it.
+func TestProvidersWithoutImageInputAreToldAPictureWasNotShown(t *testing.T) {
+	turns := []Turn{
+		{Role: "user", Content: "What is on my screen?", Attachments: []chatmedia.Ref{{ID: "abc", Name: "desk.png", Format: "png"}}},
+		{Role: "assistant", Content: "A terminal.", PersonaID: "obey", PersonaDisplayName: "Obey"},
+	}
+	for name, b := range map[string]interface {
+		Provider
+		buildPrompt(string, StreamOptions) string
+	}{"muse-spark": testMuse(&fakeMuse{}), "obey": obeyTestBrain(nil)} {
+		t.Run(name, func(t *testing.T) {
+			b.LoadHistory(turns)
+			prompt := b.buildPrompt("What do you think?", StreamOptions{})
+			if got := strings.Count(prompt, "Attached image abc (desk.png): not shown, because this model cannot view images."); got != 1 {
+				t.Fatalf("the prompt says the picture was not shown %d times:\n%s", got, prompt)
+			}
+			if history := b.History(); history[0].Content != "What is on my screen?" || len(history[0].Attachments) != 1 {
+				t.Fatalf("the record changed: %+v", history[0])
 			}
 		})
 	}

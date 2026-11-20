@@ -324,7 +324,7 @@ func (b *ObeyBrain) buildPrompt(input string, opts StreamOptions) string {
 	if len(b.working) > 0 {
 		parts = append(parts, systemPrompt(b.cfg, "daemon-history", nil))
 		for _, t := range b.working {
-			parts = append(parts, cliHistoryRecord(t, b.speakerNames))
+			parts = append(parts, cliHistoryRecord(unviewedTurn(t), b.speakerNames))
 		}
 	}
 	parts = append(parts, WorkResultsPrompt(opts.WorkResults))

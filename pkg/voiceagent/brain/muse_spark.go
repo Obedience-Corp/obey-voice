@@ -111,7 +111,7 @@ func museRunOptions(cfg *config.Config, tools bool) *muse.RunOptions {
 func (b *MuseSparkBrain) buildPrompt(input string, o StreamOptions) string {
 	parts := []string{b.systemPrompt}
 	for _, t := range b.working {
-		parts = append(parts, cliHistoryRecord(t, b.speakerNames))
+		parts = append(parts, cliHistoryRecord(unviewedTurn(t), b.speakerNames))
 	}
 	if group := b.groupContext.promptWith(b.cfg, b.agentName(), b.snapshot.Speakers, b.working); group != "" {
 		parts = append(parts, group)
