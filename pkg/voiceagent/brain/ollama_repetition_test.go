@@ -205,21 +205,6 @@ func TestFreshReplyStreamsBeforeProviderCompletion(t *testing.T) {
 	}
 }
 
-func TestReplyPrefixGateWhitespaceAndChunks(t *testing.T) {
-	for _, size := range []int{1, 7, 1024} {
-		g := replyPrefixGate{prior: normalizeReplyPrefix(gardenReply)}
-		reply := strings.ReplaceAll(gardenReply, " ", "\n  ") + " New details."
-		for offset := 0; offset < len(reply); offset += size {
-			if text := g.feed(reply[offset:min(offset+size, len(reply))]); text != "" {
-				t.Fatalf("size=%d leaked %q", size, text)
-			}
-		}
-		if !g.repeat || g.release() != reply {
-			t.Fatalf("size=%d failed to preserve whole reply", size)
-		}
-	}
-}
-
 func TestRepetitionCandidateUsesOnlyCurrentPersonaCompletedAnswer(t *testing.T) {
 	o := &OllamaBrain{cfg: &config.Config{ActivePersona: "veronica", MaxHistory: 20}}
 	turns := []Turn{{Role: "assistant", Content: gardenReply, PersonaID: "jarvis"}}

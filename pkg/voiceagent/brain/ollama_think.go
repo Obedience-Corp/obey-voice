@@ -11,21 +11,6 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-// restatementSkip reports whether soFar is still a restatement of already —
-// text this turn already streamed, usually before a tool call. Local models
-// often emit the spoken line, fire a phantom tool, then emit the same line
-// again. Forwarding the second copy is how Veronica said one sentence twice.
-// soFar is compared as speakable text: think tags in a restated Content
-// must not hide that it is the same reply.
-func restatementSkip(already, soFar string) bool {
-	already = strings.TrimSpace(already)
-	soFar = strings.TrimSpace(textclean.StripThinkBlocks(soFar))
-	if already == "" || soFar == "" {
-		return false
-	}
-	return soFar == already || strings.HasPrefix(already, soFar)
-}
-
 // fallbackEmptyContent is the empty-Content table: recover when there is
 // nothing speakable and the turn either used tools or never thought.
 func fallbackEmptyContent(cleaned string, hadTools, hadThinking bool) bool {

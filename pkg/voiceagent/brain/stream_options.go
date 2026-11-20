@@ -14,3 +14,19 @@ func liveCLITools(opts StreamOptions) bool {
 	}
 	return opts.effectiveRouterPolicy() != RouterToolsRouteOnly
 }
+
+func (opts StreamOptions) reportStreamUsage(input, output int) {
+	if opts.OnUsage != nil {
+		opts.OnUsage(input, output)
+	}
+	if opts.OnWorkerUsage != nil {
+		worker := WorkerUsage{}
+		if input > 0 {
+			worker.InputTokens = &input
+		}
+		if output > 0 {
+			worker.OutputTokens = &output
+		}
+		opts.OnWorkerUsage(worker)
+	}
+}

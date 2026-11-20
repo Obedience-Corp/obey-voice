@@ -596,31 +596,6 @@ func TestThinkStreamDoesNotRestateTaggedContentAfterTools(t *testing.T) {
 	}
 }
 
-func TestRestatementSkip(t *testing.T) {
-	const already = "The test run finished."
-	tests := []struct {
-		soFar string
-		skip  bool
-	}{
-		{"", false},
-		{"The test", true},
-		{"The test run finished.", true},
-		{"The test run finished. And then this.", false},
-		{"Something else entirely.", false},
-	}
-	for _, tt := range tests {
-		if got := restatementSkip(already, tt.soFar); got != tt.skip {
-			t.Errorf("restatementSkip(%q, %q) = %v, want %v", already, tt.soFar, got, tt.skip)
-		}
-	}
-	if restatementSkip("", "hello") {
-		t.Error("empty already must not skip; that is the first iteration")
-	}
-	if !restatementSkip(already, "<think>plan a greeting</think>"+already) {
-		t.Error("tagged restatement of the same reply must skip")
-	}
-}
-
 // Tool-only turns used to close the stream with zero chunks, so the TUI showed
 // tool activity and then nothing — "looking into it" with no reply.
 func TestThinkStreamFallbackAfterToolOnlyTurn(t *testing.T) {
