@@ -696,6 +696,18 @@ Other brains decide the same question with a private classifier; for them
 | `json_route` (experimental) | Asks for the same route as a JSON object, with no tools, on the reply's own messages. |
 
 Existing configurations that select `legacy` use the same direct tool execution path.
+The CLI rejects unknown mode names on write. An unrecognized value loaded from
+a file or environment variable (for example, `route-only`) logs a warning once
+and uses `route_only`.
+
+With direct tools, accepted microphone transcripts have the same tool access as
+typed requests. A transcription mistake or another voice within microphone range
+can trigger a command. Direct calls run with the speaking provider’s permissions
+and outside worker admission, budgets and spending records. Tool replies share
+the conversation context and consume its token budget. Remote serve sessions
+use `remote_tools_enabled` for direct tool access. With that setting off,
+tool-capable tiered jobs are also unavailable in the remote session. Use `route_only` to keep
+tool output in a separate worker context, especially with small context windows.
 
 `json_route` is about prompt-cache reuse. Under `route_only` the route request
 carries the route tool schema and the reply does not. Ollama renders tool schemas

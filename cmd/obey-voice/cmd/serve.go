@@ -273,13 +273,8 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 	// the middle of the caller's JSON stream on stdout.
 	display := ui.NewWithOutput(bus, cfg.AgentName, serveHumanOut)
 
-	// Remote turns are gated by remote_tools_enabled only. The pipeline is
-	// the sole runtime tools gate (ThinkStream and ThinkFull both take
-	// StreamOptions.ToolsEnabled from p.VoiceToolsEnabled), so clone config
-	// and set the flag before building brains. Local voice_tools_enabled
-	// must not leak tool power to the network.
 	serveCfg := *cfg
-	serveCfg.VoiceToolsEnabled = cfg.RemoteToolsEnabled
+	applyServeToolPolicy(&serveCfg, cfg.RemoteToolsEnabled)
 
 	p, fanout, ingress, liveTTS, cleanup, err := buildServePipeline(ctx, &serveCfg, bus, serveNoVoice, serveRemoteMic)
 	if err != nil {
@@ -287,9 +282,6 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 	}
 	defer cleanup()
 	display.SetWorkSnapshot(p.WorkSnapshot)
-
-	// Keep pipeline streaming options in lockstep with the serve policy.
-	p.VoiceToolsEnabled = cfg.RemoteToolsEnabled
 
 	ref := &sessionRef{sess: session.New(cfg.BrainProvider, serveModelName(cfg))}
 	defer func() { state.sessionID = ref.id() }()
@@ -320,7 +312,7 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 	}
 	base.WorkDir = serveCfg.WorkDir
 	base.WorkDirSource = serveCfg.WorkDirSource
-	base.VoiceToolsEnabled = serveCfg.VoiceToolsEnabled
+	applyServeToolPolicy(base, cfg.RemoteToolsEnabled)
 	switcher := &servePersonaSwitcher{base: base, cfg: &serveCfg, pipeline: p, tts: liveTTS, sessions: ref}
 	if err := switcher.initialize(); err != nil {
 		return err
@@ -554,6 +546,17 @@ func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error
 			return out, warnings
 		}
 		return out, nil
+	}
+}
+
+// applyServeToolPolicy binds both the startup config and the persona-switch
+// base to the host's remote permission. A tiered job always runs with tools,
+// so it cannot be admitted to a tools-disabled remote conversation.
+func applyServeToolPolicy(cfg *config.Config, enabled bool) {
+	cfg.VoiceToolsEnabled = enabled
+	if !enabled && cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
+		cfg.VoiceWorkers = nil
+		cfg.VoiceWorkersDisabled = true
 	}
 }
 

@@ -468,6 +468,18 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				done <- StreamResult{Err: fmt.Errorf("tools are disabled for group discussion"), Recovered: true}
 				return
 			}
+			if !opts.ToolsEnabled && len(toolCalls) > 0 {
+				// A tool-only response to an ordinary chat turn would otherwise
+				// end in silence. Give the model one final text-only round.
+				ordinary := !rounds.worker && !opts.Background && !opts.AgentContinuation && !opts.OmitTurnInstruction && !opts.TransientHistory
+				if ordinary && i == 0 && !hasSpeakableContent(emitted.String()) {
+					rounds.stop = "tools are disabled for this turn"
+					rounds.instruction = systemPrompt(o.cfg, "tools-disabled-answer", nil)
+					continue
+				}
+				done <- StreamResult{Err: fmt.Errorf("tools are disabled for this turn"), Recovered: true}
+				return
+			}
 			if (continuation != "" || repetitionRetry || routedChat || finalAnswer) && len(toolCalls) > 0 {
 				done <- StreamResult{Err: fmt.Errorf("response recovery returned tool calls"), Recovered: true}
 				return
@@ -475,10 +487,6 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 			// If model made tool calls, execute them and loop.
 			if len(toolCalls) > 0 {
-				if !opts.ToolsEnabled {
-					done <- StreamResult{Err: fmt.Errorf("tools are disabled for this turn"), Recovered: true}
-					return
-				}
 				hadTools = true
 				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
 					tier, reason := routeMetadata(toolCalls)

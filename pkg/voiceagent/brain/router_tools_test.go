@@ -278,7 +278,8 @@ func TestDirectTurnRejectsToolCallsWhenToolsAreDisabled(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		t.Run(map[bool]string{false: "blocking", true: "streaming"}[streaming], func(t *testing.T) {
 			call := api.ToolCall{Function: api.ToolCallFunction{Name: "list_files", Arguments: mustArgs(map[string]any{"path": "."})}}
-			o, requests := imageClaimBrain(t, []api.Message{{Role: "assistant", ToolCalls: []api.ToolCall{call}}})
+			reply := api.Message{Role: "assistant", ToolCalls: []api.ToolCall{call}}
+			o, requests := imageClaimBrain(t, []api.Message{reply, reply})
 			opts := StreamOptions{RouterToolsPolicy: RouterToolsDirect, OnToolStart: func(c ToolCall) {
 				t.Errorf("unexpected tool execution: %s", c.Name)
 			}}
@@ -293,7 +294,16 @@ func TestDirectTurnRejectsToolCallsWhenToolsAreDisabled(t *testing.T) {
 			} else {
 				_, err = o.ThinkFull(t.Context(), "What is here?", opts)
 			}
-			if err == nil || !strings.Contains(err.Error(), "tools are disabled") || len(*requests) != 1 || len((*requests)[0].Tools) != 0 {
+			wantRequests := 1
+			if streaming {
+				wantRequests++
+			}
+			for _, req := range *requests {
+				if len(req.Tools) != 0 {
+					t.Fatal("a disabled tool was offered")
+				}
+			}
+			if err == nil || !strings.Contains(err.Error(), "tools are disabled") || len(*requests) != wantRequests {
 				t.Fatalf("error=%v requests=%d", err, len(*requests))
 			}
 		})

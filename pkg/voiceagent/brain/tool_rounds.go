@@ -91,15 +91,16 @@ func (r *toolRounds) more(i int) bool {
 // final reports whether round i is the tools-free answer round, and the
 // instruction to append to it. Once a round is final, later rounds stay final.
 func (r *toolRounds) final(ctx context.Context, i int) (bool, string) {
+	if r.instruction != "" {
+		return true, r.instruction
+	}
 	if !r.worker {
 		if i >= maxToolIterations {
 			return true, toolLimitAnswerInstruction
 		}
 		return false, ""
 	}
-	if r.instruction == "" {
-		r.instruction = r.limitInstruction(ctx, i)
-	}
+	r.instruction = r.limitInstruction(ctx, i)
 	return r.instruction != "", r.instruction
 }
 
