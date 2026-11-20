@@ -102,8 +102,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		var continuation string
 		repetitionRetry := false
 		repetitionAllowed := false
-		directImage := o.directImageRequest(input, opts)
-		sess.imageDelivery = directImage != "" && requestsPictureDelivery(input)
+		directImage, owedImage := o.directImageRequest(input, opts)
+		sess.imageDelivery = directImage.requiresFile(input)
 		var imageRepair string
 
 		rounds := newToolRounds(o.cfg, opts)
@@ -142,7 +142,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				appendToNewestUser(messages, "\n"+chatRouteAnswerInstruction)
 			}
 			if imageRepair != "" {
-				if directImage != "" {
+				if directImage != noImageContext {
 					appendToNewestUser(messages, "\n\n"+imageRepair)
 				} else {
 					messages[0].Content += "\n\n" + imageRepair
@@ -197,7 +197,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// json_route decides on the reply's own messages without tools. A
 			// retry after a rejected decision is the existing recovery call.
 			jsonRouting := routing && opts.RouteJSON && imageRepair == "" && jsonRouteEligible(tools, messages)
-			checkImageResult := directImage != "" || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
+			checkImageResult := directImage != noImageContext || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
 			// Hold routing, image and final-answer text until the complete reply is validated.
 			prior := priorReply
 			if continuation != "" || repetitionAllowed {
@@ -232,7 +232,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			missingRoute := err == nil && routing && len(toolCalls) == 0
 			var invalidImage error
 			if checkImageResult && err == nil && len(toolCalls) == 0 {
-				invalidImage = o.imageReplyError(output.HeldText(), input, directImage)
+				invalidImage = o.imageReplyError(output.HeldText(), input, directImage, imageRepair != "")
 			}
 
 			finalReady := !finalAnswer || (output.Usage.Complete && output.Usage.DoneReason != "length" && hasSpeakableContent(cleanForVoice(output.HeldText())))
@@ -250,7 +250,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				routeRetried = true
 				if invalidImage != nil {
-					imageRepair = o.imageRepairPrompt(ctx, directImage, invalidImage)
+					imageRepair = o.imageRepairPrompt(ctx, directImage, owedImage, invalidImage)
 					if routing {
 						skillCtx += "\n" + missingRouteInstruction
 					}

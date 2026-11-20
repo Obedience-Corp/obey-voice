@@ -1,9 +1,11 @@
 package pipeline
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 )
 
 func TestClassifySpawnIntent(t *testing.T) {
@@ -216,6 +218,75 @@ func TestDirectWorkIntentUsesAnAvailableBackgroundWorkerForLongTasks(t *testing.
 		kind, _, _ := classifyTurn(tc.input, RouteContext{DirectTools: true, LegacyImageWorker: tc.worker})
 		if (kind == RouteSpawn) != tc.spawn {
 			t.Errorf("%q worker=%v: route=%v, want spawn=%v", tc.input, tc.worker, kind, tc.spawn)
+		}
+	}
+}
+
+func TestCompoundTaskIsAnImageOnlyWhileAPictureIsOwed(t *testing.T) {
+	// The turn order and wording follow a recorded conversation. Only the
+	// subject is changed.
+	asked := []brain.Turn{
+		{Role: "user", Content: "No, I mean like show me a picture of some dogs from the internet."},
+		{Role: "assistant", Content: "Alright, let me find something nice for you."},
+		{Role: "user", Content: "I'll do it."},
+		{Role: "assistant", Content: "Just wait."},
+	}
+	delivered := []brain.Turn{
+		{Role: "user", Content: "Show me a picture of a dog."},
+		{Role: "assistant", Content: "Here it is.", Attachments: []chatmedia.Ref{{ID: "delivered"}}},
+	}
+	mentioned := []brain.Turn{
+		{Role: "user", Content: "What's a good caption for my vacation photo?"},
+		{Role: "assistant", Content: "Try: sunset over the bay."},
+	}
+	then := func(history []brain.Turn, lines ...string) []brain.Turn {
+		history = slices.Clone(history)
+		for _, line := range lines {
+			history = append(history, brain.Turn{Role: "user", Content: line})
+		}
+		return history
+	}
+	refused := []brain.Turn{
+		{Role: "user", Content: "Show me a picture of the Eiffel Tower."},
+		{Role: "assistant", Content: "I can't browse for images right now."},
+	}
+	described := []brain.Turn{
+		{Role: "user", Content: "Show me a picture of what a quokka looks like."},
+		{Role: "assistant", Content: "I can't browse for images right now."},
+	}
+	const find = "You need to search the internet find a nice pair of dogs and add it to the chat"
+	const weather = "search the web for today's weather and add it to the chat"
+	for _, tc := range []struct {
+		name    string
+		history []brain.Turn
+		task    string
+		want    bool
+	}{
+		{"the picture was asked for and never arrived", asked, find, true},
+		{"the task is already in history", then(asked, find), find, true},
+		{"the task points back by pronoun", asked, "You need to search the internet and find one and add it to the chat", true},
+		{"the task asks for the picture itself", nil, "find a picture of a dog and add it to the chat", true},
+		{"a second turn about something else ends the request", then(asked, "Write a shopping list for dinner."), find, false},
+		{"the request was withdrawn", then(asked, "Never mind."), find, false},
+		{"the last picture was delivered", delivered, weather, false},
+		{"the last picture was delivered", delivered, "look up today's weather and add it to the chat", false},
+		{"the last picture was delivered", delivered, "look up the capital of France and put it in the chat", false},
+		{"delivered, then an assent", then(delivered, "ok"), weather, false},
+		{"a picture was only mentioned", mentioned, "search the web for flight prices and add them to the chat", false},
+		{"the task only mentions a picture", nil, "write a caption for my vacation photo and add it to the chat", false},
+		{"the task only mentions a picture", nil, "write alt text for the image and put it in the chat", false},
+		{"the task only mentions a picture", nil, "list the pictures in my downloads folder and add them to the chat", false},
+		{"no conversation", nil, weather, false},
+		{"a withdrawal is not a task", asked, "search the internet and don't add it to the chat", false},
+		{"another lookup while the picture is owed", asked, weather, false},
+		{"another lookup after a refusal", refused, "find the population of paris and put it in the chat", false},
+		{"ordinary words are not a shared subject", described, "look up what time the game starts and add it to the chat", false},
+		// Only the shared subject ties this task to the owed picture, so a
+		// different lookup about the same subject is held to an image too.
+		{"another lookup about the same subject", asked, "search the web for prices of dogs and add it to the chat", true},
+	} {
+		if got := requestsChatImage(tc.task, tc.history); got != tc.want {
+			t.Errorf("%s: %q = %t", tc.name, tc.task, got)
 		}
 	}
 }

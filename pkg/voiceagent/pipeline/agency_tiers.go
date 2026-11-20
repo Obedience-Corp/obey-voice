@@ -148,7 +148,7 @@ func (a *Agency) plannedWorkerRun(brief string, cfg *config.Config, plan *config
 		if plan.Assignment.Billing != config.WorkerBillingLocal {
 			return a.paidWorkerRun(ctx, brief, worker, cfg, plan, requestID)
 		}
-		return a.workerRunWithBudget(brief, worker, cfg, budget)(ctx)
+		return a.workerRunWithBudget(brief, worker, cfg, budget, true)(ctx)
 	}
 }
 

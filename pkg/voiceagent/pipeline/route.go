@@ -133,6 +133,10 @@ var imageNoun = regexp.MustCompile(`\b(images?|photos?|pictures?|pngs?|jpe?gs?|g
 var showSubject = regexp.MustCompile(`^(?:yeah,? so )?(?:(?:can|could|would) you )?(?:please )?show me (?:a|an) ([a-z]+)$`)
 var addToChat = regexp.MustCompile(`^(?:(?:please|just|you need to|can you|could you) )*(?:add|attach|send|put) (?:it|them|that|those|the (?:images?|photos?|pictures?)) (?:here|(?:in|to) (?:the|this) chat)\b`)
 
+// A job inherits an undelivered picture request only while that request is
+// still the subject: one user turn about something else may sit between.
+const inheritedImageIdle = 1
+
 func requestsChatImage(task string, history []brain.Turn) bool {
 	s := normalizeUtterance(task)
 	if pictureDeliveryRequest.MatchString(s) {
@@ -147,11 +151,33 @@ func requestsChatImage(task string, history []brain.Turn) bool {
 		}
 		return false
 	}
-	if !addToChat.MatchString(s) {
+	// A lookup can end with "and add it to the chat". That clause says where
+	// the result goes, not what it is.
+	whole := addToChat.MatchString(s)
+	tail := false
+	if i := strings.LastIndex(s, " and "); i >= 0 {
+		tail = addToChat.MatchString(s[i+len(" and "):])
+	}
+	if !whole && !tail {
 		return false
 	}
-	if imageNoun.MatchString(s) {
+	if whole && imageNoun.MatchString(s) {
 		return true
+	}
+	// "Find a picture of a dog and add it to the chat" asks for the picture
+	// itself. "Write a caption for my photo and add it" only mentions one.
+	if !whole && brain.AsksForPicture(task) {
+		return true
+	}
+	before := history
+	if n := len(before); n > 0 && before[n-1].Role == "user" && before[n-1].Content == task {
+		before = before[:n-1]
+	}
+	if owed, ok := brain.FindOwedImage(before); ok && owed.Idle <= inheritedImageIdle && owed.AskedAfter(task) {
+		return true
+	}
+	if !whole {
+		return false
 	}
 	// Resolve "add them to the chat" against the most recent substantive
 	// exchange. Do not revive an image task from before a change of subject.

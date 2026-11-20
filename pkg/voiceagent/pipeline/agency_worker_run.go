@@ -24,10 +24,22 @@ const workNarrationMilestones = "milestones"
 var errNoImageDelivered = errors.New("the worker returned text without an image attachment")
 
 func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Config) func(context.Context) (string, error) {
-	return a.workerRunWithBudget(brief, worker, cfg, legacyWorkerBudget(a.workEnabled(), cfg))
+	return a.workerRunWithBudget(brief, worker, cfg, legacyWorkerBudget(a.workEnabled(), cfg), true)
 }
 
-func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *config.Config, budget *brain.WorkerBudget) func(context.Context) (string, error) {
+// A worker with no request budget may repeat a request only when its model
+// runs on this machine. The provider name does not prove that: Ollama also
+// serves cloud aliases, and the admission check that rejects them runs only
+// for feature-enabled work.
+func servedLocally(ctx context.Context, cfg *config.Config, worker brain.Provider) bool {
+	if providerName(cfg) != "ollama" {
+		return false
+	}
+	validator, ok := worker.(brain.LegacyWorkerValidator)
+	return !ok || validator.ValidateLegacyWorker(ctx) == nil
+}
+
+func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *config.Config, budget *brain.WorkerBudget, allowImageRepair bool) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		if a.workEnabled() && !a.acceptJobCallback(job.IDFromContext(ctx)) {
 			return "", context.Canceled
@@ -105,7 +117,7 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		attachmentErr := workerImageFailure(importErr, firstReply)
 		remaining, limited := budget.RemainingRequests()
 		// An opaque paid dispatch has a single admission and no per-request budget.
-		if !tools || budget == nil || (limited && remaining == 0) {
+		if !tools || !allowImageRepair || (limited && remaining == 0) || (budget == nil && !servedLocally(ctx, cfg, worker)) {
 			return cleaned, attachmentErr
 		}
 		input, promptErr := prompts.RenderSystem(config.PromptsDirFrom(cfg), "worker-image-repair", map[string]string{

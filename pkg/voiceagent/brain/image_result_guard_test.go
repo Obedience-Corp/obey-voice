@@ -3,11 +3,13 @@ package brain
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -354,6 +356,208 @@ func TestDirectImageComplaintChecksVolunteeredPicture(t *testing.T) {
 		messages := (*requests)[1].Messages
 		if msg := messages[len(messages)-1].Content; !strings.Contains(msg, "valid.png") || !strings.Contains(msg, "cat.jpg") {
 			t.Fatalf("missing repair feedback: %q", msg)
+		}
+	}
+}
+
+// The turn order and the wording each pattern depends on follow a recorded
+// conversation. Only the subject is changed.
+func stalledImageConversation() []Turn {
+	return []Turn{
+		{Role: "user", Content: "No, I mean like show me a picture of some dogs from the internet."},
+		{Role: "assistant", Content: "Alright, let me find something nice for you."},
+		{Role: "user", Content: "I'll do it."},
+		{Role: "assistant", Content: "Just wait."},
+		{Role: "user", Content: "You need to search the internet find a nice pair of dogs and add it to the chat"},
+		{Role: "assistant", Content: "I'll work on that and report back."},
+		{Role: "user", Content: "Alright, well a lot of it's working on there. Uh can you tell me some stories?"},
+		{Role: "assistant", Content: "I'll tell you a story, but only if you promise to listen."},
+		{Role: "assistant", Content: "I found a nice pair of dogs for you. Let me add it to the chat.", ResponseID: "work-first"},
+	}
+}
+
+var stalledImageFollowups = []string{
+	"Alright, I'm waiting for you to add to the chat.",
+	"Add the dogs to the chat right now. That should be the next thing you do. Don't stop until you have it done.",
+	"No you're not, you just keep saying you're adding it, add it to the damn chat",
+	"Where is it then?",
+	"It should be in your next response",
+}
+
+const stalledImageReply = "I’m adding it now, baby. Just wait for the rush."
+
+type directTurn struct {
+	answer   string
+	err      error
+	requests []api.ChatRequest
+	history  []Turn
+}
+
+func runDirectTurn(t *testing.T, streaming bool, history []Turn, input string, replies ...string) directTurn {
+	t.Helper()
+	messages := make([]api.Message, len(replies))
+	for i, reply := range replies {
+		messages[i] = api.Message{Role: "assistant", Content: reply}
+	}
+	o, requests := imageClaimBrain(t, messages)
+	if err := o.ImportHistory(history); err != nil {
+		t.Fatal(err)
+	}
+	opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect}
+	var out directTurn
+	if streaming {
+		turn := runRoutedTurn(t, o, input, opts)
+		out.answer, out.err = turn.answer, turn.result.Err
+	} else {
+		out.answer, out.err = o.ThinkFull(t.Context(), input, opts)
+	}
+	out.requests, out.history = *requests, o.History()
+	return out
+}
+
+func TestOwedPictureFollowupIsNotAnsweredWithAnAnnouncement(t *testing.T) {
+	for i, input := range stalledImageFollowups {
+		history := stalledImageConversation()
+		if i == len(stalledImageFollowups)-1 {
+			// Earlier complaints and the announcements they drew do not settle the request.
+			for _, earlier := range stalledImageFollowups[:i] {
+				history = append(history, Turn{Role: "user", Content: earlier}, Turn{Role: "assistant", Content: stalledImageReply})
+			}
+		}
+		for _, streaming := range []bool{false, true} {
+			for _, retry := range []string{stalledImageReply, "I've attached it.", "I'll send it right away."} {
+				turn := runDirectTurn(t, streaming, history, input, stalledImageReply, retry)
+				if !errors.Is(turn.err, errUnattachedImage) || turn.answer != "" || len(turn.requests) != 2 {
+					t.Fatalf("%q streaming=%t retry=%q: answer=%q err=%v requests=%d", input, streaming, retry, turn.answer, turn.err, len(turn.requests))
+				}
+				correction := turn.requests[1].Messages[len(turn.requests[1].Messages)-1].Content
+				if !strings.Contains(correction, "show me a picture of some dogs from the internet") {
+					t.Fatalf("%q: the correction does not name the picture that is owed: %s", input, correction)
+				}
+				if got := len(turn.history); got > len(history)+1 {
+					t.Fatalf("%q: an announcement was saved as a reply: %+v", input, turn.history[len(history):])
+				}
+			}
+		}
+	}
+}
+
+func TestOwedPictureFollowupAcceptsAnHonestAnswerAfterOneCorrection(t *testing.T) {
+	for _, blocker := range []string{
+		"I couldn't get one. The download was refused.",
+		"I couldn't get one, the download was refused. I'll find another source if you want.",
+	} {
+		for _, input := range []string{"Where is it then?", "Put it in the chat.", "Add it to the chat."} {
+			for _, streaming := range []bool{false, true} {
+				for _, first := range []string{stalledImageReply, blocker} {
+					turn := runDirectTurn(t, streaming, stalledImageConversation(), input, first, blocker)
+					if turn.err != nil || turn.answer != blocker || len(turn.requests) != 2 {
+						t.Fatalf("%q streaming=%t first=%q: answer=%q err=%v requests=%d", input, streaming, first, turn.answer, turn.err, len(turn.requests))
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestOwedPictureDoesNotFollowACancelADeliveryOrANewSubject(t *testing.T) {
+	promised := []Turn{
+		{Role: "user", Content: "Show me a picture of a dog."},
+		{Role: "assistant", Content: "Let me add it to the chat."},
+	}
+	delivered := []Turn{
+		{Role: "user", Content: "Show me a picture of a dog."},
+		{Role: "assistant", Content: "Here it is.", Attachments: []chatmedia.Ref{{ID: "delivered"}}},
+	}
+	weather := []Turn{
+		{Role: "user", Content: "Show me a picture of a dog."},
+		{Role: "assistant", Content: "Sure, give me a moment."},
+		{Role: "user", Content: "What's the weather in Paris?"},
+		{Role: "assistant", Content: "Sunny, twenty degrees."},
+	}
+	quokka := []Turn{
+		{Role: "user", Content: "Show me a picture of what a quokka looks like."},
+		{Role: "assistant", Content: "I can't browse for images right now."},
+		{Role: "user", Content: "Fine. What do you make of the new schedule?"},
+		{Role: "assistant", Content: "It looks tight."},
+	}
+	haiku := append(slices.Clone(promised),
+		Turn{Role: "user", Content: "Actually forget that, write me a haiku instead."},
+		Turn{Role: "assistant", Content: "Let me add it to the chat."})
+	for _, tc := range []struct {
+		name    string
+		history []Turn
+		input   string
+		reply   string
+	}{
+		{"cancel", stalledImageConversation(), "Never mind, don't send it.", "Okay, I won't."},
+		{"cancel", promised, "Never mind, don't send it.", "Okay, I won't."},
+		{"no longer needed", stalledImageConversation(), "You don't need to add it anymore.", "Understood."},
+		{"another subject", stalledImageConversation(), "Tell me another story.", "Once upon a time, a dog found a home."},
+		{"another subject in the chat", promised, "Tell me a story in the chat.", "Once upon a time, a dog found a home."},
+		{"text for the chat", weather, "Put the weather summary in the chat.", "Sunny, twenty degrees."},
+		{"text for the chat", stalledImageConversation(), "Put the weather summary in the chat.", "Sunny, twenty degrees."},
+		{"its own clause", stalledImageConversation(), "Write a shopping list and put it in the chat.", "Eggs, milk and bread."},
+		{"its own clause", quokka, "Tell me what you think and put it in the chat.", "I think it will hold."},
+		{"waiting for something else", stalledImageConversation(), "I'm still waiting for my pizza.", "It should arrive soon."},
+		{"replaced request", haiku, "Where is it then?", "Autumn moonlight, a worm digs silently into the chestnut."},
+		{"already delivered", delivered, "Where is it then?", "It's right above in the chat."},
+	} {
+		for _, streaming := range []bool{false, true} {
+			turn := runDirectTurn(t, streaming, tc.history, tc.input, tc.reply)
+			if turn.err != nil || turn.answer != tc.reply || len(turn.requests) != 1 {
+				t.Errorf("%s streaming=%t %q: answer=%q err=%v requests=%d", tc.name, streaming, tc.input, turn.answer, turn.err, len(turn.requests))
+			}
+		}
+	}
+}
+
+func TestOwedPictureKeepsExistingChecks(t *testing.T) {
+	promised := []Turn{
+		{Role: "user", Content: "Show me a picture of a dog."},
+		{Role: "assistant", Content: "Let me add it to the chat."},
+	}
+	reported := []Turn{
+		{Role: "user", Content: "Find a picture of a dog and add it to the chat."},
+		{Role: "assistant", Content: "I'll work on that and report back."},
+		{Role: "assistant", Content: "I found a dog. Let me add it to the chat.", ResponseID: "work-first"},
+	}
+	for _, tc := range []struct {
+		history []Turn
+		input   string
+		reply   string
+		want    error
+	}{
+		{promised, "Can you share it in this chat?", "Sure thing, dogs are great.", errMissingImageReference},
+		{promised, "Post one in this chat.", "Dogs are loyal animals.", errMissingImageReference},
+		{reported, "Where is it then?", "I've attached it.", errUnattachedImage},
+		{reported, "Where is it then?", "I'll send it right away.", errUnattachedImage},
+	} {
+		for _, streaming := range []bool{false, true} {
+			turn := runDirectTurn(t, streaming, tc.history, tc.input, tc.reply, tc.reply)
+			if !errors.Is(turn.err, tc.want) || turn.answer != "" {
+				t.Errorf("streaming=%t %q -> %q: answer=%q err=%v", streaming, tc.input, tc.reply, turn.answer, turn.err)
+			}
+		}
+	}
+}
+
+func TestDeliveryAnnouncementNeedsTheChatOrAPicture(t *testing.T) {
+	o := &OllamaBrain{}
+	for _, tc := range []struct {
+		request, reply string
+		unsupported    bool
+	}{
+		{"Find a picture of a dog.", "I found one. Let me add it to the chat.", true},
+		{"Find a picture of a dog.", "I'm attaching the picture now.", true},
+		{"Write a caption for my photo and add it to the chat.", "Adding it here: Sunset over the bay.", false},
+		{"Write a caption for my photo and add it to the chat.", "Adding it to the chat: Sunset over the bay.", false},
+		{"Update the README to mention the image pipeline.", "Adding the file now.", false},
+		{"Update the README to mention the image pipeline.", "I'm adding it now.", false},
+		{"Put the meeting on my calendar.", "Let me add it to the chat.", false},
+	} {
+		if got := o.unsupportedImageResult(tc.reply, tc.request); got != tc.unsupported {
+			t.Errorf("%q -> %q: unsupported=%t", tc.request, tc.reply, got)
 		}
 	}
 }
