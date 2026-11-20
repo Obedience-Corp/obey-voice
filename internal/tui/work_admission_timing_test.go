@@ -119,6 +119,8 @@ func TestLiveDirectWorkerKeepsConversationOpen(t *testing.T) {
 	p := &pipeline.Pipeline{Brain: live, Events: events.NewBus(), VoiceToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsDirect}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
+	events.Subscribe(p.Events, func(e events.ToolCallStarted) { t.Logf("tool %s job=%q", e.Name, e.JobID) })
+	events.Subscribe(p.Events, func(e events.ResponseReady) { t.Logf("reply %q", e.Response) })
 	measureCaptureDuringWork(t, ctx, p, cfg, "live-handoff", []string{
 		"Can you just get a new photo from the internet of a dog and not a cat and show me that?",
 		"What is two plus two?",
@@ -177,14 +179,14 @@ func measureCaptureDuringWork(t *testing.T, parent context.Context, p *pipeline.
 	}()
 	var admitted, available time.Time
 	select {
-	case admitted = <-accepted:
-	case <-ctx.Done():
-		t.Fatal("production Agency never accepted work")
-	}
-	select {
 	case available = <-capture.next:
 	case <-ctx.Done():
 		t.Fatal("next capture depended on blocked worker completion")
+	}
+	select {
+	case admitted = <-accepted:
+	default:
+		t.Fatal("conversation completed the inputs without admitting a background job")
 	}
 	select {
 	case <-worker.started:

@@ -32,7 +32,7 @@ type StreamOptions struct {
 	// tool. It contains no provider, model, or pricing information.
 	WorkerTiers *WorkerTierAvailability
 	// BackgroundWorker lets an ordinary live Ollama turn hand its original
-	// request to the host before executing any tools.
+	// request to the host before performing side effects.
 	BackgroundWorker bool
 	// WorkerFacts are bounded identifiers for existing jobs, supplied for
 	// grounded status references. They contain no task text or provider data.

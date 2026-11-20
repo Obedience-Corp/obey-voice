@@ -90,7 +90,7 @@ func routerToolsForSession(policy RouterToolsPolicy, catalog []skills.Skill, tie
 const backgroundWorkTool = "start_background_work"
 
 // The worker receives the original request and its conversation context. Offer
-// ownership of the whole task only before any foreground tools have run.
+// ownership while the task can still be run without repeating side effects.
 func (opts StreamOptions) canHandOff() bool {
 	return opts.BackgroundWorker && opts.ToolsEnabled && opts.RouterToolsPolicy == RouterToolsDirect &&
 		!opts.Background && !opts.AgentContinuation && opts.Discussion == nil && !opts.OmitTurnInstruction && !opts.TransientHistory && !opts.RetryInput
@@ -112,6 +112,19 @@ func directWorkerHandoff(calls []api.ToolCall) bool {
 		}
 	}
 	return false
+}
+
+// A second tool round after inspecting local state is multi-step work. Any
+// other completed tool might have changed state and must not be replayed.
+func onlyLocalInspection(calls []api.ToolCall) bool {
+	for _, call := range calls {
+		switch call.Function.Name {
+		case "list_files", "read_file", "read_skill":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // LiveRouterDecision reports whether live route_only tool calls should leave

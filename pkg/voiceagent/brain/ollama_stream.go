@@ -108,9 +108,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		var imageIssue error
 
 		rounds := newToolRounds(o.cfg, opts)
+		workerAvailable := opts.canHandOff()
+		inspectedLocally := false
 		for i := 0; rounds.more(i); i++ {
 			finalAnswer, finalInstruction := rounds.final(ctx, i)
-			handoff := i == 0 && opts.canHandOff()
+			handoff := workerAvailable && !finalAnswer && continuation == "" && !repetitionRetry
 			var tools api.Tools
 			if opts.ToolsEnabled && !routedChat && !finalAnswer {
 				tools = sess.tools()
@@ -132,6 +134,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 			messages := o.buildMessagesForTurn(roundCtx, opts.AgentContinuation && opts.Discussion == nil, opts)
+			if handoff {
+				messages[0].Content += "\n\n" + systemPrompt(o.cfg, "live-background-work", nil)
+			}
 			if jsonChat {
 				// The JSON route request ended at this same point, so the
 				// reply re-reads only this line.
@@ -500,7 +505,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if len(toolCalls) > 0 {
 				hadTools = true
 				kind := LiveRouterDecision(sess.routerPolicy, toolCalls)
-				if handoff && directWorkerHandoff(toolCalls) {
+				if handoff && (inspectedLocally || directWorkerHandoff(toolCalls)) {
 					kind = "spawn"
 				}
 				if kind != "" {
@@ -518,9 +523,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							}})
 						}
 					}
-					// Drop this turn from the talking window. Work belongs on
-					// the worker session, not the live KV cache.
-					if n := len(o.history); n > 0 {
+					// The routed history writer owns an untouched user line.
+					// After a local inspection, keep its user/tool exchange
+					// intact; the writer appends only the acknowledgment.
+					if n := len(o.history); n > 0 && !inspectedLocally {
 						if len(o.canonical) > 0 && len(o.working) > 0 {
 							o.stopped.routed = &ollamaRoutedLine{canonical: o.canonical[len(o.canonical)-1], working: o.working[len(o.working)-1], message: o.history[n-1]}
 						}
@@ -547,6 +553,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 						continue
 					}
 					skillCtx += "\n" + chatRouteAnswerInstruction
+				}
+				if handoff {
+					inspectedLocally = onlyLocalInspection(toolCalls)
+					workerAvailable = inspectedLocally
 				}
 				// Add the assistant's tool-calling message to history.
 				o.appendMessage(api.Message{

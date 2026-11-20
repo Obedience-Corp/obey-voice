@@ -705,8 +705,10 @@ When a built-in worker is available, the live Ollama model can choose
 `start_background_work` on its first tool round. Choosing `web_search` or
 `fetch_url` on that round also hands the entire request to the worker before
 any tool in the batch runs. The conversation can then accept another message
-or persona while the job runs. Once a turn starts executing tools inline, it
-keeps ownership to avoid repeating completed actions. With workers disabled
+or persona while the job runs. A quick local inspection can finish inline. If
+the model requests another tool after that inspection, the worker takes over.
+After any tool that may change state runs inline, the turn keeps ownership
+to avoid repeating completed actions. With workers disabled
 or unavailable, lookup tools run inline.
 
 With direct tools, accepted microphone transcripts have the same tool access as

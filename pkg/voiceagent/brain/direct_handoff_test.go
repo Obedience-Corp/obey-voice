@@ -56,3 +56,19 @@ func TestDirectLookupWithoutWorkerStaysInForeground(t *testing.T) {
 		t.Fatalf("lookup without a worker: %+v, tool events: %+v", turn.result, turn.tools)
 	}
 }
+
+func TestDirectWorkerTakesOverAfterLocalInspection(t *testing.T) {
+	o, requests := imageClaimBrain(t, []api.Message{
+		{Role: "assistant", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "list_files", Arguments: mustArgs(map[string]any{"path": "."})}}}},
+		{Role: "assistant", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "web_search"}}}},
+	})
+	o.workDir = t.TempDir()
+	turn := runRoutedTurn(t, o, "Get a new photo of a dog from the internet.", StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, BackgroundWorker: true})
+	if turn.result.Err != nil || turn.result.Route != "spawn" || len(*requests) != 2 {
+		t.Fatalf("handoff after inspection: %+v", turn.result)
+	}
+	history := o.History()
+	if len(history) != 3 || history[0].Role != "user" || history[2].ToolName != "list_files" {
+		t.Fatalf("foreground inspection history: %+v", history)
+	}
+}
