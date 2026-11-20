@@ -104,7 +104,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		repetitionRetry := false
 		repetitionAllowed := false
 		directImage := o.directImageRequest(input, opts)
-		sess.imageDelivery = directImage != "" && requestsPictureDelivery(input)
+		sess.imageDelivery = directImage.requiresFile(input)
 		var imageRepair string
 
 		rounds := newToolRounds(o.cfg, opts)
@@ -143,7 +143,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				appendToNewestUser(messages, "\n"+chatRouteAnswerInstruction)
 			}
 			if imageRepair != "" {
-				if directImage != "" {
+				if directImage != noImageContext {
 					appendToNewestUser(messages, "\n\n"+imageRepair)
 				} else {
 					messages[0].Content += "\n\n" + imageRepair
@@ -250,7 +250,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// json_route decides on the reply's own messages without tools. A
 			// retry after a rejected decision is the existing recovery call.
 			jsonRouting := routing && opts.RouteJSON && imageRepair == "" && jsonRouteEligible(tools, messages)
-			checkImageResult := directImage != "" || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
+			checkImageResult := directImage != noImageContext || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
 			var routeText []string
 			emitText := func(text string) error {
 				if checkImageResult || finalAnswer {

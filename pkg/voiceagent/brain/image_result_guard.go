@@ -62,7 +62,23 @@ func deliveryProse(text string) string {
 var errUnattachedImage = errors.New("the model claimed image delivery without a file reference")
 var errDeliveryPromise = errors.New("the reply promised to add something to chat but delivered nothing")
 
-const pendingChatDelivery = "pending chat delivery"
+type imageRequestContext uint8
+
+const (
+	noImageContext imageRequestContext = iota
+	checkVolunteeredImage
+	imageMentioned
+	pendingChatDelivery
+	pendingImageDelivery
+)
+
+func (c imageRequestContext) requiresFile(input string) bool {
+	return c == pendingImageDelivery || (c != noImageContext && c != pendingChatDelivery && requestsPictureDelivery(input))
+}
+
+// A request for delivery can survive a pronoun-only follow-up. Questions
+// about the subject of the image can still be answered in prose.
+var asksForDelivery = regexp.MustCompile(`(?i)\b(?:where(?: is|'s|’s) it|where are they)(?: then| now)?\s*(?:[?!.]|$)|\b(?:still waiting|waiting for (?:it|them|you to (?:add|attach|send))|(?:it|they) should be in your next (?:reply|response|message)|(?:add|show|send|attach|put) (?:it|them|that|those))\b`)
 
 var errMissingImageReference = errors.New("the reply contained no standalone image reference")
 
@@ -76,18 +92,25 @@ var imageFollowup = regexp.MustCompile(`(?i)\b(?:it|them|one|those|that)\b`)
 
 // An immediate follow-up such as "find one online and put it in the chat"
 // can refer to the image in the last exchange. Stop at the preceding user.
-func (o *OllamaBrain) directImageRequest(input string, opts StreamOptions) string {
+func (o *OllamaBrain) directImageRequest(input string, opts StreamOptions) imageRequestContext {
 	if !opts.ToolsEnabled || opts.effectiveRouterPolicy() == RouterToolsRouteOnly || opts.OmitTurnInstruction || opts.Background || opts.AgentContinuation || opts.Discussion != nil {
-		return ""
+		return noImageContext
 	}
 	if imageResultNoun.MatchString(input) {
-		return input
+		return imageMentioned
 	}
 	// Follow a live exchange about a missing chat item even if both parties
 	// refer to it by pronoun. Do not infer the item is an arbitrary local image.
-	if len(o.canonical) > 1 && (imageFollowup.MatchString(input) || chatDestination.MatchString(input)) &&
-		awaitingChatDelivery(o.canonical[:len(o.canonical)-1]) {
-		return pendingChatDelivery
+	followup := asksForDelivery.MatchString(input)
+	if len(o.canonical) > 1 && (followup || chatDestination.MatchString(input)) {
+		if pending := pendingDeliveryContext(o.canonical[:len(o.canonical)-1]); pending != noImageContext {
+			if !followup {
+				// A new request can also mention the chat. Check an empty
+				// promise without requiring the previous image for it.
+				return pendingChatDelivery
+			}
+			return pending
+		}
 	}
 	for i := len(o.canonical) - 2; i >= 0; i-- {
 		turn := o.canonical[i]
@@ -96,24 +119,25 @@ func (o *OllamaBrain) directImageRequest(input string, opts StreamOptions) strin
 		}
 		if imageResultNoun.MatchString(turn.Content) || len(turn.Attachments) != 0 {
 			if imageFollowup.MatchString(input) {
-				return "image"
+				return imageMentioned
 			}
 			// The very next turn may be a complaint without an image noun
 			// or pronoun. Validate any file the agent volunteers, but let
 			// ordinary replies stand without requiring an attachment.
-			return input
+			return checkVolunteeredImage
 		}
 		if turn.Role == "user" {
 			break
 		}
 	}
-	return ""
+	return noImageContext
 }
 
-func awaitingChatDelivery(history []Turn) bool {
-	// Follow the consecutive progress replies back to their chat destination.
-	// An actual attachment or an unrelated reply ends the chain.
-	progress := false
+func pendingDeliveryContext(history []Turn) imageRequestContext {
+	// Walk only the unresolved exchange. Keep the generic chat context if
+	// the speaker promised delivery but the original item is ambiguous.
+	progress, destination := false, false
+exchange:
 	for i := len(history) - 1; i >= 0; i-- {
 		turn := history[i]
 		if len(turn.Attachments) > 0 || len(turn.ToolCalls) > 0 {
@@ -123,46 +147,50 @@ func awaitingChatDelivery(history []Turn) bool {
 		case "assistant", "samantha":
 			prose := deliveryProse(turn.Content)
 			if !deliveryProgress.MatchString(prose) {
-				return false
+				break exchange
 			}
 			progress = true
-			if chatDestination.MatchString(prose) {
-				return true
-			}
+			destination = destination || chatDestination.MatchString(prose)
 		case "user":
-			if progress && (chatDestination.MatchString(turn.Content) || imageResultNoun.MatchString(turn.Content)) {
-				return true
+			if progress && imageResultNoun.MatchString(turn.Content) {
+				return pendingImageDelivery
 			}
-			if !imageFollowup.MatchString(turn.Content) {
-				return false
+			destination = destination || chatDestination.MatchString(turn.Content)
+			if !asksForDelivery.MatchString(turn.Content) && !imageFollowup.MatchString(turn.Content) {
+				break exchange
 			}
 		}
 	}
-	return false
+	if progress && destination {
+		return pendingChatDelivery
+	}
+	return noImageContext
 }
 
 func requestsPictureDelivery(input string) bool {
 	return requestPicture.MatchString(input) || requestPictureInChat.MatchString(input)
 }
 
-func (o *OllamaBrain) imageReplyError(text, input, directRequest string) error {
-	if directRequest != "" {
+func (o *OllamaBrain) imageReplyError(text, input string, directRequest imageRequestContext) error {
+	if directRequest != noImageContext {
 		protected := chatmedia.ProtectImageExamples(text)
 		if chatmedia.ReplyProse(protected) != strings.TrimSpace(protected) {
 			return chatmedia.DefaultStore().CheckReplyFiles(protected, ReplyWorkDir(o))
 		}
+		if (directRequest == pendingImageDelivery || directRequest == pendingChatDelivery) && deliveryProgress.MatchString(deliveryProse(text)) {
+			return errDeliveryPromise
+		}
 		if directRequest == pendingChatDelivery {
-			if deliveryProgress.MatchString(deliveryProse(text)) {
-				return errDeliveryPromise
-			}
 			// The item might also be text. A substantive reply or an
 			// explanation is valid on an ambiguous follow-up.
 			return nil
 		}
-		if requestsPictureDelivery(input) {
+		if directRequest.requiresFile(input) {
 			return errMissingImageReference
 		}
-		input = directRequest
+		if directRequest == imageMentioned {
+			input = "image"
+		}
 	}
 	if o.unsupportedImageResult(text, input) {
 		return errUnattachedImage
@@ -170,11 +198,11 @@ func (o *OllamaBrain) imageReplyError(text, input, directRequest string) error {
 	return nil
 }
 
-func (o *OllamaBrain) imageRepairPrompt(ctx context.Context, directRequest string, issue error) string {
+func (o *OllamaBrain) imageRepairPrompt(ctx context.Context, directRequest imageRequestContext, issue error) string {
 	if directRequest == pendingChatDelivery {
 		return systemPrompt(o.cfg, "pending-chat-delivery", nil)
 	}
-	if directRequest == "" {
+	if directRequest == noImageContext {
 		return systemPrompt(o.cfg, "image-result-repair", nil)
 	}
 	paths := []string{}

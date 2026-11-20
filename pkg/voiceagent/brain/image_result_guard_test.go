@@ -396,7 +396,7 @@ func TestPendingChatDeliveryEndsWithNewSubjectOrAttachment(t *testing.T) {
 		{Role: "assistant", Content: "Here it is.", Attachments: []chatmedia.Ref{{ID: "delivered"}}},
 		{Role: "user", Content: "Tell me a story."},
 	} {
-		if awaitingChatDelivery(append(history, last)) {
+		if pendingDeliveryContext(append(history, last)) != noImageContext {
 			t.Fatalf("reopened a delivery after %+v", last)
 		}
 	}
@@ -405,5 +405,18 @@ func TestPendingChatDeliveryEndsWithNewSubjectOrAttachment(t *testing.T) {
 		if err := o.imageReplyError(reply, "Where is it?", pendingChatDelivery); err != nil {
 			t.Errorf("rejected %q: %v", reply, err)
 		}
+	}
+}
+
+func TestPendingImageDoesNotRequireAttachmentForNewChatTopic(t *testing.T) {
+	const next = "Tell me a story in the chat."
+	o := &OllamaBrain{canonical: []Turn{
+		{Role: "user", Content: "Show me a picture of a dog."},
+		{Role: "assistant", Content: "Let me add it to the chat."},
+		{Role: "user", Content: next},
+	}}
+	ctx := o.directImageRequest(next, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect})
+	if err := o.imageReplyError("Once upon a time, a dog found a home.", next, ctx); err != nil {
+		t.Fatalf("new request required an unrelated attachment: %v", err)
 	}
 }

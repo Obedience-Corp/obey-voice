@@ -88,7 +88,7 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 					} else {
 						repair := req.Messages[len(req.Messages)-1].Content
 						if mode == "pending" {
-							if !strings.Contains(repair, "did not deliver") || len(req.Tools) == 0 {
+							if !strings.Contains(repair, "delivered nothing") || len(req.Tools) == 0 {
 								t.Error("missing correction for an unfulfilled chat delivery")
 							}
 						} else if !strings.Contains(repair, "16 megapixels") || !strings.Contains(repair, "oversize.gif") || !strings.Contains(repair, "result.png") || len(req.Tools) == 0 {

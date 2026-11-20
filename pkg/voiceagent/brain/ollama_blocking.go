@@ -86,7 +86,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	hadTools := false
 	routedChat := false
 	directImage := o.directImageRequest(input, opts)
-	sess.imageDelivery = directImage != "" && requestsPictureDelivery(input)
+	sess.imageDelivery = directImage.requiresFile(input)
 	var imageRepair string
 	routeRetried := false
 	continuations := 0
@@ -109,7 +109,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 		messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil, opts)
 		if imageRepair != "" {
-			if directImage != "" {
+			if directImage != noImageContext {
 				appendToNewestUser(messages, "\n\n"+imageRepair)
 			} else {
 				messages[0].Content += "\n\n" + imageRepair
@@ -189,7 +189,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 		routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
 		missingRoute := routing && len(response.ToolCalls) == 0
-		checkImageResult := directImage != "" || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
+		checkImageResult := directImage != noImageContext || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
 		var invalidImage error
 		if checkImageResult && len(response.ToolCalls) == 0 {
 			invalidImage = o.imageReplyError(speakable+tail, input, directImage)
