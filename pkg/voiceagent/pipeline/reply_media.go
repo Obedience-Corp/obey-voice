@@ -72,7 +72,14 @@ func (p *Pipeline) finalizeMedia(metrics *turnMetrics, response string) events.R
 }
 func (p *Pipeline) replyMediaEvent(metrics *turnMetrics, event events.Event) events.Event {
 	e, ok := event.(events.ResponseReady)
-	if !ok || e.Interrupted || e.Degraded || len(e.Attachments) > 0 {
+	if !ok || len(e.Attachments) > 0 {
+		return event
+	}
+	if metrics != nil && metrics.mediaReply != nil {
+		e.Response, e.Attachments = metrics.mediaReply.Response, metrics.mediaReply.Attachments
+		return e
+	}
+	if e.Degraded || (e.Interrupted && (metrics == nil || metrics.modelOutcome != "completed")) {
 		return event
 	}
 	reply := p.finalizeMedia(metrics, e.Response)

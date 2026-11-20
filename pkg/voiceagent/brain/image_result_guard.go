@@ -1,6 +1,8 @@
 package brain
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -13,8 +15,7 @@ var imageResultPromise = regexp.MustCompile(`(?i)\bi(?: will|'ll|’ll| am going
 var imageResultQuotation = regexp.MustCompile("`[^`\\n]*`|\"[^\"\\n]*\"|“[^”\\n]*”")
 var imageResultEarlier = regexp.MustCompile(`(?i)\b(?:earlier|above|previously|already|last (?:reply|message))\b`)
 
-// Only guard explicit image delivery claims/promises on the held live-router
-// response and its post-chat answer. The current request grounds pronouns such
+// Guard explicit image delivery claims/promises on a held response. The current request grounds pronouns such
 // as "attached them" without treating unrelated attachment replies as images.
 // This is not an intent router: the model must still select the tool
 // and effort tier, and normal admission decides whether that work can run.
@@ -45,4 +46,72 @@ func (o *OllamaBrain) unsupportedImageResult(text, request string) bool {
 	}
 	text = imageResultQuotation.ReplaceAllString(strings.Join(prose, "\n"), "")
 	return (imageResultNoun.MatchString(text) || imageResultNoun.MatchString(request)) && (imageResultClaim.MatchString(text) || imageResultPromise.MatchString(text))
+}
+
+var errUnattachedImage = errors.New("the model claimed image delivery without a file reference")
+var errMissingImageReference = errors.New("the reply contained no standalone image reference")
+
+// Require a file for explicit delivery requests. Mentions such as "how do I
+// share a picture?" and "did you put an image in the chat?" remain discussion.
+const imageRequestStart = `(?i)(?:^|[.!?,]\s*)\s*(?:now )?(?:(?:can|could|would|will) you )?(?:please )?`
+
+var requestPicture = regexp.MustCompile(imageRequestStart + `(?:show me|send me|attach|put|post|share) (?:an? |the |some |another )?(?:images?|photos?|pictures?|pngs?|jpe?gs?|gifs?)\b`)
+var requestPictureInChat = regexp.MustCompile(imageRequestStart + `(?:put|send|post|attach|share)\b[^.!?\n]{0,80}\b(?:in|to) (?:the|this) chat\b`)
+var imageFollowup = regexp.MustCompile(`(?i)\b(?:it|them|one|those|that)\b`)
+
+// An immediate follow-up such as "find one online and put it in the chat"
+// can refer to the image in the last exchange. Stop at the preceding user.
+func (o *OllamaBrain) directImageRequest(input string, opts StreamOptions) string {
+	if !opts.ToolsEnabled || opts.effectiveRouterPolicy() == RouterToolsRouteOnly || opts.OmitTurnInstruction || opts.Background || opts.AgentContinuation || opts.Discussion != nil {
+		return ""
+	}
+	if imageResultNoun.MatchString(input) {
+		return input
+	}
+	if !imageFollowup.MatchString(input) {
+		return ""
+	}
+	for i := len(o.canonical) - 2; i >= 0; i-- {
+		turn := o.canonical[i]
+		if turn.Role != "user" && turn.Role != "assistant" && turn.Role != "samantha" || len(turn.ToolCalls) != 0 {
+			continue
+		}
+		if imageResultNoun.MatchString(turn.Content) || len(turn.Attachments) != 0 {
+			return "image"
+		}
+		if turn.Role == "user" {
+			break
+		}
+	}
+	return ""
+}
+
+func requestsPictureDelivery(input string) bool {
+	return requestPicture.MatchString(input) || requestPictureInChat.MatchString(input)
+}
+
+func (o *OllamaBrain) imageReplyError(text, input, directRequest string) error {
+	if directRequest != "" {
+		protected := chatmedia.ProtectImageExamples(text)
+		if chatmedia.ReplyProse(protected) != strings.TrimSpace(protected) {
+			return chatmedia.DefaultStore().CheckReplyFiles(protected, ReplyWorkDir(o))
+		}
+		if requestsPictureDelivery(input) {
+			return errMissingImageReference
+		}
+		input = directRequest
+	}
+	if o.unsupportedImageResult(text, input) {
+		return errUnattachedImage
+	}
+	return nil
+}
+
+func (o *OllamaBrain) imageRepairPrompt(input, directRequest string, issue error) string {
+	if directRequest == "" {
+		return systemPrompt(o.cfg, "image-result-repair", nil)
+	}
+	return systemPrompt(o.cfg, "worker-image-repair", map[string]string{
+		"brief": input, "work_dir": o.workDir, "import_error": fmt.Sprintf("%.512s", issue.Error()),
+	})
 }

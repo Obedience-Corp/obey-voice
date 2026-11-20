@@ -77,7 +77,7 @@ func TestWarmupSendsTheFirstTurnsPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &pipeline.Pipeline{Brain: provider, Events: events.NewBus(), VoiceToolsEnabled: true}
+	p := &pipeline.Pipeline{Brain: provider, Events: events.NewBus(), VoiceToolsEnabled: true, RouterToolsPolicy: brain.NormalizeRouterToolsPolicy(cfg.VoiceRouterTools)}
 	t.Cleanup(func() { _ = p.CloseBrains() })
 	selector, err := NewSelector(SelectionOptions{Base: cfg, Catalog: catalog, Pipeline: p, SessionID: "warmup", Initial: binding,
 		Persist: func([]brain.Turn, events.PersonaSelection) error { return nil }})

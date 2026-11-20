@@ -129,6 +129,8 @@ func TestImageReplyIsACompleteResponse(t *testing.T) {
 	}{
 		{"Here is the image.\n![Result](</tmp/result.png>)", false},
 		{"![Result](</tmp/result.png>)", false},
+		{"Here is one from the docs:\n\n![desktop home](/work/desktop-home.png)", false},
+		{"Here is one from the docs:\n![unfinished](/work/home", true},
 		{"I was about to\n![Result](</tmp/result.png>)", true},
 		{"![Result](</tmp/res", true},
 	} {

@@ -184,8 +184,7 @@ func TestImageReachesTheOllamaPersonaItWasNotSaidTo(t *testing.T) {
 }
 
 func TestLocalConversationWithAToolRoundSendsOllamaWhatItWasSentBefore(t *testing.T) {
-	c := newLocalConversation(t, 6, "ember", "scout")
-	c.p.RouterToolsPolicy = brain.RouterToolsLegacy
+	c := newLocalConversationWithTools(t, 6, "", "ember", "scout")
 	if err := os.WriteFile(filepath.Join(c.root, "notes.txt"), []byte("The vault code is cobalt.\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

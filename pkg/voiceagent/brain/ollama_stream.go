@@ -103,7 +103,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		var continuation string
 		repetitionRetry := false
 		repetitionAllowed := false
-		imageResultRetry := false
+		directImage := o.directImageRequest(input, opts)
+		sess.imageDelivery = directImage != "" && requestsPictureDelivery(input)
+		var imageIssue error
 
 		rounds := newToolRounds(o.cfg, opts)
 		for i := 0; rounds.more(i); i++ {
@@ -131,8 +133,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// reply re-reads only this line.
 				appendToNewestUser(messages, "\n"+chatRouteAnswerInstruction)
 			}
-			if imageResultRetry {
-				messages[0].Content += "\n\n" + systemPrompt(o.cfg, "image-result-repair", nil)
+			if imageIssue != nil {
+				messages[0].Content += "\n\n" + o.imageRepairPrompt(input, directImage, imageIssue)
 			}
 			if opts.Discussion != nil {
 				messages[0].Content += opts.Discussion.Prompt()
@@ -234,8 +236,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
 			// json_route decides on the reply's own messages without tools. A
 			// retry after a rejected decision is the existing recovery call.
-			jsonRouting := routing && opts.RouteJSON && !imageResultRetry && jsonRouteEligible(tools, messages)
-			checkImageResult := routing || imageResultRetry || (routedChat && imageResultNoun.MatchString(input))
+			jsonRouting := routing && opts.RouteJSON && imageIssue == nil && jsonRouteEligible(tools, messages)
+			checkImageResult := directImage != "" || routing || imageIssue != nil || (routedChat && imageResultNoun.MatchString(input))
 			var routeText []string
 			emitText := func(text string) error {
 				if checkImageResult || finalAnswer {
@@ -248,7 +250,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			promptEstimate := o.estimateTokens(skillCtx)
 			generatedBytes, lastBudget := 0, promptEstimate
 			chat := o.chat
-			if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && !imageResultRetry {
+			if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && imageIssue == nil {
 				chat = o.chatRouteRecovery
 			} else if jsonRouting {
 				chat = o.chatJSONRoute
@@ -362,7 +364,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 			}
 			missingRoute := err == nil && routing && len(toolCalls) == 0
-			missingImageResult := checkImageResult && err == nil && len(toolCalls) == 0 && o.unsupportedImageResult(strings.Join(routeText, ""), input)
+			var invalidImage error
+			if checkImageResult && err == nil && len(toolCalls) == 0 {
+				invalidImage = o.imageReplyError(strings.Join(routeText, ""), input, directImage)
+			}
 			if checkImageResult || finalAnswer {
 				if len(toolCalls) > 0 {
 					// Tool preambles belong to the thinking surface,
@@ -374,7 +379,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							err = sendErr
 						}
 					}
-				} else if err == nil && !missingRoute && !missingImageResult && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
+				} else if err == nil && !missingRoute && invalidImage == nil && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
 					for _, text := range routeText {
 						if sendErr := forward(gate.feed(text)); sendErr != nil {
 							err = sendErr
@@ -398,19 +403,21 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				opts.OnWorkerUsage(u)
 			}
-			if missingRoute || missingImageResult {
-				if routeRetried || routedChat {
+			if missingRoute || invalidImage != nil {
+				if routeRetried || routedChat || finalAnswer {
 					err := fmt.Errorf("model did not select a route; no work was dispatched")
-					if missingImageResult {
-						err = fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call")
+					if invalidImage != nil {
+						err = fmt.Errorf("no image was attached: %w", invalidImage)
 					}
 					done <- StreamResult{Err: err, Recovered: true}
 					return
 				}
 				routeRetried = true
-				imageResultRetry = missingImageResult
-				if missingImageResult {
-					skillCtx += "\n" + missingRouteInstruction
+				imageIssue = invalidImage
+				if invalidImage != nil {
+					if routing {
+						skillCtx += "\n" + missingRouteInstruction
+					}
 					o.emitInfo(events.Info{Message: "Image reply had no attachment; retrying once before delivery"})
 				}
 				continue
@@ -466,6 +473,18 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 			if opts.Discussion != nil && len(toolCalls) > 0 {
 				done <- StreamResult{Err: fmt.Errorf("tools are disabled for group discussion"), Recovered: true}
+				return
+			}
+			if !opts.ToolsEnabled && len(toolCalls) > 0 {
+				// A tool-only response to an ordinary chat turn would otherwise
+				// end in silence. Give the model one final text-only round.
+				ordinary := !rounds.worker && !opts.Background && !opts.AgentContinuation && !opts.OmitTurnInstruction && !opts.TransientHistory
+				if ordinary && i == 0 && !hasSpeakableContent(emitted.String()) {
+					rounds.stop = "tools are disabled for this turn"
+					rounds.instruction = systemPrompt(o.cfg, "tools-disabled-answer", nil)
+					continue
+				}
+				done <- StreamResult{Err: fmt.Errorf("tools are disabled for this turn"), Recovered: true}
 				return
 			}
 			if (continuation != "" || repetitionRetry || routedChat || finalAnswer) && len(toolCalls) > 0 {

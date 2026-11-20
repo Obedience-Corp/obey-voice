@@ -28,7 +28,7 @@ func TestClassifySpawnIntent(t *testing.T) {
 		"search your feelings",
 	}
 	for _, s := range chats {
-		if classifySpawnIntent(s) {
+		if classifyWorkIntent(s, RouteContext{}) {
 			t.Errorf("classifySpawnIntent(%q) = true, want chat", s)
 		}
 	}
@@ -141,7 +141,7 @@ func TestClassifyPhraseIgnoresEndPunctuation(t *testing.T) {
 			t.Errorf("%q = %q, %v; want %q, true", tc.in, kind, ok, tc.want)
 		}
 	}
-	if !classifySpawnIntent("Google the weather.") {
+	if !classifyWorkIntent("Google the weather.", RouteContext{}) {
 		t.Error("a trailing period must not hide a spawn intent")
 	}
 }
@@ -198,6 +198,24 @@ func TestPictureDeliveryFollowups(t *testing.T) {
 	} {
 		if got := requestsChatImage(tc.input, history); got != tc.want {
 			t.Errorf("%q = %v", tc.input, got)
+		}
+	}
+}
+
+func TestDirectWorkIntentUsesAnAvailableBackgroundWorkerForLongTasks(t *testing.T) {
+	for _, tc := range []struct {
+		input         string
+		worker, spawn bool
+	}{
+		{"Build this project.", false, false},
+		{"Build this project.", true, true},
+		{"Implement a command.", true, true},
+		{"Run this command.", true, false},
+		{"What should we build this week?", true, false},
+	} {
+		kind, _, _ := classifyTurn(tc.input, RouteContext{DirectTools: true, LegacyImageWorker: tc.worker})
+		if (kind == RouteSpawn) != tc.spawn {
+			t.Errorf("%q worker=%v: route=%v, want spawn=%v", tc.input, tc.worker, kind, tc.spawn)
 		}
 	}
 }

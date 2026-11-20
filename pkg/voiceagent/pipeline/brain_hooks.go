@@ -139,7 +139,7 @@ func (p *Pipeline) liveRouterToolsPolicy() brain.RouterToolsPolicy {
 	if p.RouterToolsPolicy != "" {
 		return p.RouterToolsPolicy
 	}
-	return brain.RouterToolsRouteOnly
+	return brain.RouterToolsDirect
 }
 
 func (p *Pipeline) liveRouteJSON() bool {
@@ -153,7 +153,7 @@ func (p *Pipeline) liveToolsEnabled() bool {
 }
 
 func (p *Pipeline) routeContext() RouteContext {
-	ctx := RouteContext{}
+	ctx := RouteContext{DirectTools: p.liveRouterToolsPolicy() == brain.RouterToolsDirect}
 	if p.NarrationActive != nil {
 		ctx.NarrationActive = p.NarrationActive()
 	}

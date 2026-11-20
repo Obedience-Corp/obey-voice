@@ -101,3 +101,37 @@ func TestServeManagementPersonaPreservesWorkerAndPrompt(t *testing.T) {
 		t.Fatal("accepted destructive structured prompt edit")
 	}
 }
+
+func TestServeToolPolicyUsesRemotePermissionForLiveAndTieredWork(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		local, remote, tiered bool
+	}{
+		{"local permission only", true, false, false},
+		{"remote permission only", false, true, false},
+		{"local tiers and no remote permission", true, false, true},
+		{"permitted remote tiers", false, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			local := config.Config{VoiceToolsEnabled: tc.local, RemoteToolsEnabled: tc.remote, VoiceWorkers: config.DefaultVoiceWorkers()}
+			if tc.tiered {
+				local.VoiceWorkers.Mode = config.WorkerModeTiered
+			}
+			session := local
+			applyServeToolPolicy(&session, local.RemoteToolsEnabled)
+			if session.VoiceToolsEnabled != tc.remote {
+				t.Fatal("live permission differs from host remote setting")
+			}
+			if tc.tiered && !tc.remote {
+				if session.VoiceWorkers != nil || !session.VoiceWorkersDisabled {
+					t.Fatal("tool-capable tiered jobs remain available")
+				}
+			} else if session.VoiceWorkers.Mode != local.VoiceWorkers.Mode || session.VoiceWorkersDisabled {
+				t.Fatal("unexpected worker configuration change")
+			}
+			if local.VoiceToolsEnabled != tc.local || (local.VoiceWorkers.Mode == config.WorkerModeTiered) != tc.tiered {
+				t.Fatal("local configuration was modified")
+			}
+		})
+	}
+}

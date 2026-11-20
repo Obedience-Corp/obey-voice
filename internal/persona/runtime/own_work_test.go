@@ -84,6 +84,7 @@ func ownWorkSetup(t *testing.T, work, dir string) func(*claudeConversation) {
 	return func(c *claudeConversation) {
 		c.jobs, c.tools = true, true
 		c.base.VoiceToolsEnabled = true
+		c.base.VoiceRouterTools = "route_only"
 		c.base.VoiceWorkerProvider, c.base.VoiceWorkerModel = "ollama", "fixture:latest"
 		mira := testProfile("mira", "Mira", "mira")
 		mira.Brain = persona.Brain{Provider: "claude", Model: "haiku", Work: work}

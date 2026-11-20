@@ -39,7 +39,7 @@ func harnessPipeline(t *testing.T, tiered bool) (*Pipeline, *harnessFixtureBrain
 	b.classify = func(context.Context, brain.LiveRouteRequest) (brain.StreamResult, error) {
 		return brain.StreamResult{Route: "spawn", RouteTier: config.WorkerTierSimple, RouteReasonCode: "bounded_action"}, nil
 	}
-	p := &Pipeline{Brain: b, Events: events.NewBus(), VoiceToolsEnabled: true}
+	p := &Pipeline{Brain: b, Events: events.NewBus(), VoiceToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsRouteOnly}
 	p.SetOutputMuted(true)
 	cfg := &config.Config{WorkDir: t.TempDir(), PromptsDir: t.TempDir(), VoiceToolsEnabled: true, VoiceWorkerProvider: "ollama"}
 	if tiered {

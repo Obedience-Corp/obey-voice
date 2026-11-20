@@ -251,8 +251,10 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	}
 
 	p := &pipeline.Pipeline{
-		Events:                      opts.Events,
-		VoiceToolsEnabled:           cfg.VoiceToolsEnabled,
+		Events:            opts.Events,
+		VoiceToolsEnabled: cfg.VoiceToolsEnabled,
+		// Retain the preference. Each turn applies the current worker mode,
+		// which can change in Settings without rebuilding this pipeline.
 		RouterToolsPolicy:           brain.NormalizeRouterToolsPolicy(cfg.VoiceRouterTools),
 		RouteJSON:                   brain.JSONRouteEnabled(cfg.VoiceRouterTools),
 		VoiceFailedRouteRepair:      cfg.VoiceFailedRouteRepair,

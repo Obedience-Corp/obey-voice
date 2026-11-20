@@ -160,10 +160,11 @@ func TestNewWiresTheRouterSetting(t *testing.T) {
 		policy  brain.RouterToolsPolicy
 		json    bool
 	}{
-		{"", brain.RouterToolsRouteOnly, false},
+		{"", brain.RouterToolsDirect, false},
+		{"direct", brain.RouterToolsDirect, false},
 		{"route_only", brain.RouterToolsRouteOnly, false},
 		{"json_route", brain.RouterToolsRouteOnly, true},
-		{"legacy", brain.RouterToolsLegacy, false},
+		{"legacy", brain.RouterToolsDirect, false},
 	} {
 		t.Run(tc.setting, func(t *testing.T) {
 			agent, cleanup, err := New(context.Background(), Options{
@@ -706,5 +707,65 @@ func TestNewPreservesEnrolledOnlyWithoutLiveAnalyzer(t *testing.T) {
 				t.Fatalf("missing analyzer reported recognition: %+v", v)
 			}
 		})
+	}
+}
+
+type turnPolicyRecorder struct {
+	stubBrain
+	turn   brain.StreamOptions
+	warmed chan brain.StreamOptions
+}
+
+func (b *turnPolicyRecorder) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	b.turn = opts
+	return b.stubBrain.ThinkStream(ctx, input, opts)
+}
+
+func (b *turnPolicyRecorder) WarmupTurn(_ context.Context, opts brain.StreamOptions) {
+	b.warmed <- opts
+}
+
+func TestNewTieredAgentAppliesCurrentModeToWarmupAndTurn(t *testing.T) {
+	workers := config.DefaultVoiceWorkers()
+	workers.Mode = config.WorkerModeTiered
+	host := "http://127.0.0.1:11434"
+	workers.Tiers.Simple.Enabled = true
+	workers.Tiers.Simple.Assignment = &config.WorkerAssignment{Provider: "ollama", Model: "fixture", Billing: config.WorkerBillingLocal, EndpointRef: &host}
+	b := &turnPolicyRecorder{warmed: make(chan brain.StreamOptions, 1)}
+	agent, closeAgent, err := New(t.Context(), Options{
+		Config: &config.Config{AgentName: "Test", VoiceToolsEnabled: true, VoiceWorkers: workers},
+		Events: events.NewBus(), Brain: b, Silent: true, TextOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeAgent()
+	for _, policy := range []brain.RouterToolsPolicy{brain.RouterToolsRouteOnly, brain.RouterToolsDirect} {
+		if policy == brain.RouterToolsDirect {
+			settings := agent.Agency.WorkerSettings()
+			settings.Revision++
+			settings.Mode = config.WorkerModeLegacy
+			if err := agent.Agency.ApplyWorkerSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+		}
+		agent.StartWarmup(t.Context())
+		var warm brain.StreamOptions
+		select {
+		case warm = <-b.warmed:
+		case <-time.After(2 * time.Second):
+			t.Fatal("warmup did not reach provider")
+		}
+		if err := agent.SendText(t.Context(), "Hello there."); err != nil {
+			t.Fatal(err)
+		}
+		for _, opts := range []brain.StreamOptions{warm, b.turn} {
+			if !opts.ToolsEnabled || opts.RouterToolsPolicy != policy || (opts.WorkerTiers != nil) != (policy == brain.RouterToolsRouteOnly) {
+				t.Fatalf("want %s, got options %+v", policy, opts)
+			}
+			if opts.WorkerTiers != nil && !opts.WorkerTiers.Simple {
+				t.Fatal("configured simple worker was missing from route options")
+			}
+		}
 	}
 }

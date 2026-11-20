@@ -55,3 +55,26 @@ func TestLiveTurnsCarryJSONRouteOnlyWithRouteOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultSpeakingTurnCanRunBasicCommandsWithoutAWorker(t *testing.T) {
+	const request = "Run this command for me."
+	for _, voice := range []bool{false, true} {
+		t.Run(map[bool]string{false: "text", true: "voice"}[voice], func(t *testing.T) {
+			b := &optionsRecordingBrain{fakeBrain: &fakeBrain{chunks: []string{"Done."}}}
+			p := &Pipeline{Brain: b, STT: &fakeSTT{text: request}, Events: events.NewBus(), VoiceToolsEnabled: true}
+			p.SetOutputMuted(true)
+			var err error
+			if voice {
+				_, err = p.RunTurn(t.Context())
+			} else {
+				err = p.RunTurnTextMode(t.Context(), request)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(b.opts) != 1 || !b.opts[0].ToolsEnabled || b.opts[0].RouterToolsPolicy != brain.RouterToolsDirect {
+				t.Fatalf("speaking model received %+v", b.opts)
+			}
+		})
+	}
+}

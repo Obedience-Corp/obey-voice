@@ -144,7 +144,7 @@ func TestAssembledPromptFollowsPolicyOrder(t *testing.T) {
 
 	personaAt := strings.Index(got, "PERSONA_MARKER")
 	envAt := strings.Index(got, "Environment:")
-	toolsAt := strings.Index(got, "Live tool: route")
+	toolsAt := strings.Index(got, "You have tools available: list_files")
 	skillsAt := strings.Index(got, "Available skills")
 	turnAt := strings.Index(got, "TURN_MARKER")
 
@@ -160,8 +160,8 @@ func TestAssembledPromptFollowsPolicyOrder(t *testing.T) {
 		t.Errorf("elements out of policy order: persona=%d env=%d tools=%d skills=%d turn=%d",
 			personaAt, envAt, toolsAt, skillsAt, turnAt)
 	}
-	if strings.Contains(got, "You have tools available: list_files") {
-		t.Fatal("route_only ollama prompt must not advertise worker tools")
+	if strings.Contains(got, "Live tool: route") {
+		t.Fatal("default prompt incorrectly described a routed turn")
 	}
 }
 
@@ -194,7 +194,7 @@ func TestTurnInstructionPlacementIsProviderSpecific(t *testing.T) {
 }
 
 func TestToolSurfaceContextMatchesRouterPolicy(t *testing.T) {
-	live := ToolSurfaceContext(&config.Config{VoiceToolsEnabled: true})
+	live := ToolSurfaceContext(&config.Config{VoiceToolsEnabled: true, VoiceRouterTools: "route_only"})
 	if !strings.Contains(live, "Live tool: route") {
 		t.Fatalf("route_only surface missing route:\n%s", live)
 	}

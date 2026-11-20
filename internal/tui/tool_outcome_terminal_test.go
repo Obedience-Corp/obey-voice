@@ -73,6 +73,7 @@ func TestToolOutcomeProductionTerminalProof(t *testing.T) {
 		OllamaModel:         "proof",
 		WorkDir:             dir,
 		VoiceToolsEnabled:   true,
+		VoiceRouterTools:    "route_only",
 		ToolCommandTimeout:  10,
 		VoiceWorkerProvider: "ollama",
 		VoiceWorkerModel:    "proof",
@@ -91,7 +92,7 @@ func TestToolOutcomeProductionTerminalProof(t *testing.T) {
 	defer writer.Close()
 	jobs := job.NewTable(context.Background(), job.WithMaxConcurrent(1))
 	defer jobs.Close()
-	p := &pipeline.Pipeline{Brain: live, Events: bus, VoiceToolsEnabled: true}
+	p := &pipeline.Pipeline{Brain: live, Events: bus, VoiceToolsEnabled: true, RouterToolsPolicy: brain.NormalizeRouterToolsPolicy(cfg.VoiceRouterTools)}
 	agency := pipeline.NewAgency(p, jobs, live, cfg, nil)
 	agency.Wire()
 

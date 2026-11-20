@@ -1,8 +1,10 @@
 package chatmedia
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"image/gif"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -16,6 +18,32 @@ var replyImage = regexp.MustCompile(`^[\t ]*!\[([^\]\r\n]*)\]\((?:<([^>\r\n]+)>|
 // ImportReply runs on the owning response/job goroutine, before publication.
 // Partial failures preserve the answer and return an explicit diagnostic.
 func (s Store) ImportReply(text, workDir string) (string, []Ref, error) {
+	return s.processReply(text, workDir, s.importReplyFile)
+}
+
+// CheckReplyFiles reports an error when every explicit result is unusable.
+// The normal reply importer owns persistence and reports partial failures.
+func (s Store) CheckReplyFiles(text, workDir string) error {
+	_, refs, err := s.processReply(text, workDir, func(path string) (Ref, error) {
+		data, err := readImageFile(path)
+		if err != nil {
+			return Ref{}, err
+		}
+		ref, err := Inspect(filepath.Base(path), data)
+		if err == nil && ref.Format == "gif" {
+			// Inspect checks the animation bounds and decodes the first frame.
+			// A later frame must also be decodable for the preview to succeed.
+			_, err = gif.DecodeAll(bytes.NewReader(data))
+		}
+		return ref, err
+	})
+	if len(refs) > 0 {
+		return nil
+	}
+	return err
+}
+
+func (s Store) processReply(text, workDir string, load func(string) (Ref, error)) (string, []Ref, error) {
 	lines := strings.Split(text, "\n")
 	var refs []Ref
 	var failures []error
@@ -45,7 +73,11 @@ func (s Store) ImportReply(text, workDir string) (string, []Ref, error) {
 			err = errors.New("at most four result images are allowed")
 		} else {
 			attempts++
-			ref, err = s.importReplyFile(path, workDir)
+			var resolved string
+			resolved, err = s.resolveReplyFile(path, workDir)
+			if err == nil {
+				ref, err = load(resolved)
+			}
 		}
 		if err != nil {
 			failures = append(failures, fmt.Errorf("image result %q: %w", name, err))
@@ -64,22 +96,22 @@ func (s Store) ImportReply(text, workDir string) (string, []Ref, error) {
 	return strings.TrimSpace(strings.Join(lines, "\n")), refs, errors.Join(failures...)
 }
 
-func (s Store) importReplyFile(path, workDir string) (Ref, error) {
+func (s Store) resolveReplyFile(path, workDir string) (string, error) {
 	if strings.HasPrefix(path, "file://") {
 		u, err := url.Parse(path)
 		if err != nil || (u.Host != "" && u.Host != "localhost") {
-			return Ref{}, errors.New("use a local image file")
+			return "", errors.New("use a local image file")
 		}
 		path = u.Path
 	} else if strings.Contains(path, "://") {
-		return Ref{}, errors.New("remote image URLs are not imported")
+		return "", errors.New("remote image URLs are not imported")
 	}
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(workDir, path)
 	}
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return Ref{}, fmt.Errorf("resolve file: %w", err)
+		return "", fmt.Errorf("resolve file: %w", err)
 	}
 	allowed := false
 	for _, root := range []string{workDir, s.Dir} {
@@ -97,8 +129,12 @@ func (s Store) importReplyFile(path, workDir string) (Ref, error) {
 		}
 	}
 	if !allowed {
-		return Ref{}, errors.New("result image must be inside the agent work directory")
+		return "", errors.New("result image must be inside the agent work directory")
 	}
+	return resolved, nil
+}
+
+func (s Store) importReplyFile(resolved string) (Ref, error) {
 	ref, err := s.ImportFile(resolved)
 	if err != nil {
 		return Ref{}, err

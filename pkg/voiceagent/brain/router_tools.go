@@ -17,7 +17,9 @@ type RouterToolsPolicy string
 const (
 	// RouterToolsRouteOnly exposes only the constrained route tool on the mic path.
 	RouterToolsRouteOnly RouterToolsPolicy = "route_only"
-	// RouterToolsLegacy keeps the full voiceAssistantTools list for A/B comparison.
+	// RouterToolsDirect lets the model use its tools on the speaking turn.
+	RouterToolsDirect RouterToolsPolicy = "direct"
+	// RouterToolsLegacy is the historical spelling retained in worker diagnostics.
 	RouterToolsLegacy RouterToolsPolicy = "legacy"
 )
 
@@ -46,16 +48,28 @@ var unknownRouterToolsOnce sync.Once
 // Unknown values fail closed to route_only and log once.
 func NormalizeRouterToolsPolicy(raw string) RouterToolsPolicy {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", string(RouterToolsRouteOnly), JSONRouteSetting:
+	case string(RouterToolsRouteOnly), JSONRouteSetting:
 		return RouterToolsRouteOnly
-	case string(RouterToolsLegacy):
-		return RouterToolsLegacy
+	case "", string(RouterToolsDirect), string(RouterToolsLegacy):
+		return RouterToolsDirect
 	default:
 		unknownRouterToolsOnce.Do(func() {
 			log.Printf("obey-voice: unknown voice_router_tools %q; using route_only on the live brain", raw)
 		})
 		return RouterToolsRouteOnly
 	}
+}
+
+// configuredLiveToolsPolicy includes tiered admission, which remains active even
+// when direct tool execution is disabled.
+func configuredLiveToolsPolicy(cfg *config.Config) RouterToolsPolicy {
+	if cfg == nil {
+		return RouterToolsDirect
+	}
+	if cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
+		return RouterToolsRouteOnly
+	}
+	return NormalizeRouterToolsPolicy(cfg.VoiceRouterTools)
 }
 
 // RouterToolsForSession returns the tool definitions for one Think* turn.

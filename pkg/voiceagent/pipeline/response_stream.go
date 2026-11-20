@@ -11,11 +11,12 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
-func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.CancelFunc, stream *brain.Stream, allowBargeIn bool, metrics *turnMetrics, turn *turnConductor, repair *promiseRepairState) (string, bool, error) {
+func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.CancelFunc, stream *brain.Stream, allowBargeIn bool, metrics *turnMetrics, turn *turnConductor, repair *promiseRepairState) (response string, wasInterrupted bool, streamErr error) {
 	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -34,6 +35,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// Two narrow upstream stages feed the turn loop: the model observer forwards
 	// brain chunks (stamping first-chunk metrics), then the segmenter turns that
 	// chunk stream into voice-ready sentences. Both are testable in isolation.
+	var original strings.Builder
 	var streamedChunks <-chan string
 	var tokenTick <-chan struct{}
 	var observeDone <-chan struct{}
@@ -43,6 +45,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			return reply, false, err
 		}
 		chunks := make(chan string, 1)
+		original.WriteString(reply)
 		chunks <- reply
 		close(chunks)
 		terminal := make(chan brain.StreamResult, 1)
@@ -54,7 +57,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		close(finished)
 		observeDone = finished
 	} else {
-		streamedChunks, tokenTick, observeDone = p.observeStream(streamCtx, stream, metrics)
+		streamedChunks, tokenTick, observeDone = p.observeStreamText(streamCtx, stream, metrics, &original)
 	}
 	// Join the observer before returning: it stamps firstModelChunk, which the
 	// caller reads via snapshot() in finish(). Cancel first so the goroutine
@@ -63,6 +66,14 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	defer func() {
 		cancel()
 		<-observeDone
+		// Speech segmentation joins sentences with spaces. Keep standalone
+		// attachment lines intact in the chat version of a media reply.
+		if raw := original.String(); strings.Contains(raw, "![") {
+			cleaned := brain.CleanForVoice(raw)
+			if chatmedia.ReplyProse(cleaned) != cleaned {
+				response = cleaned
+			}
+		}
 	}()
 	// Raw segments: the voice gate needs the markdown fences CleanForVoice
 	// strips, so gating happens first and each destination cleans after.
@@ -822,6 +833,10 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 // deliberately do not tick — a reply already segmented has nothing to wait for
 // while the model reasons.
 func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metrics *turnMetrics) (<-chan string, <-chan struct{}, <-chan struct{}) {
+	return p.observeStreamText(ctx, stream, metrics, nil)
+}
+
+func (p *Pipeline) observeStreamText(ctx context.Context, stream *brain.Stream, metrics *turnMetrics, original *strings.Builder) (<-chan string, <-chan struct{}, <-chan struct{}) {
 	out := make(chan string, 8)
 	ticks := make(chan struct{}, 1)
 	done := make(chan struct{})
@@ -880,6 +895,9 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 					if !metrics.firstSpeakable.Equal(metrics.firstToken) {
 						p.emitResponse(metrics, events.ResponseSpeakableStarted{Elapsed: metrics.elapsedFromEOU(now)})
 					}
+				}
+				if original != nil {
+					original.WriteString(c)
 				}
 				p.emitResponse(metrics, events.ResponseDelta{Text: c})
 				select {

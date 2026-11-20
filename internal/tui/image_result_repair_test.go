@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
@@ -26,18 +28,31 @@ import (
 // Exercise the actual router, bounded correction, worker admission, file import,
 // event delivery and Bubble Tea loop. Only model responses are fixtures.
 func TestImageClaimRepairReachesTerminal(t *testing.T) {
-	runImageClaimTerminal(t, false)
+	runImageClaimTerminal(t, "spawn")
 }
 
 func TestPostChatImageClaimShowsTerminalError(t *testing.T) {
-	runImageClaimTerminal(t, true)
+	runImageClaimTerminal(t, "chat")
 }
 
-func runImageClaimTerminal(t *testing.T, postChat bool) {
+func TestDirectImageRepairReachesTerminal(t *testing.T) {
+	runImageClaimTerminal(t, "direct")
+}
+
+func runImageClaimTerminal(t *testing.T, mode string) {
+	postChat := mode == "chat"
 	root := t.TempDir()
 	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
 	for name, data := range map[string][]byte{"result.png": testmedia.PNG(), "result.gif": testmedia.GIF()} {
 		if err := os.WriteFile(filepath.Join(root, name), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if mode == "direct" {
+		oversize := testmedia.GIF()
+		binary.LittleEndian.PutUint16(oversize[6:8], 2048)
+		binary.LittleEndian.PutUint16(oversize[8:10], 2048)
+		if err := os.WriteFile(filepath.Join(root, "oversize.gif"), oversize, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -58,7 +73,16 @@ func runImageClaimTerminal(t *testing.T, postChat bool) {
 			msg := api.Message{Role: "assistant"}
 			if req.Model == "live" {
 				first := liveCalls.Add(1) == 1
-				if first != postChat {
+				if mode == "direct" {
+					if first {
+						msg.Content = "Here's an image from the workspace.\n![tui](oversize.gif)"
+					} else {
+						if !strings.Contains(req.Messages[0].Content, "16 megapixels") || len(req.Tools) == 0 {
+							t.Error("direct repair omitted the import error or the tools")
+						}
+						msg.Content = "Here are the pictures from the docs:\n![Still](result.png)\n![Animation](result.gif)"
+					}
+				} else if first != postChat {
 					msg.Content = claim
 				} else {
 					var args api.ToolCallFunctionArguments
@@ -95,6 +119,10 @@ func runImageClaimTerminal(t *testing.T, postChat bool) {
 	defer cancel()
 	bus := events.NewBus()
 	p := &pipeline.Pipeline{Brain: live, Events: bus, VoiceToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsRouteOnly}
+	if mode == "direct" {
+		p.RouterToolsPolicy = brain.RouterToolsDirect
+		cfg.ContinuityIntegrityEnabled = true
+	}
 	jobs := job.NewTable(ctx)
 	defer jobs.Close()
 	pipeline.NewAgency(p, jobs, worker, cfg, nil).Wire()
@@ -102,13 +130,13 @@ func runImageClaimTerminal(t *testing.T, postChat bool) {
 	m.cfg = cfg
 	initial := m.startConversation(conversationDeps{runner: p, ctx: ctx, bus: bus})
 	m.input.SetValue("Find a PNG and GIF and show them in this chat.")
-	h := &imageRepairTerminal{model: m, initial: initial, stopOnError: postChat}
+	h := &imageRepairTerminal{model: m, initial: initial, stopOnError: postChat, wantImages: 2, stopOnTurnEnd: mode == "direct"}
 	var output bytes.Buffer
 	if _, err := tea.NewProgram(h, tea.WithContext(ctx), tea.WithoutSignalHandler(), tea.WithInput(nil), tea.WithOutput(&output)).Run(); err != nil {
 		t.Fatalf("terminal did not receive the result: %v\n%s", err, stripANSI(output.String()))
 	}
 	wantWorkers := int32(1)
-	if postChat {
+	if postChat || mode == "direct" {
 		wantWorkers = 0
 	}
 	if liveCalls.Load() != 2 || workerCalls.Load() != wantWorkers {
@@ -125,6 +153,16 @@ func runImageClaimTerminal(t *testing.T, postChat bool) {
 			t.Fatalf("missing %s preview: %s", name, view)
 		}
 	}
+	if mode == "direct" {
+		history := live.History()
+		reply := history[len(history)-1]
+		if len(reply.Attachments) != 2 || strings.Contains(reply.Content, "![") || strings.Contains(view, "![") || strings.Contains(view, "oversize.gif") {
+			t.Fatalf("direct reply did not retain the verified images: %+v\n%s", reply, view)
+		}
+		if data, err := chatmedia.DefaultStore().Read(reply.Attachments[0]); err != nil || !bytes.Equal(data, testmedia.PNG()) {
+			t.Fatalf("stored image differs from the delivered PNG: %v", err)
+		}
+	}
 	if strings.Contains(stripANSI(output.String()), claim) {
 		t.Fatal("unsupported attachment claim reached the terminal")
 	}
@@ -132,9 +170,11 @@ func runImageClaimTerminal(t *testing.T, postChat bool) {
 
 type imageRepairProbe struct{}
 type imageRepairTerminal struct {
-	model       conversationModel
-	initial     tea.Cmd
-	stopOnError bool
+	model         conversationModel
+	initial       tea.Cmd
+	stopOnError   bool
+	wantImages    int
+	stopOnTurnEnd bool
 }
 
 func (h *imageRepairTerminal) Init() tea.Cmd {
@@ -149,9 +189,12 @@ func (h *imageRepairTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return h, tea.Quit
 		}
 		for _, item := range h.model.items {
-			if len(item.attachments) == 2 {
+			if len(item.attachments) == h.wantImages {
 				return h, tea.Quit
 			}
+		}
+		if h.stopOnTurnEnd && h.model.lastMetrics.Outcome != "" {
+			return h, tea.Quit
 		}
 		return h, h.probe()
 	}

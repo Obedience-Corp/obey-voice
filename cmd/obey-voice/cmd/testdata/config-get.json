@@ -691,7 +691,7 @@
       "source": "default"
     },
     "voice_router_tools": {
-      "value": "route_only",
+      "value": "direct",
       "source": "default"
     },
     "voice_tools_enabled": {

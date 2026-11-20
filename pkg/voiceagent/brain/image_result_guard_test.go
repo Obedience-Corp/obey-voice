@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -226,6 +228,48 @@ func TestImageClaimAfterChatRoute(t *testing.T) {
 					t.Fatalf("valid answer rejected: reply=%q error=%v", reply, err)
 				}
 			})
+		}
+	}
+}
+
+func TestDirectTextWriteCannotFakeImageDelivery(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		root := t.TempDir()
+		path := filepath.Join(root, "result.png")
+		if err := os.WriteFile(path, testmedia.PNG(), 0600); err != nil {
+			t.Fatal(err)
+		}
+		const claim = "I attached it — now look."
+		o, requests := imageClaimBrain(t, []api.Message{
+			{Role: "assistant", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "write_file", Arguments: mustArgs(map[string]any{"path": "result.png", "content": "![picture](result.png)"})}}}},
+			{Role: "assistant", Content: claim},
+			{Role: "assistant", Content: claim},
+		})
+		o.workDir = root
+		opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect}
+		const input = "Please put a picture in the chat."
+		var reply string
+		var err error
+		if streaming {
+			stream, startErr := o.ThinkStream(t.Context(), input, opts)
+			if startErr != nil {
+				t.Fatal(startErr)
+			}
+			reply, _ = drainStream(t, stream)
+			err = (<-stream.Done).Err
+		} else {
+			reply, err = o.ThinkFull(t.Context(), input, opts)
+		}
+		if err == nil || !strings.Contains(err.Error(), "no image was attached") || reply != "" || len(*requests) != 3 {
+			t.Fatalf("streaming=%t: reply=%q err=%v requests=%d", streaming, reply, err, len(*requests))
+		}
+		if data, err := os.ReadFile(path); err != nil || !bytes.Equal(data, testmedia.PNG()) {
+			t.Fatal("text write replaced an existing picture")
+		}
+		for _, turn := range o.History() {
+			if turn.Content == claim {
+				t.Fatal("unsupported claim retained in history")
+			}
 		}
 	}
 }

@@ -106,6 +106,9 @@ func normalizeToSpec(spec KeySpec, value any) (any, error) {
 // ships an empty list and accepts any text.
 func canonicalEnum(spec KeySpec, raw string) (any, error) {
 	value := strings.TrimSpace(raw)
+	if spec.Key == "voice_router_tools" && strings.EqualFold(value, "legacy") {
+		value = "direct"
+	}
 	// "" is a listed state, not a missing one, for a key whose default is "" —
 	// it means "use the built-in behaviour". Refusing it left `stt_mode` with no
 	// way back to its own default short of hand-editing config.yaml.

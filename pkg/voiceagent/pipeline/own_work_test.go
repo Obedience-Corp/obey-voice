@@ -749,6 +749,7 @@ func TestATurnSpawnsOnTheWorkDecisionItWasAdmittedWith(t *testing.T) {
 			}
 			h.p.Brain = b
 			h.p.VoiceToolsEnabled = true
+			h.p.RouterToolsPolicy = brain.RouterToolsRouteOnly
 			if err := h.p.RunTurnTextMode(t.Context(), "refactor the parser"); err != nil {
 				t.Fatal(err)
 			}

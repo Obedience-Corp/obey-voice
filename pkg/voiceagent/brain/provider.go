@@ -88,9 +88,7 @@ type StreamOptions struct {
 	// summarize turn — where the turn instruction's voice framing ("2–3
 	// sentences max") lands after the real instruction and starves it.
 	OmitTurnInstruction bool
-	// RouterToolsPolicy selects live route_only vs full worker tools when
-	// ToolsEnabled is true. Empty keeps the full worker list; the microphone
-	// path passes route_only explicitly.
+	// RouterToolsPolicy selects direct tools or a routed turn when tools are enabled.
 	RouterToolsPolicy RouterToolsPolicy
 	// RouteJSON has a route_only Ollama turn decide its route with a tools-free
 	// JSON request on the reply's own messages (voice_router_tools: json_route).

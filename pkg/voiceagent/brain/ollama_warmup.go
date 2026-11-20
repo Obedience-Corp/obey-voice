@@ -33,16 +33,12 @@ func (o *OllamaBrain) configuredTurnOptions() StreamOptions {
 		return StreamOptions{}
 	}
 	tiers := workerTierAvailability(o.cfg)
-	opts := StreamOptions{
+	return StreamOptions{
 		WorkerTiers:       tiers,
 		ToolsEnabled:      o.cfg.VoiceToolsEnabled || tiers != nil,
-		RouterToolsPolicy: NormalizeRouterToolsPolicy(o.cfg.VoiceRouterTools),
+		RouterToolsPolicy: configuredLiveToolsPolicy(o.cfg),
 		RouteJSON:         JSONRouteEnabled(o.cfg.VoiceRouterTools),
 	}
-	if tiers != nil {
-		opts.RouterToolsPolicy = RouterToolsRouteOnly
-	}
-	return opts
 }
 
 // WarmupTurn preloads the model and primes the server's prompt cache with the

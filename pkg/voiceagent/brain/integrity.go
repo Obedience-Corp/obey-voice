@@ -56,7 +56,14 @@ func evaluateStreamIntegrity(in IntegrityInput) IntegrityResult {
 }
 
 func endsMidSentence(s string) bool {
+	s = strings.TrimSpace(s)
+	// A standalone result completes an introduction such as "Here it is:".
+	// An unfinished directive or prose after the image still needs checking.
+	lastLine := s[strings.LastIndexByte(s, '\n')+1:]
 	s = strings.TrimSpace(textclean.StripStageDirections(chatmedia.ReplyProse(s)))
+	if strings.HasSuffix(s, ":") && chatmedia.ReplyProse(lastLine) == "" {
+		return false
+	}
 	if s == "" {
 		return false
 	}

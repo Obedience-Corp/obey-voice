@@ -78,3 +78,45 @@ func TestOllamaMalformedToolFailureDoesNotStartSpeech(t *testing.T) {
 		}
 	}
 }
+
+func TestChatOnlyVoiceTurnRecoversBeforeSpeech(t *testing.T) {
+	const answer = "I can explain the command from our conversation."
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
+			return
+		}
+		var req struct{ Tools []json.RawMessage }
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Tools) != 0 {
+			t.Errorf("expected a tools-free request, got %+v (%v)", req, err)
+		}
+		if requests.Add(1) == 1 {
+			_, _ = w.Write([]byte(`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"list_files","arguments":{"path":"."}}}]},"done":true,"done_reason":"stop"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"role": "assistant", "content": answer}, "done": true, "done_reason": "stop"})
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	provider, err := brain.NewOllama(&config.Config{BrainProvider: "ollama", OllamaHost: server.URL, OllamaModel: "fixture:latest",
+		PromptsDir: filepath.Join(root, "prompts"), WorkDir: root, MaxHistory: 20, OllamaNumCtx: 8192})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := events.NewBus()
+	events.Subscribe(bus, func(e events.ToolCallStarted) { t.Errorf("unexpected execution: %s", e.Name) })
+	synth := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{STT: &fakeSTT{text: "Can you explain that command?"}, Brain: provider, TTS: synth, Player: player, Events: bus}
+	if _, err := p.RunTurn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(synth.Texts(), " "); got != answer || requests.Load() != 2 {
+		t.Fatalf("speech=%q requests=%d", got, requests.Load())
+	}
+	if turns := provider.History(); len(turns) != 2 || turns[1].Content != answer || len(turns[1].ToolCalls) != 0 {
+		t.Fatalf("history=%+v", turns)
+	}
+}
