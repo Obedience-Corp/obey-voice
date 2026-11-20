@@ -85,7 +85,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	hadThinking := false
 	hadTools := false
 	routedChat := false
-	imageResultRetry := false
+	directImage := o.directImageRequest(input, opts)
+	sess.imageDelivery = directImage != "" && requestsPictureDelivery(input)
+	var imageIssue error
 	routeRetried := false
 	continuations := 0
 	rounds := newToolRounds(o.cfg, opts)
@@ -106,8 +108,8 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			return "", err
 		}
 		messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil, opts)
-		if imageResultRetry {
-			messages[0].Content += "\n\n" + systemPrompt(o.cfg, "image-result-repair", nil)
+		if imageIssue != nil {
+			messages[0].Content += "\n\n" + o.imageRepairPrompt(input, directImage, imageIssue)
 		}
 		if opts.Discussion != nil {
 			messages[0].Content += opts.Discussion.Prompt()
@@ -149,7 +151,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 
 		chat := o.chat
-		if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && !imageResultRetry {
+		if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && imageIssue == nil {
 			chat = o.chatRouteRecovery
 		}
 		requestCtx, cancelRequest := ctx, context.CancelFunc(func() {})
@@ -183,19 +185,24 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 		routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
 		missingRoute := routing && len(response.ToolCalls) == 0
-		checkImageResult := routing || imageResultRetry || (routedChat && imageResultNoun.MatchString(input))
-		missingImageResult := checkImageResult && len(response.ToolCalls) == 0 && o.unsupportedImageResult(response.Content, input)
-		if missingRoute || missingImageResult {
-			if routeRetried || routedChat {
-				if missingImageResult {
-					return "", fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call")
+		checkImageResult := directImage != "" || routing || imageIssue != nil || (routedChat && imageResultNoun.MatchString(input))
+		var invalidImage error
+		if checkImageResult && len(response.ToolCalls) == 0 {
+			invalidImage = o.imageReplyError(speakable+tail, input, directImage)
+		}
+		if missingRoute || invalidImage != nil {
+			if routeRetried || routedChat || finalAnswer {
+				if invalidImage != nil {
+					return "", fmt.Errorf("no image was attached: %w", invalidImage)
 				}
 				return "", fmt.Errorf("model did not select a route; no work was dispatched")
 			}
 			routeRetried = true
-			imageResultRetry = missingImageResult
-			if missingImageResult {
-				skillCtx += "\n" + missingRouteInstruction
+			imageIssue = invalidImage
+			if invalidImage != nil {
+				if routing {
+					skillCtx += "\n" + missingRouteInstruction
+				}
 			}
 			continue
 		}

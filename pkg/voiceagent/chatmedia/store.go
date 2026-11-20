@@ -46,23 +46,27 @@ func (s Store) Path(r Ref) string {
 	return filepath.Join(s.Dir, r.ID+"."+r.Format)
 }
 func (s Store) ImportFile(path string) (Ref, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return Ref{}, fmt.Errorf("open attachment: %w", err)
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return Ref{}, err
-	}
-	if !st.Mode().IsRegular() {
-		return Ref{}, errors.New("attachment must be a regular file")
-	}
-	data, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
+	data, err := readImageFile(path)
 	if err != nil {
 		return Ref{}, err
 	}
 	return s.Import(filepath.Base(path), data)
+}
+
+func readImageFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open attachment: %w", err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, errors.New("attachment must be a regular file")
+	}
+	return io.ReadAll(io.LimitReader(f, MaxBytes+1))
 }
 func (s Store) Import(name string, data []byte) (Ref, error) {
 	r, err := Inspect(name, data)

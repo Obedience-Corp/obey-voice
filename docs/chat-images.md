@@ -73,7 +73,15 @@ missing, invalid, out-of-directory, and remote images produce visible diagnostic
 Fenced examples and ordinary filenames do not import files. Paths are kept out of
 speech. Image generation remains the responsibility of the agent's available tools.
 
-Requests to find or create an image must reach a worker that can obtain the file.
+Speaking agents with direct Ollama tools can obtain and attach an image on the
+same turn. For explicit picture requests the host checks the reply before
+speech. If a file is missing, invalid, or over the animation limit, or the
+agent only returns prose, the agent gets one correction with the reason and
+can use its tools to produce a usable file. If that fails, the chat reports
+the error. Once the model finishes, stopping voice playback preserves the
+picture in the conversation.
+
+With route-only tools, requests to find or create an image must reach a worker that can obtain the file.
 Saying "attached below" or naming a directory does not attach anything. The live
 Ollama router retries explicit image-delivery claims once if they contain neither
 a file reference nor a tool call. A repeated unsupported claim produces an error

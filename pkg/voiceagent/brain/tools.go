@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/ollama/ollama/api"
 
@@ -37,11 +38,12 @@ const defaultToolCommandTimeout = 30 * time.Second
 // voice_tools_enabled / remote_tools_enabled gates remain the authority for
 // whether tools are available at all.
 type toolSession struct {
-	budget      *WorkerBudget
-	limitErr    error
-	delegation  *delegation.Runtime
-	catalog     []skills.Skill
-	workerTiers *WorkerTierAvailability
+	imageDelivery bool
+	budget        *WorkerBudget
+	limitErr      error
+	delegation    *delegation.Runtime
+	catalog       []skills.Skill
+	workerTiers   *WorkerTierAvailability
 	// routerPolicy selects live route_only vs legacy full tools. Workers use legacy.
 	routerPolicy RouterToolsPolicy
 	// commandTimeout bounds each run_command call in this session.
@@ -185,6 +187,12 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 	if err := s.boundary.check(workDir, call); err != nil {
 		observed = failedToolOutcome(started.Summary, err.Error())
 		return "error: " + err.Error()
+	}
+	if s.imageDelivery && name == "write_file" {
+		if err := checkImageWrite(call); err != nil {
+			observed = failedToolOutcome(started.Summary, err.Error())
+			return "error: " + err.Error()
+		}
 	}
 	result, observed = executeToolWithOutcome(ctx, workDir, call, s.catalog, s.commandTimeout)
 	return result
@@ -608,6 +616,19 @@ func toolReadFile(workDir string, args map[string]any) string {
 		return string(data[:maxBytes]) + "\n... (truncated)"
 	}
 	return string(data)
+}
+
+// Keep a text placeholder from overwriting a picture on an image-delivery
+// turn. Ordinary file-writing tasks can still create invalid test fixtures.
+func checkImageWrite(call api.ToolCall) error {
+	path := toolCallArg(call, "path")
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png", ".jpg", ".jpeg", ".gif":
+		if _, err := chatmedia.Inspect(path, []byte(toolCallArg(call, "content"))); err != nil {
+			return fmt.Errorf("write_file received text for an image file: %w. Use run_command to obtain or generate the image and put its image reference in your reply", err)
+		}
+	}
+	return nil
 }
 
 func toolWriteFile(workDir string, args map[string]any) string {

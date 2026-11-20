@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -291,6 +293,14 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	}
 	if err != nil {
 		if interrupted || errors.Is(err, context.Canceled) {
+			// New input can cancel playback after the model has delivered a
+			// complete image reply. Finalize that reply before the next turn.
+			if metrics.modelOutcome == "completed" && chatmedia.ReplyProse(fullResponse) != strings.TrimSpace(fullResponse) {
+				p.emitResponse(metrics, events.ResponseReady{Response: fullResponse, Interrupted: true})
+				if p.OnTurn != nil {
+					p.OnTurn()
+				}
+			}
 			turn.finish(TurnInterrupted)
 			return original, err
 		}

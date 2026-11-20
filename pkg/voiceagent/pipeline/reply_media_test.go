@@ -189,3 +189,55 @@ func TestUnsupportedWorkerImagesAndSpeechSuppression(t *testing.T) {
 		t.Fatal("image suppressed later prose")
 	}
 }
+
+func TestVoiceReplyImageSurvivesPlaybackInterruption(t *testing.T) {
+	_, provider, _, source, _, release := imageWorkerFixture(t, false)
+	close(release)
+	player := newFakePlayer(5 * time.Second)
+	defer player.Close()
+	capture := newFakeCapture()
+	bus := events.NewBus()
+	p := &Pipeline{Brain: provider, STT: &fakeSTT{text: "Show me a picture"}, Capture: capture, VAD: &fakeVAD{}, BargeInVAD: &fakeVAD{}, TTS: &fakeTTS{}, Player: player, Events: bus}
+	var ready events.ResponseReady
+	events.Subscribe(bus, func(e events.ResponseReady) { ready = e })
+	modelDone := make(chan struct{}, 1)
+	events.Subscribe(bus, func(events.ThinkingComplete) { modelDone <- struct{}{} })
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := p.RunTurn(ctx); done <- err }()
+	for _, ch := range []<-chan struct{}{modelDone, player.StartedSignal()} {
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			t.Fatal("no completed reply with active playback")
+		}
+	}
+	time.Sleep(bargeInArmDelay + 80*time.Millisecond)
+	for range bargeInMinSpeechChunks {
+		capture.Publish([]float32{0.9, 0.9, 0.9})
+		time.Sleep(60 * time.Millisecond)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if !ready.Interrupted || len(ready.Attachments) != 1 || strings.Contains(ready.Response, "![") {
+		t.Fatalf("interrupted chat reply: %+v", ready)
+	}
+	history := provider.History()
+	last := history[len(history)-1]
+	if len(last.Attachments) != 1 || last.Attachments[0] != ready.Attachments[0] {
+		t.Fatalf("recorded reply: %+v", last)
+	}
+	if err := os.Remove(source); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chatmedia.DefaultStore().Preview(last.Attachments[0]); err != nil {
+		t.Fatal(err)
+	}
+}
