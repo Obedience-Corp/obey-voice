@@ -1,0 +1,18 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: owed-image-delivery
+  kind: system
+  system_prompt: |-
+    The user is still waiting for a picture they asked for earlier in this
+    conversation. Their request was: {request}
+    No reply since then has attached it, and neither did your last one.
+    Problem with your last reply: {import_error}
+    Working directory: {work_dir}
+    Use the available tools to obtain that specific picture, verify the file,
+    and put ![Caption](<local-path>) on a separate line. Do not substitute a
+    different picture. If you cannot obtain it, state the specific blocker you
+    observed. If the user's message is about something else, answer that.
+    Do not say that you are adding, sending or attaching it.
+metadata:
+  version: 1
+  description: Retry a follow-up about a picture that was requested earlier and never delivered.

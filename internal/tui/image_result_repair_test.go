@@ -88,8 +88,8 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 					} else {
 						repair := req.Messages[len(req.Messages)-1].Content
 						if mode == "pending" {
-							if !strings.Contains(repair, "delivered nothing") || len(req.Tools) == 0 {
-								t.Error("missing correction for an unfulfilled chat delivery")
+							if !strings.Contains(repair, "show me a picture of some dogs from the internet") || len(req.Tools) == 0 {
+								t.Error("the correction omitted the picture that is owed or the tools")
 							}
 						} else if !strings.Contains(repair, "16 megapixels") || !strings.Contains(repair, "oversize.gif") || !strings.Contains(repair, "result.png") || len(req.Tools) == 0 {
 							t.Error("direct repair omitted the import error or the tools")
@@ -146,9 +146,14 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 	m.input.SetValue("Find a PNG and GIF and show them in this chat.")
 	if mode == "pending" {
 		if err := live.ImportHistory([]brain.Turn{
-			{Role: "user", Content: "Find a picture of a dog."},
-			{Role: "assistant", Content: "I found a dog. Let me add it to the chat.", ResponseID: "work-first"},
-			{Role: "user", Content: "I'm waiting for you to add to the chat."},
+			{Role: "user", Content: "No, I mean like show me a picture of some dogs from the internet."},
+			{Role: "assistant", Content: "Alright, let me find something nice for you."},
+			{Role: "user", Content: "You need to search the internet find a nice pair of dogs and add it to the chat"},
+			{Role: "assistant", Content: "I'll work on that and report back."},
+			{Role: "user", Content: "Uh can you tell me some stories?"},
+			{Role: "assistant", Content: "I'll tell you a story, but only if you promise to listen."},
+			{Role: "assistant", Content: "I found a nice pair of dogs for you. Let me add it to the chat.", ResponseID: "work-first"},
+			{Role: "user", Content: "Alright, I'm waiting for you to add to the chat."},
 			{Role: "assistant", Content: "I’m adding it now. Just wait."},
 		}); err != nil {
 			t.Fatal(err)

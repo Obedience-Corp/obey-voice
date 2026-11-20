@@ -102,7 +102,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		var continuation string
 		repetitionRetry := false
 		repetitionAllowed := false
-		directImage := o.directImageRequest(input, opts)
+		directImage, owedImage := o.directImageRequest(input, opts)
 		sess.imageDelivery = directImage.requiresFile(input)
 		var imageRepair string
 
@@ -232,7 +232,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			missingRoute := err == nil && routing && len(toolCalls) == 0
 			var invalidImage error
 			if checkImageResult && err == nil && len(toolCalls) == 0 {
-				invalidImage = o.imageReplyError(output.HeldText(), input, directImage)
+				invalidImage = o.imageReplyError(output.HeldText(), input, directImage, imageRepair != "")
 			}
 
 			finalReady := !finalAnswer || (output.Usage.Complete && output.Usage.DoneReason != "length" && hasSpeakableContent(cleanForVoice(output.HeldText())))
@@ -250,7 +250,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				routeRetried = true
 				if invalidImage != nil {
-					imageRepair = o.imageRepairPrompt(ctx, directImage, invalidImage)
+					imageRepair = o.imageRepairPrompt(ctx, directImage, owedImage, invalidImage)
 					if routing {
 						skillCtx += "\n" + missingRouteInstruction
 					}

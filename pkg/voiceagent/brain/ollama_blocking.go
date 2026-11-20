@@ -86,7 +86,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	hadThinking := false
 	hadTools := false
 	routedChat := false
-	directImage := o.directImageRequest(input, opts)
+	directImage, owedImage := o.directImageRequest(input, opts)
 	sess.imageDelivery = directImage.requiresFile(input)
 	var imageRepair string
 	routeRetried := false
@@ -193,7 +193,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		checkImageResult := directImage != noImageContext || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
 		var invalidImage error
 		if checkImageResult && len(response.ToolCalls) == 0 {
-			invalidImage = o.imageReplyError(speakable+tail, input, directImage)
+			invalidImage = o.imageReplyError(speakable+tail, input, directImage, imageRepair != "")
 		}
 		if missingRoute || invalidImage != nil {
 			if routeRetried || routedChat || finalAnswer {
@@ -204,7 +204,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			}
 			routeRetried = true
 			if invalidImage != nil {
-				imageRepair = o.imageRepairPrompt(ctx, directImage, invalidImage)
+				imageRepair = o.imageRepairPrompt(ctx, directImage, owedImage, invalidImage)
 				if routing {
 					skillCtx += "\n" + missingRouteInstruction
 				}

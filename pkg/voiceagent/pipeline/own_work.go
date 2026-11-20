@@ -180,7 +180,7 @@ func (a *Agency) ownWorkRun(brief string, cfg *config.Config, tier *config.OwnTi
 			return "", err
 		}
 		defer func() { _ = brain.CloseProvider(worker) }()
-		return a.workerRunWithBudget(brief, worker, cfg, budget, budget != nil || providerName(cfg) == "ollama")(ctx)
+		return a.workerRunWithBudget(brief, worker, cfg, budget, true)(ctx)
 	}
 }
 

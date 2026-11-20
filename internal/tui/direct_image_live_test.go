@@ -54,9 +54,14 @@ func runLiveImageConversation(t *testing.T, pending bool) {
 	m.input.SetValue("Show me a picture in this chat. Use the existing picture.png in the working directory.")
 	if pending {
 		if err := live.ImportHistory([]brain.Turn{
-			{Role: "user", Content: "Show me the test image picture.png from the working directory."},
+			{Role: "user", Content: "No, I mean like show me the test image picture.png from the working directory."},
+			{Role: "assistant", Content: "Alright, let me find it for you."},
+			{Role: "user", Content: "You need to look in the working directory find picture.png and add it to the chat"},
+			{Role: "assistant", Content: "I'll work on that and report back."},
+			{Role: "user", Content: "Uh can you tell me some stories?"},
+			{Role: "assistant", Content: "I'll tell you a story, but only if you promise to listen."},
 			{Role: "assistant", Content: "I found it. Let me add it to the chat.", ResponseID: "work-first"},
-			{Role: "user", Content: "I'm waiting for you to add to the chat."},
+			{Role: "user", Content: "Alright, I'm waiting for you to add to the chat."},
 			{Role: "assistant", Content: "I’m adding it now."},
 		}); err != nil {
 			t.Fatal(err)

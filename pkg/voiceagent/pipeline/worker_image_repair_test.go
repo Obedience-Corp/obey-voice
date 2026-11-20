@@ -189,3 +189,60 @@ func TestUnbudgetedOllamaWorkerRepairsPromiseBeforePublication(t *testing.T) {
 		t.Fatalf("worker result=%q refs=%v calls=%d error=%v", reply, w.refs, len(w.inputs), err)
 	}
 }
+
+type cloudAliasWorker struct {
+	imageRepairWorker
+	checks int
+}
+
+func (w *cloudAliasWorker) ValidateLegacyWorker(context.Context) error {
+	w.checks++
+	return errors.New("ollama model is a remote or cloud alias")
+}
+
+func (*cloudAliasWorker) ValidateWorkerTools(context.Context) error { return nil }
+
+// Without the work feature nothing validates the worker at admission, so the
+// repair has to establish for itself that a second request stays local.
+func TestUnbudgetedCloudAliasWorkerGetsNoSecondRequest(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	cfg := &config.Config{VoiceToolsEnabled: true, VoiceWorkerProvider: "ollama", WorkDir: t.TempDir()}
+	w := &cloudAliasWorker{imageRepairWorker: imageRepairWorker{answers: []string{"I found a dog. Let me add it to the chat.", "![Dog](dog.png)"}}}
+	jobs := job.NewTable(t.Context())
+	defer jobs.Close()
+	a := NewAgency(&Pipeline{Events: events.NewBus()}, jobs, w, cfg, nil)
+	if a.workEnabled() {
+		t.Fatal("the work feature is on")
+	}
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	_, err := a.workerRun("Get a dog photo and add it to the chat", w, cfg)(ctx)
+	if !errors.Is(err, errNoImageDelivered) || len(w.inputs) != 1 || w.checks != 1 {
+		t.Fatalf("calls=%d locality checks=%d err=%v", len(w.inputs), w.checks, err)
+	}
+}
+
+type localWorker struct {
+	imageRepairWorker
+	checks int
+}
+
+func (w *localWorker) ValidateLegacyWorker(context.Context) error { w.checks++; return nil }
+func (*localWorker) ValidateWorkerTools(context.Context) error    { return nil }
+
+func TestUnbudgetedLocalWorkerRepairsAfterValidating(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dog.png"), testmedia.PNG(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{VoiceToolsEnabled: true, VoiceWorkerProvider: "ollama", WorkDir: dir}
+	w := &localWorker{imageRepairWorker: imageRepairWorker{answers: []string{"I found a dog. Let me add it to the chat.", "![Dog](dog.png)"}}}
+	jobs := job.NewTable(t.Context())
+	defer jobs.Close()
+	a := NewAgency(&Pipeline{Events: events.NewBus()}, jobs, w, cfg, nil)
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	reply, err := a.workerRun("Get a dog photo and add it to the chat", w, cfg)(ctx)
+	if err != nil || reply != "Dog" || len(w.inputs) != 2 || w.checks != 1 {
+		t.Fatalf("reply=%q calls=%d locality checks=%d err=%v", reply, len(w.inputs), w.checks, err)
+	}
+}
