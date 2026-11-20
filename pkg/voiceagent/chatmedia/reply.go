@@ -24,23 +24,25 @@ func (s Store) ImportReply(text, workDir string) (string, []Ref, error) {
 // CheckReplyFiles reports an error when every explicit result is unusable.
 // The normal reply importer owns persistence and reports partial failures.
 func (s Store) CheckReplyFiles(text, workDir string) error {
-	_, refs, err := s.processReply(text, workDir, func(path string) (Ref, error) {
-		data, err := readImageFile(path)
-		if err != nil {
-			return Ref{}, err
-		}
-		ref, err := Inspect(filepath.Base(path), data)
-		if err == nil && ref.Format == "gif" {
-			// Inspect checks the animation bounds and decodes the first frame.
-			// A later frame must also be decodable for the preview to succeed.
-			_, err = gif.DecodeAll(bytes.NewReader(data))
-		}
-		return ref, err
-	})
+	_, refs, err := s.processReply(text, workDir, inspectReplyFile)
 	if len(refs) > 0 {
 		return nil
 	}
 	return err
+}
+
+func inspectReplyFile(path string) (Ref, error) {
+	data, err := readImageFile(path)
+	if err != nil {
+		return Ref{}, err
+	}
+	ref, err := Inspect(filepath.Base(path), data)
+	if err == nil && ref.Format == "gif" {
+		// Inspect checks the animation bounds and decodes the first frame.
+		// A later frame must also be decodable for the preview to succeed.
+		_, err = gif.DecodeAll(bytes.NewReader(data))
+	}
+	return ref, err
 }
 
 func (s Store) processReply(text, workDir string, load func(string) (Ref, error)) (string, []Ref, error) {
@@ -80,7 +82,7 @@ func (s Store) processReply(text, workDir string, load func(string) (Ref, error)
 			}
 		}
 		if err != nil {
-			failures = append(failures, fmt.Errorf("image result %q: %w", name, err))
+			failures = append(failures, fmt.Errorf("image result %q (%q): %w", name, path, err))
 			lines[i] = "[Image unavailable: " + name + "]"
 			continue
 		}

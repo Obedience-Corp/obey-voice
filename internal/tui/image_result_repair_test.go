@@ -36,6 +36,7 @@ func TestPostChatImageClaimShowsTerminalError(t *testing.T) {
 }
 
 func TestDirectImageRepairReachesTerminal(t *testing.T) {
+	t.Setenv("OBEY_VOICE_TUI_IMAGES", "blocks")
 	runImageClaimTerminal(t, "direct")
 }
 
@@ -77,7 +78,8 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 					if first {
 						msg.Content = "Here's an image from the workspace.\n![tui](oversize.gif)"
 					} else {
-						if !strings.Contains(req.Messages[0].Content, "16 megapixels") || len(req.Tools) == 0 {
+						repair := req.Messages[len(req.Messages)-1].Content
+						if !strings.Contains(repair, "16 megapixels") || !strings.Contains(repair, "oversize.gif") || !strings.Contains(repair, "result.png") || len(req.Tools) == 0 {
 							t.Error("direct repair omitted the import error or the tools")
 						}
 						msg.Content = "Here are the pictures from the docs:\n![Still](result.png)\n![Animation](result.gif)"
@@ -154,6 +156,9 @@ func runImageClaimTerminal(t *testing.T, mode string) {
 		}
 	}
 	if mode == "direct" {
+		if !strings.Contains(view, "▀") {
+			t.Fatalf("reply has no rendered image pixels: %s", view)
+		}
 		history := live.History()
 		reply := history[len(history)-1]
 		if len(reply.Attachments) != 2 || strings.Contains(reply.Content, "![") || strings.Contains(view, "![") || strings.Contains(view, "oversize.gif") {
@@ -190,6 +195,12 @@ func (h *imageRepairTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for _, item := range h.model.items {
 			if len(item.attachments) == h.wantImages {
+				for _, ref := range item.attachments {
+					preview := h.model.media.cache[ref.ID]
+					if len(preview.preview.Frames) == 0 && preview.err == nil {
+						return h, h.probe()
+					}
+				}
 				return h, tea.Quit
 			}
 		}
