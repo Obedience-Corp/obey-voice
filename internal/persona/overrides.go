@@ -44,6 +44,8 @@ var personaRoutes = []struct {
 		func(c *config.Config, v string) { c.VoiceWorkerModel = v }},
 	{"voice_worker_ollama_host", func(c *config.Config) string { return c.VoiceWorkerOllamaHost },
 		func(c *config.Config, v string) { c.VoiceWorkerOllamaHost = v }},
+	{"voice_router_tools", func(c *config.Config) string { return c.VoiceRouterTools },
+		func(c *config.Config, v string) { c.VoiceRouterTools = v }},
 	{"tts_provider", func(c *config.Config) string { return c.TTSProvider },
 		func(c *config.Config, v string) { c.TTSProvider = v }},
 	{"tts_voice", func(c *config.Config) string { return c.TTSVoice },

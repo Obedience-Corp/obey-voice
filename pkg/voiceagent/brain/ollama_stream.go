@@ -197,7 +197,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// json_route decides on the reply's own messages without tools. A
 			// retry after a rejected decision is the existing recovery call.
 			jsonRouting := routing && opts.RouteJSON && imageRepair == "" && jsonRouteEligible(tools, messages)
-			checkImageResult := directImage != noImageContext || routing || imageRepair != "" || (routedChat && imageResultNoun.MatchString(input))
+			single := newSingleCallRound(sess, routing, routeRetried && imageRepair == "", activatedSkills != "")
+			checkImageResult := directImage != noImageContext || (routing && !single.answering) || imageRepair != "" || ((routedChat || single.answering) && imageResultNoun.MatchString(input))
 			// Hold routing, image and final-answer text until the complete reply is validated.
 			prior := priorReply
 			if continuation != "" || repetitionAllowed {
@@ -222,23 +223,30 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if finalAnswer {
 				requestCtx, cancelRequest = rounds.answerContext(ctx)
 			}
-			requestCtx = withModelRequestPurpose(requestCtx, roundPurpose(routing, continuation != ""))
+			requestCtx = withModelRequestPurpose(requestCtx, single.purpose(roundPurpose(routing, continuation != "")))
 			roundStarted := time.Now()
 			err := chat(requestCtx, req, receive)
 			cancelRequest()
 			toolCalls := output.ToolCalls
 			err = sess.checkStreamRoute(ctx, routing, jsonRouting, output.Usage.Complete, toolCalls, roundStarted, err)
 			err = output.FlushFilters(err)
-			missingRoute := err == nil && routing && len(toolCalls) == 0
+			chatText, err := single.settle(output, o.cfg.AgentName, err)
+			toolCalls = output.ToolCalls
+			missingRoute := err == nil && routing && len(toolCalls) == 0 && !chatText
 			var invalidImage error
-			if checkImageResult && err == nil && len(toolCalls) == 0 {
+			if checkImageResult && err == nil && len(toolCalls) == 0 && !single.deciding {
 				invalidImage = o.imageReplyError(output.HeldText(), input, directImage, imageRepair != "")
 			}
 
 			finalReady := !finalAnswer || (output.Usage.Complete && output.Usage.DoneReason != "length" && hasSpeakableContent(cleanForVoice(output.HeldText())))
-			err = output.ReleaseHeld(!missingRoute && invalidImage == nil && finalReady, err)
+			err = output.ReleaseHeld(!missingRoute && invalidImage == nil && finalReady && !single.deciding, err)
 			hadThinking = hadThinking || output.HadThinking
 			opts.reportStreamUsage(output.Usage.InputTokens, output.Usage.OutputTokens)
+			if single.deciding && chatText {
+				routedChat = true
+				skillCtx += "\n" + chatRouteAnswerInstruction
+				continue
+			}
 			if missingRoute || invalidImage != nil {
 				if routeRetried || routedChat || finalAnswer {
 					err := fmt.Errorf("model did not select a route; no work was dispatched")
@@ -251,7 +259,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				routeRetried = true
 				if invalidImage != nil {
 					imageRepair = o.imageRepairPrompt(ctx, directImage, owedImage, invalidImage)
-					if routing {
+					if routing && !single.answering {
 						skillCtx += "\n" + missingRouteInstruction
 					}
 					o.emitInfo(events.Info{Message: "Image reply had no attachment; retrying once before delivery"})

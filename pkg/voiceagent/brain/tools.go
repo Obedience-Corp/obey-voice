@@ -46,6 +46,8 @@ type toolSession struct {
 	workerTiers   *WorkerTierAvailability
 	// routerPolicy selects live route_only vs legacy full tools. Workers use legacy.
 	routerPolicy RouterToolsPolicy
+	// singleCall answers chat in the route_only routing request itself.
+	singleCall bool
 	// commandTimeout bounds each run_command call in this session.
 	commandTimeout time.Duration
 	// boundary fences file and shell tools to the worker's campaign root.
@@ -114,7 +116,7 @@ func (s *toolSession) describe(name, summary, id string) ToolCall {
 // local Ollama should behave like a general harness and may load more than one
 // relevant skill without losing capabilities on the legacy worker path.
 func (s *toolSession) tools() api.Tools {
-	tools := routerToolsForSession(s.routerPolicy, s.catalog, s.workerTiers)
+	tools := routerToolsForSession(s.routerPolicy, s.catalog, s.workerTiers, s.singleCall)
 	if s.delegation != nil && !(s.routerPolicy == RouterToolsRouteOnly && s.workerTiers != nil) {
 		tools = append(tools, delegationTools()...)
 	}
@@ -447,26 +449,31 @@ func voiceAssistantTools(catalog []skills.Skill) api.Tools {
 
 // liveRouterTools returns the constrained route tool for the conversational model.
 func liveRouterTools(availability ...*WorkerTierAvailability) api.Tools {
-	props := orderedProps
 	var tiers *WorkerTierAvailability
 	if len(availability) > 0 {
 		tiers = availability[0]
 	}
+	description := "Classify this user turn. Use spawn only when fulfilling the request requires external actions: search the web, look something up, read or write files, run commands, or build. Use chat for conversation, advice, brainstorming, drafting an answer, and preferences or follow-up questions that can be answered from context. A request to suggest or describe a persona does not by itself require files or commands. Spawn starts a worker that has those tools. Use narrate for long reading. Otherwise chat."
+	if tiers != nil {
+		description = "Classify this user turn using this effort rubric: simple for one bounded action, medium for a few dependent steps, complex for broad or multi-stage work. Choose the effort tier that fits the request; the host will reject unavailable tiers and never substitute another tier. Use spawn only for work requiring external actions such as searches, files, or commands. Use chat for conversation, advice, brainstorming, drafting an answer, and preferences or follow-up questions answerable from context. A request to suggest or describe a persona does not by itself require files or commands. Use narrate for long reading."
+	}
+	if tiers == nil || tiers.Simple || tiers.Medium || tiers.Complex {
+		description += " To show or attach a new picture, choose spawn. Discussing pictures or answering questions about an attached image uses chat."
+	}
+	return routeTool(tiers, description)
+}
+
+func routeTool(tiers *WorkerTierAvailability, description string) api.Tools {
 	required := []string{"kind"}
 	properties := map[string]api.ToolProperty{
 		"kind":   {Type: api.PropertyType{"string"}, Description: "One of: chat, spawn, narrate.", Enum: []any{"chat", "spawn", "narrate"}},
 		"source": {Type: api.PropertyType{"string"}, Description: "Optional URL or file path when kind is narrate."},
 		"goal":   {Type: api.PropertyType{"string"}, Description: "Optional summary of work when kind is spawn."},
 	}
-	description := "Classify this user turn. Use spawn only when fulfilling the request requires external actions: search the web, look something up, read or write files, run commands, or build. Use chat for conversation, advice, brainstorming, drafting an answer, and preferences or follow-up questions that can be answered from context. A request to suggest or describe a persona does not by itself require files or commands. Spawn starts a worker that has those tools. Use narrate for long reading. Otherwise chat."
 	if tiers != nil {
 		required = append(required, "tier")
-		description = "Classify this user turn using this effort rubric: simple for one bounded action, medium for a few dependent steps, complex for broad or multi-stage work. Choose the effort tier that fits the request; the host will reject unavailable tiers and never substitute another tier. Use spawn only for work requiring external actions such as searches, files, or commands. Use chat for conversation, advice, brainstorming, drafting an answer, and preferences or follow-up questions answerable from context. A request to suggest or describe a persona does not by itself require files or commands. Use narrate for long reading."
 		properties["tier"] = api.ToolProperty{Type: api.PropertyType{"string"}, Description: fmt.Sprintf("Required effort tier. Availability now: simple=%t, medium=%t, complex=%t.", tiers.Simple, tiers.Medium, tiers.Complex), Enum: []any{"simple", "medium", "complex"}}
 		properties["reason_code"] = api.ToolProperty{Type: api.PropertyType{"string"}, Description: "Optional reason for the selected tier.", Enum: []any{"bounded_action", "dependent_steps", "broad_scope", "explicit_request"}}
-	}
-	if tiers == nil || tiers.Simple || tiers.Medium || tiers.Complex {
-		description += " To show or attach a new picture, choose spawn. Discussing pictures or answering questions about an attached image uses chat."
 	}
 	return api.Tools{
 		{
@@ -477,7 +484,7 @@ func liveRouterTools(availability ...*WorkerTierAvailability) api.Tools {
 				Parameters: api.ToolFunctionParameters{
 					Type:       "object",
 					Required:   required,
-					Properties: props(properties),
+					Properties: orderedProps(properties),
 				},
 			},
 		},

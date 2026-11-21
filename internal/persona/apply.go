@@ -255,6 +255,11 @@ func UpdateStack(id string, brain Brain, tts TTS) (*Profile, error) {
 	if workerTiers == nil {
 		workerTiers = p.Brain.WorkerTiers
 	}
+	// The stack editors do not edit the router either.
+	router := strings.TrimSpace(brain.Router)
+	if router == "" {
+		router = p.Brain.Router
+	}
 	p.Brain = Brain{
 		WorkerTiers: workerTiers.Clone(),
 		Provider:    strings.TrimSpace(brain.Provider),
@@ -265,6 +270,7 @@ func UpdateStack(id string, brain Brain, tts TTS) (*Profile, error) {
 			Model:      strings.TrimSpace(brain.Worker.Model),
 			OllamaHost: strings.TrimSpace(brain.Worker.OllamaHost),
 		},
+		Router: router,
 	}
 	p.TTS = TTS{
 		Provider: strings.TrimSpace(tts.Provider),

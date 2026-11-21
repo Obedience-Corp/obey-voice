@@ -98,6 +98,7 @@ type CatalogIssue struct {
 //	  worker:                   # the model that runs spawned background jobs
 //	    provider: ollama        # or claude, grok; empty = app default
 //	    model: qwen3:8b         # empty = that provider's usual default
+//	  router: single_call       # a voice_router_tools value; empty = app default
 //
 // Profiles written before this field existed have the zero value and keep
 // using the app-level brain keys until edited.
@@ -109,6 +110,9 @@ type Brain struct {
 	// backend and model, "worker" on the configured worker.
 	Work   string `yaml:"work,omitempty" json:"work"`
 	Worker Worker `yaml:"worker,omitempty" json:"worker"`
+	// Router is this persona's voice_router_tools: how its live turns choose
+	// between answering and handing work off.
+	Router string `yaml:"router,omitempty" json:"router"`
 }
 
 // Worker is the persona's async job brain. It is a peer of the live brain,
@@ -186,6 +190,9 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("persona %q: %w", p.ID, err)
 	}
 	if err := config.ValidateWork(p.Brain.Work); err != nil {
+		return fmt.Errorf("persona %q: %w", p.ID, err)
+	}
+	if err := config.ValidateRouter(p.Brain.Router); err != nil {
 		return fmt.Errorf("persona %q: %w", p.ID, err)
 	}
 	if err := p.Audio.Validate(); err != nil {
@@ -461,6 +468,9 @@ func applyBrain(cfg *config.Config, b Brain) {
 	applyWorker(cfg, b.Worker)
 	if model := strings.TrimSpace(b.Model); model != "" {
 		config.SetBrainModel(cfg, cfg.BrainProvider, model)
+	}
+	if router := strings.ToLower(strings.TrimSpace(b.Router)); router != "" {
+		cfg.VoiceRouterTools = router
 	}
 }
 

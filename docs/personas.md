@@ -12,6 +12,11 @@ empty inherits the app default — an empty `brain:` uses the app-level
 check its `brain:` first: it can send the conversation to a hosted provider or
 pick a larger, costlier model.
 
+`brain.router` sets this persona's
+[`voice_router_tools`](configuration.md#live-routing-voice_router_tools), for
+example `router: single_call` to have an Ollama persona answer chat in one
+request. Empty inherits the app setting.
+
 Profiles also accept an optional `audio` section for native audio implementation
 work. Existing profiles omit it and keep Standard behavior. Native activation
 is currently unavailable: a saved native draft is rejected before selection or

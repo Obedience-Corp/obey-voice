@@ -230,6 +230,28 @@ func TestModelRequestSpansFollowEachRequest(t *testing.T) {
 	}
 }
 
+// A single_call chat turn is one request with its own purpose. Both warmup
+// requests have that request's shape.
+func TestSingleCallTurnIsOneRouteReplyRequest(t *testing.T) {
+	p, provider, spans := modelRequestPipeline(t, modelRequestServer(t, nil), func(c *config.Config) { c.VoiceRouterTools = brain.SingleCallSetting })
+	p.ObserveModelRequests()
+	provider.Warmup(t.Context())
+	if err := p.RunTurnTextMode(t.Context(), spanPrompt); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.RunTurnTextMode(t.Context(), "And the lighthouse?"); err != nil {
+		t.Fatal(err)
+	}
+	byID, order := requestsByID(t, spans())
+	var purposes []string
+	for _, id := range order {
+		purposes = append(purposes, byID[id].start.Span.Request.Purpose+":"+byID[id].end.Span.Status)
+	}
+	if got, want := strings.Join(purposes, " "), "warmup:completed warmup:completed route_reply:completed route_reply:failed"; got != want {
+		t.Fatalf("requests = %s\nwant       %s", got, want)
+	}
+}
+
 func TestModelRequestSpanEndsCancelledWhenTheTurnIsCancelled(t *testing.T) {
 	hang := make(chan struct{})
 	defer close(hang)

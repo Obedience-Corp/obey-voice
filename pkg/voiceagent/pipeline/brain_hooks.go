@@ -7,6 +7,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
@@ -140,6 +141,17 @@ func (p *Pipeline) liveRouterToolsPolicy() brain.RouterToolsPolicy {
 		return p.RouterToolsPolicy
 	}
 	return brain.RouterToolsDirect
+}
+
+// applyRouterSetting follows the voice_router_tools of the responder's own
+// configuration, which a persona's brain.router can set, so each turn's tools
+// match the tool surface that responder's system prompt describes.
+func (p *Pipeline) applyRouterSetting(cfg *config.Config) {
+	if cfg == nil || strings.TrimSpace(cfg.VoiceRouterTools) == "" {
+		return
+	}
+	p.RouterToolsPolicy = brain.NormalizeRouterToolsPolicy(cfg.VoiceRouterTools)
+	p.RouteJSON = brain.JSONRouteEnabled(cfg.VoiceRouterTools)
 }
 
 func (p *Pipeline) liveRouteJSON() bool {
