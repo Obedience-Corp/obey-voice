@@ -316,11 +316,15 @@ func BareMarker(line string) bool {
 	return bareMarker.MatchString(line)
 }
 
-// IsFence reports whether a line opens or closes a fenced block. As in the
-// voice gate, an odd count of ``` toggles a block and an even count is a span
-// on the line. ~~~ has no inline form, so it toggles as a prefix.
+// IsFence reports whether a line opens or closes a fenced block: it starts
+// with ``` and does not close it on the same line, which would be a span, or
+// it starts with ~~~, which has no inline form.
 func IsFence(line string) bool {
-	return strings.Count(line, "```")%2 == 1 || strings.HasPrefix(strings.TrimSpace(line), "~~~")
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "~~~") {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "```") && strings.Count(trimmed, "```")%2 == 1
 }
 
 // escaped reports whether the byte at i is preceded by an odd number of

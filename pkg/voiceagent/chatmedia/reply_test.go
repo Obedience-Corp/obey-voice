@@ -295,6 +295,7 @@ func TestOneLineCodeSpanDoesNotOpenAFence(t *testing.T) {
 	for _, reply := range []string{
 		"```![Example](<" + example + ">)```\nHere is the chart. ![Chart](<" + chart + ">)",
 		"```\nExample: ![Example](<" + example + ">)\n```\nHere is the chart. ![Chart](<" + chart + ">)",
+		"Wrap code in ``` marks.\nHere is the chart. ![Chart](<" + chart + ">)",
 	} {
 		for _, cleaned := range []string{reply, strings.ReplaceAll(ProtectImageExamples(reply), "```", "")} {
 			_, refs, err := store.ImportReply(cleaned, root)
