@@ -271,6 +271,10 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 				return m, nil
 			}
 		case "esc":
+			if m.pathMentionsShowing() {
+				m.dismissMentions()
+				return m, nil
+			}
 			if m.vim.mode == vimVisual {
 				m.enterVimNormal()
 				return m, nil

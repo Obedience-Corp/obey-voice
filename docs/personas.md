@@ -235,6 +235,22 @@ classification. A bare `@joker` selects that persona with an acknowledgement.
 Unknown IDs are refused; mentions in ordinary prose and email addresses do
 not select a persona.
 
+The same `@` also completes paths. At the start of a message the list shows
+matching personas first and paths below them; after a space anywhere else in
+the message it shows paths only. Paths are relative to the campaign root when
+the conversation's starting directory is inside a campaign, and to that
+directory otherwise. Inside a campaign the `camp` navigation shortcuts from
+`.campaign/settings/jumps.yaml` work: typing `@p/` rewrites it to `@projects/`
+and lists that directory, and `@de` offers `workflow/design/`. Tab inserts the
+highlighted path; a directory keeps the list open on its contents. Esc closes
+the list for that word, and Enter always sends the message exactly as typed.
+Every completed path contains a `/` (a top-level file is written `@./name`),
+so a message such as `@projects/obey-voice/ what is this?` goes to the current
+persona instead of being refused as an unknown persona. Names containing spaces
+cannot be completed, because the word ends at the space. When the Machine
+context setting (`environment_context_enabled`) is off, the model is not told
+which directory paths are relative to, so Tab inserts the full path.
+
 Use `/menu` (or `/back`) to save the current chat and return to the launcher
 inside the same terminal UI. The app drains the conversation runtime before
 enabling the launcher; Continue offers the saved chat.
@@ -266,7 +282,8 @@ system documents are shown as templates, with runtime placeholders intact.
 `application.yaml` groups app capabilities into named sections. `group-chat`,
 `group-available`, `group-spoken`, `group-reply`, `peer-reply`, and
 `conversation-history` own conversation context; `addressee` and `acoustic-name`
-own private routing instructions. Metadata in each file names its runtime
+own private routing instructions; `path-mentions` says what an `@path` in a chat
+message is relative to. Metadata in each file names its runtime
 variables. Go supplies values such as the current persona, public roster and
 Calibre enablement. Edits take effect on the next relevant request; invalid YAML or
 unknown placeholders report a warning and use the packaged YAML. Unchanged

@@ -157,6 +157,7 @@ func groundingFor(in SystemPromptInput, env Env) grounding {
 	if !env.OmitBrain {
 		g.brain = brainLine(in.Provider, in.Cfg)
 	}
+	g.paths = pathMentionsLine(in.Cfg, in.WorkDir)
 	switch {
 	case normalizeProvider(in.Provider) != providerOllama:
 		// Hosted providers' models are not installed anywhere to list.

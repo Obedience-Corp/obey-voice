@@ -97,6 +97,9 @@ type conversationDeps struct {
 	outputDevice   string
 	liveSpeaker    LiveSpeakerController
 	speakerNames   *speaker.NameMap
+	// mentionPaths supplies the @path root and campaign shortcuts the
+	// composer completes against.
+	mentionPaths func() (root string, shortcuts map[string]string)
 	// endUtterance commits the utterance the recogniser is reading, for a
 	// talk key released; nil when the audio source cannot be ended on demand.
 	endUtterance func() bool
@@ -123,6 +126,9 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 	m.outputDevice = deps.outputDevice
 	m.liveSpeaker = deps.liveSpeaker
 	m.speakerNames = deps.speakerNames
+	if deps.mentionPaths != nil {
+		m.mentions.paths, m.mentions.pathsRead = deps.mentionPaths, false
+	}
 	m.bridge = newEventBridge(0)
 	m.bridge.attach(deps.bus)
 

@@ -24,6 +24,9 @@ func (m *conversationModel) updateComposer(msg tea.KeyMsg) tea.Cmd {
 	previous := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	if msg.Type == tea.KeyRunes && !msg.Paste && string(msg.Runes) == "/" {
+		m.expandMentionShortcut()
+	}
 	m.syncEditorFromTextarea()
 	m.syncComposer(previous)
 	return cmd
@@ -136,7 +139,7 @@ func (m *conversationModel) handleCommandPaletteKey(msg tea.KeyMsg) (bool, tea.C
 }
 
 func (m conversationModel) commandPaletteRows() int {
-	if m.mentions.active {
+	if m.mentionsShowing() {
 		return m.mentionPaletteRows()
 	}
 	matches := matchingSlashCommands(m.input.Value())
@@ -152,7 +155,7 @@ func (m conversationModel) commandPaletteRows() int {
 }
 
 func (m conversationModel) renderCommandPalette() string {
-	if m.mentions.active {
+	if m.mentionsShowing() {
 		return m.renderMentionPalette()
 	}
 	rows := m.commandPaletteRows()

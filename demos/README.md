@@ -12,6 +12,20 @@ no microphone, audio, personal config, or external model is used.
 See [chat images](../docs/chat-images.md) for controls, limits, and the isolated
 native desktop fixture. The reproducible source is `chat-images.tape`.
 
+## chat-path-completion.gif — @path completion in chat
+
+`just demo-chat-path-completion` records, in a disposable campaign created under
+the test's temp directory: `@p/` rewriting to `@projects/` with the directory
+listed and Tab accepting an entry; `@` at the start of a message listing personas
+and paths in one list; and a message starting with `@projects/obey-voice/`
+routed through the real persona Selector and answered rather than refused. Only
+the brain is a fixture; no microphone, audio, personal config, or model is used.
+
+![@path completion](chat-path-completion.gif)
+
+See [personas](../docs/personas.md) for the keys. The reproducible source is
+`chat-path-completion.tape`.
+
 ## context-meter.gif — live usage beside the composer
 
 `just demo-context-meter` records the real Bubble Tea app against a slow loopback

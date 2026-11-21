@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // campaignRoot plants .campaign/campaign.yaml in a fresh directory.
@@ -57,5 +59,34 @@ func TestEnvironmentContextNamesTheCampaign(t *testing.T) {
 				t.Errorf("environment grounding must not advertise worker tools:\n%s", got)
 			}
 		})
+	}
+}
+
+func TestEveryProviderIsToldWhatAtPathsAreRelativeTo(t *testing.T) {
+	root := campaignRoot(t, "id: c-1\nname: My_Tools\n")
+	launch := filepath.Join(root, "projects", "app")
+	if err := os.MkdirAll(launch, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pinned := t.TempDir()
+	cfg := &config.Config{
+		EnvironmentContextEnabled: true,
+		PromptsDir:                t.TempDir(),
+		ConversationDirectories:   &config.ConversationDirectories{Default: config.ConversationDirectory{Dir: launch, Source: "launch-dir"}},
+	}
+	want := "- All file paths are relative to the working directory unless absolute\n- An @path in the user's message, such as @projects/app/ or @./README.md, names a file or directory relative to " + root + "; it is a path, not an agent address.\n"
+	for _, provider := range []string{providerOllama, providerClaude, providerCursor, providerGrok, "codex", "muse-spark", "obey"} {
+		got := AssembleSystemPrompt(SystemPromptInput{Provider: provider, Persona: "P", WorkDir: pinned, Cfg: cfg})
+		if !strings.Contains(got, want) || strings.Count(got, "An @path") != 1 {
+			t.Fatalf("%s: missing the @path line next to the path rule:\n%s", provider, got)
+		}
+	}
+	worker := config.WorkerBrainConfig(cfg)
+	if got := AssembleSystemPrompt(SystemPromptInput{Provider: worker.BrainProvider, Persona: "P", WorkDir: pinned, Cfg: worker}); !strings.Contains(got, want) {
+		t.Fatalf("a delegated worker is not told the same @path root:\n%s", got)
+	}
+	cfg.EnvironmentContextEnabled = false
+	if got := AssembleSystemPrompt(SystemPromptInput{Provider: providerOllama, Persona: "P", WorkDir: pinned, Cfg: cfg}); strings.Contains(got, "An @path") {
+		t.Fatalf("@path line without the environment block:\n%s", got)
 	}
 }

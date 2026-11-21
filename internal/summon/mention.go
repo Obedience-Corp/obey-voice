@@ -37,6 +37,9 @@ func (r *Roster) resolveMention(input string) ExactControl {
 	if i := strings.IndexFunc(target, unicode.IsSpace); i >= 0 {
 		target, rest = target[:i], strings.TrimSpace(target[i:])
 	}
+	if strings.ContainsRune(target, '/') {
+		return ExactControl{Kind: ExactControlNone}
+	}
 	id, ok := r.byID[strings.ToLower(target)]
 	if !ok {
 		return ExactControl{Kind: ExactControlInvalid, Err: &UnknownTargetError{Target: "@" + target}}
@@ -44,4 +47,19 @@ func (r *Roster) resolveMention(input string) ExactControl {
 	return ExactControl{Kind: ExactControlValid, Address: Address{
 		PersonaID: id, Remainder: rest, Reason: "explicit-mention", Bare: rest == "",
 	}}
+}
+
+// leadingPathMention reports whether text opens with an @path such as
+// @projects/app/ or @./README.md. A persona id never contains "/", so that
+// token names a file or directory the message is about, never an address.
+func leadingPathMention(text string) bool {
+	text = strings.TrimSpace(text)
+	if !strings.HasPrefix(text, "@") {
+		return false
+	}
+	token := text[1:]
+	if i := strings.IndexFunc(token, unicode.IsSpace); i >= 0 {
+		token = token[:i]
+	}
+	return strings.ContainsRune(token, '/')
 }
