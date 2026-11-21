@@ -53,10 +53,10 @@ type refusedImages struct{ err error }
 func (e refusedImages) Error() string { return e.err.Error() }
 func (e refusedImages) Unwrap() error { return e.err }
 
-// refuseImages marks a turn that failed its picture check as refused. A turn
-// canceled during the check was interrupted, whatever the check then returned.
-func refuseImages(ctx context.Context, err error) error {
-	if ctx.Err() != nil {
+// refuseImages marks a turn that failed its picture check as refused. A check
+// that was itself canceled gave no answer: that turn was interrupted.
+func refuseImages(err error) error {
+	if errors.Is(err, context.Canceled) {
 		return err
 	}
 	return refusedImages{err}

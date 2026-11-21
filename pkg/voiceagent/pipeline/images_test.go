@@ -265,23 +265,45 @@ func TestTurnRefusedOverItsPicturesIsMarked(t *testing.T) {
 		t.Fatal("an unrelated failure is marked as a refused picture")
 	}
 
-	// A turn canceled while its pictures are checked was interrupted, whatever
-	// the check then answers.
-	canceled, cancel := context.WithCancel(ctx)
-	err = (&Pipeline{Brain: &interruptedCheck{cancel: cancel}, Events: events.NewBus()}).RunTurnTextMode(canceled, "What is this?")
-	if err == nil || ImagesRefused(err) {
-		t.Fatalf("a canceled turn: err=%v refused=%v", err, ImagesRefused(err))
+	// A check that was itself canceled gave no answer, at the first check and
+	// at the one after routing: that turn was interrupted, not refused.
+	canceled := fmt.Errorf("check image support: %w", context.Canceled)
+	err = (&Pipeline{Brain: &checkAnswers{err: canceled}, Events: events.NewBus()}).RunTurnTextMode(ctx, "What is this?")
+	if !errors.Is(err, context.Canceled) || ImagesRefused(err) {
+		t.Fatalf("a canceled first check: err=%v refused=%v", err, ImagesRefused(err))
+	}
+	viewer = &reportsWithheld{streamClock: &streamClock{}, validates: true}
+	p = &Pipeline{Brain: viewer, Events: events.NewBus()}
+	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+		p.Brain = &checkAnswers{err: canceled}
+		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r2", PersonaID: "scout", DisplayName: "Scout"}}, nil
+	}
+	err = p.RunTurnTextMode(ctx, "Scout, what is this?")
+	if !errors.Is(err, context.Canceled) || ImagesRefused(err) || len(viewer.at) != 0 {
+		t.Fatalf("a canceled check after routing: err=%v refused=%v", err, ImagesRefused(err))
+	}
+
+	// A check that did answer is a refusal even when the turn was canceled
+	// meanwhile. Nothing was sent, so the draft must not vanish.
+	interrupted, cancel := context.WithCancel(ctx)
+	answered := &checkAnswers{err: errors.New("this persona cannot be sent pictures"), cancel: cancel}
+	err = (&Pipeline{Brain: answered, Events: events.NewBus()}).RunTurnTextMode(interrupted, "What is this?")
+	if !ImagesRefused(err) || answered.requests != 0 {
+		t.Fatalf("a refusal that follows a cancel: err=%v requests=%d", err, answered.requests)
 	}
 }
 
-// interruptedCheck is a provider whose turn is canceled while it checks the
-// pictures.
-type interruptedCheck struct {
+// checkAnswers is a provider whose picture check returns err, canceling the
+// turn first when cancel is set.
+type checkAnswers struct {
 	noImageInput
+	err    error
 	cancel context.CancelFunc
 }
 
-func (b *interruptedCheck) ValidateImages(context.Context, []chatmedia.Ref) error {
-	b.cancel()
-	return errors.New("the model could not be described")
+func (b *checkAnswers) ValidateImages(context.Context, []chatmedia.Ref) error {
+	if b.cancel != nil {
+		b.cancel()
+	}
+	return b.err
 }

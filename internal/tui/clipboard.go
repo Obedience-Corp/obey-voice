@@ -40,6 +40,9 @@ type clipboardPasteMsg struct {
 	text  string
 	image []byte
 	err   error
+	// returned counts the refused drafts that had come back to the input
+	// when the paste was asked for.
+	returned int
 }
 
 func readClipboard(backend clipboardBackend) tea.Cmd {
@@ -52,6 +55,20 @@ func readClipboard(backend clipboardBackend) tea.Cmd {
 		}
 		text, err := backend.ReadAll()
 		return clipboardPasteMsg{text: text, err: err}
+	}
+}
+
+// pasteClipboard reads the clipboard for the input as it is now. A refused
+// draft that comes back before the read ends is not what the user pasted into.
+func (m *conversationModel) pasteClipboard() tea.Cmd {
+	read, returned := readClipboard(m.clipboard()), m.media.returned
+	return func() tea.Msg {
+		msg := read()
+		if paste, ok := msg.(clipboardPasteMsg); ok {
+			paste.returned = returned
+			return paste
+		}
+		return msg
 	}
 }
 

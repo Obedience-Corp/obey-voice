@@ -30,6 +30,12 @@ type mediaState struct {
 	// refused holds submissions whose turns were refused over their pictures
 	// after they left the input, oldest first, until the input is free.
 	refused []refusedDraft
+	// returned counts the ones given back. It outlives a cleared conversation,
+	// so that a paste asked for before the clear is not taken for a late one.
+	returned int
+	// inputElsewhere marks a front end that keeps its own text field, which
+	// this model cannot see. Nothing is held or returned there.
+	inputElsewhere bool
 }
 
 // refusedDraft is the text and pictures of a refused submission, and why.
@@ -365,23 +371,41 @@ func mediaSummary(r chatmedia.Ref) string {
 // cannot take one. That turn sent and recorded nothing. The refusal is
 // reported here, and returnRefusedDraft gives the submission back.
 func (m *conversationModel) holdRefusedDraft(msg textTurnDoneMsg) bool {
-	if !pipeline.ImagesRefused(msg.err) || len(msg.refs) == 0 || msg.media != m.media.token {
+	if m.media.inputElsewhere || !pipeline.ImagesRefused(msg.err) || len(msg.refs) == 0 || msg.media != m.media.token {
 		return false
 	}
-	text := msg.input
-	if text == imageOnlyText {
-		text = ""
+	held := refusedDraft{text: msg.input, reason: msg.err.Error(), refs: msg.refs}
+	if held.text == imageOnlyText {
+		held.text = ""
 	}
-	m.emit(events.Error{Message: msg.err.Error()})
-	if len(m.media.refused) > 0 || !m.inputFree() {
-		pictures := "picture"
-		if len(msg.refs) > 1 {
-			pictures = "pictures"
-		}
-		m.emit(events.Info{Message: "That message was not sent. It returns to the input with its " + pictures + " once the input is empty."})
+	m.emit(events.Error{Message: held.reason})
+	// The error stands under the message it is about unless that message
+	// waits or another was sent after it. Then a line says which one it was.
+	waits := !m.inputFree()
+	if waits || m.turnState == turnVoiceCanceling {
+		m.emit(events.Info{Message: held.unsentNotice(waits)})
 	}
-	m.media.refused = append(m.media.refused, refusedDraft{text: text, reason: msg.err.Error(), refs: msg.refs})
+	m.media.refused = append(m.media.refused, held)
 	return true
+}
+
+func (d refusedDraft) unsentNotice(waits bool) string {
+	notice := "Your picture message was not sent."
+	if words := strings.Fields(d.text); len(words) > 0 {
+		quoted := []rune(strings.Join(words, " "))
+		if len(quoted) > 60 {
+			quoted = append(quoted[:60], '…')
+		}
+		notice = fmt.Sprintf("Your message %q was not sent.", string(quoted))
+	}
+	if !waits {
+		return notice
+	}
+	pictures := "picture"
+	if len(d.refs) > 1 {
+		pictures = "pictures"
+	}
+	return notice + " It returns to the input with its " + pictures + " once the input is empty."
 }
 
 // inputFree reports an input with no text and no pictures, and none being
@@ -393,13 +417,15 @@ func (m *conversationModel) inputFree() bool {
 
 // returnRefusedDraft gives the oldest held submission back once the input is
 // free, with the reason beside its pictures as for a draft refused before it
-// was sent. Whatever the user has started since is never joined to it.
+// was sent. It goes only into an empty input, never into text or pictures
+// that are already there.
 func (m *conversationModel) returnRefusedDraft() tea.Cmd {
 	if len(m.media.refused) == 0 || !m.inputFree() {
 		return nil
 	}
 	held := m.media.refused[0]
 	m.media.refused = m.media.refused[1:]
+	m.media.returned++
 	m.media.draft = append([]chatmedia.Ref(nil), held.refs...)
 	m.media.approved = false
 	m.media.err = held.reason

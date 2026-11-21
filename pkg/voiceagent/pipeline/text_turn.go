@@ -40,7 +40,7 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 		return err
 	}
 	if err := p.ValidateImages(ctx, chatmedia.Input(ctx)); err != nil {
-		return refuseImages(ctx, err)
+		return refuseImages(err)
 	}
 	p.incActiveTurn()
 	defer p.decActiveTurn()
@@ -121,8 +121,13 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	// its pictures are already in the history checked above.
 	if !isContinuation && !background {
 		if err := p.validateAdmittedImages(ctx, chatmedia.Input(ctx)); err != nil {
-			turn.finish(TurnFailed)
-			return refuseImages(ctx, err)
+			err = refuseImages(err)
+			if ImagesRefused(err) {
+				turn.finish(TurnFailed)
+			} else {
+				turn.finish(TurnInterrupted)
+			}
+			return err
 		}
 	}
 	if !isRetry {

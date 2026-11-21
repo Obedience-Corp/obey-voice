@@ -184,7 +184,7 @@ func TestRefusedPictureWaitsWhileTheNextMessageIsTyped(t *testing.T) {
 	}
 	want := []string{
 		"error: this persona takes native audio and cannot be sent pictures; select a persona that views images",
-		"info: That message was not sent. It returns to the input with its picture once the input is empty.",
+		`info: Your message "Echo, what is on my screen?" was not sent. It returns to the input with its picture once the input is empty.`,
 	}
 	if !reflect.DeepEqual(*said, want) {
 		t.Fatalf("the conversation was told: %q", *said)
@@ -324,12 +324,44 @@ func TestRefusedPictureIsNotJoinedToAPictureBeingPasted(t *testing.T) {
 	}
 }
 
+// A paste is asked for with the input empty, and the refused draft comes back
+// before the clipboard has been read. The paste was not meant for that draft
+// and is not added to it.
+func TestPasteAskedForBeforeARefusedPictureReturnsIsNotAddedToIt(t *testing.T) {
+	c := newTextOnlyChat(t)
+	c.routeByName(t)
+	c.model.deps.clipboard = &testClipboard{value: "my next question"}
+	ref, refusal := c.refusedAfterSending(t, toEcho)
+
+	reading := c.deliver(tea.KeyMsg{Type: tea.KeyCtrlV})
+	c.deliver(refusal)
+	if !c.holds(toEcho, ref) {
+		t.Fatalf("the refused message did not return: %s", c.input())
+	}
+	c.deliver(produced[clipboardPasteMsg](t, reading))
+	if !c.holds(toEcho, ref) {
+		t.Fatalf("the paste was added to the refused message: %s", c.input())
+	}
+	c.deliver(produced[clipboardPasteMsg](t, c.deliver(tea.KeyMsg{Type: tea.KeyCtrlV})))
+	if !c.holds(toEcho+"my next question", ref) {
+		t.Fatalf("a paste into the returned draft was dropped: %s", c.input())
+	}
+	// Clearing the conversation is not a draft coming back.
+	reading = c.deliver(tea.KeyMsg{Type: tea.KeyCtrlV})
+	c.model.clearTranscript()
+	c.deliver(produced[clipboardPasteMsg](t, reading))
+	if !c.holds(toEcho + "my next questionmy next question") {
+		t.Fatalf("a paste asked for before the conversation was cleared was dropped: %s", c.input())
+	}
+}
+
 // The user sends the next message before the refusal is delivered, which
 // interrupts the turn in flight. That message goes out and the refused one
 // still returns.
 func TestRefusedPictureReturnsAfterAMessageSentMeanwhile(t *testing.T) {
 	c := newTextOnlyChat(t)
 	c.routeByName(t)
+	said := c.reports()
 	ref, refusal := c.refusedAfterSending(t, toEcho)
 
 	c.typeText("and also")
@@ -341,6 +373,15 @@ func TestRefusedPictureReturnsAfterAMessageSentMeanwhile(t *testing.T) {
 	if !c.holds(toEcho, ref) || !strings.Contains(c.model.media.err, "native audio") {
 		t.Fatalf("the refused message did not return: %s", c.input())
 	}
+	// The error now stands under the next message, so a line names the one
+	// it is about.
+	want := []string{
+		"error: this persona takes native audio and cannot be sent pictures; select a persona that views images",
+		`info: Your message "Echo, what is on my screen?" was not sent.`,
+	}
+	if !reflect.DeepEqual(*said, want) {
+		t.Fatalf("the conversation was told: %q", *said)
+	}
 	if done := produced[textTurnDoneMsg](t, turn); done.err != nil || done.input != "and also" || len(done.refs) != 0 {
 		t.Fatalf("the next message: %+v", done)
 	}
@@ -350,6 +391,46 @@ func TestRefusedPictureReturnsAfterAMessageSentMeanwhile(t *testing.T) {
 				t.Fatal("the next message carried the refused picture")
 			}
 		}
+	}
+}
+
+// The next message interrupts the turn while it is still being routed, and
+// the refusal comes after that. Nothing was sent, so the refused message is
+// given back all the same.
+func TestRefusedPictureReturnsWhenTheRefusalFollowsTheInterruption(t *testing.T) {
+	c := newTextOnlyChat(t)
+	echo, err := brain.NewNativeOllama(t.Context(), c.cfg, c.client, noRecordings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routing := make(chan struct{})
+	c.pipeline.AdmitInput = func(ctx context.Context, input string, _ bool) (pipeline.ResponseAdmission, error) {
+		if strings.HasPrefix(input, "Echo,") {
+			close(routing)
+			<-ctx.Done()
+			c.pipeline.Brain = echo
+		}
+		return pipeline.ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "p1", DisplayName: "Persona"}}, nil
+	}
+	ref := c.attachNew(t)
+	c.typeText(toEcho)
+	turn := c.deliver(produced[mediaValidated](t, c.deliver(pressEnter)))
+	done := make(chan tea.Msg, 1)
+	go func() { done <- turn() }()
+	<-routing
+	c.typeText("and also")
+	c.deliver(pressEnter)
+	refusal, ok := (<-done).(textTurnDoneMsg)
+	if !ok || !pipeline.ImagesRefused(refusal.err) {
+		t.Fatalf("the interrupted turn ended with: %+v", refusal)
+	}
+	c.pipeline.Brain = c.brain
+	next := c.deliver(refusal)
+	if !c.holds(toEcho, ref) {
+		t.Fatalf("the refused message did not return: %s", c.input())
+	}
+	if sent := produced[textTurnDoneMsg](t, next); sent.err != nil || sent.input != "and also" || len(sent.refs) != 0 {
+		t.Fatalf("the next message: %+v", sent)
 	}
 }
 
@@ -370,7 +451,7 @@ func TestRefusedPicturesReturnOneAtATime(t *testing.T) {
 	}
 	said := c.reports()
 	second, refusal := c.refusedAfterSending(t, "Echo, and this one?")
-	// Meanwhile the first draft is brought back by hand.
+	// Meanwhile another picture is attached.
 	again := c.attachNew(t)
 	c.deliver(refusal)
 	if !c.holds("", again) || len(*said) != 2 {
@@ -382,15 +463,17 @@ func TestRefusedPicturesReturnOneAtATime(t *testing.T) {
 	}
 }
 
-// A message with a picture is parked, waiting for the turn it interrupted to
-// end. The refused draft stays out of the input until that message has gone,
-// so the two sets of pictures cannot end up in one draft.
+// A message with a picture can stay parked after the turn it interrupted has
+// ended, behind a persona selection or captured speech. Its pictures would go
+// back to the draft if a compaction then dropped it, so the refused draft
+// stays out of the input until the parked message has gone. The parked state
+// is set directly here: reaching it takes one of those in flight.
 func TestRefusedPictureWaitsBehindAMessageParkedForSending(t *testing.T) {
 	c := newTextOnlyChat(t)
 	c.routeByName(t)
 	ref, refusal := c.refusedAfterSending(t, toEcho)
 
-	parked := c.attachNew(t)
+	c.attachNew(t)
 	c.model.media.pending, c.model.media.draft = c.model.media.draft, nil
 	c.deliver(refusal)
 	if !c.holds("") {
@@ -398,8 +481,8 @@ func TestRefusedPictureWaitsBehindAMessageParkedForSending(t *testing.T) {
 	}
 	c.model.dispatchTextTurn("And this one?")
 	c.deliver(pressF4)
-	if !c.holds(toEcho, ref) || parked == ref {
-		t.Fatalf("the refused message did not return on its own: %s", c.input())
+	if !c.holds(toEcho, ref) {
+		t.Fatalf("the refused message did not return once the parked one was sent: %s", c.input())
 	}
 }
 
@@ -444,23 +527,24 @@ func TestPictureTurnCanceledDuringItsCheckIsNotRefused(t *testing.T) {
 	}
 }
 
-// The desktop front end drives the conversation directly, past its Update. A
-// held draft still returns as soon as one of its actions empties the input.
-func TestHeldPictureReturnsAfterADesktopAction(t *testing.T) {
+// The desktop front end keeps its own text field, which the engine cannot
+// see, so it cannot tell when a refused message could return without landing
+// in another one. There the refusal is reported and nothing is returned.
+func TestRefusedPictureIsReportedButNotReturnedOnTheDesktop(t *testing.T) {
 	c := newTextOnlyChat(t)
 	c.routeByName(t)
-	ref, refusal := c.refusedAfterSending(t, toEcho)
-	next := c.attachNew(t)
-	c.deliver(refusal)
-	if !c.holds("", next) {
-		t.Fatalf("the new picture was joined to the refused draft: %s", c.input())
-	}
+	said := c.reports()
+	_, refusal := c.refusedAfterSending(t, toEcho)
 
 	app := newApp(c.cfg, nil, nil)
 	app.conversation = c.model
-	model, _ := desktopModel{app: app, rt: fakeRuntime()}.Update(DesktopAction{Kind: "attachment_remove", Text: next.ID})
-	state := model.(desktopModel).state()
-	if len(state.Attachments) != 1 || state.Attachments[0].Ref != ref || !strings.Contains(state.AttachmentError, "native audio") {
+	model, _ := desktopModel{app: app, rt: fakeRuntime()}.Update(refusal)
+	desktop := model.(desktopModel)
+	state := desktop.state()
+	if len(state.Attachments) != 0 || state.AttachmentError != "" || len(desktop.app.conversation.media.refused) != 0 || desktop.app.conversation.input.Value() != "" {
 		t.Fatalf("the desktop draft: %+v, reason %q", state.Attachments, state.AttachmentError)
+	}
+	if len(*said) != 1 || !strings.Contains((*said)[0], "error: this persona takes native audio") {
+		t.Fatalf("the conversation was told: %q", *said)
 	}
 }

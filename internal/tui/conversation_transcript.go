@@ -29,7 +29,7 @@ func (m *conversationModel) clearTranscript() {
 	m.providerHealth = nil
 	m.providerResponseID = ""
 	m.pendingInputRetry = false
-	m.media = mediaState{}
+	m.media = mediaState{returned: m.media.returned}
 	m.adoptGraphics(m.graphics)
 	m.transcript = nil
 	m.items = nil

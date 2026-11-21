@@ -165,6 +165,8 @@ func StartDesktopController(ctx context.Context, rt *ConversationRuntime, publis
 }
 
 func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// The desktop app has its own text field.
+	m.app.conversation.media.inputElsewhere = true
 	var cmd tea.Cmd
 	if action, ok := msg.(DesktopAction); ok {
 		c := &m.app.conversation
@@ -326,10 +328,6 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.app, cmd = next.(App), nextCmd
 		default:
 			c.setStatus(fmt.Sprintf("Unknown desktop action: %s", action.Kind), true)
-		}
-		// Actions drive the conversation directly, past its own Update.
-		if back := c.returnRefusedDraft(); back != nil {
-			cmd = tea.Batch(cmd, back)
 		}
 	} else if result, ok := msg.(desktopOutputResult); ok {
 		m.outputActionBusy = false
