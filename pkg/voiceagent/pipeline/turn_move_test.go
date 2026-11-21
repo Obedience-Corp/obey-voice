@@ -225,6 +225,8 @@ func (b *workingBrain) requestLog() []string {
 // movingConversation is a conversation whose persona Anika is on a held
 // brain, with Obey named by any line starting "Hey Obey".
 type movingConversation struct {
+	readMu sync.Mutex
+	read   strings.Builder
 	t      *testing.T
 	p      *Pipeline
 	jobs   *job.Table
@@ -256,6 +258,11 @@ func newMovingConversation(t *testing.T, opts ...job.Option) *movingConversation
 	events.Subscribe(c.p.Events, func(e events.JobAborted) { keep(e) })
 	events.Subscribe(c.p.Events, func(e events.ToolCallFinished) { keep(e) })
 	events.Subscribe(c.p.Events, func(e events.ResponseReady) { keep(e) })
+	events.Subscribe(c.p.Events, func(e events.ResponseDelta) {
+		c.readMu.Lock()
+		c.read.WriteString(e.Text)
+		c.readMu.Unlock()
+	})
 	events.Subscribe(c.p.Events, func(e events.TurnMetrics) { keep(e) })
 	return c
 }
@@ -275,6 +282,30 @@ func (c *movingConversation) holdTurn() {
 	case <-c.anika.held:
 	case <-time.After(5 * time.Second):
 		c.t.Fatal("Anika's request never started")
+	}
+	c.waitRead()
+}
+
+// waitRead waits until the turn has read everything Anika sent before she
+// was held.
+func (c *movingConversation) waitRead() {
+	c.t.Helper()
+	want := strings.Join(c.anika.before, "")
+	if c.anika.before == nil {
+		want = "Working on it. "
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.readMu.Lock()
+		read := c.read.String()
+		c.readMu.Unlock()
+		if read == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			c.t.Fatalf("the turn read %q, want %q", read, want)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -814,6 +845,7 @@ func TestMovedVoiceReplyKeepsWhatItFinishedSaying(t *testing.T) {
 				c.turn <- err
 			}()
 			<-c.anika.held
+			c.waitRead()
 			deadline := time.Now().Add(5 * time.Second)
 			for len(voice.Texts()) == 0 {
 				if time.Now().After(deadline) {
