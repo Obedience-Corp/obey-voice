@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -22,13 +23,21 @@ func (m settingsModel) sttRows() []settingRow {
 	if value == "" {
 		value = "not set"
 	}
-	return []settingRow{{
+	rows := []settingRow{{
 		key: "stt_provider", name: "Recognizer", kind: rowPick,
 		value: value, detail: sttConfiguredAliasNote(m.cfg), options: options, current: current,
-		applies: "applies to a new conversation",
-		help:    "Which speech recognizer hears you.",
-		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectSTTItem(items[i]) },
+		applies:  "applies to a new conversation",
+		help:     "Which speech recognizer hears you. Choosing it installs its selected model.",
+		disabled: m.sttSetup.running, reason: "Model installation is running",
+		set: func(m *settingsModel, i int) tea.Cmd { return m.selectSTTItem(items[i]) },
 	}}
+	if modes := config.STTModes(active); len(modes) > 1 {
+		current, _ := config.NormalizeSTTWithMode(m.cfg.STTProvider, m.cfg.STTMode)
+		rows = append(rows, settingRow{key: "stt_mode", name: "Recognition mode", kind: rowChoice, options: modes, current: indexOf(modes, current.Mode), value: current.Mode, disabled: m.sttSetup.running, reason: "Model installation is running", help: "Offline waits for your pause; streaming recognizes speech as you speak. Choosing a mode installs its model.", set: func(m *settingsModel, i int) tea.Cmd {
+			return m.selectSTTItem(sttOptionItem{provider: active, mode: modes[i]})
+		}})
+	}
+	return append(rows, m.sttModelRows()...)
 }
 
 func (m settingsModel) speakerSettingRows() []settingRow {

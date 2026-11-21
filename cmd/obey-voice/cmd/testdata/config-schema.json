@@ -2264,6 +2264,11 @@
         "tdt-0.6b-v3",
         "tdt-110m"
       ],
+      "enum_labels": {
+        "tdt-0.6b-v2": "English — Parakeet v2 (600M)",
+        "tdt-0.6b-v3": "Multilingual (25 languages) — Parakeet v3 (600M)",
+        "tdt-110m": "English — Parakeet small (110M)"
+      },
       "allows_empty": false,
       "group": "models",
       "title": "Parakeet model",
@@ -2823,6 +2828,16 @@
       "key": "whisper_model",
       "type": "string",
       "default": "small",
+      "suggestions": [
+        "tiny",
+        "tiny.en",
+        "base",
+        "base.en",
+        "small",
+        "small.en",
+        "medium",
+        "medium.en"
+      ],
       "allows_empty": true,
       "group": "models",
       "title": "Whisper size",
@@ -2864,6 +2879,10 @@
       "key": "whispercpp_model",
       "type": "string",
       "default": "base.en",
+      "suggestions": [
+        "base.en",
+        "small.en"
+      ],
       "allows_empty": true,
       "group": "models",
       "title": "whisper.cpp model",

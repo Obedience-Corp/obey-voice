@@ -199,3 +199,106 @@ fn visible_text(shape: &Shape, clip: Rect, seen: &mut HashSet<String>) {
         _ => {}
     }
 }
+
+#[test]
+fn stt_settings_expose_multilingual_model_install_and_cancel() {
+    if std::env::var_os("VOICE_STT_SETTINGS_TEST").is_none() {
+        assert!(std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "screens::settings::tests::stt_settings_expose_multilingual_model_install_and_cancel"])
+            .env("VOICE_STT_SETTINGS_TEST", "1")
+            .env("OBEY_VOICE_AGENT_DEMO", "1")
+            .status().unwrap().success());
+        return;
+    }
+    let cc = eframe::CreationContext::_new_kittest(Default::default());
+    let mut app = VoiceApp::new(&cc);
+    app.screen = Screen::Settings;
+    app.group = "stt".into();
+    app.values["stt_provider"] = json!({"value":"parakeet","source":"config"});
+    app.values["parakeet_model"] = json!({"value":"tdt-0.6b-v2","source":"config"});
+    app.drafts
+        .insert("parakeet_model".into(), "tdt-0.6b-v3".into());
+    let saved = app.values.clone();
+    let viewport = Rect::from_min_size(Default::default(), Vec2::new(1000., 700.));
+    let mut seen = HashSet::new();
+    for frame in 0..100 {
+        let events = vec![
+            Event::PointerMoved(egui::pos2(700., 600.)),
+            Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: Vec2::new(0., if frame == 0 { 0. } else { -60. }),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
+                modifiers: Default::default(),
+            },
+        ];
+        let mut output = cc.egui_ctx.run_ui(
+            RawInput {
+                screen_rect: Some(viewport),
+                time: Some(frame as f64 / 30.),
+                events,
+                ..Default::default()
+            },
+            |ui| app.settings(ui),
+        );
+        output.textures_delta.clear();
+        for clipped in output.shapes {
+            visible_text(
+                &clipped.shape,
+                clipped.clip_rect.intersect(viewport),
+                &mut seen,
+            );
+        }
+    }
+    for label in [
+        "Speech recognition models",
+        "Parakeet model",
+        "Multilingual (25 languages) — Parakeet v3 (600M)",
+        "Save and install",
+        "Install / repair selected model",
+    ] {
+        assert!(seen.contains(label), "STT control not reachable: {label}");
+    }
+    assert!(
+        !seen.contains("Whisper size"),
+        "inactive recognizer model was shown"
+    );
+    assert_eq!(
+        saved, app.values,
+        "browsing must not save or download models"
+    );
+    // A running install must offer Cancel at the top, without scrolling past settings.
+    app.task = Some(800);
+    app.task_title = "Install selected speech model".into();
+    app.setup.download = json!({"asset":"tdt-0.6b-v3","phase":"download","pct":25});
+    seen.clear();
+    for frame in 100..106 {
+        let mut output = cc.egui_ctx.run_ui(
+            RawInput {
+                screen_rect: Some(viewport),
+                time: Some(frame as f64 / 30.),
+                events: vec![
+                    Event::PointerMoved(egui::pos2(700., 600.)),
+                    Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: Vec2::new(0., 10000.),
+                        phase: egui::TouchPhase::Move,
+                        source: egui::MouseWheelSource::Unknown,
+                        modifiers: Default::default(),
+                    },
+                ],
+                ..Default::default()
+            },
+            |ui| app.settings(ui),
+        );
+        output.textures_delta.clear();
+        for clipped in output.shapes {
+            visible_text(
+                &clipped.shape,
+                clipped.clip_rect.intersect(viewport),
+                &mut seen,
+            );
+        }
+    }
+    assert!(seen.contains("Cancel model installation"));
+}

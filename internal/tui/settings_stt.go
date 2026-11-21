@@ -152,6 +152,9 @@ func (m *settingsModel) binaryLookPath() func(string) (string, error) {
 
 // selectSTTItem saves a recognizer row: provider and mode as a pair.
 func (m *settingsModel) selectSTTItem(item sttOptionItem) tea.Cmd {
+	if m.sttSetup.running {
+		return nil
+	}
 
 	// Provider and mode are written as a pair, so the result is always a pair
 	// this build can resolve. A refusal here would mean the table itself is
@@ -186,7 +189,7 @@ func (m *settingsModel) selectSTTItem(item sttOptionItem) tea.Cmd {
 	if gap := config.STTEnvironmentGap(item.provider, m.cfg, config.ModelsDirFrom(m.cfg), m.binaryLookPath()); gap.Missing() {
 		m.message += fmt.Sprintf(" · %s is not ready on this computer: %s — %s", item.provider, gap.Detail, gap.Remediation)
 	}
-	return nil
+	return m.startSTTSetup()
 }
 
 // sttApplyNote is the truth about when a recognizer change takes effect.

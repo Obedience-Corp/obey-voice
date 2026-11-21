@@ -79,6 +79,7 @@ type settingsModel struct {
 	// voiceItems, view state that is never saved. See settings_voices.go.
 	voices        voiceCatalog
 	voiceLocale   string
+	sttSetup      sttSetup
 	speechSetup   speechSetup
 	decisionSetup decisionSetup
 	storage       *storageState
@@ -611,6 +612,8 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		return m, m.applyDecisionSetup(msg)
 	case storageUsageMsg, storageMoveProgressMsg, storageMoveDoneMsg, storagePlanMsg:
 		return m, m.applyStorage(msg)
+	case sttSetupProgressMsg, sttSetupDoneMsg:
+		return m, m.applySTTSetup(msg)
 	case speechSetupProgressMsg, speechSetupDoneMsg:
 		cmd := m.applySpeechSetup(msg)
 		return m, cmd

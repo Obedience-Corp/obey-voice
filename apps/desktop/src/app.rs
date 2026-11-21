@@ -14,6 +14,8 @@ mod resident;
 mod resident_tests;
 mod setup;
 mod speech_catalog;
+#[cfg(test)]
+mod stt_settings_tests;
 mod view;
 
 use crate::backend::Backend;

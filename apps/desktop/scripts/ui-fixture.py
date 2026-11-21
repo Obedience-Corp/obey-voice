@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--native-audio', action='store_true', help='Quiet native persona setup fixture; no device playback')
+parser.add_argument('--stt-models', action='store_true', help='Real STT settings persistence with download failure/cancel/retry fixtures')
 parser.add_argument('--fresh', action='store_true', help='Start without config.yaml or setup progress')
 parser.add_argument('--voice-preview', action='store_true', help='Serve test tones for persona previews; voice broken fails, slow delays')
 parser.add_argument("--brain-error", action="store_true", help="Return a provider error for requests containing trigger failure")
@@ -133,6 +134,8 @@ voice_work_enabled: false
 voice_tools_enabled: false
 skills_enabled: false
 '''
+if args.stt_models:
+    fixture_config += f'stt_provider: parakeet\nparakeet_model: tdt-0.6b-v2\nmodels_dir: {fixture_root / "models"}\n'
 if args.group_participation:
     fixture_config += 'group_participation_enabled: true\ngroup_participation_mode: invited\n'
 if args.voice_preview:
@@ -141,7 +144,7 @@ if not args.fresh:
     (config_dir / 'config.yaml').write_text(fixture_config)
 if args.recorded_input:
     subprocess.run(['go', 'run', str(root / 'scripts/recording-fixture.go')], cwd=root.parent.parent, env=dict(os.environ, OBEY_VOICE_TEST_CONFIG=str(config_dir)), check=True)
-fixture_app = root / ('dist/Obey Voice Agent Images Test.app' if args.agent_images else 'dist/Obey Voice Images Test.app' if args.images else 'dist/Obey Voice Test.app')
+fixture_app = root / ('dist/Obey Voice STT Test.app' if args.stt_models else 'dist/Obey Voice Agent Images Test.app' if args.agent_images else 'dist/Obey Voice Images Test.app' if args.images else 'dist/Obey Voice Test.app')
 if args.images:
     env = dict(os.environ, OBEY_VOICE_MEDIA_FIXTURE_DIR=str(fixture_root))
     subprocess.run(['go', 'test', './internal/testmedia', '-run', '^TestWriteFixtures$', '-count=1'], cwd=root.parent.parent, env=env, check=True)
@@ -182,7 +185,10 @@ int main(void) {
 }
 ''', text=True, check=True)
     info['CFBundleExecutable'] = 'fixture-launcher'
+if args.stt_models:
+    info.update(CFBundleIdentifier='com.obedience.voice-agent.stt-models-test', CFBundleName='Obey Voice STT Test', CFBundleDisplayName='Obey Voice STT Test')
 info['LSEnvironment'] = {'OBEY_VOICE_REPLAY_FIXTURE': '1' if args.recorded_input else '0', 'OBEY_VOICE_TEST_CONFIG': str(config_dir), 'OBEY_VOICE_LOG_DIR': str(fixture_root / 'logs')}
+info['LSEnvironment']['OBEY_VOICE_STT_SETUP_FIXTURE'] = '1' if args.stt_models else '0'
 info['LSEnvironment']['OBEY_VOICE_OUTPUT_FIXTURE'] = '1' if args.audio_output else '0'
 with plist_path.open('wb') as f:
     plistlib.dump(info, f)

@@ -87,3 +87,12 @@ func (a ParakeetAsset) EnglishOnly() bool { return a.Name != "tdt-0.6b-v3" }
 func (a ParakeetAsset) RequiredFiles() []string {
 	return []string{a.Encoder(), a.Decoder(), a.Joiner(), a.Tokens()}
 }
+
+// parakeetModelLabels describes the language and size tradeoffs in model pickers.
+func parakeetModelLabels() map[string]string {
+	return map[string]string{
+		"tdt-0.6b-v2": "English — Parakeet v2 (600M)",
+		"tdt-0.6b-v3": "Multilingual (25 languages) — Parakeet v3 (600M)",
+		"tdt-110m":    "English — Parakeet small (110M)",
+	}
+}
