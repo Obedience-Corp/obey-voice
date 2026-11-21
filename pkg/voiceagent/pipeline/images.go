@@ -20,13 +20,24 @@ func (p *Pipeline) ValidateImages(ctx context.Context, refs []chatmedia.Ref) err
 }
 
 // Bind a provider at the serialized UI boundary before starting a read-only probe.
+//
+// A picture belongs to the conversation, not to the persona that is selected
+// when it is sent. A provider that keeps a picture on the record admits it
+// whether or not its own model can view it. A provider that would drop the
+// picture refuses it.
 func (p *Pipeline) ImageValidator() func(context.Context, []chatmedia.Ref) error {
+	keeper, keeps := p.Brain.(interface {
+		ValidateNewImages(context.Context, []chatmedia.Ref) error
+	})
 	validator, ok := p.Brain.(interface {
 		ValidateImages(context.Context, []chatmedia.Ref) error
 	})
 	return func(ctx context.Context, refs []chatmedia.Ref) error {
 		if len(refs) == 0 {
 			return nil
+		}
+		if keeps {
+			return keeper.ValidateNewImages(ctx, refs)
 		}
 		if !ok {
 			return errors.New("this provider does not support image input; choose a vision-capable Ollama model, Codex or Claude")

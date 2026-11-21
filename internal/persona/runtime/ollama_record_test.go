@@ -100,17 +100,26 @@ func newLocalConversationWithTools(t *testing.T, maxHistory int, routerTools str
 	return c
 }
 
+// textOnlyModel is the fixture model that cannot view images.
+const textOnlyModel = "text-only:latest"
+
 // serveOllama answers a request offering the route tool by choosing chat,
 // one offering read_file for a line asking to read by reading notes.txt, and
 // any other request with a reply numbered by its request.
 func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.URL.Path == "/api/show" {
+		var show struct{ Model string }
+		_ = json.NewDecoder(r.Body).Decode(&show)
+		if show.Model == textOnlyModel {
+			_, _ = w.Write([]byte(`{"capabilities":["completion"]}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{"capabilities":["completion","vision"]}`))
 		return
 	}
 	if r.URL.Path != "/api/chat" {
-		_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
+		_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"},{"name":"` + textOnlyModel + `"}]}`))
 		return
 	}
 	body, err := io.ReadAll(r.Body)

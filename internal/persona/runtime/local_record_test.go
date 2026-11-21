@@ -183,6 +183,36 @@ func TestImageReachesTheOllamaPersonaItWasNotSaidTo(t *testing.T) {
 	}
 }
 
+// A picture sent while a persona that cannot view images is selected goes into
+// the conversation. That persona answers without it, and the persona that
+// views images receives it.
+func TestPictureSentToATextOnlyPersonaReachesThePersonaThatViewsImages(t *testing.T) {
+	c := newLocalConversation(t, 20, "ember", "scout")
+	blind := testProfile("ember", "Ember", "ember")
+	blind.Brain.Model = textOnlyModel
+	writeTestProfile(t, c.catalog.Dir, blind)
+	c.start("ember", nil, nil)
+	ref, err := chatmedia.DefaultStore().Import("diagram.png", append(slices.Clone(testmedia.PNG()), 9))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c.sayWith([]chatmedia.Ref{ref}, "What is in this diagram?")
+	if sent := c.lastOllamaRequest(); strings.Contains(sent, `"images":[`) || !strings.Contains(sent, "(diagram.png): not shown, because this model cannot view images.") {
+		t.Fatalf("Ember, who cannot view images, was sent:\n%s", sent)
+	}
+	c.say("switch to Scout", "What did I show?")
+	if sent := c.lastOllamaRequest(); !strings.Contains(sent, `"images":[`) || strings.Contains(sent, "not shown") {
+		t.Fatalf("Scout was not sent the image:\n%s", sent)
+	}
+	if turns := c.selector.Transcript(); !slices.Equal(turns[0].Attachments, []chatmedia.Ref{ref}) {
+		t.Fatalf("recorded line = %+v", turns[0])
+	}
+	if errs := c.errorEvents(); len(errs) > 0 {
+		t.Fatalf("errors: %+v", errs)
+	}
+}
+
 func TestLocalConversationWithAToolRoundSendsOllamaWhatItWasSentBefore(t *testing.T) {
 	c := newLocalConversationWithTools(t, 6, "", "ember", "scout")
 	if err := os.WriteFile(filepath.Join(c.root, "notes.txt"), []byte("The vault code is cobalt.\n"), 0o600); err != nil {

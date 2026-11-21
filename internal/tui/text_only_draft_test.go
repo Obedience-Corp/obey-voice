@@ -1,0 +1,144 @@
+package tui
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/ollama/ollama/api"
+)
+
+// textOnlyChat is a conversation whose selected persona runs on an Ollama
+// model that cannot view images, with the real provider and pipeline.
+type textOnlyChat struct {
+	model conversationModel
+	brain *brain.OllamaBrain
+	mu    sync.Mutex
+	sent  []api.ChatRequest
+}
+
+func newTextOnlyChat(t *testing.T) *textOnlyChat {
+	t.Helper()
+	root := t.TempDir()
+	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
+	c := &textOnlyChat{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/show":
+			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion"}})
+		case "/api/chat":
+			var req api.ChatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+				return
+			}
+			c.mu.Lock()
+			c.sent = append(c.sent, req)
+			c.mu.Unlock()
+			_ = json.NewEncoder(w).Encode(api.ChatResponse{Model: "fixture", Message: api.Message{Role: "assistant", Content: "I cannot view it."}, Done: true, DoneReason: "stop"})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"models": []map[string]string{{"name": "fixture"}}})
+		}
+	}))
+	t.Cleanup(server.Close)
+	cfg := &config.Config{BrainProvider: "ollama", OllamaHost: server.URL, OllamaModel: "fixture", OllamaNumCtx: 8192, WorkDir: root, PromptsDir: filepath.Join(root, "prompts"), AgentName: "Venessa", MaxHistory: 20}
+	var err error
+	if c.brain, err = brain.NewOllama(cfg); err != nil {
+		t.Fatal(err)
+	}
+	bus := events.NewBus()
+	c.model = sizedConversation(t, 100, 40)
+	c.model.cfg = cfg
+	c.model.deps = conversationDeps{runner: &pipeline.Pipeline{Brain: c.brain, Events: bus}, ctx: t.Context(), bus: bus}
+	return c
+}
+
+// attach puts one picture in the draft, as a paste or a dropped file does.
+func (c *textOnlyChat) attach(t *testing.T) chatmedia.Ref {
+	t.Helper()
+	cmd := c.model.importMedia(nil, testmedia.PNG())
+	if cmd == nil {
+		t.Fatal("missing import")
+	}
+	c.model.updateMedia(cmd())
+	return c.model.media.draft[len(c.model.media.draft)-1]
+}
+
+func (c *textOnlyChat) requests() []api.ChatRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]api.ChatRequest(nil), c.sent...)
+}
+
+// The picture is for the conversation, so the draft is sent. The selected
+// model answers without it and the record keeps it for a persona that views
+// images.
+func TestPictureDraftIsSentWhileATextOnlyModelIsSelected(t *testing.T) {
+	c := newTextOnlyChat(t)
+	ref := c.attach(t)
+	c.model.input.SetValue("What is on my screen?")
+	check := c.model.handleSubmit()
+	if check == nil {
+		t.Fatal("missing draft check")
+	}
+	send, _ := c.model.updateMedia(check())
+	if c.model.media.err != "" || send == nil {
+		t.Fatalf("the draft was refused: %q", c.model.media.err)
+	}
+	if done, ok := send().(textTurnDoneMsg); !ok || done.err != nil {
+		t.Fatalf("turn: %+v", done)
+	}
+	sent := c.requests()
+	if len(sent) == 0 {
+		t.Fatal("the turn was not sent")
+	}
+	for _, req := range sent {
+		told := false
+		for _, m := range req.Messages {
+			if len(m.Images) > 0 {
+				t.Fatal("a model that cannot view images was sent one")
+			}
+			told = told || strings.Contains(m.Content, "not shown, because this model cannot view images.")
+		}
+		if !told {
+			t.Fatal("the model was not told a picture was left out")
+		}
+	}
+	history := c.brain.History()
+	if len(history) != 2 || history[0].Content != "What is on my screen?" || len(history[0].Attachments) != 1 || history[0].Attachments[0] != ref {
+		t.Fatalf("the conversation record: %+v", history)
+	}
+}
+
+// A picture that cannot be read is still refused at the draft, before it can
+// enter the conversation and fail every persona that views images.
+func TestUnreadablePictureDraftIsRefusedWhileATextOnlyModelIsSelected(t *testing.T) {
+	c := newTextOnlyChat(t)
+	ref := c.attach(t)
+	if err := os.Remove(chatmedia.DefaultStore().Path(ref)); err != nil {
+		t.Fatal(err)
+	}
+	c.model.input.SetValue("What is on my screen?")
+	check := c.model.handleSubmit()
+	if check == nil {
+		t.Fatal("missing draft check")
+	}
+	send, _ := c.model.updateMedia(check())
+	if c.model.media.err == "" || send != nil || len(c.model.media.draft) != 1 || c.model.input.Value() != "What is on my screen?" {
+		t.Fatalf("an unreadable picture was not refused with its draft kept: err=%q", c.model.media.err)
+	}
+	if len(c.requests()) != 0 || len(c.brain.History()) != 0 {
+		t.Fatal("a refused picture reached the model or the record")
+	}
+}

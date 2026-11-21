@@ -2,9 +2,16 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -156,5 +163,49 @@ func TestProviderWithoutImageInputAnswersAndSaysSoWithItsRequest(t *testing.T) {
 				t.Fatalf("requests %d, notice said %d times", b.requests, said)
 			}
 		})
+	}
+}
+
+// A new picture is admitted to the conversation whatever the selected Ollama
+// model can view. The checks that keep a bad picture out of the record stay,
+// and a provider that would drop the picture still refuses it.
+func TestNewPictureAdmission(t *testing.T) {
+	root := t.TempDir()
+	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
+	var good []chatmedia.Ref
+	for i := range 5 {
+		ref, err := chatmedia.DefaultStore().Import(fmt.Sprintf("picture-%d.png", i), append(slices.Clone(testmedia.PNG()), byte(i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		good = append(good, ref)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/show":
+			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion"}})
+		case "/api/chat":
+			t.Error("an admission check reached the model")
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"models": []map[string]string{{"name": "fixture"}}})
+		}
+	}))
+	t.Cleanup(server.Close)
+	textOnly, err := brain.NewOllama(&config.Config{OllamaHost: server.URL, OllamaModel: "fixture", MaxHistory: 20, WorkDir: root, PromptsDir: filepath.Join(root, "prompts"), AgentName: "Venessa"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admit := (&Pipeline{Brain: textOnly}).ImageValidator()
+	if err := admit(t.Context(), good[:1]); err != nil {
+		t.Fatalf("a picture for the conversation was refused: %v", err)
+	}
+	if err := admit(t.Context(), good); err == nil || !strings.Contains(err.Error(), "at most four") {
+		t.Fatalf("five pictures: %v", err)
+	}
+	if err := admit(t.Context(), []chatmedia.Ref{{ID: "missing", Name: "gone.png", Format: "png"}}); err == nil {
+		t.Fatal("a picture that does not load was admitted")
+	}
+	if err := (&Pipeline{Brain: &noImageInput{}}).ImageValidator()(t.Context(), good[:1]); err == nil || !strings.Contains(err.Error(), "does not support image input") {
+		t.Fatalf("a provider that would drop the picture: %v", err)
 	}
 }

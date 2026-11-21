@@ -10,8 +10,8 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-// ValidateImages checks new pictures before their turn is sent. A model that
-// cannot view them refuses them here, while the draft can still be changed.
+// ValidateImages checks pictures for a model that must view them, such as a
+// worker handed a picture job. A model that cannot refuses them.
 func (o *OllamaBrain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) error {
 	if len(refs) == 0 {
 		return nil
@@ -24,6 +24,18 @@ func (o *OllamaBrain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) 
 		return fmt.Errorf("model %s does not support images; select a vision-capable Ollama model", o.model)
 	}
 	_, err = loadImageData(refs)
+	return err
+}
+
+// ValidateNewImages checks pictures as they enter the conversation: how many
+// there are, and that each one loads. Whether this model can view them is not
+// asked. One that cannot answers without them, and they stay on the record
+// for a persona that can.
+func (o *OllamaBrain) ValidateNewImages(ctx context.Context, refs []chatmedia.Ref) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, err := loadImageData(refs)
 	return err
 }
 
