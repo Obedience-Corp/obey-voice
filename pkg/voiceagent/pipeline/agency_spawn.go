@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -42,36 +43,13 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if task == "" {
 		task = "background task"
 	}
-	experimental := a.workEnabled()
-	// A persona doing its own work runs on its own backend, held to the
-	// routed tier's limits in tiered mode; the configured worker and the
-	// tier's assignment apply only to work handed to the worker.
-	decision := a.turnWork(ctx)
-	jobCfg, own := decision.own, decision.own != nil
-	var worker brain.Provider
-	var plan *config.WorkerPlan
-	var ownTier *config.OwnTier
-	if own {
-		var err error
-		if ownTier, err = decision.admit(d.Tier); err != nil {
-			a.emitRouteDecision(d, "rejected", "", err.Error())
-			a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
-			return
-		}
-	} else {
-		var workerErr error
-		worker, jobCfg, plan, workerErr = a.admitWorker(d.Tier)
-		if workerErr != nil {
-			a.emitRouteDecision(d, "rejected", "", workerErr.Error())
-			a.pipeline.emit(events.Error{Stage: "job", Message: workerErr.Error()})
-			return
-		}
-	}
-	if experimental && plan == nil && providerName(jobCfg) != "ollama" {
-		a.emitRouteDecision(d, "rejected", "", "Experimental work requires a local worker; paid and unknown providers are disabled.")
-		a.pipeline.emit(events.Error{Stage: "job", Message: "Experimental work requires a local worker; paid and unknown providers are disabled."})
+	w, err := a.admitSpawn(ctx, d.Tier, a.workerSource())
+	if err != nil {
+		a.emitRouteDecision(d, "rejected", "", err.Error())
+		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 		return
 	}
+	jobCfg, own, decision := w.cfg, w.own, w.decision
 	// The job sends the persona's share to its hosted backend; the user is
 	// told first, as before any other request to it.
 	if own && brain.IsHosted(providerName(jobCfg)) {
@@ -82,13 +60,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	}
 	jobID := ""
 	var key work.JobKey
-	admission := frozenWorkerConfig(jobCfg, plan)
-	if own {
-		admission["work"] = config.WorkOwn
-		if ownTier != nil {
-			admission["worker_tier"] = string(ownTier.Tier)
-		}
-	}
+	admission := w.admission()
 	if c, scope := a.workAuthority(); c != nil {
 		jobID = newWorkID()
 		var err error
@@ -102,44 +74,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		a.jobScopes[jobID] = scope
 		a.workMu.Unlock()
 	}
-	user := ""
-	if jobCfg != nil {
-		user = jobCfg.UserDisplayName
-	}
-	brief := spawnBrief(history, d.Transcript, briefPersonaID(metrics, jobCfg), a.pipeline.SpeakerNames, user)
-	imageTask := requestsChatImage(task, history)
-	if imageTask {
-		instruction, err := prompts.RenderSystem(config.PromptsDirFrom(jobCfg), "worker-image-delivery", nil)
-		if err != nil {
-			a.pipeline.emit(events.Info{Message: err.Error()})
-		}
-		brief += "\n" + instruction
-	}
-	run := a.workerRun(brief, worker, jobCfg)
-	switch {
-	case plan != nil:
-		run = a.plannedWorkerRun(brief, jobCfg, plan)
-	case own:
-		run = a.ownWorkRun(brief, jobCfg, ownTier)
-	}
-	refs := chatmedia.Input(ctx)
-	if len(refs) > 0 || imageTask {
-		originalRun := run
-		run = func(jobCtx context.Context) (string, error) {
-			if imageTask {
-				jobCtx = context.WithValue(jobCtx, imageDeliveryKey{}, true)
-			}
-			return originalRun(chatmedia.WithInput(jobCtx, refs))
-		}
-	}
-	run = withLiveSkills(a.pipeline.Brain, run)
-	var runtimeBudget time.Duration
-	if plan != nil {
-		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
-	}
-	if own {
-		runtimeBudget = a.ownRuntimeBudget(decision, ownTier)
-	}
+	run, runtimeBudget := a.spawnRun(ctx, metrics, d.Transcript, task, history, a.pipeline.Brain, w)
 	origin := workerOrigin{Scope: a.pipeline.ConversationScope(), Trace: events.TraceFromContext(ctx), admission: admission}
 	if metrics != nil {
 		origin.Envelope = metrics.response
@@ -192,6 +127,94 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 			metrics.degraded = true
 		}
 	}
+}
+
+// spawnWork is who runs a spawned job: the persona itself, under its routed
+// tier, or a worker admitted from the configuration at hand.
+type spawnWork struct {
+	decision workDecision
+	own      bool
+	cfg      *config.Config
+	worker   brain.Provider
+	plan     *config.WorkerPlan
+	ownTier  *config.OwnTier
+}
+
+// admitSpawn decides who runs work routed at tier. A persona doing its own
+// work runs on its own backend, held to the routed tier's limits in tiered
+// mode; the configured worker and the tier's assignment apply only to work
+// handed to the worker.
+func (a *Agency) admitSpawn(ctx context.Context, tier config.WorkerTierName, source workerSource) (spawnWork, error) {
+	decision := a.turnWork(ctx)
+	w := spawnWork{decision: decision, own: decision.own != nil, cfg: decision.own}
+	var err error
+	if w.own {
+		w.ownTier, err = decision.admit(tier)
+	} else {
+		w.worker, w.cfg, w.plan, err = a.admitWorkerFrom(source, tier)
+	}
+	if err != nil {
+		return w, err
+	}
+	if a.workEnabled() && w.plan == nil && providerName(w.cfg) != "ollama" {
+		return w, errors.New("Experimental work requires a local worker; paid and unknown providers are disabled.")
+	}
+	return w, nil
+}
+
+func (w spawnWork) admission() map[string]string {
+	admission := frozenWorkerConfig(w.cfg, w.plan)
+	if w.own {
+		admission["work"] = config.WorkOwn
+		if w.ownTier != nil {
+			admission["worker_tier"] = string(w.ownTier.Tier)
+		}
+	}
+	return admission
+}
+
+// spawnRun is a spawned job's run function, briefed from history, and the
+// runtime limit it is admitted with; zero leaves the job table's.
+func (a *Agency) spawnRun(ctx context.Context, metrics *turnMetrics, transcript, task string, history []brain.Turn, live brain.Provider, w spawnWork) (func(context.Context) (string, error), time.Duration) {
+	user := ""
+	if w.cfg != nil {
+		user = w.cfg.UserDisplayName
+	}
+	brief := spawnBrief(history, transcript, briefPersonaID(metrics, w.cfg), a.pipeline.SpeakerNames, user)
+	imageTask := requestsChatImage(task, history)
+	if imageTask {
+		instruction, err := prompts.RenderSystem(config.PromptsDirFrom(w.cfg), "worker-image-delivery", nil)
+		if err != nil {
+			a.pipeline.emit(events.Info{Message: err.Error()})
+		}
+		brief += "\n" + instruction
+	}
+	run := a.workerRun(brief, w.worker, w.cfg)
+	switch {
+	case w.plan != nil:
+		run = a.plannedWorkerRun(brief, w.cfg, w.plan)
+	case w.own:
+		run = a.ownWorkRun(brief, w.cfg, w.ownTier)
+	}
+	refs := chatmedia.Input(ctx)
+	if len(refs) > 0 || imageTask {
+		originalRun := run
+		run = func(jobCtx context.Context) (string, error) {
+			if imageTask {
+				jobCtx = context.WithValue(jobCtx, imageDeliveryKey{}, true)
+			}
+			return originalRun(chatmedia.WithInput(jobCtx, refs))
+		}
+	}
+	run = withLiveSkills(live, run)
+	var runtimeBudget time.Duration
+	if w.plan != nil {
+		runtimeBudget = time.Duration(w.plan.Limits.RuntimeSeconds) * time.Second
+	}
+	if w.own {
+		runtimeBudget = a.ownRuntimeBudget(w.decision, w.ownTier)
+	}
+	return run, runtimeBudget
 }
 
 // liveHistory is the talking brain's conversation, or nil when there is no

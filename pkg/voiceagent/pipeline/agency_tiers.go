@@ -82,7 +82,23 @@ func (a *Agency) ApplyWorkerSettings(settings *config.VoiceWorkers) error {
 // admitWorker resolves only configuration here. Catalog I/O and provider
 // construction happen on the job goroutine, without coordinator/config locks.
 func (a *Agency) admitWorker(tier config.WorkerTierName) (brain.Provider, *config.Config, *config.WorkerPlan, error) {
-	worker, cfg, legacyErr := a.workerAdmission()
+	return a.admitWorkerFrom(a.workerSource(), tier)
+}
+
+// workerSource is the worker configuration a spawn is admitted from.
+type workerSource struct {
+	worker brain.Provider
+	cfg    *config.Config
+	err    error
+}
+
+func (a *Agency) workerSource() workerSource {
+	worker, cfg, err := a.workerAdmission()
+	return workerSource{worker: worker, cfg: cfg, err: err}
+}
+
+func (a *Agency) admitWorkerFrom(source workerSource, tier config.WorkerTierName) (brain.Provider, *config.Config, *config.WorkerPlan, error) {
+	worker, cfg, legacyErr := source.worker, cloneConfig(source.cfg), source.err
 	if cfg != nil && cfg.VoiceWorkers != nil {
 		if err := cfg.VoiceWorkers.Validate(); err != nil {
 			return nil, cfg, nil, err
