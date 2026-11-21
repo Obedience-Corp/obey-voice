@@ -394,15 +394,15 @@ func TestOneLineImageReplySpeaksItsSentence(t *testing.T) {
 	}
 }
 
-func TestSpeechSkipsEveryReferenceSplitAcrossSegments(t *testing.T) {
+func TestSpeechSkipsAReferenceSplitAcrossSegments(t *testing.T) {
 	projection := NewSpeechProjection()
 	var spoken []string
-	for _, chunk := range []string{"Here they are. ![A](</w/a.", "png>) ![B](</w/b.", "png>) ![C](/w/c.", "png)", "That is all."} {
+	for _, chunk := range []string{"![A](</w/a.", "png>)", "That is all."} {
 		if got := projection.Speak(chunk).Speakable; got != "" {
 			spoken = append(spoken, got)
 		}
 	}
-	if strings.Join(spoken, " ") != "Here they are. That is all." {
+	if strings.Join(spoken, " ") != "That is all." {
 		t.Fatalf("spoken %q", spoken)
 	}
 }
@@ -433,19 +433,20 @@ func gateSpeaks(lines ...string) []string {
 
 // Speech keeps only the prose before references that end a line. Any other
 // reference drops its line, and a "![" that is not a picture is left alone.
-func TestSpeechResumesAfterANonImageBang(t *testing.T) {
+// Only complete references that end a line are cut out of it. Any other line
+// holding "![" is dropped whole, so no path or Markdown reaches speech.
+func TestSpeechSpeaksOnlyTheProseBeforeTrailingReferences(t *testing.T) {
 	for _, tc := range []struct {
 		lines, want []string
 	}{
-		{[]string{"let v = vec![1, 2, 3];", "Next sentence here."}, []string{"let v = vec![1, 2, 3];", "Next sentence here."}},
-		{[]string{"Great![laughs] That's wonderful.", "Next sentence here."}, []string{"Great![laughs] That's wonderful.", "Next sentence here."}},
-		{[]string{"Oh wow![laughs]", "Next sentence here."}, []string{"Oh wow![laughs]", "Next sentence here."}},
-		{[]string{"Look ![a](b (1).png) now, okay.", "Next sentence here."}, []string{"Next sentence here."}},
-		{[]string{"![a](<my (1).", "png>)", "Here is the chart."}, []string{"Here is the chart."}},
-		{[]string{"![a](</w/a.", "png>) Here is the chart.", "Next sentence here."}, []string{"Next sentence here."}},
-		{[]string{"See ![a](x.png): the chart.", "Here ![a](x.png) it is.", "Next sentence here."}, []string{"Next sentence here."}},
 		{[]string{"Here it is: ![a](</w/a.png>) ![b](/w/b.png)"}, []string{"Here it is:"}},
+		{[]string{"Here they are, freshly made.", "![A](/w/a.jpg) ![B](/w/b.jpg)", "Next sentence here."}, []string{"Here they are, freshly made.", "Next sentence here."}},
+		{[]string{"See ![a](x.png): the chart.", "Here ![a](x.png) it is.", "Next sentence here."}, []string{"Next sentence here."}},
+		{[]string{"See ![a](x.png): the chart. ![b](y.png)", "Next sentence here."}, []string{"Next sentence here."}},
+		{[]string{"Here it is: ![a [b] c](/w/x.png)", "Next sentence here."}, []string{"Next sentence here."}},
+		{[]string{"Look ![a](b (1).png) now, okay.", "Next sentence here."}, []string{"Next sentence here."}},
 		{[]string{"Write `![a](b.png)` to show a picture.", "Next sentence here."}, []string{"Next sentence here."}},
+		{[]string{"a. ![x](/w/a.png)", "ii) ![y](/w/b.png)", "Next sentence here."}, []string{"Next sentence here."}},
 	} {
 		if got := gateSpeaks(tc.lines...); !slices.Equal(got, tc.want) {
 			t.Errorf("%q: spoken %q, want %q", tc.lines, got, tc.want)
@@ -453,7 +454,15 @@ func TestSpeechResumesAfterANonImageBang(t *testing.T) {
 	}
 }
 
-// A reference inside a fenced or tool region does not end the region.
+// Code that holds "![" must leave the fence state as it found it.
+func TestSpeechKeepsFencesAroundCodeThatHoldsABang(t *testing.T) {
+	reply := "Here's how:\n```go\nif strings.HasPrefix(s, \"![\") {\n\treturn\n}\n```\nOK?\nThat's all.\n```go\nx := y\n```\nDone."
+	got, _ := (&voiceGate{}).filter(reply)
+	if got != "Here's how:\nOK?\nThat's all.\nDone." {
+		t.Fatalf("spoken %q", got)
+	}
+}
+
 func TestSpeechKeepsRegionsAroundAReference(t *testing.T) {
 	for _, tc := range []struct {
 		lines, want []string

@@ -19,11 +19,8 @@ const imageReference = `!\[([^\]\r\n]*)\]\((?:<([^>\r\n]+)>|([^()\r\n]+))\)`
 var (
 	inlineImage = regexp.MustCompile(imageReference)
 	replyImage  = regexp.MustCompile(`^[\t ]*` + imageReference + `[\t ]*\r?$`)
-	bareMarker  = regexp.MustCompile(`^[\t ]*(?:>[\t ]*)*(?:[-*+•]|[0-9]+[.)])?[\t ]*$`)
+	bareMarker  = regexp.MustCompile(`^[\t ]*(?:>[\t ]*)*(?:[-*+•]|(?:[0-9]+|[A-Za-z]|[ivxIVX]{2,4})[.)])?[\t ]*$`)
 	bulletOnly  = regexp.MustCompile(`^[\t ]*(?:>[\t ]*)*(?:[-*+•][\t ]*)?$`)
-	leadImage   = regexp.MustCompile(`^` + imageReference)
-	openImage   = regexp.MustCompile(`^!\[[^\]\r\n]*(?:\]\((?:<[^>\r\n]*>?|[^()<\r\n]*))?$`)
-	imageTry    = regexp.MustCompile(`^!\[[^\]\r\n]*\]\(`)
 )
 
 // ImportReply runs on the owning response/job goroutine, before publication.
@@ -200,33 +197,6 @@ func ProtectImageExamples(text string) string {
 }
 
 func inertImage(ref string) string { return ref[1:] }
-
-// LeadingImageReference returns the end of a complete reference that starts
-// text, or -1.
-func LeadingImageReference(text string) int {
-	if m := leadImage.FindStringIndex(text); m != nil {
-		return m[1]
-	}
-	return -1
-}
-
-// UnfinishedImageReference reports whether text, from its "![", could still
-// become a reference: the caption or the target is not closed yet.
-func UnfinishedImageReference(text string) bool {
-	return openImage.MatchString(text)
-}
-
-// ImageReferenceAttempt reports whether text starts like a reference, "![…](",
-// whether or not the rest is valid.
-func ImageReferenceAttempt(text string) bool {
-	return imageTry.MatchString(text)
-}
-
-// HasImageReference reports whether text holds a complete reference anywhere,
-// in code or escaped included.
-func HasImageReference(text string) bool {
-	return inlineImage.MatchString(text)
-}
 
 // ReplyProse omits complete image directives when judging spoken sentence
 // boundaries. An unfinished directive remains visible to truncation checks.
