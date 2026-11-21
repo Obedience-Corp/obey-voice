@@ -70,7 +70,7 @@ func feedIncremental(t *testing.T, ctx context.Context, segment *playbackSegment
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		pumpIncremental(ctx, segment, stream, nil, inputRate, outputRate, 0)
+		pumpIncremental(ctx, segment, stream, nil, inputRate, outputRate, testStallTimer(t, stream))
 	}()
 	for _, chunk := range chunks {
 		if err := stream.Write(chunk); err != nil {
@@ -94,7 +94,7 @@ func TestIncrementalSegmentIsAudibleBeforeTheStreamCloses(t *testing.T) {
 	if err := stream.SetSampleRate(rate); err != nil {
 		t.Fatal(err)
 	}
-	go pumpIncremental(ctx, segment, stream, nil, rate, rate, 0)
+	go pumpIncremental(ctx, segment, stream, nil, rate, rate, testStallTimer(t, stream))
 
 	// One chunk, comfortably more than the pre-roll, and then nothing.
 	if err := stream.Write(chunkSamples(0, rate/2, rate)); err != nil {
@@ -276,7 +276,7 @@ func TestIncrementalPumpFailsTheSegmentOnCancel(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		pumpIncremental(ctx, segment, stream, nil, rate, rate, 0)
+		pumpIncremental(ctx, segment, stream, nil, rate, rate, testStallTimer(t, stream))
 	}()
 	if err := stream.Write(chunkSamples(0, 2400, rate)); err != nil {
 		t.Fatal(err)
@@ -309,7 +309,7 @@ func TestIncrementalPumpStallBudgetIsSilenceNotDuration(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		pumpIncremental(ctx, segment, stream, nil, rate, rate, stream.StallBudget())
+		pumpIncremental(ctx, segment, stream, nil, rate, rate, testStallTimer(t, stream))
 	}()
 	// Six batches at 40 ms apart run well past the 120 ms budget in total
 	// while never being silent for it.
@@ -342,9 +342,10 @@ func TestIncrementalPumpFailsOnSilencePastTheBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
+	stream.SetStallBudget(50 * time.Millisecond)
 	go func() {
 		defer close(done)
-		pumpIncremental(ctx, segment, stream, nil, rate, rate, 50*time.Millisecond)
+		pumpIncremental(ctx, segment, stream, nil, rate, rate, testStallTimer(t, stream))
 	}()
 	if err := stream.Write(chunkSamples(0, 240, rate)); err != nil {
 		t.Fatal(err)
@@ -377,7 +378,7 @@ func TestIncrementalPumpRacesTheDeviceCallback(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		pumpIncremental(ctx, segment, stream, nil, rate, rate, 0)
+		pumpIncremental(ctx, segment, stream, nil, rate, rate, testStallTimer(t, stream))
 	}()
 	stop := make(chan struct{})
 	go func() {

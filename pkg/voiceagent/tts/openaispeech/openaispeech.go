@@ -607,11 +607,10 @@ func (p *Provider) Status() tts.ProviderStatus {
 	return tts.ProviderStatus{Provider: config.OpenAISpeechProviderName, Available: p.Available(), ModelReady: p.Available(), Detail: detail}
 }
 
-// Grace for first audio. Warm Phonon through Ollama answered in under 20 ms
-// on an M4 Max, but Ollama unloads an idle model after a few minutes and the
-// reload measured 2.4 s. The floor covers that reload; the per-character term
-// covers a slower server.
+// Ollama schedules and loads Phonon before producing any PCM. A short
+// utterance can spend over nine seconds waiting for that runner alone.
 const (
+	phononStartupGrace = 30 * time.Second
 	minFirstAudioGrace = 5 * time.Second
 	maxFirstAudioGrace = 20 * time.Second
 	// rtfCeiling is the slowest synthesis this grace tolerates relative to
@@ -626,6 +625,12 @@ func (p *Provider) FirstAudioGrace() time.Duration {
 
 // FirstAudioGraceForChars sizes the stall budget to the segment.
 func (p *Provider) FirstAudioGraceForChars(chars int) time.Duration {
+	if config.IsOllamaPhononModel(p.model) {
+		if p.timeout > 0 {
+			return min(p.timeout, phononStartupGrace)
+		}
+		return phononStartupGrace
+	}
 	if chars <= 0 {
 		chars = tts.TypicalSegmentChars
 	}
@@ -635,6 +640,14 @@ func (p *Provider) FirstAudioGraceForChars(chars int) time.Duration {
 		return maxFirstAudioGrace
 	}
 	return grace
+}
+
+// FrameGapGrace lets playback detect silence sooner once Phonon is running.
+func (p *Provider) FrameGapGrace() time.Duration {
+	if config.IsOllamaPhononModel(p.model) {
+		return minFirstAudioGrace
+	}
+	return 0
 }
 
 // errorMessage pulls error.message out of an OpenAI error envelope, falling

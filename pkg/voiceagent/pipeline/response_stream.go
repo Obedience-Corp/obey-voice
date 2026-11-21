@@ -300,7 +300,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// a merged opening is longer than the beat that started it and
 			// would otherwise run under a one-sentence grace. Arm before the
 			// handoff so a hung WaitReady is visible.
-			stallTimeout := p.stallTimeout(len(text))
+			stallTimeout := p.stallTimeout(ctx, len(text))
 			metrics.firstAudioGrace = stallTimeout
 			metrics.ttsEngine = p.ttsIdentity()
 			metrics.sinkAtArm = p.sinkKind()

@@ -13,7 +13,7 @@ import (
 func TestPCMStreamPropertiesAreDerived(t *testing.T) {
 	source := NewPCMStream(context.Background())
 	source.SetIncremental(true)
-	source.SetStallBudget(3 * time.Second)
+	source.SetStallBudgets(9*time.Second, 3*time.Second)
 	if err := source.SetSampleRate(16000); err != nil {
 		t.Fatal(err)
 	}

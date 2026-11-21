@@ -21,26 +21,26 @@ import (
 func TestStallTimeoutHonorsQwenFirstAudioGrace(t *testing.T) {
 	graceful := &graceTTS{grace: 90 * time.Second}
 	p := &Pipeline{TTS: graceful}
-	if got := p.stallTimeout(0); got != 90*time.Second {
+	if got := p.stallTimeout(t.Context(), 0); got != 90*time.Second {
 		t.Fatalf("stallTimeout() = %v, want provider FirstAudioGrace 90s", got)
 	}
 
 	// Explicit override always wins (including short values used by tests).
 	p.PlaybackStallTimeout = 150 * time.Millisecond
-	if got := p.stallTimeout(0); got != 150*time.Millisecond {
+	if got := p.stallTimeout(t.Context(), 0); got != 150*time.Millisecond {
 		t.Fatalf("stallTimeout() = %v, want explicit 150ms override", got)
 	}
 
 	// Providers without FirstAudioGrace keep the default.
 	p = &Pipeline{TTS: &fakeTTS{}}
-	if got := p.stallTimeout(0); got != defaultPlaybackStallTimeout {
+	if got := p.stallTimeout(t.Context(), 0); got != defaultPlaybackStallTimeout {
 		t.Fatalf("stallTimeout() = %v, want default %v without grace", got, defaultPlaybackStallTimeout)
 	}
 
 	// Kokoro is whole-utterance on CPU; a short sentence still needs more
 	// than the 8s default on a GPD-class machine.
 	p = &Pipeline{TTS: &tts.KokoroTTS{}}
-	if got := p.stallTimeout(17); got != 12*time.Second {
+	if got := p.stallTimeout(t.Context(), 17); got != 12*time.Second {
 		t.Fatalf("Kokoro stallTimeout(17) = %v, want 12s floor", got)
 	}
 
@@ -49,7 +49,7 @@ func TestStallTimeoutHonorsQwenFirstAudioGrace(t *testing.T) {
 	// fallback); waiting 90s for a Kokoro stall is a hung turn, not a slow
 	// synth.
 	p = &Pipeline{TTS: &fakeTTS{}, TTSFallback: graceful}
-	if got := p.stallTimeout(0); got != defaultPlaybackStallTimeout {
+	if got := p.stallTimeout(t.Context(), 0); got != defaultPlaybackStallTimeout {
 		t.Fatalf("stallTimeout() = %v, want default %v with Kokoro primary", got, defaultPlaybackStallTimeout)
 	}
 }
@@ -87,22 +87,22 @@ func TestStallNoticeDelay(t *testing.T) {
 // set the budget. A Kokoro turn on the default 8s is not governed by it.
 func TestStallHintNamesTheKnobOnlyWhenItApplies(t *testing.T) {
 	graceful := &Pipeline{TTS: &graceTTS{grace: 90 * time.Second}}
-	if got := graceful.stallHint(90*time.Second, 0); !strings.Contains(got, "qwen_tts_timeout") {
+	if got := graceful.stallHint(t.Context(), 90*time.Second, 0); !strings.Contains(got, "qwen_tts_timeout") {
 		t.Fatalf("stallHint(grace budget) = %q, want the qwen_tts_timeout knob named", got)
 	}
 	// Explicit override on the same provider: the budget is no longer the grace.
-	if got := graceful.stallHint(150*time.Millisecond, 0); strings.Contains(got, "qwen_tts_timeout") {
+	if got := graceful.stallHint(t.Context(), 150*time.Millisecond, 0); strings.Contains(got, "qwen_tts_timeout") {
 		t.Fatalf("stallHint(override) = %q, want no qwen_tts_timeout for a budget it did not set", got)
 	}
 
 	plain := &Pipeline{TTS: &fakeTTS{}}
-	if got := plain.stallHint(defaultPlaybackStallTimeout, 0); strings.Contains(got, "qwen_tts_timeout") {
+	if got := plain.stallHint(t.Context(), defaultPlaybackStallTimeout, 0); strings.Contains(got, "qwen_tts_timeout") {
 		t.Fatalf("stallHint(default, non-gracer) = %q, want no qwen_tts_timeout", got)
 	}
 
 	// Kokoro now has FirstAudioGrace too; qwen_tts_timeout still does not govern it.
 	kokoro := &Pipeline{TTS: &tts.KokoroTTS{}}
-	if got := kokoro.stallHint(12*time.Second, 17); strings.Contains(got, "qwen_tts_timeout") {
+	if got := kokoro.stallHint(t.Context(), 12*time.Second, 17); strings.Contains(got, "qwen_tts_timeout") {
 		t.Fatalf("stallHint(Kokoro grace) = %q, want no qwen_tts_timeout", got)
 	}
 }

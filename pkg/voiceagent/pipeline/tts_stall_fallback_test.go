@@ -52,26 +52,51 @@ func TestShouldFallbackCoversSlowEngines(t *testing.T) {
 }
 
 // TestBoundPrimarySilenceUsesProviderGrace checks the budget only lands on
-// engines that publish one. Kokoro declares no grace, so its streams stay
-// unbounded exactly as before this change.
+// engines that publish one.
 func TestBoundPrimarySilenceUsesProviderGrace(t *testing.T) {
 	ctx := context.Background()
 
 	p := &Pipeline{TTS: &graceTTS{grace: 12 * time.Second}}
 	stream := audio.NewPCMStream(ctx)
-	p.boundPrimarySilence(stream, 40)
+	boundPrimarySilence(p.TTS, stream, 40)
 	if got := stream.StallBudget(); got != 12*time.Second {
 		t.Fatalf("StallBudget() = %v, want the provider grace 12s", got)
 	}
 
 	p = &Pipeline{TTS: &fakeTTS{}}
 	stream = audio.NewPCMStream(ctx)
-	p.boundPrimarySilence(stream, 40)
+	boundPrimarySilence(p.TTS, stream, 40)
 	if got := stream.StallBudget(); got != 0 {
 		t.Fatalf("StallBudget() = %v, want 0 for a provider that publishes no grace", got)
 	}
 
-	p.boundPrimarySilence(nil, 40) // must not panic
+	boundPrimarySilence(p.TTS, nil, 40) // must not panic
+}
+
+type coldStartTTS struct{ fakeTTS }
+
+func (*coldStartTTS) FirstAudioGrace() time.Duration { return 30 * time.Second }
+func (*coldStartTTS) FrameGapGrace() time.Duration   { return 5 * time.Second }
+
+func TestAdmittedVoiceSetsPlaybackBudgets(t *testing.T) {
+	// The selected persona changed after admission. This reply still uses
+	// its captured primary and fallback for synthesis and recovery.
+	p := &Pipeline{TTS: &fakeTTS{}}
+	voices := responseVoices{primary: &coldStartTTS{}, fallback: &fakeTTS{}}
+	ctx := context.WithValue(t.Context(), responseVoicesKey{}, voices)
+	const sentence = "Hello there."
+	stream, fallback, _, err := p.synthesizeWithFallbackObserved(ctx, sentence, nil, false)
+	if err != nil || fallback || stream == nil {
+		t.Fatalf("expected primary synthesis, got fallback=%v, err=%v", fallback, err)
+	}
+	for range stream.Frames() {
+	}
+	if first, gap := stream.FirstAudioBudget(), stream.StallBudget(); first != 30*time.Second || gap != 5*time.Second {
+		t.Errorf("stream startup and gap budgets = %v and %v", first, gap)
+	}
+	if got := p.stallTimeout(ctx, len(sentence)); got != 30*time.Second+fallbackSpeakAllowance {
+		t.Errorf("turn watchdog = %v", got)
+	}
 }
 
 // TestStallTimeoutLeavesRoomForTheFallbackVoice pins the ordering between the
@@ -83,7 +108,7 @@ func TestStallTimeoutLeavesRoomForTheFallbackVoice(t *testing.T) {
 	graceful := &graceTTS{grace: 40 * time.Second}
 
 	withFallback := &Pipeline{TTS: graceful, TTSFallback: &fakeTTS{}}
-	got := withFallback.stallTimeout(0)
+	got := withFallback.stallTimeout(t.Context(), 0)
 	if got <= 40*time.Second {
 		t.Fatalf("stallTimeout() = %v, want more than the 40s grace so the fallback can speak first", got)
 	}
@@ -94,8 +119,12 @@ func TestStallTimeoutLeavesRoomForTheFallbackVoice(t *testing.T) {
 	// With no fallback configured there is nothing to wait for, so the budget
 	// stays at the provider grace rather than delaying recovery.
 	noFallback := &Pipeline{TTS: graceful}
-	if got := noFallback.stallTimeout(0); got != 40*time.Second {
+	if got := noFallback.stallTimeout(t.Context(), 0); got != 40*time.Second {
 		t.Fatalf("stallTimeout() = %v, want the bare 40s grace without a fallback", got)
+	}
+	graceful.grace = 7 * time.Second
+	if got := withFallback.stallTimeout(t.Context(), 0); got != graceful.grace+fallbackSpeakAllowance {
+		t.Fatalf("watchdog with a 7s request timeout = %v", got)
 	}
 }
 

@@ -288,7 +288,7 @@ func (p *Pipeline) synthesizeWithFallbackObserved(ctx context.Context, text stri
 	}
 	stream, primaryObservation, err := p.synthesizePrepared(ctx, primary, text, joinBeats)
 	if err == nil {
-		p.boundPrimarySilence(stream, len(prepareSpeechForTTS(text, primary, p.vocals, joinBeats)))
+		boundPrimarySilence(primary, stream, len(prepareSpeechForTTS(text, primary, p.vocals, joinBeats)))
 		return stream, false, primaryObservation, nil
 	}
 	if errors.Is(err, errNothingToSpeak) || !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(err) {
@@ -414,14 +414,22 @@ func shouldFallback(err error) bool {
 //
 // Only the primary is bounded. The fallback is the last voice available, so
 // failing it would produce silence rather than another retry. Providers that
-// publish no grace (Kokoro) leave the stream unbounded, exactly as before.
-func (p *Pipeline) boundPrimarySilence(stream *audio.PCMStream, chars int) {
+// publish no grace leave the stream unbounded.
+func boundPrimarySilence(primary tts.Provider, stream *audio.PCMStream, chars int) {
 	if stream == nil {
 		return
 	}
-	if budget := p.ttsFirstAudioGrace(chars); budget > 0 {
-		stream.SetStallBudget(budget)
+	first := ttsFirstAudioGrace(primary, chars)
+	if first <= 0 {
+		return
 	}
+	gap := first
+	if provider, ok := primary.(tts.FrameGapGracer); ok {
+		if d := provider.FrameGapGrace(); d > 0 {
+			gap = d
+		}
+	}
+	stream.SetStallBudgets(first, gap)
 }
 
 func (p *Pipeline) canUseFallback(ctx context.Context, primary, fallback tts.Provider) bool {

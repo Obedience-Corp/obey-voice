@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
-	"time"
 )
 
 // runPlaybackWorker keeps an unexpected panic in device initialization or the
@@ -45,10 +45,11 @@ func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stre
 func (p *Player) pumpSegmentGeneration(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream, epoch uint64) {
 	// A stalled engine has to surface as a segment failure rather than an
 	// unbounded wait: the pipeline can only switch to the fallback voice if
-	// this call returns. The budget measures the gap between frame batches,
-	// not the whole utterance, so an engine that streams audio slowly keeps
-	// its segment while one that produces nothing at all loses it.
-	budget := stream.StallBudget()
+	// this call returns. Allow the provider to start up before applying its
+	// budget for gaps between PCM batches.
+	silence := stream.NewStallTimer()
+	defer silence.Stop()
+	budget := stream.FirstAudioBudget()
 
 	readyCtx := ctx
 	if budget > 0 {
@@ -59,7 +60,7 @@ func (p *Player) pumpSegmentGeneration(ctx context.Context, segment *playbackSeg
 	inputRate, err := stream.WaitReady(readyCtx)
 	if err != nil {
 		if budget > 0 && ctx.Err() == nil && errors.Is(readyCtx.Err(), context.DeadlineExceeded) {
-			err = fmt.Errorf("%w after %s", audio.ErrStreamStalled, budget)
+			err = silence.Err()
 		}
 		segment.fail(err)
 		return
@@ -80,7 +81,7 @@ func (p *Player) pumpSegmentGeneration(ctx context.Context, segment *playbackSeg
 	p.mu.Unlock()
 
 	if stream.Incremental() {
-		pumpIncremental(ctx, segment, stream, debug, inputRate, outputRate, budget)
+		pumpIncremental(ctx, segment, stream, debug, inputRate, outputRate, silence)
 		return
 	}
 
@@ -91,17 +92,13 @@ func (p *Player) pumpSegmentGeneration(ctx context.Context, segment *playbackSeg
 	segment.setReadyFrames(0)
 	var samples []float32
 
-	// Reset on every batch: the budget bounds silence, not total duration.
-	silence := newSilenceTimer(budget)
-	defer silence.stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			segment.fail(ctx.Err())
 			return
 		case <-silence.C():
-			segment.fail(fmt.Errorf("%w after %s", audio.ErrStreamStalled, budget))
+			segment.fail(silence.Err())
 			return
 		case frames, ok := <-stream.Frames():
 			if !ok {
@@ -112,57 +109,8 @@ func (p *Player) pumpSegmentGeneration(ctx context.Context, segment *playbackSeg
 				continue
 			}
 			samples = append(samples, frames...)
-			silence.reset()
+			silence.ReceivedFrames()
 		}
-	}
-}
-
-// silenceTimer fires when no reset arrives within budget. A zero or negative
-// budget yields a timer that never fires, so an unbounded stream keeps the
-// pre-existing behaviour of waiting as long as the turn allows.
-//
-// It exists so an engine that delivers audio slowly is judged on whether audio
-// is still arriving rather than on total synthesis time: every batch resets it.
-type silenceTimer struct {
-	budget time.Duration
-	timer  *time.Timer
-}
-
-func newSilenceTimer(budget time.Duration) *silenceTimer {
-	s := &silenceTimer{budget: budget}
-	if budget > 0 {
-		s.timer = time.NewTimer(budget)
-	}
-	return s
-}
-
-// C is the fire channel, nil when the timer is disabled so a select on it
-// blocks forever.
-func (s *silenceTimer) C() <-chan time.Time {
-	if s.timer == nil {
-		return nil
-	}
-	return s.timer.C
-}
-
-// reset restarts the budget, draining an already-delivered tick so a batch that
-// races the deadline does not leave a stale fire queued.
-func (s *silenceTimer) reset() {
-	if s.timer == nil {
-		return
-	}
-	if !s.timer.Stop() {
-		select {
-		case <-s.timer.C:
-		default:
-		}
-	}
-	s.timer.Reset(s.budget)
-}
-
-func (s *silenceTimer) stop() {
-	if s.timer != nil {
-		s.timer.Stop()
 	}
 }
 
@@ -183,15 +131,12 @@ func (s *silenceTimer) stop() {
 // A worker that is slow but still emitting chunks resets the timer on every one
 // of them and keeps its segment — which is precisely the engine this path
 // exists for.
-func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream, debug *playerDebugRecorder, inputRate, outputRate int, budget time.Duration) {
+func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream, debug *playerDebugRecorder, inputRate, outputRate int, silence *audio.StreamStallTimer) {
 	segment.setReadyFrames(preRollFrames(outputRate))
 
 	var resampler streamResampler
 	resampler.Configure(inputRate, outputRate)
 	var converted []float32
-
-	silence := newSilenceTimer(budget)
-	defer silence.stop()
 
 	// Enqueue source chunks immediately so a reset or capture deadline retains
 	// the affected sentence prefix, joined by the writer under one stable ID.
@@ -203,7 +148,7 @@ func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *audi
 			segment.fail(ctx.Err())
 			return
 		case <-silence.C():
-			segment.fail(fmt.Errorf("%w after %s", audio.ErrStreamStalled, budget))
+			segment.fail(silence.Err())
 			return
 		case frames, ok := <-stream.Frames():
 			if !ok {
@@ -225,7 +170,7 @@ func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *audi
 				converted = resampleChunk(&resampler, frames, converted, inputRate, outputRate)
 				segment.append(float32ToPCM16(converted))
 			}
-			silence.reset()
+			silence.ReceivedFrames()
 		}
 	}
 }

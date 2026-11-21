@@ -206,6 +206,10 @@ server that wants a bearer token.
 
 - The client asks for `pcm` (16-bit little-endian mono, 24 kHz) and hands frames
   to the player as the body arrives, so playback can start before synthesis ends.
+- When Ollama Phonon is the primary voice, playback waits up to 30 seconds
+  for the first audio chunk so Ollama can load an idle model. A shorter
+  `openai_speech_timeout` still applies. Once audio arrives, five seconds
+  without another chunk counts as a stall.
 - Text goes through the same spoken-text cleaning as the other engines
   (think blocks, emoji, quotes). Ollama reads Markdown aloud and skips emoji,
   so the cleaning matters.
