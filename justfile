@@ -146,6 +146,20 @@ demo-workers: build
     just _optimize-demo-gif demos/workers.gif
     ls -lh demos/workers.gif demos/frames/workers-detail.png
 
+# Browse sessions: view a saved conversation read-only, then delete one.
+# Fixture sessions in a disposable install; nothing is opened or spoken.
+demo-sessions-browse: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    go test -c -o bin/demo-terminal.test ./cmd/obey-voice/cmd
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/sessions-browse.tape
+    just _optimize-demo-gif demos/sessions-browse.gif
+    ls -lh demos/sessions-browse.gif demos/frames/sessions-browse-*.png
+
 # Conversation: animated background work beside listening, then Ctrl+W detail.
 # Scripted bus events and a fixture worker; no mic or model required.
 demo-work-cue: build

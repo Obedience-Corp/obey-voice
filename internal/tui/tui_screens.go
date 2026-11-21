@@ -207,8 +207,11 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 	case screenSessions:
 		// Apply stored geometry immediately — Bubble Tea only re-emits
 		// WindowSize on actual resize, not on screen switches.
-		a.sessions.width, a.sessions.height = a.width, a.height
-		a.sessions.ensureVisible()
+		a.sessions = a.sessions.enter(a.width, a.height)
+		// Read here, not at startup: Settings can rename either one.
+		a.sessions.agentName, a.sessions.userName = a.cfg.AgentName, a.cfg.UserDisplayName
+		runCtx, wg := a.runCtx, a.wg
+		a.sessions.track = func(cmd tea.Cmd) tea.Cmd { return trackedCommand(runCtx, wg, cmd) }
 	case screenMeetingSetup:
 		a.meetingSetup = newMeetingSetup(a.cfg)
 		a.meetingSetup.width, a.meetingSetup.height = a.width, a.height
@@ -322,6 +325,17 @@ func (a App) onLibraryAudiobook(msg libraryAudiobookMsg) (tea.Model, tea.Cmd) {
 	a.audiobook.message = "Filled input from Calibre library"
 	a.audiobook.command = ""
 	a.screen = screenAudiobook
+	return a, nil
+}
+
+// onSessionDeleted lands wherever the user is now, so the launcher never
+// keeps offering a deleted session as Continue.
+func (a App) onSessionDeleted(msg sessionDeletedMsg) (tea.Model, tea.Cmd) {
+	before := len(a.sessions.sessions)
+	a.sessions, _ = a.sessions.Update(msg)
+	if len(a.sessions.sessions) != before {
+		a.launcher = a.launcher.withSessions(a.sessions.sessions)
+	}
 	return a, nil
 }
 

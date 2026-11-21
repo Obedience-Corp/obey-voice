@@ -339,6 +339,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.onBookPicked(msg)
 	case libraryAudiobookMsg:
 		return a.onLibraryAudiobook(msg)
+	case sessionDeletedMsg:
+		return a.onSessionDeleted(msg)
 	case workerSettingsSavedMsg:
 		return a.onWorkerSettingsSaved(msg)
 	case settingsDoneMsg:
