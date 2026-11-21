@@ -77,8 +77,9 @@ var rootCmd = &cobra.Command{
 			fmt.Fprintf(cmd.ErrOrStderr(), "  Audio debug capture enabled under %s\n", debugDir)
 		}
 		// Best-effort: seed default prompt documents so users have editable
-		// starting files. A failure here (e.g. a read-only home) must not
-		// block commands — resolution falls back to the embedded defaults.
+		// starting files, and bring unedited copies up to date. A failure here
+		// (e.g. a read-only home) must not block commands — resolution falls
+		// back to the embedded defaults.
 		if shouldSeedPrompts(cmd) {
 			if _, err := prompts.Seed(config.PromptsDir()); err != nil {
 				fmt.Fprintf(os.Stderr, "obey-voice: seeding prompt defaults: %v\n", err)
