@@ -53,6 +53,9 @@ func pipelineTraceRecord(event events.Event) map[string]any {
 		r["reason"] = e.Reason
 	case events.ResponseReady:
 		r["interrupted"] = e.Interrupted
+		if e.ContinuedAs != "" {
+			r["continued_as"] = e.ContinuedAs
+		}
 	case events.TurnMetrics:
 		r["outcome"], r["interrupted"], r["degraded"] = e.Outcome, e.Interrupted, e.Degraded
 		r["sink"], r["tts_provider"] = e.AudibleSink, e.TTSProvider

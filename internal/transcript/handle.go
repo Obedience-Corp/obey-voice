@@ -149,7 +149,7 @@ func encodeEvent(e events.Event) (record, bool) {
 	case events.ResponseDelta:
 		return record{Type: "agent_delta", Text: x.Text}, true
 	case events.ResponseReady:
-		return record{Type: "agent", Text: x.Response, Degraded: x.Degraded, Interrupted: x.Interrupted}, true
+		return record{Type: "agent", Text: x.Response, Degraded: x.Degraded, Interrupted: x.Interrupted, ContinuedAs: x.ContinuedAs}, true
 	case events.ToolCallStarted:
 		var scope *work.WorkScope
 		if x.WorkScope.Valid() {

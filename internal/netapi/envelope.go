@@ -174,6 +174,9 @@ func encodeEvent(e events.Event) map[string]any {
 	case events.ResponseReady:
 		env["response"] = e.Response
 		env["interrupted"] = e.Interrupted
+		if e.ContinuedAs != "" {
+			env["continued_as"] = e.ContinuedAs
+		}
 	case events.ToolCallStarted:
 		env["id"] = e.ID
 		env["job_id"] = e.JobID

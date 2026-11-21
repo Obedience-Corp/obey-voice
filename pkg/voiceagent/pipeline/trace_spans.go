@@ -31,7 +31,7 @@ func (p *Pipeline) traceSpan(trace events.TraceContext, id, stage, state, status
 		return
 	}
 	switch status {
-	case "succeeded", "done":
+	case "succeeded", "done", TurnMoved.String():
 		status = "completed"
 	case "canceled", "aborted":
 		status = "cancelled"
