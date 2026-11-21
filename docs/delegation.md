@@ -289,6 +289,21 @@ and transcript keep the whole request. With a persona on a hosted backend
 answering, the answer names only the jobs that persona started, on any backend,
 and counts the rest (see [Hosted backends](personas.md#hosted-backends)).
 
+A persona on Ollama is also told about unfinished jobs whenever it answers you,
+so a question that is not one of the status phrases ("what have you been doing
+all this time?") gets a true answer. Obey Voice writes the reply that starts a
+job, not the persona's model, and a long job outlives the six to twelve turns
+the model is sent, so the conversation itself stops showing that the job exists.
+Each request that answers a person carries a short list beside your message:
+every running or queued job with its state, how long it has run, the request it
+was started for (up to 160 bytes), its three newest activity rows, and whether
+the answering persona or another one started it. Up to eight jobs are listed,
+the answering persona's own first. The list is rebuilt for each request and is
+never saved to the conversation. Result notifications, peer replies and group
+discussions do not carry it. The sentence that introduces the list is the
+`system/active-work.yaml` prompt. A persona on a hosted backend is not sent the
+list; ask it "what's happening" or open `/workers`.
+
 In the TUI, `/workers` provides **Stop task** (`s`), **Stop all** (`x`, then
 `y`), and **Allow background workers** (`t`). The permission is global, not
 persona-specific, and is saved as `voice_workers_disabled` (default `false`).

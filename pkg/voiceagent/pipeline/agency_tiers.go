@@ -22,19 +22,36 @@ func (p *Pipeline) workerTierAvailability() *brain.WorkerTierAvailability {
 	return brain.WorkerTierAvailabilityForConfig(p.Agency.currentConfig())
 }
 
-func (p *Pipeline) workerFacts() []brain.WorkerFact {
-	if p.Agency == nil || !tieredWorkers(p.Agency.currentConfig()) {
+// workerFacts is what a live request is told about existing jobs. A turn
+// answering a person describes the running and queued ones; the tiered work
+// record adds its own jobs by identifier on every turn.
+func (p *Pipeline) workerFacts(answersPerson bool) []brain.WorkerFact {
+	if p.Agency == nil {
 		return nil
 	}
 	var facts []brain.WorkerFact
-	for _, v := range p.Agency.WorkSnapshot().Jobs {
-		facts = append(facts, brain.WorkerFact{ID: v.Key.JobID, Tier: config.WorkerTierName(v.Config["worker_tier"]), State: string(v.State)})
-		if len(facts) == 8 {
-			break
+	if answersPerson {
+		facts = p.Agency.activeJobFacts()
+	}
+	if tieredWorkers(p.Agency.currentConfig()) {
+		described := make(map[string]bool, len(facts))
+		for _, fact := range facts {
+			described[fact.ID] = true
 		}
+		for _, v := range p.Agency.WorkSnapshot().Jobs {
+			if !described[v.Key.JobID] {
+				facts = append(facts, brain.WorkerFact{ID: v.Key.JobID, Tier: config.WorkerTierName(v.Config["worker_tier"]), State: string(v.State)})
+			}
+		}
+	}
+	if len(facts) > workerFactLimit {
+		facts = facts[:workerFactLimit]
 	}
 	return facts
 }
+
+// workerFactLimit is how many jobs one request describes.
+const workerFactLimit = 8
 
 func tieredWorkers(cfg *config.Config) bool {
 	return cfg != nil && cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered

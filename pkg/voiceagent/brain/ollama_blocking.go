@@ -77,7 +77,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
 	skillCtx += WorkResultsPrompt(opts.WorkResults)
-	skillCtx += WorkerFactsPrompt(opts.WorkerFacts)
+	skillCtx += WorkerFactsPrompt(o.cfg, opts.WorkerFacts)
 	o.ensureContextBudget(skillCtx)
 	o.maybeEmitContinuityBudget(skillCtx)
 

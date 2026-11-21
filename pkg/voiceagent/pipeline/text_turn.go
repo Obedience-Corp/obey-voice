@@ -186,7 +186,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		Attachments:       chatmedia.Input(ctx),
 		Discussion:        admission.Discussion,
 		WorkerTiers:       p.workerTierAvailability(),
-		WorkerFacts:       p.workerFacts(),
+		WorkerFacts:       p.workerFacts(!background && !isContinuation),
 		Identity:          metrics.responseIdentity(),
 		OriginalInput:     original,
 		Background:        background,

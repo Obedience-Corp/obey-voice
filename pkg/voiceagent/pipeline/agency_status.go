@@ -1,12 +1,16 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
@@ -130,6 +134,72 @@ func (a *Agency) speakJobStatus(ctx context.Context, turn *turnConductor, metric
 	}
 	// Standalone speech reports synthesis/playback errors on the event bus.
 	_ = a.pipeline.speakStandalone(ctx, turn, metrics, line)
+}
+
+// activeJobFacts describes the running and queued jobs the live persona may
+// be told about, its own first. The acknowledgement that starts a job is
+// written by the host and leaves the conversation window long before a long
+// job ends, so without these the persona answering has no record that the
+// job exists.
+func (a *Agency) activeJobFacts() []brain.WorkerFact {
+	var facts []brain.WorkerFact
+	for _, info := range a.jobs.Status() {
+		if info.State != job.StateRunning && info.State != job.StateQueued {
+			continue
+		}
+		a.mu.Lock()
+		origin := a.workerOrigins[info.ID]
+		a.mu.Unlock()
+		if !a.pipeline.receivesJob(origin.admission) {
+			continue
+		}
+		fact := brain.WorkerFact{
+			ID:       info.ID,
+			Tier:     factTier(origin.admission),
+			State:    string(info.State),
+			Task:     info.Task,
+			Running:  info.Elapsed(),
+			Progress: recentProgress(a.work.Summary(info.ID)),
+			Own:      a.pipeline.startedByLivePersona(origin.admission),
+		}
+		if !fact.Own {
+			fact.Starter = cmp.Or(strings.TrimSpace(origin.Envelope.DisplayName), strings.TrimSpace(origin.admission["persona"]))
+		}
+		facts = append(facts, fact)
+	}
+	slices.SortStableFunc(facts, func(x, y brain.WorkerFact) int {
+		switch {
+		case x.Own == y.Own:
+			return 0
+		case x.Own:
+			return -1
+		default:
+			return 1
+		}
+	})
+	return facts
+}
+
+func factTier(admission map[string]string) config.WorkerTierName {
+	switch tier := config.WorkerTierName(admission["worker_tier"]); tier {
+	case config.WorkerTierSimple, config.WorkerTierMedium, config.WorkerTierComplex:
+		return tier
+	default:
+		return "legacy"
+	}
+}
+
+// progressRows caps how much of a job's activity one request repeats.
+const progressRows = 3
+
+// recentProgress keeps the newest rows of a job's folded activity. A long job
+// folds into many rows, and the newest say what it is doing now.
+func recentProgress(summary string) string {
+	rows := strings.Split(summary, " · ")
+	if len(rows) <= progressRows {
+		return strings.Join(rows, ", ")
+	}
+	return "earlier work, then " + strings.Join(rows[len(rows)-progressRows:], ", ")
 }
 
 // otherJobs counts the jobs a status line may not describe.
