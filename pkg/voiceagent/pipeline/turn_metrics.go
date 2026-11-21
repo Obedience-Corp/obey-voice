@@ -117,9 +117,9 @@ type turnMetrics struct {
 	// onAudible runs when a standalone line's audio starts, before
 	// SpeakingStarted.
 	onAudible func()
-	// moveRequested closes when the turn is asked to hand its model stream
-	// to a background job; nil while it may not be moved.
-	moveRequested <-chan struct{}
+	// moveRequests delivers typed input asking the turn to hand its model
+	// stream to a background job; nil while it may not be moved.
+	moveRequests <-chan moveRequest
 }
 
 // Speech has its own lifetime: typing stops output while the model continues

@@ -46,6 +46,7 @@ func (a *Agency) onJobStarted(id, task string) {
 }
 
 func (a *Agency) onJobDone(id string, state job.State, result string, err error) {
+	a.pipeline.stopMovedRequest(id)
 	a.mu.Lock()
 	releaseVoice := a.workerOrigins[id].releaseVoice
 	a.mu.Unlock()

@@ -283,7 +283,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		brainStream = ordinary.wrap(brainStream)
 	}
 	var withdrawMove func()
-	metrics.moveRequested, withdrawMove = p.offerMove(recording)
+	metrics.moveRequests, withdrawMove = p.offerMove(recording)
 	fullResponse, interrupted, err := p.streamResponse(requestCtx, turnCancel, brainStream, true, metrics, turn, repair)
 	withdrawMove()
 	if errors.Is(err, errTurnMoved) {

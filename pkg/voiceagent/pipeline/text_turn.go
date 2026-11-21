@@ -237,7 +237,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		stream = ordinary.wrap(stream)
 	}
 	var withdrawMove func()
-	metrics.moveRequested, withdrawMove = p.offerMove(recording)
+	metrics.moveRequests, withdrawMove = p.offerMove(recording)
 	response, route, err := p.collectTextStream(brainCtx, brainCancel, stream, metrics)
 	withdrawMove()
 	if errors.Is(err, errTurnMoved) {

@@ -3,13 +3,17 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
@@ -18,12 +22,18 @@ import (
 // workingBrain keeps the shared history. A line with "HOLD" in it gets a
 // first sentence and a tool call, then waits for release before it runs a
 // second tool and finishes; fail, when set, ends that request with an error
-// instead, and route with that route. Any other line is answered at once.
+// instead, and route with that route; last replaces its final text, sent
+// after trickle more sentences gap apart. Any other line is answered after
+// steps words gap apart.
 type workingBrain struct {
 	release chan struct{}
 	held    chan struct{}
 	fail    error
 	route   string
+	last    string
+	trickle int
+	steps   int
+	gap     time.Duration
 
 	mu        sync.Mutex
 	turns     []brain.Turn
@@ -60,6 +70,13 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 		defer close(done)
 		defer close(out)
 		if !strings.Contains(input, "HOLD") {
+			for range b.steps {
+				time.Sleep(b.gap)
+				if !send("word ") {
+					done <- brain.StreamResult{Err: ctx.Err()}
+					return
+				}
+			}
 			if send("Noted.") {
 				record("Noted.")
 				done <- brain.StreamResult{}
@@ -103,11 +120,22 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 			done <- brain.StreamResult{Route: b.route}
 			return
 		}
-		if !send("Found three files.") {
+		for range b.trickle {
+			time.Sleep(b.gap)
+			if !send("Still working. ") {
+				done <- brain.StreamResult{Err: ctx.Err()}
+				return
+			}
+		}
+		last := b.last
+		if last == "" {
+			last = "Found three files."
+		}
+		if !send(last) {
 			done <- brain.StreamResult{Err: ctx.Err()}
 			return
 		}
-		record("Working on it. Found three files.")
+		record("Working on it. " + last)
 		done <- brain.StreamResult{}
 	}()
 	return &brain.Stream{Chunks: out, Done: done}, nil
@@ -148,6 +176,18 @@ func (b *workingBrain) AppendAssistantResponseWithIdentity(text string, identity
 	return nil
 }
 
+func (b *workingBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := len(b.turns) - 1; i >= 0; i-- {
+		if b.turns[i].Role == "assistant" && b.turns[i].Content == text {
+			b.turns[i].Attachments = slices.Clone(refs)
+			return nil
+		}
+	}
+	return errors.New("no such reply")
+}
+
 func (b *workingBrain) RecordStoppedRequest(s brain.StoppedRequest) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -186,7 +226,7 @@ type movingConversation struct {
 	events chan events.Event
 }
 
-func newMovingConversation(t *testing.T) *movingConversation {
+func newMovingConversation(t *testing.T, opts ...job.Option) *movingConversation {
 	t.Helper()
 	c := &movingConversation{t: t, anika: newWorkingBrain(), turn: make(chan error, 1), events: make(chan events.Event, 64)}
 	c.p = &Pipeline{Brain: c.anika, Events: events.NewBus()}
@@ -195,7 +235,7 @@ func newMovingConversation(t *testing.T) *movingConversation {
 	}
 	c.p.AdmitInput = admitPersona("anika", "Anika")
 	c.p.NamesOtherPersona = func(input string) bool { return strings.HasPrefix(input, "Hey Obey") }
-	c.jobs = job.NewTable(t.Context())
+	c.jobs = job.NewTable(t.Context(), opts...)
 	t.Cleanup(c.jobs.Close)
 	NewAgency(c.p, c.jobs, nil, &config.Config{AgentName: "Anika", ActivePersona: "anika"}, nil).Wire()
 	keep := func(e events.Event) {
@@ -555,5 +595,132 @@ func TestMovedReplyThatAsksForNarrationFailsItsJob(t *testing.T) {
 	failed := c.next(func(e events.Event) bool { _, ok := e.(events.JobFailed); return ok }).(events.JobFailed)
 	if !strings.Contains(failed.Err, "narrat") {
 		t.Fatalf("job failed = %+v", failed)
+	}
+}
+
+// A moved reply that goes silent ends as a failed job after the idle time a
+// live reply gets, and its request is stopped.
+func TestMovedReplyThatGoesSilentFailsItsJob(t *testing.T) {
+	c := newMovingConversation(t)
+	c.p.BrainTurnTimeout = 150 * time.Millisecond
+	c.holdTurn()
+	c.move()
+	failed := c.next(func(e events.Event) bool { _, ok := e.(events.JobFailed); return ok }).(events.JobFailed)
+	if !strings.Contains(failed.Err, "sent nothing") {
+		t.Fatalf("job failed = %+v", failed)
+	}
+	if err := c.waitHoldErr(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("held request ended with %v", err)
+	}
+}
+
+// A moved reply that keeps producing runs past the idle time, and past a job
+// time limit, which applies only to work it hands off: moving a reply does
+// not shorten how long its persona may work.
+func TestMovedReplyRunsWhileItIsActive(t *testing.T) {
+	c := newMovingConversation(t, job.WithBudget(100*time.Millisecond))
+	c.p.BrainTurnTimeout = 200 * time.Millisecond
+	c.anika.trickle, c.anika.gap = 6, 80*time.Millisecond
+	c.holdTurn()
+	c.move()
+	time.Sleep(50 * time.Millisecond)
+	close(c.anika.release)
+	e := c.next(func(e events.Event) bool {
+		switch e.(type) {
+		case events.JobFinished, events.JobFailed, events.JobAborted:
+			return true
+		}
+		return false
+	})
+	if finished, ok := e.(events.JobFinished); !ok || !strings.HasSuffix(finished.Summary, "Found three files.") {
+		t.Fatalf("an active moved reply ended as %+v", e)
+	}
+}
+
+// An image line in a moved reply becomes an attachment of the job's result,
+// as it does in a worker's answer: it is not shown or spoken as a path, and
+// it is saved with the reply.
+func TestMovedReplyWithAnImageLineAttachesTheImage(t *testing.T) {
+	root := t.TempDir()
+	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
+	if err := os.WriteFile(filepath.Join(root, "chart.gif"), testmedia.GIF(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := newMovingConversation(t)
+	c.p.Agency.ReplaceWorker(nil, &config.Config{AgentName: "Anika", ActivePersona: "anika", WorkDir: root}, nil)
+	c.anika.last = "Here is the chart.\n![chart](chart.gif)"
+	c.holdTurn()
+	c.move()
+	obey := newWorkingBrain()
+	if err := c.p.ReplaceConversationBrain(obey, nil, &config.Config{AgentName: "Obey", ActivePersona: "obey"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	close(c.anika.release)
+	finished := c.next(func(e events.Event) bool { _, ok := e.(events.JobFinished); return ok }).(events.JobFinished)
+	if len(finished.Attachments) != 1 || strings.Contains(finished.Summary, "![") || strings.Contains(finished.Summary, "chart.gif") || !strings.Contains(finished.Summary, "Here is the chart.") {
+		t.Fatalf("job finished = %+v", finished)
+	}
+	if err := c.p.RunBackgroundTurn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	history := obey.History()
+	if len(history) == 0 {
+		t.Fatal("the reply was not saved")
+	}
+	reply := history[len(history)-1]
+	if reply.PersonaID != "anika" || len(reply.Attachments) != 1 || strings.Contains(reply.Content, "![") {
+		t.Fatalf("saved reply = %+v", reply)
+	}
+}
+
+// Whether a turn moves is decided on the turn's goroutine, which owns the
+// persona selector during the turn: the hook below shares unguarded state
+// with the turn's end. A move asked for while the turn streams, finishes or
+// has ended is answered promptly either way; a refused one leaves the turn
+// to finish.
+func TestMoveIsDecidedOnTheTurnsOwnGoroutine(t *testing.T) {
+	for i := range 20 {
+		c := newMovingConversation(t)
+		c.anika.steps, c.anika.gap = 5, time.Duration(i%4)*time.Millisecond
+		calls := 0
+		events.Subscribe(c.p.Events, func(events.ResponseReady) { calls++ })
+		c.p.NamesOtherPersona = func(input string) bool {
+			calls++
+			return strings.HasPrefix(input, "Hey Obey")
+		}
+		line := "Anika, keep going."
+		if i%2 == 1 {
+			line = "Hey Obey, what time is it?"
+		}
+		go func() { c.turn <- c.p.RunTurnTextMode(t.Context(), "Anika, check the build") }()
+		moved, ended := false, false
+		for !moved && !ended {
+			select {
+			case err := <-c.turn:
+				if err != nil {
+					t.Fatal(err)
+				}
+				ended = true
+				continue
+			default:
+			}
+			asked := time.Now()
+			moved = c.p.MoveTurnToBackground(line)
+			if took := time.Since(asked); took > moveOfferWait+time.Second {
+				t.Fatalf("asking to move took %v", took)
+			}
+		}
+		if moved != (i%2 == 1) && !(i%2 == 1 && ended) {
+			t.Fatalf("line %q moved=%v", line, moved)
+		}
+		if moved {
+			if err := <-c.turn; err != nil {
+				t.Fatalf("moved turn returned %v", err)
+			}
+			c.next(func(e events.Event) bool { _, ok := e.(events.JobFinished); return ok })
+		}
+		if c.p.MoveTurnToBackground("Hey Obey, what time is it?") {
+			t.Fatal("a move was accepted with no turn running")
+		}
 	}
 }

@@ -558,7 +558,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	}
 
 	var imageTextDone <-chan struct{}
-	moveRequested := metrics.moveRequested
+	moveRequests := metrics.moveRequests
 	for sentences != nil || pending > 0 || modelDone != nil || imageTextDone != nil {
 		// Pause sentence intake while the playback queue is full so the loop
 		// always returns to select and can drain playbackEvents. Blocking here
@@ -568,11 +568,14 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			sentenceCh = sentences
 		}
 		if modelDone == nil || interrupted {
-			moveRequested = nil
+			moveRequests = nil
 		}
 
 		select {
-		case <-moveRequested:
+		case req := <-moveRequests:
+			if !p.acceptMove(req) {
+				continue
+			}
 			// The model request goes on in a background job; only this
 			// turn's speech stops.
 			cancelSpeech()
@@ -961,7 +964,10 @@ func (p *Pipeline) collectTextStream(ctx context.Context, cancel context.CancelF
 				continue
 			}
 			b.WriteString(chunk)
-		case <-metrics.moveRequested:
+		case req := <-metrics.moveRequests:
+			if !p.acceptMove(req) {
+				continue
+			}
 			stopObserving()
 			<-done
 			return strings.TrimSpace(b.String()), "", errTurnMoved
