@@ -253,6 +253,12 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// Segments are numbered here, in admission order, so an index is fixed
 	// before any worker sees the job.
 	nextIndex := 0
+	// sentencesRead counts the sentences the segmenter has handed over;
+	// batchThrough is the last of them in the held group, groupThrough the
+	// last in each queued group, and spokenThrough the last in a group whose
+	// playback finished, every group before it finished too.
+	sentencesRead, batchThrough, spokenThrough, spokenGroups := 0, 0, 0, 0
+	var groupThrough []int
 	// idle fires when a complete sentence has been buffered and the brain has
 	// gone quiet: a tool call or a long pause must not hold speech hostage.
 	// Stopped until a segment is buffered; Stop/Reset never leave a stale value
@@ -312,6 +318,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		index := nextIndex
 		p.traceSpan(metrics.trace, traceID(metrics.trace, "queue")+":"+fmt.Sprint(index), "segment_queue", "start", "running", queuedAt, time.Time{}, &index, nil)
 		synthQueue <- synthWork{sentence: text, index: nextIndex, textReady: batchTextReady, queuedAt: queuedAt, joinBeats: joinBeats}
+		groupThrough = append(groupThrough, batchThrough)
 		nextIndex++
 		voiceBatch = voiceBatch[:0]
 		batchTextReady = time.Time{}
@@ -360,6 +367,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		// opens it.
 		openingGroup := lastGroupChars == 0 && len(voiceBatch) == 0
 		voiceBatch = append(voiceBatch, speakable)
+		batchThrough = sentencesRead
 		if batchTextReady.IsZero() {
 			batchTextReady = now
 		}
@@ -524,6 +532,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if sentence == "" {
 			return
 		}
+		sentencesRead++
 
 		// Think blocks come off before anything else reads the segment.
 		// They look like speech (letters, periods) so the gate would read
@@ -577,7 +586,12 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				continue
 			}
 			// The model request goes on in a background job; only this
-			// turn's speech stops.
+			// turn's speech stops. What it had finished saying stays with
+			// the turn.
+			metrics.movedSpoken = &spokenThrough
+			if p.OutputMuted() || p.Player == nil || !p.ttsReady() {
+				metrics.movedSpoken = nil
+			}
 			cancelSpeech()
 			voiceBatch = nil
 			stopIdle()
@@ -788,6 +802,11 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			}
 			if p.applyPlaybackEvent(event, metrics, &armAt) {
 				pending--
+			}
+			played := event.kind == playbackFinished && event.synthError == "" && !event.result.Interrupted && event.result.Err == nil
+			if (played || event.kind == playbackNotEnqueued) && event.index == spokenGroups && event.index < len(groupThrough) {
+				spokenThrough = groupThrough[event.index]
+				spokenGroups++
 			}
 		}
 	}

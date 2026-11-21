@@ -30,6 +30,7 @@ type workingBrain struct {
 	held    chan struct{}
 	fail    error
 	route   string
+	before  []string
 	last    string
 	trickle int
 	steps   int
@@ -86,9 +87,15 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 			return
 		}
 		defer close(b.holdEnded)
-		if !send("Working on it. ") {
-			done <- brain.StreamResult{Err: ctx.Err()}
-			return
+		before := b.before
+		if before == nil {
+			before = []string{"Working on it. "}
+		}
+		for _, chunk := range before {
+			if !send(chunk) {
+				done <- brain.StreamResult{Err: ctx.Err()}
+				return
+			}
 		}
 		if opts.OnToolStart != nil {
 			opts.OnToolStart(brain.ToolCall{ID: "call-1", Name: "list_files"})
@@ -135,7 +142,7 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 			done <- brain.StreamResult{Err: ctx.Err()}
 			return
 		}
-		record("Working on it. " + last)
+		record(strings.Join(before, "") + last)
 		done <- brain.StreamResult{}
 	}()
 	return &brain.Stream{Chunks: out, Done: done}, nil
@@ -248,6 +255,8 @@ func newMovingConversation(t *testing.T, opts ...job.Option) *movingConversation
 	events.Subscribe(c.p.Events, func(e events.JobFailed) { keep(e) })
 	events.Subscribe(c.p.Events, func(e events.JobAborted) { keep(e) })
 	events.Subscribe(c.p.Events, func(e events.ToolCallFinished) { keep(e) })
+	events.Subscribe(c.p.Events, func(e events.ResponseReady) { keep(e) })
+	events.Subscribe(c.p.Events, func(e events.TurnMetrics) { keep(e) })
 	return c
 }
 
@@ -345,7 +354,7 @@ func TestMovedTurnKeepsItsRequestAndDeliversItAsAJob(t *testing.T) {
 		t.Fatalf("a tool run after the move belongs to job %q, want %q", tool.JobID, info.ID)
 	}
 	finished := c.next(func(e events.Event) bool { _, ok := e.(events.JobFinished); return ok }).(events.JobFinished)
-	if finished.ID != info.ID || finished.Envelope == nil || finished.Envelope.PersonaID != "anika" || finished.Summary != "Found three files." {
+	if finished.ID != info.ID || finished.Envelope == nil || finished.Envelope.PersonaID != "anika" || finished.Summary != " Found three files." {
 		t.Fatalf("job finished = %+v", finished)
 	}
 	if err := c.p.RunBackgroundTurn(t.Context()); err != nil {
@@ -722,5 +731,107 @@ func TestMoveIsDecidedOnTheTurnsOwnGoroutine(t *testing.T) {
 		if c.p.MoveTurnToBackground("Hey Obey, what time is it?") {
 			t.Fatal("a move was accepted with no turn running")
 		}
+	}
+}
+
+// A moved reply is divided at a sentence end: what the turn keeps ends a
+// sentence, the job's reply begins one, and together, whitespace included,
+// they are the model's reply.
+func TestMovedReplyIsDividedAtASentenceEnd(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		before     []string
+		last, kept string
+	}{
+		{"mid-word", []string{"Lighthouses guided ships. Stories were told by travel"}, "ers from Pliny onward.", "Lighthouses guided ships."},
+		{"at a sentence end", []string{"One is first. Two is second. "}, "Three is last.", "One is first. Two is second."},
+		{"sentence end not yet confirmed", []string{"One is first. Two is second."}, " Three is last.", "One is first."},
+		{"before any sentence", []string{"Lighthouses are"}, " tall towers.", ""},
+		{"paragraph break", []string{"The first paragraph ends here.\n\nThe second starts"}, " and ends.", "The first paragraph ends here."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newMovingConversation(t)
+			c.anika.before, c.anika.last = tc.before, tc.last
+			c.holdTurn()
+			c.move()
+			id := c.movedJob().ID
+			ready := c.next(func(e events.Event) bool { _, ok := e.(events.ResponseReady); return ok }).(events.ResponseReady)
+			if ready.Response != tc.kept || ready.ContinuedAs != id || ready.Interrupted {
+				t.Fatalf("the turn ended with %+v, want %q continued as %s", ready, tc.kept, id)
+			}
+			metrics := c.next(func(e events.Event) bool { _, ok := e.(events.TurnMetrics); return ok }).(events.TurnMetrics)
+			if metrics.Outcome != TurnMoved.String() || metrics.Interrupted {
+				t.Fatalf("turn outcome %q interrupted=%v", metrics.Outcome, metrics.Interrupted)
+			}
+			history, ok := c.p.MovedContinuity(c.anika)
+			if !ok {
+				t.Fatal("no history kept for the moved reply")
+			}
+			kept := 0
+			for _, turn := range history.Canonical {
+				if turn.Role == "assistant" {
+					kept++
+					if turn.Content != tc.kept {
+						t.Fatalf("history keeps %q, want %q", turn.Content, tc.kept)
+					}
+				}
+			}
+			if want := map[bool]int{true: 0, false: 1}[tc.kept == ""]; kept != want {
+				t.Fatalf("history holds %d partial replies: %+v", kept, history.Canonical)
+			}
+			close(c.anika.release)
+			finished := c.next(func(e events.Event) bool { _, ok := e.(events.JobFinished); return ok }).(events.JobFinished)
+			full := strings.Join(tc.before, "") + tc.last
+			if ready.Response+finished.Summary != full {
+				t.Fatalf("kept %q + delivered %q != %q", ready.Response, finished.Summary, full)
+			}
+		})
+	}
+}
+
+// A spoken reply keeps only the sentences it finished saying. A sentence cut
+// off by the move is delivered again in full, in the persona's voice.
+func TestMovedVoiceReplyKeepsWhatItFinishedSaying(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		play time.Duration
+		kept string
+	}{
+		{"finished saying", time.Millisecond, "One is first. Two is second."},
+		{"cut off while saying", time.Minute, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newMovingConversation(t)
+			voice := &fakeTTS{}
+			player := newFakePlayer(tc.play)
+			defer player.Close()
+			c.p.ReplaceTTS(voice, nil)
+			c.p.Player = player
+			c.p.STT = &fakeSTT{text: "Anika, HOLD and check the build"}
+			c.anika.before, c.anika.last = []string{"One is first. Two is second. "}, "Three is last."
+			go func() {
+				_, err := c.p.RunTurn(t.Context())
+				c.turn <- err
+			}()
+			<-c.anika.held
+			deadline := time.Now().Add(5 * time.Second)
+			for len(voice.Texts()) == 0 {
+				if time.Now().After(deadline) {
+					t.Fatal("nothing was spoken before the move")
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			time.Sleep(200 * time.Millisecond)
+			c.move()
+			ready := c.next(func(e events.Event) bool { _, ok := e.(events.ResponseReady); return ok }).(events.ResponseReady)
+			if ready.Response != tc.kept {
+				t.Fatalf("the turn kept %q, want %q", ready.Response, tc.kept)
+			}
+			close(c.anika.release)
+			finished := c.next(func(e events.Event) bool { _, ok := e.(events.JobFinished); return ok }).(events.JobFinished)
+			if ready.Response+finished.Summary != "One is first. Two is second. Three is last." {
+				t.Fatalf("kept %q + delivered %q", ready.Response, finished.Summary)
+			}
+		})
 	}
 }

@@ -99,6 +99,23 @@ func ChunkSentencesRaw(input <-chan string) <-chan string {
 	return out
 }
 
+// SentenceEnds returns the byte offset just past each complete sentence of
+// text, split as ChunkSentencesRaw splits a stream, one offset per segment it
+// would emit. Text after the last offset is a sentence still unfinished.
+func SentenceEnds(text string) []int {
+	var ends []int
+	for at := 0; ; {
+		idx := findSentenceEnd(text[at:])
+		if idx < 0 {
+			return ends
+		}
+		if trimSegment(text[at:at+idx]) != "" {
+			ends = append(ends, at+idx)
+		}
+		at += idx
+	}
+}
+
 // ParagraphMark is the blank line a segment carries when a paragraph ended
 // before it. It is the one boundary a listener hears that punctuation does not
 // carry, and TrimSpace here used to erase it: the speech pipeline only ever saw

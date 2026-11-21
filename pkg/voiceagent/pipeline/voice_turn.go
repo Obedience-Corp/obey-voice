@@ -287,8 +287,8 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	fullResponse, interrupted, err := p.streamResponse(requestCtx, turnCancel, brainStream, true, metrics, turn, repair)
 	withdrawMove()
 	if errors.Is(err, errTurnMoved) {
-		if partial, moved := p.moveToJob(ctx, metrics, recording, brainStream, original); moved {
-			p.finishMovedTurn(turn, metrics, partial)
+		if partial, id, moved := p.moveToJob(ctx, metrics, recording, brainStream, original); moved {
+			p.finishMovedTurn(turn, metrics, partial, id)
 			return original, nil
 		}
 		err = context.Canceled

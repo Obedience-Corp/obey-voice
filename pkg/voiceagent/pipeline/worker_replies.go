@@ -22,6 +22,8 @@ type workerOrigin struct {
 	// admission is the frozen worker config, which names the persona and
 	// backend that started the job.
 	admission map[string]string
+	// continued marks a job that continues a reply moved off the live turn.
+	continued bool
 }
 type workerReply struct {
 	Attachments []chatmedia.Ref

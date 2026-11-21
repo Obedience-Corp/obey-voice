@@ -29,7 +29,11 @@ func (a *Agency) onJobQueued(id, task string) {
 		// Register already published the canonical scoped admission.
 		return
 	}
-	a.emitJobTrace(id, events.JobQueued{ID: id, Task: task})
+	queued := events.JobQueued{ID: id, Task: task}
+	if origin.continued {
+		queued.Persona = origin.Envelope.DisplayName
+	}
+	a.emitJobTrace(id, queued)
 }
 
 func (a *Agency) onJobStarted(id, task string) {

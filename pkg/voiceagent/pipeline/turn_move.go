@@ -181,15 +181,15 @@ func (r *transcriptRecording) deliveredText() string {
 }
 
 // moveToJob hands a request whose turn stopped reading it to a background job
-// of the persona that started it, and returns the text the turn had read. It
-// reports false when the request cannot be moved; the turn then stops it as
-// before.
-func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *transcriptRecording, stream *brain.Stream, task string) (string, bool) {
+// of the persona that started it. It returns the part of the reply that stays
+// with the turn and the job's id, or false when the request cannot be moved;
+// the turn then stops it as before.
+func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *transcriptRecording, stream *brain.Stream, task string) (string, string, bool) {
 	a := p.Agency
 	if a == nil || rec == nil || rec.movable == nil || !rec.movable.detach() {
-		return "", false
+		return "", "", false
 	}
-	partial := rec.deliveredText()
+	partial, carried := splitMovedReply(rec.deliveredText(), metrics.movedSpoken)
 	cfg := a.currentConfig()
 	admission := frozenConfig(cfg)
 	if admission == nil {
@@ -204,12 +204,12 @@ func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *tra
 	if workDir == "" {
 		workDir = config.WorkDirFrom(cfg)
 	}
-	origin := workerOrigin{Scope: p.ConversationScope(), Trace: metrics.trace, Envelope: metrics.response, admission: admission}
+	origin := workerOrigin{Scope: p.ConversationScope(), Trace: metrics.trace, Envelope: metrics.response, admission: admission, continued: true}
 	origin.Envelope.ResponseID = newWorkID()
 	origin.Voices.primary, origin.Voices.fallback = p.responseTTS(ctx)
 	origin.releaseVoice = p.RetainTTS(origin.Voices.primary, origin.Voices.fallback)
 	handOff := a.movedHandOff(context.WithoutCancel(ctx), metrics, task, rec)
-	_, err := a.jobs.Start(ctx, job.Spec{
+	id, err := a.jobs.Start(ctx, job.Spec{
 		Task:     truncateJobTask(task),
 		Provider: provider,
 		Model:    model,
@@ -224,14 +224,31 @@ func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *tra
 			start, end := a.foldingToolHooks(id)
 			p.markMoved(rec, id, partial, workDir, start, end)
 		},
-		Run: p.drainMoved(rec, stream, handOff),
+		Run: p.drainMoved(rec, stream, carried, handOff),
 	})
 	if err != nil {
 		origin.releaseVoice()
 		p.emit(events.Error{Stage: "job", Message: err.Error()})
-		return "", false
+		return "", "", false
 	}
-	return partial, true
+	return partial, id, true
+}
+
+// splitMovedReply divides the text a moved turn had read at a sentence end,
+// so the job's reply starts with a sentence and nothing is said twice or
+// lost: the turn keeps the sentences it had finished saying, or, when it was
+// not speaking, every complete sentence it had read. The rest, from the
+// whitespace after the last kept sentence, leads the job's reply.
+func splitMovedReply(read string, spoken *int) (kept, carried string) {
+	ends := brain.SentenceEnds(read)
+	n := len(ends)
+	if spoken != nil {
+		n = min(n, *spoken)
+	}
+	if n == 0 {
+		return "", read
+	}
+	return read[:ends[n-1]], read[ends[n-1]:]
 }
 
 func (p *Pipeline) markMoved(rec *transcriptRecording, jobID, partial, workDir string, start func(brain.ToolCall), end func(brain.ToolResult)) {
@@ -345,7 +362,7 @@ func (w *idleWatch) stop() bool {
 // drainMoved is a moved request's job: it reads the rest of the stream and
 // returns the text the turn had not read, or runs the work the reply handed
 // off.
-func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, handOff func(context.Context, config.WorkerTierName) (string, error)) func(context.Context) (string, error) {
+func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, carried string, handOff func(context.Context, config.WorkerTierName) (string, error)) func(context.Context) (string, error) {
 	return func(jobCtx context.Context) (string, error) {
 		idle := p.watchMovedIdle(rec)
 		var rest strings.Builder
@@ -384,7 +401,7 @@ func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, ha
 		case routeKindSkipsBrain(kind):
 			return "", fmt.Errorf("the reply asked to %s, which only works in the live conversation; ask again", result.Route)
 		}
-		return p.finishMovedText(jobCtx, rec, rest.String())
+		return p.finishMovedText(jobCtx, rec, carried+rest.String())
 	}
 }
 
@@ -392,7 +409,7 @@ func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, ha
 // is shown, spoken and saved: thinking removed, and image lines imported as
 // the job's attachments instead of being left as paths.
 func (p *Pipeline) finishMovedText(jobCtx context.Context, rec *transcriptRecording, raw string) (string, error) {
-	text := strings.TrimSpace(textclean.StripThinkBlocks(raw))
+	text := textclean.StripThinkBlocks(raw)
 	if !strings.Contains(text, "![") {
 		return text, nil
 	}
@@ -415,13 +432,11 @@ func (p *Pipeline) finishMovedText(jobCtx context.Context, rec *transcriptRecord
 	return cleaned, nil
 }
 
-// finishMovedTurn ends a turn whose request now belongs to a job. What the
-// turn had shown stays shown as a partial reply.
-func (p *Pipeline) finishMovedTurn(turn *turnConductor, metrics *turnMetrics, partial string) {
-	metrics.interrupted = true
-	partial = strings.TrimSpace(brain.CleanForVoice(partial))
-	p.emitResponse(metrics, events.ResponseReady{Response: partial, Interrupted: true})
-	turn.finish(TurnInterrupted)
+// finishMovedTurn ends a turn whose reply continues in job id. The part it
+// kept is given as that reply's beginning.
+func (p *Pipeline) finishMovedTurn(turn *turnConductor, metrics *turnMetrics, partial, id string) {
+	p.emitResponse(metrics, events.ResponseReady{Response: brain.CleanForVoice(partial), ContinuedAs: id})
+	turn.finish(TurnMoved)
 }
 
 // MovedContinuity is the conversation as the host reads it from provider
