@@ -2,7 +2,6 @@ package playback
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -35,13 +34,6 @@ func runPlaybackWorker(ctx context.Context, segment *playbackSegment, stream *au
 	pump()
 }
 
-func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream) {
-	p.mu.Lock()
-	epoch := p.epoch
-	p.mu.Unlock()
-	p.pumpSegmentGeneration(ctx, segment, stream, epoch)
-}
-
 func (p *Player) pumpSegmentGeneration(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream, epoch uint64) {
 	// A stalled engine has to surface as a segment failure rather than an
 	// unbounded wait: the pipeline can only switch to the fallback voice if
@@ -49,19 +41,8 @@ func (p *Player) pumpSegmentGeneration(ctx context.Context, segment *playbackSeg
 	// budget for gaps between PCM batches.
 	silence := stream.NewStallTimer()
 	defer silence.Stop()
-	budget := stream.FirstAudioBudget()
-
-	readyCtx := ctx
-	if budget > 0 {
-		var cancelReady context.CancelFunc
-		readyCtx, cancelReady = context.WithTimeout(ctx, budget)
-		defer cancelReady()
-	}
-	inputRate, err := stream.WaitReady(readyCtx)
+	inputRate, err := stream.WaitReadyWithStallTimer(ctx, silence)
 	if err != nil {
-		if budget > 0 && ctx.Err() == nil && errors.Is(readyCtx.Err(), context.DeadlineExceeded) {
-			err = silence.Err()
-		}
 		segment.fail(err)
 		return
 	}

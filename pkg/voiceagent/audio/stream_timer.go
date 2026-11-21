@@ -24,7 +24,7 @@ func (s *PCMStream) NewStallTimer() *StreamStallTimer {
 
 // C fires when the current phase times out. A nil channel disables that phase.
 func (t *StreamStallTimer) C() <-chan time.Time {
-	if t.timer == nil {
+	if t == nil || t.timer == nil {
 		return nil
 	}
 	return t.timer.C

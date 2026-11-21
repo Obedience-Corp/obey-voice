@@ -126,8 +126,11 @@ func (a *AudioFanout) PlayStream(ctx context.Context, stream *audio.PCMStream) (
 		generation = a.hub.audioGenerationSnapshot()
 	}
 
-	sampleRate, err := stream.WaitReady(ctx)
+	silence := stream.NewStallTimer()
+	sampleRate, err := stream.WaitReadyWithStallTimer(ctx, silence)
 	if err != nil {
+		silence.Stop()
+		go stream.Drain(ctx)
 		return nil, err
 	}
 
@@ -158,7 +161,7 @@ func (a *AudioFanout) PlayStream(ctx context.Context, stream *audio.PCMStream) (
 	done := make(chan audio.PlaybackResult, 1)
 	seg := &fanoutSegment{started: started, done: done}
 
-	go a.pump(ctx, stream, localStream, localReady, sampleRate, segID, generation, identity, seg)
+	go a.pump(ctx, stream, silence, localStream, localReady, sampleRate, segID, generation, identity, seg)
 
 	playback := audio.NewPlayback(started, done)
 	didStart, terminal := playback.WaitStart(ctx.Done())
@@ -195,6 +198,7 @@ type localStart struct {
 func (a *AudioFanout) pump(
 	ctx context.Context,
 	src *audio.PCMStream,
+	silence *audio.StreamStallTimer,
 	local *audio.PCMStream,
 	localReady <-chan localStart,
 	sampleRate int,
@@ -203,6 +207,7 @@ func (a *AudioFanout) pump(
 	identity events.ResponseEnvelope,
 	seg *fanoutSegment,
 ) {
+	defer silence.Stop()
 	var (
 		hadAudio      bool
 		localPlayback *audio.Playback
@@ -270,6 +275,18 @@ func (a *AudioFanout) pump(
 			finish(awaitLocalResult(audio.PlaybackResult{Interrupted: true, Err: ctx.Err()}))
 			return
 
+		case <-silence.C():
+			result := audio.PlaybackResult{Err: silence.Err()}
+			if err := ctx.Err(); err != nil {
+				result = audio.PlaybackResult{Interrupted: true, Err: err}
+			}
+			if local != nil {
+				local.CloseWithError(result.Err)
+			}
+			finish(result)
+			src.Drain(ctx)
+			return
+
 		case frames, ok := <-src.Frames():
 			if !ok {
 				if local != nil {
@@ -281,6 +298,8 @@ func (a *AudioFanout) pump(
 			if len(frames) == 0 {
 				continue
 			}
+
+			silence.ReceivedFrames()
 
 			// Wire side-effect: skip all encode work when no stream clients.
 			if !attempt.Write(func() { a.emitAudioChunks(segID, sampleRate, generation, identity, frames) }) {

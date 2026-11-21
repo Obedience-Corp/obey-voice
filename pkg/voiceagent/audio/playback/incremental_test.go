@@ -94,7 +94,13 @@ func TestIncrementalSegmentIsAudibleBeforeTheStreamCloses(t *testing.T) {
 	if err := stream.SetSampleRate(rate); err != nil {
 		t.Fatal(err)
 	}
-	go pumpIncremental(ctx, segment, stream, nil, rate, rate, testStallTimer(t, stream))
+	timer := testStallTimer(t, stream)
+	var pump sync.WaitGroup
+	pump.Go(func() { pumpIncremental(ctx, segment, stream, nil, rate, rate, timer) })
+	defer func() {
+		stream.Close()
+		pump.Wait()
+	}()
 
 	// One chunk, comfortably more than the pre-roll, and then nothing.
 	if err := stream.Write(chunkSamples(0, rate/2, rate)); err != nil {
@@ -109,7 +115,6 @@ func TestIncrementalSegmentIsAudibleBeforeTheStreamCloses(t *testing.T) {
 	if segment.pending() == 0 {
 		t.Fatal("segment reported ready with nothing buffered")
 	}
-	stream.Close()
 }
 
 // The buffered path must keep its old behaviour exactly: a whole-utterance

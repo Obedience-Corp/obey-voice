@@ -172,9 +172,20 @@ func (s *PCMStream) Incremental() bool {
 
 // WaitReady waits until the stream sample rate is known or the stream fails.
 func (s *PCMStream) WaitReady(ctx context.Context) (int, error) {
+	return s.WaitReadyWithStallTimer(ctx, nil)
+}
+
+// WaitReadyWithStallTimer shares the first-audio deadline with the caller's
+// subsequent wait for PCM. Learning the sample rate does not restart it.
+func (s *PCMStream) WaitReadyWithStallTimer(ctx context.Context, silence *StreamStallTimer) (int, error) {
 	select {
 	case <-ctx.Done():
 		return 0, ctx.Err()
+	case <-silence.C():
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		return 0, silence.Err()
 	case <-s.ready:
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -315,4 +326,18 @@ func (s *PCMStream) Err() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.err
+}
+
+// Drain discards remaining frames until the producer finishes or ctx is canceled.
+func (s *PCMStream) Drain(ctx context.Context) {
+	for {
+		select {
+		case _, ok := <-s.Frames():
+			if !ok {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }

@@ -172,13 +172,13 @@ func (p *Player) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audi
 	if p.closed {
 		p.mu.Unlock()
 		cancel()
-		go drainPlaybackStream(producerCtx, stream)
+		go stream.Drain(producerCtx)
 		return nil, errors.New("audio player is closed")
 	}
 	if generation, bound := audio.PlaybackGeneration(ctx, p); bound && generation != p.epoch {
 		p.mu.Unlock()
 		cancel()
-		go drainPlaybackStream(producerCtx, stream)
+		go stream.Drain(producerCtx)
 		return nil, context.Canceled
 	}
 	epoch := p.epoch
@@ -216,7 +216,7 @@ func (p *Player) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audi
 	go runPlaybackWorker(ctx, segment, stream, func() {
 		defer func() {
 			if ctx.Err() != nil {
-				go drainPlaybackStream(producerCtx, stream)
+				go stream.Drain(producerCtx)
 			}
 		}()
 		p.pumpSegmentGeneration(ctx, segment, stream, epoch)
@@ -327,17 +327,4 @@ func (p *Player) Close() error {
 
 func (p *Player) SubscribeRecording(buffer int, enabled func() bool) (<-chan audio.Frame, func() audio.RecordingStats) {
 	return p.recording.SubscribeRecording(buffer, enabled)
-}
-
-func drainPlaybackStream(ctx context.Context, stream *audio.PCMStream) {
-	for {
-		select {
-		case _, ok := <-stream.Frames():
-			if !ok {
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
 }
