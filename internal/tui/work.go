@@ -104,7 +104,7 @@ func (m *conversationModel) jobFinished(e events.JobFinished) {
 	m.jobEnded(e.ID, "finished", " · done in "+roundSeconds(e.Elapsed), e.Elapsed)
 	// Image results are readable immediately, even behind another speaker.
 	// Text-only results join the thread in spoken order.
-	if !e.SpeechPending || len(e.Attachments) > 0 {
+	if e.ShownAtFinish() {
 		m.showWorkerReply(e.ID, e.Summary, e.Envelope, e.Attachments)
 	}
 }

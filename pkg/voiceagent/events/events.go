@@ -722,6 +722,10 @@ type JobFinished struct {
 
 func (e JobFinished) eventType() string { return "job_finished" }
 
+// ShownAtFinish reports whether the chat displays the result with this event
+// rather than at JobResultDelivered.
+func (e JobFinished) ShownAtFinish() bool { return !e.SpeechPending || len(e.Attachments) > 0 }
+
 // JobResultDelivered resolves speech for a SpeechPending result:
 // Spoken when its audio started, false when its speech was skipped, failed
 // or dropped. It carries the whole reply and is emitted once per such job.

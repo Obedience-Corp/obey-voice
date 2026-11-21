@@ -51,8 +51,9 @@ type Agency struct {
 	liveManaged    func() *delegation.Runtime // guarded by mu; provider accessor is concurrency-safe
 	personas       map[string]bool            // guarded by mu
 	notices        OneTimeNotices             // guarded by mu
-	// heldReplies wait for their speech to start before history may take
-	// them, so the saved thread follows the order the user heard.
+	// heldReplies wait for their speech to start or be given up. Until then
+	// history may take only the ones the chat already shows, so the saved
+	// thread follows the order the user saw and heard.
 	heldReplies map[string]workerReply
 }
 
