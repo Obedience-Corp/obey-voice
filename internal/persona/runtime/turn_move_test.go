@@ -1,6 +1,7 @@
 package personaruntime
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,7 +92,9 @@ func (c *movingLocalConversation) holdAndMove(next string) {
 	})
 	defer stop()
 	turn := make(chan error, 1)
-	go func() { turn <- c.p.RunTurnTextMode(c.t.Context(), "Read the notes, then "+ollamaStall+" "+ollamaRelease) }()
+	go func() {
+		turn <- c.p.RunTurnTextMode(c.t.Context(), "Read the notes, then "+ollamaStall+" "+ollamaRelease)
+	}()
 	select {
 	case <-streaming:
 	case <-time.After(10 * time.Second):
@@ -140,6 +143,9 @@ func TestMovedTurnRunsOnWhileAnotherPersonaAnswers(t *testing.T) {
 	}
 	if strings.Contains(obeyRequest, "notes.txt") {
 		t.Fatalf("Obey was sent the tool round of Anika's running request:\n%s", obeyRequest)
+	}
+	if !strings.Contains(string(sent[len(sent)-2]), `"role":"tool"`) {
+		t.Fatal("Anika's moved request did not run its tool round before it was held")
 	}
 
 	c.say("switch to Anika")
@@ -197,5 +203,41 @@ func TestNamesOtherPersonaUsesOnlyTheExactRules(t *testing.T) {
 		if got := c.selector.NamesOtherPersona(input); got != want {
 			t.Errorf("NamesOtherPersona(%q) = %v, want %v", input, got, want)
 		}
+	}
+}
+
+// A persona whose provider keeps its own session is stopped as before when
+// another persona is addressed; its request is not moved.
+func TestTurnOnAProviderKeepingItsOwnSessionIsNotMoved(t *testing.T) {
+	c := newLocalConversation(t, 20, "ember", "mira=codex")
+	// Without tools the fixture CLI answers without a route request first.
+	c.p.VoiceToolsEnabled = false
+	jobs := job.NewTable(t.Context())
+	t.Cleanup(jobs.Close)
+	pipeline.NewAgency(c.p, jobs, nil, c.base, nil).Wire()
+	c.p.NamesOtherPersona = c.selector.NamesOtherPersona
+	c.say("Note that the vault code is cobalt.", "switch to Mira")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	streaming := make(chan struct{})
+	var once sync.Once
+	stop := events.SubscribeDetachable(c.p.Events, func(events.ResponseDelta) { once.Do(func() { close(streaming) }) })
+	defer stop()
+	turn := make(chan error, 1)
+	go func() { turn <- c.p.RunTurnTextMode(ctx, "Say more. "+claudeStall) }()
+	select {
+	case <-streaming:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Mira's reply never started")
+	}
+	if !c.selector.NamesOtherPersona("Hey Ember, what is the vault code?") {
+		t.Fatal("the line does not name Ember")
+	}
+	if c.p.MoveTurnToBackground("Hey Ember, what is the vault code?") {
+		t.Fatal("a request on a provider keeping its own session was moved")
+	}
+	cancel()
+	if err := <-turn; err == nil {
+		t.Fatal("stopped turn reported success")
 	}
 }

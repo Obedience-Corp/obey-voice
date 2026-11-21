@@ -284,7 +284,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if brain.HostedSharedHistory(oldBrain) {
 					s.refreshShare(previous.PersonaID, oldBrain)
 				} else {
-					captureContext(stagedContexts, previous.PersonaID, oldBrain)
+					s.captureLiveContext(stagedContexts, previous.PersonaID, oldBrain)
 				}
 			}
 			// A provider keeping the shared history on a hosted backend keeps

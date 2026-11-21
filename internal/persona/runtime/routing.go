@@ -93,7 +93,15 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 // than the selected one by the exact rules alone (@id, a name, "Hey Name", a
 // leading vocative, "switch to Name"), without asking a model.
 func (s *Selector) NamesOtherPersona(input string) bool {
-	return false
+	if s.fixedResponder() {
+		return false
+	}
+	roster, _, err := s.conversationRoster()
+	if err != nil {
+		return false
+	}
+	exact := roster.ResolveForegroundControl(input)
+	return exact.Kind == summon.ExactControlValid && exact.Address.PersonaID != "" && exact.Address.PersonaID != s.Snapshot().PersonaID
 }
 
 func (s *Selector) warnCatalogIssues(issues []persona.CatalogIssue) {
