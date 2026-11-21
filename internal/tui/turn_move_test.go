@@ -233,6 +233,25 @@ func (c *twoPersonaChat) waitView(speaker, text string) {
 	}
 }
 
+// waitScreen waits for a screen ready reports true for, and returns it.
+func (c *twoPersonaChat) waitScreen(ready func(string) bool) string {
+	c.t.Helper()
+	timeout := time.After(10 * time.Second)
+	last := ""
+	for {
+		select {
+		case view := <-c.views:
+			last = view
+			if ready(view) {
+				return view
+			}
+		case <-timeout:
+			c.t.Fatalf("screen never became ready:\n%s", last)
+			return ""
+		}
+	}
+}
+
 // speakerOf names the reply on screen that holds text: the nearest heading
 // above it.
 func speakerOf(view, text string) string {
@@ -267,10 +286,16 @@ func TestTypedMessageToAnotherPersonaLeavesTheWorkingTurnRunning(t *testing.T) {
 	if err := c.anika.holdErr(); err != nil {
 		t.Fatalf("Anika's turn was cancelled when the message to Obey was sent: %v", err)
 	}
+	screen := c.waitScreen(func(view string) bool {
+		return strings.Contains(view, "continues as job-1") && strings.Contains(view, "job-1 · Anika · ")
+	})
+	if speakerOf(screen, "Working on it.") != "Anika" || strings.Contains(screen, "interrupted") {
+		t.Fatalf("Anika's moved reply is shown as:\n%s", screen)
+	}
 	close(c.anika.release)
 	select {
 	case finished := <-c.jobsFinished:
-		if finished.Envelope == nil || finished.Envelope.DisplayName != "Anika" || finished.Summary != "Found three files." {
+		if finished.Envelope == nil || finished.Envelope.DisplayName != "Anika" || strings.TrimSpace(finished.Summary) != "Found three files." {
 			t.Fatalf("Anika's reply arrived as %+v", finished)
 		}
 	case <-time.After(10 * time.Second):

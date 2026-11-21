@@ -24,6 +24,7 @@ import (
 type jobView struct {
 	task     string
 	origin   string
+	persona  string
 	running  bool
 	terminal bool
 	tool     string // the tool the worker is on, until the fold has a row
@@ -54,7 +55,7 @@ func (m *conversationModel) canonicalJob(v work.JobView) {
 }
 
 func (m *conversationModel) jobQueued(e events.JobQueued) {
-	m.trackJob(e.ID, e.Task)
+	m.trackJob(e.ID, e.Task).persona = e.Persona
 	m.appendActivity("job", "queued "+e.Task, 0)
 	m.refreshJobChip()
 	m.renderJobItem(e.ID, " · queued")
@@ -390,6 +391,9 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	origin := ""
 	if job := m.jobs[id]; job != nil && job.origin != "" {
 		origin = " [" + job.origin + "]"
+	}
+	if job := m.jobs[id]; job != nil && job.persona != "" {
+		label = job.persona + " · " + label
 	}
 	line := dimStyle.Render("  ⚙ " + id + origin + " · " + label + suffix)
 	line += m.renderJobToolDetails(id)
