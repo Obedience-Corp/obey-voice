@@ -159,9 +159,8 @@ func newTwoPersonaChat(t *testing.T) *twoPersonaChat {
 	events.Subscribe(bus, func(e events.JobFinished) { c.jobsFinished <- e })
 
 	var turns sync.WaitGroup
-	m := sizedConversation(t, 100, 40)
-	m.deps = conversationDeps{runner: c.p, bus: bus, ctx: ctx, wg: &turns}
-	h := &recoveryTerminal{model: m, views: c.views}
+	h := &startedTerminal{recoveryTerminal: recoveryTerminal{model: sizedConversation(t, 100, 40), views: c.views},
+		deps: conversationDeps{runner: c.p, bus: bus, ctx: ctx, wg: &turns, workScope: c.p.ConversationScope}}
 	c.program = tea.NewProgram(h, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithContext(ctx), tea.WithoutSignalHandler())
 	done := make(chan error, 1)
 	go func() { _, err := c.program.Run(); done <- err }()
@@ -179,6 +178,19 @@ func newTwoPersonaChat(t *testing.T) *twoPersonaChat {
 		jobs.Close()
 	})
 	return c
+}
+
+// startedTerminal attaches the conversation screen to its pipeline's events
+// as the app does when a conversation opens.
+type startedTerminal struct {
+	recoveryTerminal
+	deps conversationDeps
+}
+
+func (h *startedTerminal) Init() tea.Cmd { return h.model.startConversation(h.deps) }
+func (h *startedTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := h.recoveryTerminal.Update(msg)
+	return h, cmd
 }
 
 func (c *twoPersonaChat) send(text string) {
@@ -202,8 +214,9 @@ func (c *twoPersonaChat) reply(persona string) events.ResponseReady {
 	}
 }
 
-// waitView waits until the conversation screen shows text.
-func (c *twoPersonaChat) waitView(text string) {
+// waitView waits until the conversation screen shows text in a reply under
+// speaker's name.
+func (c *twoPersonaChat) waitView(speaker, text string) {
 	c.t.Helper()
 	timeout := time.After(10 * time.Second)
 	last := ""
@@ -211,13 +224,28 @@ func (c *twoPersonaChat) waitView(text string) {
 		select {
 		case view := <-c.views:
 			last = view
-			if strings.Contains(view, text) {
+			if speakerOf(view, text) == speaker {
 				return
 			}
 		case <-timeout:
-			c.t.Fatalf("screen never showed %q:\n%s", text, last)
+			c.t.Fatalf("screen never showed %q under %s:\n%s", text, speaker, last)
 		}
 	}
+}
+
+// speakerOf names the reply on screen that holds text: the nearest heading
+// above it.
+func speakerOf(view, text string) string {
+	at := strings.Index(view, text)
+	if at < 0 {
+		return ""
+	}
+	heading := strings.LastIndex(view[:at], "● ")
+	if heading < 0 {
+		return ""
+	}
+	name, _, _ := strings.Cut(view[heading+len("● "):], "\n")
+	return strings.TrimSpace(name)
 }
 
 // Typing a message to Obey while Anika works leaves her turn running: Obey
@@ -248,5 +276,33 @@ func TestTypedMessageToAnotherPersonaLeavesTheWorkingTurnRunning(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("Anika's reply never arrived")
 	}
-	c.waitView("Found three files.")
+	c.waitView("Anika", "Found three files.")
+}
+
+// A message naming the persona who is working, or naming nobody, stops her
+// turn as before.
+func TestTypedMessageNotNamingAnotherPersonaStopsTheWorkingTurn(t *testing.T) {
+	c := newTwoPersonaChat(t)
+	c.send("Anika, HOLD and check the build")
+	select {
+	case <-c.anika.held:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Anika's turn never started")
+	}
+	c.send("Anika, stop that.")
+	deadline := time.Now().Add(10 * time.Second)
+	for c.anika.holdErr() == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("Anika's turn was not stopped")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if reply := c.reply("anika"); reply.Response != "Noted." {
+		t.Fatalf("Anika replied %q to the next message", reply.Response)
+	}
+	select {
+	case finished := <-c.jobsFinished:
+		t.Fatalf("a job finished: %+v", finished)
+	default:
+	}
 }
