@@ -15,4 +15,4 @@ Hide
 Type "env OBEY_VOICE_PATH_TERMINAL=record OBEY_VOICE_COLOR_PROFILE=truecolor ./bin/chat-path-completion.test -test.run '^TestPathMentionsTerminal$' 2>/dev/null" Enter
 Sleep 500ms
 Show
-Sleep 20s
+Sleep 17s

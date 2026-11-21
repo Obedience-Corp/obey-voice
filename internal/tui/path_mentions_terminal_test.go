@@ -66,7 +66,10 @@ func (b *pathDemoBrain) ThinkFull(ctx context.Context, input string, opts brain.
 // a disposable campaign. Only the brain is a fixture: no microphone, playback
 // or model. OBEY_VOICE_PATH_TERMINAL=record paces it for VHS.
 func TestPathMentionsTerminal(t *testing.T) {
-	tmp := t.TempDir()
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("OBEY_VOICE_WORK_DIR", "")
 	t.Setenv("WORK_DIR", "")
 	config.SetConfigDirForTest(t, filepath.Join(tmp, "config"))
@@ -87,7 +90,16 @@ func TestPathMentionsTerminal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Samantha works outside the campaign; @paths still resolve against the
+	// conversation's starting directory, which is inside it.
+	pinned := filepath.Join(tmp, "elsewhere")
+	if err := os.MkdirAll(pinned, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for _, p := range []persona.Profile{pauseProofProfile("samantha", "Samantha"), pauseProofProfile("santa", "Santa")} {
+		if p.ID == "samantha" {
+			p.StartingDirectory = pinned
+		}
 		writePauseProofCatalog(t, config.ConfigDir(), p)
 	}
 
@@ -102,6 +114,15 @@ func TestPathMentionsTerminal(t *testing.T) {
 	initial, err := catalog.ResolveBinding(base, "samantha")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if config.WorkDirFrom(initial.Config()) != pinned {
+		t.Fatalf("persona directory = %q, want %q", config.WorkDirFrom(initial.Config()), pinned)
+	}
+	bound := *initial.Config()
+	bound.EnvironmentContextEnabled = true
+	grounding := brain.AssembleSystemPrompt(brain.SystemPromptInput{Provider: "ollama", Persona: "P", WorkDir: pinned, Cfg: &bound})
+	if !strings.Contains(grounding, "relative to "+campaign+";") {
+		t.Fatalf("grounding does not name the campaign root %q:\n%s", campaign, grounding)
 	}
 	p := &pipeline.Pipeline{Brain: &pathDemoBrain{&pauseTerminalBrain{promptHash: "samantha-initial"}}, Events: events.NewBus(), VoiceToolsEnabled: false}
 	jobs := job.NewTable(t.Context())
