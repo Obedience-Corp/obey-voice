@@ -244,6 +244,7 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 		liveSpeaker:         msg.rt.LiveSpeaker,
 		speakerNames:        msg.rt.SpeakerNames,
 		endUtterance:        msg.rt.Pipeline.EndUtterance,
+		mentionPaths:        mentionPathsFor(a.conversation.cfg),
 		ctx:                 a.runCtx,
 		wg:                  a.wg,
 	})
