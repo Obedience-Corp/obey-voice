@@ -27,6 +27,19 @@ func PNG() []byte {
 	_ = png.Encode(&out, img)
 	return out.Bytes()
 }
+
+// SolidPNG is a small one-colour picture. Each shade is a distinct image.
+func SolidPNG(shade uint8) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 16, 16))
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			img.SetRGBA(x, y, color.RGBA{shade, 90, 160, 255})
+		}
+	}
+	var out bytes.Buffer
+	_ = png.Encode(&out, img)
+	return out.Bytes()
+}
 func GIF() []byte {
 	palette := color.Palette{color.RGBA{20, 35, 65, 255}, color.RGBA{255, 100, 180, 255}, color.RGBA{100, 210, 255, 255}}
 	g := &gif.GIF{LoopCount: 0}

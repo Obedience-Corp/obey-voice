@@ -71,3 +71,10 @@ demo-agent-images:
     mkdir -p bin demos/frames
     go test -c -o bin/chat-media.test ./internal/tui
     vhs demos/agent-images.tape
+
+# Review a worker reply whose picture references end its line.
+[no-cd]
+demo-agent-images-end-of-line:
+    mkdir -p bin
+    go test -c -o bin/chat-media.test ./internal/tui
+    vhs demos/agent-images-end-of-line.tape

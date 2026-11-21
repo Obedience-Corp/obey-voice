@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
@@ -86,17 +87,39 @@ func (g *voiceGate) filter(text string) (string, int) {
 	lines := strings.Split(text, "\n")
 	kept := lines[:0]
 	dropped := 0
+	changed := false
 	for _, line := range lines {
+		if prose, ok := g.beforeTrailingImages(line); ok {
+			if chatmedia.BareMarker(prose) {
+				dropped++
+				continue
+			}
+			line, changed = prose, true
+		}
 		if g.suppress(line) {
 			dropped++
 			continue
 		}
 		kept = append(kept, line)
 	}
-	if dropped == 0 {
+	if dropped == 0 && !changed {
 		return text, 0
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n")), dropped
+}
+
+// beforeTrailingImages returns the prose of a line that ends in complete image
+// references, the ones the importer lifts, so that prose is still spoken. Any
+// other line holding "![" is left to suppress, which drops it whole.
+func (g *voiceGate) beforeTrailingImages(line string) (string, bool) {
+	if g.inImage || g.inFence || g.inTool || !strings.Contains(line, "![") {
+		return "", false
+	}
+	prose, refs := chatmedia.TrailingImageReferences(line)
+	if len(refs) == 0 || strings.Contains(prose, "![") {
+		return "", false
+	}
+	return prose, true
 }
 
 // suppress advances the region state for one line and reports whether it must

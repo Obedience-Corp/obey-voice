@@ -54,7 +54,7 @@ func (o *OllamaBrain) imageClaimProse(text string) (string, bool) {
 	fenced := false
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
+		if chatmedia.IsFence(line) {
 			fenced = !fenced
 			continue
 		}
