@@ -34,8 +34,9 @@ func TestEarlyReplyImageAgreesWithPromiseRepair(t *testing.T) {
 		name, reply   string
 		routed, early bool
 	}{
-		// An inline directive is neither an image reply nor a promise.
-		{name: "directive inside the promise", reply: "I'll use the ![c](<" + image + ">) plotting tool"},
+		// An inline directive is an image reply. Its path keeps the
+		// sentence from reading as a promise, so the turn does not route.
+		{name: "directive inside the promise", reply: "I'll use the ![c](<" + image + ">) plotting tool", early: true},
 		{name: "vocal tag inside the promise", reply: lead + "I'll [laughs] use the plotting tool." + directive, routed: true},
 		{name: "plain promise", reply: lead + "I'll use the plotting tool." + directive, routed: true},
 		{name: "no promise", reply: lead + "Here is the chart." + directive, early: true},

@@ -11,9 +11,14 @@ import (
 	"strings"
 )
 
-// Reply images are explicit standalone Markdown image references, not filenames
-// found in arbitrary prose, tool output, or code. Never fetch remote URLs.
-var replyImage = regexp.MustCompile(`^[\t ]*!\[([^\]\r\n]*)\]\((?:<([^>\r\n]+)>|([^()\r\n]+))\)[\t ]*$`)
+// Reply images are explicit Markdown image references outside code, not
+// filenames found in arbitrary prose or tool output. Never fetch remote URLs.
+const imageReference = `!\[([^\]\r\n]*)\]\((?:<([^>\r\n]+)>|([^()\r\n]+))\)`
+
+var (
+	inlineImage = regexp.MustCompile(imageReference)
+	replyImage  = regexp.MustCompile(`^[\t ]*` + imageReference + `[\t ]*$`)
+)
 
 // ImportReply runs on the owning response/job goroutine, before publication.
 // Partial failures preserve the answer and return an explicit diagnostic.
@@ -46,14 +51,14 @@ func inspectReplyFile(path string) (Ref, error) {
 }
 
 func (s Store) processReply(text, workDir string, load func(string) (Ref, error)) (string, []Ref, error) {
-	lines := strings.Split(text, "\n")
+	lines := strings.Split(SeparateImageReferences(text), "\n")
 	var refs []Ref
 	var failures []error
 	seen := map[string]bool{}
 	fenced := false
 	attempts := 0
 	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") || strings.HasPrefix(strings.TrimSpace(line), "~~~") {
+		if isFence(line) {
 			fenced = !fenced
 			continue
 		}
@@ -149,26 +154,52 @@ func (s Store) importReplyFile(resolved string) (Ref, error) {
 }
 
 // ProtectImageExamples prevents later Markdown cleanup from turning fenced
-// examples into standalone attachment directives. It does not read files.
+// examples into attachment directives. Cleanup also unwraps ``` code spans.
+// It does not read files.
 func ProtectImageExamples(text string) string {
+	if !strings.Contains(text, "![") {
+		return text
+	}
 	lines := strings.Split(text, "\n")
 	fenced := false
 	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") || strings.HasPrefix(strings.TrimSpace(line), "~~~") {
-			fenced = !fenced
+		fence := isFence(line)
+		if fence || fenced {
+			lines[i] = inlineImage.ReplaceAllStringFunc(line, inertImage)
+			if fence {
+				fenced = !fenced
+			}
 			continue
 		}
-		if fenced && replyImage.MatchString(line) {
-			lines[i] = strings.Replace(line, "![", "[", 1)
+		var b strings.Builder
+		last := 0
+		spans := codeSpans(line)
+		for _, m := range inlineImage.FindAllStringIndex(line, -1) {
+			if inCodeSpan(spans, m, 3) {
+				b.WriteString(line[last:m[0]])
+				b.WriteString(inertImage(line[m[0]:m[1]]))
+				last = m[1]
+			}
+		}
+		if last > 0 {
+			b.WriteString(line[last:])
+			lines[i] = b.String()
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
+func inertImage(ref string) string { return ref[1:] }
+
+// RemoveImageReferences deletes every complete image reference, code included.
+func RemoveImageReferences(text string) string {
+	return inlineImage.ReplaceAllString(text, "")
+}
+
 // ReplyProse omits complete image directives when judging spoken sentence
 // boundaries. An unfinished directive remains visible to truncation checks.
 func ReplyProse(text string) string {
-	lines := strings.Split(text, "\n")
+	lines := strings.Split(SeparateImageReferences(text), "\n")
 	kept := lines[:0]
 	for _, line := range lines {
 		if !replyImage.MatchString(line) {
@@ -176,4 +207,119 @@ func ReplyProse(text string) string {
 		}
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+// SeparateImageReferences moves each image reference written inside a line of
+// prose onto its own line after that prose, so a reference counts the same
+// wherever the model wrote it. Code and every other line are left as written.
+func SeparateImageReferences(text string) string {
+	if !strings.Contains(text, "![") {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	fenced := false
+	for _, line := range lines {
+		if isFence(line) {
+			fenced = !fenced
+		} else if !fenced && !replyImage.MatchString(line) {
+			out = append(out, separateLine(line)...)
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+func separateLine(line string) []string {
+	var refs []string
+	for {
+		var at [][]int
+		spans := codeSpans(line)
+		for _, m := range inlineImage.FindAllStringIndex(line, -1) {
+			if !inCodeSpan(spans, m, 1) {
+				at = append(at, m)
+			}
+		}
+		if len(at) == 0 {
+			break
+		}
+		prose := line[:at[0][0]]
+		for i, m := range at {
+			refs = append(refs, line[m[0]:m[1]])
+			end := len(line)
+			if i+1 < len(at) {
+				end = at[i+1][0]
+			}
+			prose = joinProse(prose, line[m[1]:end])
+		}
+		line = prose
+	}
+	if len(refs) == 0 {
+		return []string{line}
+	}
+	if strings.TrimSpace(line) == "" {
+		return refs
+	}
+	return append([]string{strings.TrimRight(line, " \t\r")}, refs...)
+}
+
+// joinProse closes the gap a removed reference leaves without doubling spaces.
+func joinProse(left, right string) string {
+	switch {
+	case strings.TrimSpace(left) == "":
+		return left + strings.TrimLeft(right, " \t")
+	case strings.TrimSpace(right) == "":
+		return strings.TrimRight(left, " \t")
+	case strings.ContainsRune(" \t,.;:!?", rune(right[0])):
+		return strings.TrimRight(left, " \t") + right
+	}
+	return left + right
+}
+
+func isFence(line string) bool {
+	line = strings.TrimSpace(line)
+	return strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~")
+}
+
+// codeSpans returns backtick code spans on one line as start, end and the
+// length of the backtick run that delimits them.
+func codeSpans(line string) [][3]int {
+	var spans [][3]int
+	for i := 0; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		open := i
+		for i < len(line) && line[i] == '`' {
+			i++
+		}
+		n := i - open
+		for j := i; j < len(line); {
+			if line[j] != '`' {
+				j++
+				continue
+			}
+			run := j
+			for j < len(line) && line[j] == '`' {
+				j++
+			}
+			if j-run == n {
+				spans = append(spans, [3]int{open, j, n})
+				i = j
+				break
+			}
+		}
+	}
+	return spans
+}
+
+func inCodeSpan(spans [][3]int, m []int, minTicks int) bool {
+	for _, s := range spans {
+		if s[2] >= minTicks && m[0] < s[1] && s[0] < m[1] {
+			return true
+		}
+	}
+	return false
 }

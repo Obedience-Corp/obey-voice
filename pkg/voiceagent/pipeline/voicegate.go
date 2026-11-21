@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
@@ -86,28 +87,54 @@ func (g *voiceGate) filter(text string) (string, int) {
 	lines := strings.Split(text, "\n")
 	kept := lines[:0]
 	dropped := 0
+	changed := false
 	for _, line := range lines {
-		if g.suppress(line) {
+		line, cut := g.withoutImages(line)
+		changed = changed || cut
+		if (cut && strings.TrimSpace(line) == "") || g.suppress(line) {
 			dropped++
 			continue
 		}
 		kept = append(kept, line)
 	}
-	if dropped == 0 {
+	if dropped == 0 && !changed {
 		return text, 0
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n")), dropped
 }
 
+// withoutImages removes image references from a line and reports whether it
+// removed anything. The prose around a reference is still spoken. References
+// may span sentence chunks (periods in filenames), so an unfinished one stays
+// out of speech until its closing delimiter.
+func (g *voiceGate) withoutImages(line string) (string, bool) {
+	indent := ""
+	if g.inImage {
+		end := strings.Index(line, ">)")
+		if end >= 0 {
+			end++
+		} else {
+			end = strings.IndexByte(line, ')')
+		}
+		if end < 0 {
+			return "", true
+		}
+		line, g.inImage = line[end+1:], false
+	} else if strings.Contains(line, "![") {
+		indent = line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+	} else {
+		return line, false
+	}
+	line = chatmedia.RemoveImageReferences(line)
+	if start := strings.Index(line, "!["); start >= 0 {
+		line, g.inImage = line[:start], true
+	}
+	return indent + strings.TrimLeft(line, " \t"), true
+}
+
 // suppress advances the region state for one line and reports whether it must
 // stay out of the voice channel.
 func (g *voiceGate) suppress(line string) bool {
-	// Image references may span sentence chunks (periods in filenames).
-	// Keep the whole reference out of speech until its closing delimiter.
-	if g.inImage || strings.Contains(line, "![") {
-		g.inImage = !strings.Contains(line, ")")
-		return true
-	}
 	// Fences toggle on the marker itself; an odd count opens or closes a
 	// region, an even count is an inline span. Either way the line is not
 	// spoken, so a one-line ``` snippet ``` cannot leak its body.

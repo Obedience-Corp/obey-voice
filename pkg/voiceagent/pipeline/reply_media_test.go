@@ -299,3 +299,109 @@ func TestTextOnlyWorkerRefusesAPictureJobBeforeItStarts(t *testing.T) {
 		t.Fatalf("picture job on a text-only worker: %v", err)
 	}
 }
+
+func writeReplyPictures(t *testing.T, dir string, names ...string) []string {
+	t.Helper()
+	paths := make([]string, len(names))
+	for i, name := range names {
+		paths[i] = filepath.Join(dir, name)
+		if err := os.WriteFile(paths[i], testmedia.SolidPNG(uint8(60*i)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return paths
+}
+
+func TestWorkerAttachesThreePicturesWrittenOnOneLine(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	dir := t.TempDir()
+	p := writeReplyPictures(t, dir, "a.png", "b.png", "c.png")
+	answer := "Fresh pictures, here they are. ![A](" + p[0] + ") ![B](" + p[1] + ") ![C](" + p[2] + ")"
+	cfg := &config.Config{WorkDir: dir, VoiceToolsEnabled: true}
+	w := &imageRepairWorker{answers: []string{answer}}
+	jobs := job.NewTable(t.Context())
+	defer jobs.Close()
+	a := NewAgency(&Pipeline{Events: events.NewBus()}, jobs, w, cfg, nil)
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	text, err := a.workerRunWithBudget("Make three pictures", w, cfg, brain.NewWorkerBudget(brain.BudgetLimits{}), true)(ctx)
+	if err != nil || len(w.refs) != 3 || text != "Fresh pictures, here they are.\nA\nB\nC" || len(w.inputs) != 1 {
+		t.Fatalf("text=%q refs=%d inputs=%d err=%v", text, len(w.refs), len(w.inputs), err)
+	}
+}
+
+func streamImageReply(t *testing.T, chunks ...string) (*fakeTTS, *turnMetrics, []events.ReplyImagesReady) {
+	t.Helper()
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	tts := &fakeTTS{}
+	p := &Pipeline{Brain: &imageReplyBrain{fakeBrain{chunks: chunks}}, TTS: tts, Player: player, Events: events.NewBus(), VoiceFailedRouteRepair: true}
+	var shown []events.ReplyImagesReady
+	events.Subscribe(p.Events, func(e events.ReplyImagesReady) { shown = append(shown, e) })
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	stream, err := p.Brain.ThinkStream(ctx, "show me", brain.StreamOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := newTurnMetrics()
+	if _, _, err := p.streamResponse(ctx, cancel, stream, false, metrics, p.newTurnConductor(metrics), &promiseRepairState{enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	return tts, metrics, shown
+}
+
+func storePictures(t *testing.T, names ...string) []string {
+	t.Helper()
+	config.SetConfigDirForTest(t, filepath.Join(t.TempDir(), "config"))
+	dir := chatmedia.DefaultStore().Dir
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return writeReplyPictures(t, dir, names...)
+}
+
+func TestStreamedReplyAttachesThreePicturesWrittenOnOneLine(t *testing.T) {
+	p := storePictures(t, "a.png", "b.png", "c.png")
+	reply := "Fresh pictures, here they are. ![A](<" + p[0] + ">) ![B](<" + p[1] + ">) ![C](<" + p[2] + ">)"
+	tts, metrics, shown := streamImageReply(t, reply)
+	if len(shown) != 1 || len(shown[0].Attachments) != 3 || shown[0].Response != "Fresh pictures, here they are.\nA\nB\nC" {
+		t.Fatalf("shown %+v", shown)
+	}
+	if metrics.mediaReply == nil || len(metrics.mediaReply.Attachments) != 3 {
+		t.Fatalf("terminal reply %+v", metrics.mediaReply)
+	}
+	if got := tts.Texts(); len(got) != 1 || got[0] != "Fresh pictures, here they are." {
+		t.Fatalf("spoken %q", got)
+	}
+}
+
+// The prose sharing a line with a picture is still spoken, and the turn does
+// not fall back to the recovery line.
+func TestOneLineImageReplySpeaksItsSentence(t *testing.T) {
+	p := storePictures(t, "bird.png")
+	for _, chunks := range [][]string{
+		{"Here it is: ![Blue bird](<" + p[0] + ">)"},
+		{"Here it is: ![Blue bird](<", p[0], ">)"},
+	} {
+		tts, metrics, shown := streamImageReply(t, chunks...)
+		if got := tts.Texts(); len(got) != 1 || got[0] != "Here it is:" {
+			t.Fatalf("%q: spoken %q", chunks, got)
+		}
+		if len(shown) != 1 || len(shown[0].Attachments) != 1 || shown[0].Response != "Here it is:\nBlue bird" || metrics.mediaReply == nil {
+			t.Fatalf("%q: shown %+v", chunks, shown)
+		}
+	}
+}
+
+func TestSpeechSkipsEveryReferenceSplitAcrossSegments(t *testing.T) {
+	projection := NewSpeechProjection()
+	var spoken []string
+	for _, chunk := range []string{"Here they are. ![A](</w/a.", "png>) ![B](</w/b.", "png>) ![C](/w/c.", "png) That is all."} {
+		if got := projection.Speak(chunk).Speakable; got != "" {
+			spoken = append(spoken, got)
+		}
+	}
+	if strings.Join(spoken, " ") != "Here they are. That is all." {
+		t.Fatalf("spoken %q", spoken)
+	}
+}

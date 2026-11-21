@@ -56,7 +56,7 @@ func evaluateStreamIntegrity(in IntegrityInput) IntegrityResult {
 }
 
 func endsMidSentence(s string) bool {
-	s = strings.TrimSpace(s)
+	s = chatmedia.SeparateImageReferences(strings.TrimSpace(s))
 	// A standalone result completes an introduction such as "Here it is:".
 	// An unfinished directive or prose after the image still needs checking.
 	lastLine := s[strings.LastIndexByte(s, '\n')+1:]

@@ -561,3 +561,46 @@ func TestDeliveryAnnouncementNeedsTheChatOrAPicture(t *testing.T) {
 		}
 	}
 }
+
+func TestInSentencePictureIsCheckedLikeAWholeLineOne(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "bird.png"), testmedia.PNG(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	o := &OllamaBrain{cfg: &config.Config{WorkDir: root}, workDir: root}
+	real := filepath.Join(root, "bird.png")
+	missing := filepath.Join(root, "missing.png")
+	if _, ok := o.imageClaimProse("I've attached it. ![Blue bird](<" + real + ">)"); ok {
+		t.Fatal("an in-sentence reference was judged as a bare claim")
+	}
+	if err := o.imageReplyError("Here it is. ![Blue bird](<"+real+">)", "Where is it then?", owedImageFollowup, false); err != nil {
+		t.Fatalf("in-sentence picture did not satisfy the owed picture: %v", err)
+	}
+	inline := o.imageReplyError("Here it is. ![Blue bird](<"+missing+">)", "Where is it then?", owedImageFollowup, false)
+	whole := o.imageReplyError("Here it is.\n![Blue bird](<"+missing+">)", "Where is it then?", owedImageFollowup, false)
+	if inline == nil || whole == nil || inline.Error() != whole.Error() {
+		t.Fatalf("missing file: in-sentence %v, whole-line %v", inline, whole)
+	}
+}
+
+// Explaining the reference syntax quotes the placeholder from the prompt.
+func TestPictureHowToQuotingThePlaceholder(t *testing.T) {
+	o := &OllamaBrain{cfg: &config.Config{WorkDir: t.TempDir()}}
+	const input = "How do I share a picture in the chat?"
+	direct, _ := o.directImageRequest(input, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect})
+	if direct != imageMentioned {
+		t.Fatalf("context = %v", direct)
+	}
+	for _, tc := range []struct {
+		reply    string
+		rejected bool
+	}{
+		{"Put the reference on its own line:\n![Short caption](<absolute-path>)", true},
+		{"Write ![Short caption](<absolute-path>) on its own line.", true},
+		{"Write `![Short caption](<absolute-path>)` on its own line.", false},
+	} {
+		if err := o.imageReplyError(tc.reply, input, direct, false); (err != nil) != tc.rejected {
+			t.Errorf("%q: err = %v", tc.reply, err)
+		}
+	}
+}

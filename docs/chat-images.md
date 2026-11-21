@@ -60,18 +60,24 @@ attached to a line said to another persona: see
 [Hosted backends](personas.md#hosted-backends).
 
 Agents can return local PNG, JPEG, or GIF files created through their existing tools.
-They attach files using a standalone Markdown image reference:
+They attach files with a Markdown image reference. The recommended form is the
+reference on its own line:
 
 ```markdown
 ![Generated chart](</absolute/work/directory/chart.png>)
 ```
 
+A reference written inside a sentence, such as `Here it is. ![Chart](</absolute/work/directory/chart.png>)`,
+is attached too: the chat shows the sentence, then each caption on its own line, and
+the sentence is still spoken.
+
 The file must be inside the agent's work directory (or the existing attachment store).
 The host validates and copies it into durable storage, replaces the reference with its
 caption, and displays the preview with the reply. Up to four references are processed;
 missing, invalid, out-of-directory, and remote images produce visible diagnostics.
-Fenced examples and ordinary filenames do not import files. Paths are kept out of
-speech. Image generation remains the responsibility of the agent's available tools.
+Fenced examples, references inside backtick code spans, and ordinary filenames do
+not import files. Paths are kept out of speech. Image generation remains the
+responsibility of the agent's available tools.
 
 Speaking agents with direct Ollama tools can obtain and attach an image on the
 same turn. For explicit picture requests the host checks the reply before
