@@ -56,11 +56,16 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 	if err := p.validateCapturedBinding(metrics); err != nil {
 		return ctx, ResponseAdmission{}, err
 	}
-	if err := p.awaitProvider(ctx); err != nil {
+	if err := p.awaitStopped(ctx); err != nil {
 		return ctx, ResponseAdmission{}, err
 	}
-	if err := p.commitWorkerReplies(); err != nil {
-		return ctx, ResponseAdmission{}, err
+	// A provider whose request was moved to a background job is not written
+	// to before admission has had the chance to replace it.
+	busy := p.liveBrainBusy()
+	if !busy {
+		if err := p.commitWorkerReplies(); err != nil {
+			return ctx, ResponseAdmission{}, err
+		}
 	}
 	admitted := ResponseAdmission{Request: input}
 	if p.AdmitInput != nil {
@@ -73,7 +78,17 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 		// for brain responses, agent handoffs, and continuations.
 		admitCtx := admissionpolicy.WithSpeaker(admissionpolicy.WithAcousticName(ctx, name), metrics.speaker)
 		admitted, err = p.AdmitInput(admitCtx, input, background)
+		if busy {
+			p.reclaimMovedBrain()
+		}
 		if err != nil {
+			return ctx, admitted, err
+		}
+	} else if busy {
+		p.reclaimMovedBrain()
+	}
+	if busy {
+		if err := p.commitWorkerReplies(); err != nil {
 			return ctx, admitted, err
 		}
 	}

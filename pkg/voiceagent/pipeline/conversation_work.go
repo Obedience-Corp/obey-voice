@@ -131,6 +131,7 @@ func (p *Pipeline) ClearConversation() error {
 		p.adoptConversationScope(next)
 	}
 	if p.Brain != nil {
+		p.reclaimMovedBrain()
 		if _, fenced := p.Brain.(brain.RequestAbandoner); fenced {
 			// A request abandoned there changes nothing when it ends.
 			settle, cancel := context.WithTimeout(context.Background(), providerStopTimeout)

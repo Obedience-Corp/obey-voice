@@ -236,7 +236,17 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	if ordinary != nil {
 		stream = ordinary.wrap(stream)
 	}
+	var withdrawMove func()
+	metrics.moveRequested, withdrawMove = p.offerMove(recording)
 	response, route, err := p.collectTextStream(brainCtx, brainCancel, stream, metrics)
+	withdrawMove()
+	if errors.Is(err, errTurnMoved) {
+		if partial, moved := p.moveToJob(ctx, metrics, recording, stream, original); moved {
+			p.finishMovedTurn(turn, metrics, partial)
+			return nil
+		}
+		err = context.Canceled
+	}
 	recording.settle()
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

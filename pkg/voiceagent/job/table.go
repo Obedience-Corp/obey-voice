@@ -77,6 +77,9 @@ type Spec struct {
 	// OnAccepted publishes caller metadata after enqueue succeeds, before
 	// queued/start callbacks or execution. It runs outside the table lock.
 	OnAccepted func(id string)
+	// Immediate is for work already under way: it starts at once, past the
+	// concurrency and queue limits, and holds a running slot like any job.
+	Immediate bool
 }
 
 // Info is a point-in-time job snapshot for status UI.
@@ -261,7 +264,7 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		t.mu.Unlock()
 		return "", ErrDisabled
 	}
-	if t.maxQueued > 0 && len(t.running)+t.completing >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
+	if !spec.Immediate && t.maxQueued > 0 && len(t.running)+t.completing >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
 		t.mu.Unlock()
 		return "", errors.New("worker queue limit reached")
 	}
@@ -289,7 +292,9 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		budgetEnd: budgetEnd,
 	}
 	t.jobs[id] = e
-	t.queue = append(t.queue, id)
+	if !spec.Immediate {
+		t.queue = append(t.queue, id)
+	}
 	onQueued := t.onQueued
 	t.mu.Unlock()
 
@@ -304,6 +309,9 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 
 	t.mu.Lock()
 	e.announced = true
+	if spec.Immediate && !e.finished {
+		t.launchLocked(id, e)
+	}
 	t.pumpLocked()
 	t.mu.Unlock()
 	return id, nil
@@ -453,11 +461,15 @@ func (t *Table) pumpLocked() {
 			return
 		}
 		t.queue = t.queue[1:]
-		e.info.State = StateRunning
-		t.running[id] = struct{}{}
-		t.runOrder = append(t.runOrder, id)
-		go t.run(e.ctx, id)
+		t.launchLocked(id, e)
 	}
+}
+
+func (t *Table) launchLocked(id string, e *entry) {
+	e.info.State = StateRunning
+	t.running[id] = struct{}{}
+	t.runOrder = append(t.runOrder, id)
+	go t.run(e.ctx, id)
 }
 
 func (t *Table) run(jobCtx context.Context, id string) {

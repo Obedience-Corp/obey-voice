@@ -164,6 +164,15 @@ func (a *Agency) jobInfo(id string) (string, time.Duration) {
 	return "", 0
 }
 
+func (a *Agency) jobState(id string) job.State {
+	for _, info := range a.jobs.Status() {
+		if info.ID == id {
+			return info.State
+		}
+	}
+	return ""
+}
+
 func (a *Agency) jobTiming(id string) (time.Time, time.Time, time.Duration) {
 	for _, info := range a.jobs.Status() {
 		if info.ID == id {

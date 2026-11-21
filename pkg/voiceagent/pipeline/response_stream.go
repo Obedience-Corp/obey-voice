@@ -558,6 +558,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	}
 
 	var imageTextDone <-chan struct{}
+	moveRequested := metrics.moveRequested
 	for sentences != nil || pending > 0 || modelDone != nil || imageTextDone != nil {
 		// Pause sentence intake while the playback queue is full so the loop
 		// always returns to select and can drain playbackEvents. Blocking here
@@ -566,8 +567,23 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if pending < lookaheadDepth {
 			sentenceCh = sentences
 		}
+		if modelDone == nil || interrupted {
+			moveRequested = nil
+		}
 
 		select {
+		case <-moveRequested:
+			// The model request goes on in a background job; only this
+			// turn's speech stops.
+			cancelSpeech()
+			voiceBatch = nil
+			stopIdle()
+			stopHold()
+			if p.Player != nil {
+				p.Player.Stop()
+			}
+			return strings.TrimSpace(fullResponse.String()), false, errTurnMoved
+
 		case <-ctx.Done():
 			if interrupted {
 				return strings.TrimSpace(fullResponse.String()), interrupted, nil
@@ -932,11 +948,24 @@ func (p *Pipeline) collectTextStream(ctx context.Context, cancel context.CancelF
 		metrics.route.Tier, metrics.route.ReasonCode = result.RouteTier, result.RouteReasonCode
 		return strings.TrimSpace(reply), result.Route, err
 	}
-	out, _, done := p.observeStream(ctx, stream, metrics)
+	observeCtx, stopObserving := context.WithCancel(ctx)
+	defer stopObserving()
+	out, _, done := p.observeStream(observeCtx, stream, metrics)
 
 	var b strings.Builder
-	for chunk := range out {
-		b.WriteString(chunk)
+	for reading := true; reading; {
+		select {
+		case chunk, ok := <-out:
+			if !ok {
+				reading = false
+				continue
+			}
+			b.WriteString(chunk)
+		case <-metrics.moveRequested:
+			stopObserving()
+			<-done
+			return strings.TrimSpace(b.String()), "", errTurnMoved
+		}
 	}
 	<-done
 

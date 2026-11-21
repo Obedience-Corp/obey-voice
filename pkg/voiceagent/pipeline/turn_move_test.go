@@ -316,3 +316,193 @@ func TestMovedTurnKeepsItsRequestAndDeliversItAsAJob(t *testing.T) {
 		t.Fatalf("Obey's history holds Anika's result as %+v", obey.History())
 	}
 }
+
+func (c *movingConversation) waitHoldErr() error {
+	c.t.Helper()
+	select {
+	case <-c.anika.holdEnded:
+	case <-time.After(5 * time.Second):
+		c.t.Fatal("Anika's held request never ended")
+	}
+	return c.anika.holdErr()
+}
+
+// Stopping the job a turn was moved to stops the model request.
+func TestAbortingAMovedJobStopsItsRequest(t *testing.T) {
+	c := newMovingConversation(t)
+	c.holdTurn()
+	c.move()
+	c.jobs.Abort(c.movedJob().ID)
+	if err := c.waitHoldErr(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("held request ended with %v after its job was stopped", err)
+	}
+	c.next(func(e events.Event) bool { _, ok := e.(events.JobAborted); return ok })
+}
+
+// A moved request that fails reports a failed job.
+func TestMovedRequestThatFailsReportsAFailedJob(t *testing.T) {
+	c := newMovingConversation(t)
+	c.anika.fail = errors.New("model crashed")
+	c.holdTurn()
+	c.move()
+	id := c.movedJob().ID
+	close(c.anika.release)
+	failed := c.next(func(e events.Event) bool { _, ok := e.(events.JobFailed); return ok }).(events.JobFailed)
+	if failed.ID != id || !strings.Contains(failed.Err, "model crashed") {
+		t.Fatalf("job failed = %+v", failed)
+	}
+}
+
+// Closing the conversation stops a moved request, whether or not another
+// persona took over, and does not wait for it to end on its own.
+func TestClosingTheConversationStopsAMovedRequest(t *testing.T) {
+	for _, switched := range []bool{false, true} {
+		c := newMovingConversation(t)
+		c.holdTurn()
+		c.move()
+		if switched {
+			if err := c.p.ReplaceConversationBrain(newWorkingBrain(), nil, &config.Config{}, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		closed := make(chan error, 1)
+		go func() { closed <- c.p.CloseBrains() }()
+		select {
+		case err := <-closed:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("switched=%v: closing waited for the moved request", switched)
+		}
+		if err := c.waitHoldErr(); !errors.Is(err, context.Canceled) {
+			t.Fatalf("switched=%v: held request ended with %v", switched, err)
+		}
+	}
+}
+
+// When the next turn stays on the provider the moved request runs on, that
+// request is stopped and recorded as a stopped turn is, before the provider
+// takes the next one.
+func TestNextTurnOnTheSameProviderStopsTheMovedRequest(t *testing.T) {
+	c := newMovingConversation(t)
+	c.holdTurn()
+	c.move()
+	if err := c.p.RunTurnTextMode(t.Context(), "Hey Obey, what time is it?"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.waitHoldErr(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("held request ended with %v", err)
+	}
+	c.next(func(e events.Event) bool { _, ok := e.(events.JobAborted); return ok })
+	if requests := c.anika.requestLog(); len(requests) != 2 {
+		t.Fatalf("requests = %q", requests)
+	}
+	c.anika.mu.Lock()
+	stopped := c.anika.stopped
+	c.anika.mu.Unlock()
+	if stopped != 1 {
+		t.Fatalf("the stopped request was recorded %d times", stopped)
+	}
+}
+
+// A turn is not moved for a line that names nobody else, nor on a provider
+// whose request cannot be moved; the caller stops it as before.
+func TestTurnIsNotMovedUnlessItCanBe(t *testing.T) {
+	t.Run("names nobody else", func(t *testing.T) {
+		c := newMovingConversation(t)
+		c.holdTurn()
+		if c.p.MoveTurnToBackground("Anika, stop that.") {
+			t.Fatal("a line naming the working persona moved her turn")
+		}
+		close(c.anika.release)
+		if err := <-c.turn; err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("provider keeps no shared history", func(t *testing.T) {
+		transcript := &recordedTranscript{}
+		waiting := &waitingBrain{started: make(chan struct{})}
+		p := &Pipeline{Brain: waiting, Events: events.NewBus(), Transcript: transcript}
+		if err := p.BeginConversationIdentity("s"); err != nil {
+			t.Fatal(err)
+		}
+		p.AdmitInput = admitPersona("anika", "Anika")
+		p.NamesOtherPersona = func(string) bool { return true }
+		jobs := job.NewTable(t.Context())
+		defer jobs.Close()
+		NewAgency(p, jobs, nil, &config.Config{}, nil).Wire()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- p.RunTurnTextMode(ctx, "check the build") }()
+		<-waiting.started
+		if p.MoveTurnToBackground("Hey Obey, what time is it?") {
+			t.Fatal("a request on a provider without shared history was moved")
+		}
+		cancel()
+		<-done
+	})
+}
+
+// waitingBrain keeps no shared history; its reply starts and then waits until
+// it is stopped.
+type waitingBrain struct {
+	fakeBrain
+	started chan struct{}
+}
+
+func (b *waitingBrain) ThinkStream(ctx context.Context, _ string, _ brain.StreamOptions) (*brain.Stream, error) {
+	out, done := make(chan string, 1), make(chan brain.StreamResult, 1)
+	out <- "Working on it. "
+	close(b.started)
+	go func() {
+		defer close(done)
+		defer close(out)
+		<-ctx.Done()
+		done <- brain.StreamResult{Err: ctx.Err()}
+	}()
+	return &brain.Stream{Chunks: out, Done: done}, nil
+}
+
+// A spoken turn moved while it speaks stops speaking at once, and its result
+// is later spoken in the voice of the persona that started it, not in the
+// voice of the persona selected since.
+func TestMovedVoiceTurnSpeaksItsResultInItsOwnVoice(t *testing.T) {
+	c := newMovingConversation(t)
+	anikaVoice, obeyVoice := &fakeTTS{}, &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	c.p.ReplaceTTS(anikaVoice, nil)
+	c.p.Player = player
+	c.p.STT = &fakeSTT{text: "Anika, HOLD and check the build"}
+	go func() {
+		_, err := c.p.RunTurn(t.Context())
+		c.turn <- err
+	}()
+	select {
+	case <-c.anika.held:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Anika's request never started")
+	}
+	c.move()
+	if err := c.anika.holdErr(); err != nil {
+		t.Fatalf("the moved request was stopped: %v", err)
+	}
+	c.p.ReplaceTTS(obeyVoice, nil)
+	if err := c.p.ReplaceConversationBrain(newWorkingBrain(), nil, &config.Config{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	close(c.anika.release)
+	c.next(func(e events.Event) bool { _, ok := e.(events.JobFinished); return ok })
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(strings.Join(anikaVoice.Texts(), " "), "Found three files.") {
+		if time.Now().After(deadline) {
+			t.Fatalf("Anika's voice said %q; Obey's said %q", anikaVoice.Texts(), obeyVoice.Texts())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if strings.Contains(strings.Join(obeyVoice.Texts(), " "), "Found three files.") {
+		t.Fatalf("Obey's voice spoke Anika's result: %q", obeyVoice.Texts())
+	}
+}

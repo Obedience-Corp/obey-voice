@@ -40,6 +40,9 @@ func inputRetryFromContext(ctx context.Context) (brain.InputRetry, bool) {
 }
 
 func (p *Pipeline) discardInputRetry() {
+	if p.liveBrainBusy() {
+		return
+	}
 	if provider, ok := p.Brain.(brain.InputRetryProvider); ok {
 		provider.DiscardInputRetry()
 	}
