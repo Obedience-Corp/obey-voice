@@ -316,3 +316,18 @@ func TestSingleCallToolSurfaceReplacesOnlyTheOpening(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSingleCallKeepsTheTieredHandOff(t *testing.T) {
+	spawn := api.ToolCall{Function: api.ToolCallFunction{Name: "route", Arguments: mustArgs(map[string]any{"kind": "spawn", "tier": "medium", "reason_code": "dependent_steps"})}}
+	f := &singleCallFake{replies: [][]api.Message{{{ToolCalls: []api.ToolCall{spawn}}}}}
+	o := f.brain(t)
+	opts := singleCallTurn
+	opts.WorkerTiers = &WorkerTierAvailability{Medium: true}
+	turn := runRoutedTurn(t, o, "Audit the repo and fix the failing tests.", opts)
+	if turn.result.Err != nil || turn.result.Route != "spawn" || turn.result.RouteTier != config.WorkerTierMedium || turn.result.RouteReasonCode != "dependent_steps" {
+		t.Fatalf("result = %+v", turn.result)
+	}
+	if desc := f.sent()[0].Tools[0].Function.Description; !strings.Contains(desc, "effort rubric") || !strings.HasPrefix(desc, "Hand this user turn") {
+		t.Fatalf("tiered single-call description = %q", desc)
+	}
+}

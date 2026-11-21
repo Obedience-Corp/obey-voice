@@ -54,7 +54,7 @@ func CreateWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
 	}
 	if stackOverridden(opts) {
 		if provider := strings.TrimSpace(opts.Brain.Provider); provider != "" {
-			p.Brain = Brain{Provider: provider, Model: strings.TrimSpace(opts.Brain.Model)}
+			p.Brain = Brain{Provider: provider, Model: strings.TrimSpace(opts.Brain.Model), Router: p.Brain.Router}
 		} else if model := strings.TrimSpace(opts.Brain.Model); model != "" {
 			p.Brain.Model = model // model for the cloned provider
 		}
