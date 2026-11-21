@@ -34,13 +34,17 @@ func TestLiveRequestDescribesRunningAndQueuedJobs(t *testing.T) {
 	h := newBudgetHarness(t)
 	h.spawnAs("ember", "Ember", "ollama", "read the release notes")
 	h.awaitTool(t)
+	h.spawnAs("sol", "", "ollama", "tidy the diary")
 	h.spawnAs("mira", "Mira", "ollama", "audit the config")
 
 	facts := h.agency.pipeline.workerFacts(true)
-	if len(facts) != 2 {
-		t.Fatalf("facts = %+v, want the running and the queued job", facts)
+	if len(facts) != 3 {
+		t.Fatalf("facts = %+v, want the running job and both queued ones", facts)
 	}
-	own, other := facts[0], facts[1]
+	own, other, unnamed := facts[0], facts[1], facts[2]
+	if unnamed.Own || unnamed.Starter != "sol" || unnamed.State != "queued" {
+		t.Fatalf("a job started without a display name should carry its persona id: %+v", unnamed)
+	}
 	if !own.Own || own.Starter != "" || own.State != "queued" || own.Task != "audit the config" || own.Running != 0 || own.Tier != "legacy" {
 		t.Fatalf("the live persona's own job should come first, waiting: %+v", own)
 	}

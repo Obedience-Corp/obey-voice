@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/ollama/ollama/api"
 )
 
 func TestWorkerFactsPromptDescribesWhatAJobIsDoing(t *testing.T) {
@@ -75,7 +76,7 @@ func TestActiveWorkLeadInOverrideAndMalformedFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "active-work.yaml")
-	facts := []WorkerFact{{ID: "job-1", Tier: "legacy", State: "running"}}
+	facts := []WorkerFact{{ID: "job-1", Tier: "legacy", State: "running", Task: "audit the config"}}
 	valid := "schema: obey-voice.prompt.v1\nprompt:\n  name: active-work\n  kind: system\n  system_prompt: 'Edited lead-in.'\n"
 	if err := os.WriteFile(path, []byte(valid), 0600); err != nil {
 		t.Fatal(err)
@@ -124,6 +125,32 @@ func TestActiveWorkStaysOutOfHistoryAndTheSystemPrompt(t *testing.T) {
 	for _, turn := range o.History() {
 		if strings.Contains(turn.Content, "active_work") || strings.Contains(turn.Content, "audit the config") {
 			t.Fatalf("the job list was saved to history: %+v", turn)
+		}
+	}
+}
+
+// A persona that inspects something with a tool before it answers composes
+// the answer on the second request, so the job list has to still be there.
+func TestActiveWorkSurvivesTheToolRoundBeforeTheAnswer(t *testing.T) {
+	o, requests := imageClaimBrain(t, []api.Message{
+		{Role: "assistant", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "list_files", Arguments: mustArgs(map[string]any{"path": "."})}}}},
+		{Role: "assistant", Content: "Still auditing the config."},
+	})
+	o.workDir = t.TempDir()
+	facts := []WorkerFact{{ID: "job-1", Tier: "legacy", State: "running", Task: "audit the config", Running: 3 * time.Minute, Own: true}}
+	turn := runRoutedTurn(t, o, "What have you been doing?", StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, WorkerFacts: facts})
+	if turn.result.Err != nil || len(*requests) != 2 || len(turn.tools) != 1 {
+		t.Fatalf("want a tool round and an answer: %+v requests=%d tools=%+v", turn.result, len(*requests), turn.tools)
+	}
+	for i, req := range *requests {
+		asked := ""
+		for _, m := range req.Messages {
+			if m.Role == "user" {
+				asked = m.Content
+			}
+		}
+		if !strings.Contains(asked, `task="audit the config"`) {
+			t.Fatalf("request %d lost the job list: %q", i, asked)
 		}
 	}
 }

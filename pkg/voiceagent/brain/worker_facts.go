@@ -22,15 +22,17 @@ const (
 )
 
 // WorkerFactsPrompt renders the host's record of background jobs for a live
-// turn, behind the lead-in that says what the list is. A job the model is not
-// told about is one it will deny, so a described job carries its task, how
-// long it has run, what it has done and who started it. Provider and model
-// names and pricing are deliberately excluded.
+// turn. A job the model is not told about is one it will deny, so a described
+// job carries its task, how long it has run, what it has done and who started
+// it, behind a lead-in that says what the list is. A list of identifiers
+// alone has nothing for the lead-in to explain and goes without it. Provider
+// and model names and pricing are deliberately excluded.
 func WorkerFactsPrompt(cfg *config.Config, facts []WorkerFact) string {
 	if len(facts) > workerFactLimit {
 		facts = facts[:workerFactLimit]
 	}
 	var lines strings.Builder
+	described := false
 	for _, fact := range facts {
 		line := workerFactLine(fact)
 		if line == "" {
@@ -40,11 +42,16 @@ func WorkerFactsPrompt(cfg *config.Config, facts []WorkerFact) string {
 			break
 		}
 		lines.WriteString(line)
+		described = described || oneLine(fact.Task) != ""
 	}
 	if lines.Len() == 0 {
 		return ""
 	}
-	return "\n" + systemPrompt(cfg, "active-work", nil) + workerFactsOpen + lines.String() + workerFactsClose
+	block := workerFactsOpen + lines.String() + workerFactsClose
+	if !described {
+		return block
+	}
+	return "\n" + systemPrompt(cfg, "active-work", nil) + block
 }
 
 func workerFactLine(fact WorkerFact) string {

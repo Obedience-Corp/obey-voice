@@ -121,7 +121,8 @@ func TestWorkerFactsPromptIsBoundedAndNamesNoBackend(t *testing.T) {
 		facts[i] = WorkerFact{ID: "job", Tier: config.WorkerTierSimple, State: "queued"}
 	}
 	got := WorkerFactsPrompt(nil, facts)
-	if strings.Count(got, "job=") != 8 || strings.Contains(got, "provider") || strings.Contains(got, "model") {
+	if strings.Count(got, "job=") != 8 || strings.Contains(got, "provider") || strings.Contains(got, "model") ||
+		got != "\n<active_work>"+strings.Repeat("\njob=\"job\" tier=\"simple\" state=\"queued\"", 8)+"\n</active_work>" {
 		t.Fatalf("facts prompt = %q", got)
 	}
 	invalid := WorkerFactsPrompt(nil, []WorkerFact{{ID: strings.Repeat("x", 129), Tier: config.WorkerTierSimple, State: "running"}, {ID: "ok", Tier: config.WorkerTierSimple, State: "invented"}})

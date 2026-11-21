@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -162,7 +163,7 @@ func (a *Agency) activeJobFacts() []brain.WorkerFact {
 			Own:      a.pipeline.startedByLivePersona(origin.admission),
 		}
 		if !fact.Own {
-			fact.Starter = origin.Envelope.DisplayName
+			fact.Starter = cmp.Or(strings.TrimSpace(origin.Envelope.DisplayName), strings.TrimSpace(origin.admission["persona"]))
 		}
 		facts = append(facts, fact)
 	}
