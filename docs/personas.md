@@ -262,20 +262,27 @@ restarted and no tool runs twice. The named persona answers your message as
 usual. When the first persona's reply finishes, it is recorded under that
 persona's name and spoken in that persona's voice once the conversation is
 quiet, like any job it started; it appears as a job row, its tool runs after
-the move are listed on that row, and `/workers` or "kill it" stops it. The
-part of the reply you had already seen stays in the conversation as that
-persona's line. An image the reply links to is attached to it, as for a
+the move are listed on that row, which names the persona, and `/workers` or
+"kill it" stops it. The reply is divided at a sentence end. The complete
+sentences you had already been given stay in the conversation as that
+persona's line, marked "continues as job-1" (or whichever job it is), not as
+interrupted; in a spoken reply that is the sentences she had finished saying.
+Everything after them, starting with a sentence that was cut off, is the
+job's reply, so the two read as one reply with nothing repeated or missing. If
+no sentence was complete yet, the whole reply comes from the job and the chat
+shows only "Anika continues as job-1". An image the reply links to is attached to it, as for a
 worker's answer, rather than shown or spoken as a path. The persona you named
 stays selected afterwards. Addressing the first persona again before its job
 finishes gives it a fresh session, which knows the conversation up to your
-line and the part of its reply you saw.
+line and the part of its reply that stayed in the conversation.
 
 If the moved reply ends by handing its work off (the persona chose
 `start_background_work`, `web_search` or `fetch_url`), the same job goes on to
 do that work, as a spawned job of the first persona would: on its own backend
 or its worker, as its `brain.work` setting chose when the reply started, with
 that persona's name and voice, whoever is selected by then. Its answer is
-delivered like any job's. A moved reply that ends by asking to narrate
+delivered like any job's, and an unfinished sentence the reply had begun
+before handing off is not part of it. A moved reply that ends by asking to narrate
 fails its job with a line saying to ask again, since narration needs the live
 conversation.
 
