@@ -251,6 +251,45 @@ cannot be completed, because the word ends at the space. When the Machine
 context setting (`environment_context_enabled`) is off, the model is not told
 which directory paths are relative to, so Tab inserts the full path.
 
+#### Talking to another persona while one is working
+
+Sending a typed message while a persona is answering normally stops that
+reply and answers the message. In the TUI there is one exception: if the
+message names a different persona by an exact rule (`@obey …`, `Obey, …`,
+`Hey Obey, …`, or `switch to Obey`), a reply that is already under way keeps
+running as a background job of the persona who started it. Nothing is
+restarted and no tool runs twice. The named persona answers your message as
+usual. When the first persona's reply finishes, it is recorded under that
+persona's name and spoken in that persona's voice once the conversation is
+quiet, like any job it started; it appears as a job row, its tool runs after
+the move are listed on that row, and `/workers` or "kill it" stops it. The
+part of the reply you had already seen stays in the conversation as that
+persona's line. The persona you named stays selected afterwards. Addressing the
+first persona again before its job finishes gives it a fresh session, which
+knows the conversation up to your line and the part of its reply you saw.
+
+The turn moves only when all of these hold; otherwise the message stops the
+reply as before:
+
+- The message names a known persona other than the one answering, without
+  needing a model to tell who it is for. A message naming the persona who is
+  answering, naming nobody, or naming an unknown persona stops the reply.
+- The reply has reached the model: it is thinking, running tools or speaking.
+  If it is still being transcribed or admitted, it is stopped. If it is
+  speaking, its speech stops at once.
+- The answering persona is on Ollama. Claude, Codex, Cursor, Grok, Muse Spark
+  and Obey replies are stopped as before.
+- Background work uses the conversation's own job delivery (not the
+  experimental `voice_work_enabled` inbox), and jobs are enabled in
+  `/workers`.
+
+Only typed messages move a turn. The talk key and the open microphone still
+stop the reply. A moved reply counts as a running job: it starts at once even
+when `voice_worker_max_concurrent` is reached, and later jobs queue behind it.
+It is bound by `voice_worker_job_budget` like other jobs, not by the live
+reply's idle timeout. Closing the conversation stops it. If the persona you
+named cannot take over, the moved reply is stopped, as if it had never moved.
+
 Use `/menu` (or `/back`) to save the current chat and return to the launcher
 inside the same terminal UI. The app drains the conversation runtime before
 enabling the launcher; Continue offers the saved chat.

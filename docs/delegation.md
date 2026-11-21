@@ -136,6 +136,10 @@ its voice when the conversation is idle, like any job it started. While it
 works you can keep talking to it or to another persona. `/workers` shows the
 persona's own provider and model for the job.
 
+A reply an Ollama persona is giving directly, without handing it off, becomes
+such a job when you type a message to another persona while it runs. See
+[Talking to another persona while one is working](personas.md#talking-to-another-persona-while-one-is-working).
+
 An own job runs with the same permissions as a worker on that backend, and
 follows `voice_tools_enabled` in every mode, as a legacy worker does:
 
