@@ -72,7 +72,8 @@ type Spec struct {
 	Model    string
 	Run      func(ctx context.Context) (result string, err error)
 	// RuntimeBudget overrides the table default for this admitted job.
-	// Zero keeps the legacy default. It limits local scheduling, not remote termination.
+	// Zero keeps the legacy default and a negative value sets no limit. It
+	// limits local scheduling, not remote termination.
 	RuntimeBudget time.Duration
 	// OnAccepted publishes caller metadata after enqueue succeeds, before
 	// queued/start callbacks or execution. It runs outside the table lock.
@@ -488,6 +489,8 @@ func (t *Table) run(jobCtx context.Context, id string) {
 		budget := t.budget
 		if e.spec.RuntimeBudget > 0 {
 			budget = e.spec.RuntimeBudget
+		} else if e.spec.RuntimeBudget < 0 {
+			budget = 0
 		}
 		if budget > 0 {
 			e.budgetEnd.Store(e.info.Started.Add(budget).UnixNano())
