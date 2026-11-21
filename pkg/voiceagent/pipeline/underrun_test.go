@@ -122,7 +122,7 @@ func TestStallBudgetSurvivesAnIncrementalStream(t *testing.T) {
 	stream := audio.NewPCMStream(context.Background())
 	stream.SetIncremental(true)
 
-	p.boundPrimarySilence(stream, 40)
+	boundPrimarySilence(p.TTS, stream, 40)
 
 	if got := stream.StallBudget(); got != 9*time.Second {
 		t.Fatalf("StallBudget() = %v on an incremental stream, want the provider grace 9s", got)

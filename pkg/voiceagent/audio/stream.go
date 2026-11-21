@@ -31,7 +31,8 @@ type streamProperties struct {
 	// stallBudget bounds the silence between frame batches, not the whole
 	// utterance. A slow engine that keeps emitting audio keeps its segment;
 	// one that emits nothing loses it. Zero leaves the stream unbounded.
-	stallBudget time.Duration
+	stallBudget      time.Duration
+	firstAudioBudget time.Duration
 }
 
 // PCMStream carries synthesized mono PCM frames for playback.
@@ -55,9 +56,23 @@ type PCMStream struct {
 // batch before treating the stream as stalled. Callers set it before handing
 // the stream to a player. Zero (the default) disables the check.
 func (s *PCMStream) SetStallBudget(d time.Duration) {
+	s.SetStallBudgets(d, d)
+}
+
+// SetStallBudgets bounds the wait for first audio and the gap between later
+// batches separately. A nonpositive duration disables that phase's timer.
+func (s *PCMStream) SetStallBudgets(firstAudio, betweenBatches time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.props.stallBudget = d
+	s.props.firstAudioBudget = firstAudio
+	s.props.stallBudget = betweenBatches
+}
+
+// FirstAudioBudget returns the startup allowance before any PCM arrives.
+func (s *PCMStream) FirstAudioBudget() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.props.firstAudioBudget
 }
 
 // StallBudget returns the per-batch budget set by SetStallBudget.
@@ -157,9 +172,20 @@ func (s *PCMStream) Incremental() bool {
 
 // WaitReady waits until the stream sample rate is known or the stream fails.
 func (s *PCMStream) WaitReady(ctx context.Context) (int, error) {
+	return s.WaitReadyWithStallTimer(ctx, nil)
+}
+
+// WaitReadyWithStallTimer shares the first-audio deadline with the caller's
+// subsequent wait for PCM. Learning the sample rate does not restart it.
+func (s *PCMStream) WaitReadyWithStallTimer(ctx context.Context, silence *StreamStallTimer) (int, error) {
 	select {
 	case <-ctx.Done():
 		return 0, ctx.Err()
+	case <-silence.C():
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		return 0, silence.Err()
 	case <-s.ready:
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -300,4 +326,18 @@ func (s *PCMStream) Err() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.err
+}
+
+// Drain discards remaining frames until the producer finishes or ctx is canceled.
+func (s *PCMStream) Drain(ctx context.Context) {
+	for {
+		select {
+		case _, ok := <-s.Frames():
+			if !ok {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }

@@ -170,7 +170,10 @@ func TestDiagnosticCaptureRetainsIncrementalPrefixOnStopAndReset(t *testing.T) {
 			}
 			segment := newPlaybackSegment()
 			done := make(chan struct{})
-			go func() { defer close(done); pumpIncremental(ctx, segment, stream, p.debug, rate, rate, 0) }()
+			go func() {
+				defer close(done)
+				pumpIncremental(ctx, segment, stream, p.debug, rate, rate, testStallTimer(t, stream))
+			}()
 			first := make([]float32, rate/4)
 			second := make([]float32, rate/4)
 			for i := range first {

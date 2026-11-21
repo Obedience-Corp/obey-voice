@@ -153,6 +153,12 @@ type SegmentGracer interface {
 	FirstAudioGraceForChars(chars int) time.Duration
 }
 
+// FrameGapGracer optionally supplies a shorter silence limit once a provider
+// starts streaming PCM. Zero keeps the segment's first-audio grace.
+type FrameGapGracer interface {
+	FrameGapGrace() time.Duration
+}
+
 // SegmentRamp is how much longer one segment may be than the one before it
 // before the listener hears silence. 1.0 means no growth.
 //

@@ -617,16 +617,34 @@ func TestCancelMidBodyStopsTheDecodeLoop(t *testing.T) {
 	close(f.holdAfterFirst)
 }
 
-func TestGraceCoversAColdModelLoad(t *testing.T) {
-	p := &Provider{}
-	if g := p.FirstAudioGraceForChars(17); g < 5*time.Second {
-		t.Fatalf("short segment grace %v is below the measured 2.4 s reload", g)
+func TestPhononStartupAndFrameGapBudgets(t *testing.T) {
+	for _, model := range []string{"phonon", "phonon:latest", config.MultilingualPhononTag} {
+		p := &Provider{model: model, timeout: time.Minute}
+		for _, chars := range []int{15, tts.TypicalSegmentChars, 1000} {
+			if got := p.FirstAudioGraceForChars(chars); got != 30*time.Second {
+				t.Errorf("%s, %d chars: first audio grace = %v", model, chars, got)
+			}
+		}
+		if got := p.FrameGapGrace(); got != 5*time.Second {
+			t.Errorf("%s: gap grace = %v", model, got)
+		}
+		p.timeout = 7 * time.Second
+		if got := p.FirstAudioGrace(); got != p.timeout {
+			t.Errorf("%s: startup grace %v exceeds request deadline %v", model, got, p.timeout)
+		}
 	}
-	if g := p.FirstAudioGraceForChars(100000); g != maxFirstAudioGrace {
-		t.Fatalf("grace %v not capped", g)
+}
+
+func TestOtherSpeechModelsKeepSegmentBudget(t *testing.T) {
+	p := &Provider{model: "other-model"}
+	if got := p.FirstAudioGraceForChars(15); got != 6500*time.Millisecond {
+		t.Fatalf("short segment grace = %v", got)
 	}
-	if p.FirstAudioGrace() != p.FirstAudioGraceForChars(tts.TypicalSegmentChars) {
-		t.Fatal("default grace must use the typical segment")
+	if got := p.FirstAudioGraceForChars(100000); got != maxFirstAudioGrace {
+		t.Fatalf("long segment grace = %v", got)
+	}
+	if p.FrameGapGrace() != 0 {
+		t.Fatal("unexpected gap override for another speech model")
 	}
 }
 
