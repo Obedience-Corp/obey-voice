@@ -15,14 +15,15 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
 
-// workingBrain keeps the shared history. A line with "HOLD" in it gets a first
-// sentence and a tool call, then waits for release before it runs a second
-// tool and finishes; fail, when set, ends that request with an error instead.
-// Any other line is answered at once.
+// workingBrain keeps the shared history. A line with "HOLD" in it gets a
+// first sentence and a tool call, then waits for release before it runs a
+// second tool and finishes; fail, when set, ends that request with an error
+// instead, and route with that route. Any other line is answered at once.
 type workingBrain struct {
 	release chan struct{}
 	held    chan struct{}
 	fail    error
+	route   string
 
 	mu        sync.Mutex
 	turns     []brain.Turn
@@ -96,6 +97,10 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 		}
 		if b.fail != nil {
 			done <- brain.StreamResult{Err: b.fail}
+			return
+		}
+		if b.route != "" {
+			done <- brain.StreamResult{Route: b.route}
 			return
 		}
 		if !send("Found three files.") {
@@ -504,5 +509,51 @@ func TestMovedVoiceTurnSpeaksItsResultInItsOwnVoice(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(obeyVoice.Texts(), " "), "Found three files.") {
 		t.Fatalf("Obey's voice spoke Anika's result: %q", obeyVoice.Texts())
+	}
+}
+
+// A moved reply that ends by handing its work off runs that work in the same
+// job, on the worker of the persona that started it, not the worker of the
+// persona selected since, and its result is delivered under that persona.
+func TestMovedReplyThatHandsOffRunsTheWorkForItsPersona(t *testing.T) {
+	c := newMovingConversation(t)
+	anikaWorker := &recordingWorker{reply: "Checked by Anika's worker."}
+	c.p.Agency.ReplaceWorker(anikaWorker, &config.Config{AgentName: "Anika", ActivePersona: "anika"}, nil)
+	c.anika.route = "spawn"
+	c.holdTurn()
+	c.move()
+	id := c.movedJob().ID
+	obeyWorker := &recordingWorker{reply: "Checked by Obey's worker."}
+	if err := c.p.ReplaceConversationBrain(newWorkingBrain(), obeyWorker, &config.Config{AgentName: "Obey", ActivePersona: "obey"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	close(c.anika.release)
+	e := c.next(func(e events.Event) bool {
+		switch e.(type) {
+		case events.JobFinished, events.JobFailed:
+			return true
+		}
+		return false
+	})
+	finished, ok := e.(events.JobFinished)
+	if !ok || finished.ID != id || finished.Envelope == nil || finished.Envelope.PersonaID != "anika" || finished.Summary != "Checked by Anika's worker." {
+		t.Fatalf("the handed-off work ended as %+v", e)
+	}
+	if anikaWorker.calls() != 1 || obeyWorker.calls() != 0 || !strings.Contains(anikaWorker.briefs[0], "check the build") {
+		t.Fatalf("Anika's worker ran %d jobs (%q), Obey's %d", anikaWorker.calls(), anikaWorker.briefs, obeyWorker.calls())
+	}
+}
+
+// A moved reply that ends by asking for narration, which needs the live
+// conversation, fails its job with a reason instead of losing the request.
+func TestMovedReplyThatAsksForNarrationFailsItsJob(t *testing.T) {
+	c := newMovingConversation(t)
+	c.anika.route = "narrate"
+	c.holdTurn()
+	c.move()
+	close(c.anika.release)
+	failed := c.next(func(e events.Event) bool { _, ok := e.(events.JobFailed); return ok }).(events.JobFailed)
+	if !strings.Contains(failed.Err, "narrat") {
+		t.Fatalf("job failed = %+v", failed)
 	}
 }
