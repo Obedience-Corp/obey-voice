@@ -173,7 +173,9 @@ func newTwoPersonaChat(t *testing.T) *twoPersonaChat {
 		}
 		cancel()
 		c.program.Quit()
-		<-done
+		if err := <-done; err != nil && !errors.Is(err, tea.ErrProgramKilled) && !errors.Is(err, context.Canceled) {
+			t.Error(err)
+		}
 		turns.Wait()
 		jobs.Close()
 	})

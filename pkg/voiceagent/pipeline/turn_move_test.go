@@ -526,7 +526,9 @@ func TestTurnIsNotMovedUnlessItCanBe(t *testing.T) {
 			t.Fatal("a request on a provider without shared history was moved")
 		}
 		cancel()
-		<-done
+		if err := <-done; err == nil {
+			t.Fatal("the stopped turn reported success")
+		}
 	})
 }
 
