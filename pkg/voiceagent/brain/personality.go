@@ -265,6 +265,9 @@ func ToolSurfaceContext(cfg *config.Config) string {
 	if (cfg != nil && cfg.IsWorker) || configuredLiveToolsPolicy(cfg) == RouterToolsDirect {
 		return "\n" + systemPrompt(cfg, "tool-surface-legacy", nil)
 	}
+	if singleCallConfigured(cfg) {
+		return "\n" + systemPrompt(cfg, "tool-surface-single-call", nil)
+	}
 	return "\n" + systemPrompt(cfg, "tool-surface-live", nil)
 }
 

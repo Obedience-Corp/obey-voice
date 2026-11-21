@@ -11,10 +11,13 @@ import (
 
 // Purposes reported for a model request. Readers treat the set as open.
 const (
-	PurposeWarmup            = "warmup"
-	PurposeSkillCheck        = "skill_check"
-	PurposeRoute             = "route"
-	PurposeRouteRecovery     = "route_recovery"
+	PurposeWarmup        = "warmup"
+	PurposeSkillCheck    = "skill_check"
+	PurposeRoute         = "route"
+	PurposeRouteRecovery = "route_recovery"
+	// PurposeRouteReply is a single_call request: its text is the reply, or
+	// it calls route to hand the turn off.
+	PurposeRouteReply        = "route_reply"
 	PurposeReply             = "reply"
 	PurposeAnnouncement      = "announcement"
 	PurposeDelegationSummary = "delegation_summary"

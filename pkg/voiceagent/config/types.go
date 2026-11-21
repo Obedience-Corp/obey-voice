@@ -314,8 +314,9 @@ type Config struct {
 	ClaudeSessionWarnTokens int `mapstructure:"claude_session_warn_tokens"`
 
 	VoiceToolsEnabled bool `mapstructure:"voice_tools_enabled"`
-	// VoiceRouterTools defaults to direct tool use. route_only and json_route
-	// select worker routing. Older configurations may spell direct as legacy.
+	// VoiceRouterTools defaults to direct tool use. route_only, json_route and
+	// single_call select worker routing. Older configurations may spell direct
+	// as legacy. A persona's brain.router overrides it.
 	VoiceRouterTools string `mapstructure:"voice_router_tools"`
 	// VoiceWorkNarration is how much a background worker narrates itself:
 	// status_only (default) speaks only when asked, milestones speaks one short

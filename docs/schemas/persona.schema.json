@@ -507,6 +507,11 @@
           "enum": ["", "own", "worker"],
           "description": "Who runs this persona's background work. own: the persona's own backend and model, in a background session of its own. worker: the configured worker below. Empty takes the default: worker on Ollama or when worker below names a provider, model or host, own otherwise."
         },
+        "router": {
+          "type": "string",
+          "enum": ["", "direct", "route_only", "json_route", "single_call", "legacy"],
+          "description": "This persona's voice_router_tools: how its live turns choose between answering and handing work off. single_call lets an Ollama brain answer chat in the routing request itself. Empty takes the app-level voice_router_tools."
+        },
         "worker": {
           "type": "object",
           "additionalProperties": false,

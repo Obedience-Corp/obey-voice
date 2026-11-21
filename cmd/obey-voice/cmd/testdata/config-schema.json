@@ -1910,15 +1910,16 @@
       "enum": [
         "direct",
         "route_only",
-        "json_route"
+        "json_route",
+        "single_call"
       ],
       "allows_empty": false,
       "group": "tools",
       "title": "Live router tools",
-      "help": "Direct gives the speaking model its enabled tools. Tiered workers use routing for admission. Select route_only to route ordinary requests to workers, or json_route for experimental Ollama JSON routing. The old legacy value is an alias for direct.",
+      "help": "Direct gives the speaking model its enabled tools. Tiered workers use routing for admission. Select route_only to route ordinary requests to workers, json_route for experimental Ollama JSON routing, or single_call to let Ollama answer chat in the routing request. The old legacy value is an alias for direct.",
       "restart_required": true,
       "restart_verified": false,
-      "persona_overridable": false,
+      "persona_overridable": true,
       "env": "VOICE_ROUTER_TOOLS",
       "editable": true
     },

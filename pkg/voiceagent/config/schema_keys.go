@@ -527,9 +527,10 @@ func toolKeys() []KeySpec {
 			Help: "Lets her read files and run commands on this Mac for you. Off makes tool-capable models look broken.",
 		},
 		{
-			Key: "voice_router_tools", Type: TypeEnum, Default: "direct", Enum: []string{"direct", "route_only", "json_route"},
+			Key: "voice_router_tools", Type: TypeEnum, Default: "direct", Enum: RouterToolsValues(),
 			Group: GroupTools, Title: "Live router tools",
-			Help: "Direct gives the speaking model its enabled tools. Tiered workers use routing for admission. Select route_only to route ordinary requests to workers, or json_route for experimental Ollama JSON routing. The old legacy value is an alias for direct.",
+			Help:               "Direct gives the speaking model its enabled tools. Tiered workers use routing for admission. Select route_only to route ordinary requests to workers, json_route for experimental Ollama JSON routing, or single_call to let Ollama answer chat in the routing request. The old legacy value is an alias for direct.",
+			PersonaOverridable: true,
 		},
 		{
 			Key: "voice_work_narration", Type: TypeEnum, Default: "status_only", Enum: []string{"status_only", "milestones"},

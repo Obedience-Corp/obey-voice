@@ -153,7 +153,8 @@ func TestNewIgnoresWorkerErrWhenWorkerIsSet(t *testing.T) {
 	t.Fatal("injected worker was not used; WorkerErr should have been ignored")
 }
 
-// json_route reaches the pipeline as the route_only policy plus the JSON flag.
+// json_route reaches the pipeline as the route_only policy plus the JSON flag;
+// single_call as the route_only policy, decided inside the Ollama brain.
 func TestNewWiresTheRouterSetting(t *testing.T) {
 	for _, tc := range []struct {
 		setting string
@@ -164,6 +165,7 @@ func TestNewWiresTheRouterSetting(t *testing.T) {
 		{"direct", brain.RouterToolsDirect, false},
 		{"route_only", brain.RouterToolsRouteOnly, false},
 		{"json_route", brain.RouterToolsRouteOnly, true},
+		{"single_call", brain.RouterToolsRouteOnly, false},
 		{"legacy", brain.RouterToolsDirect, false},
 	} {
 		t.Run(tc.setting, func(t *testing.T) {

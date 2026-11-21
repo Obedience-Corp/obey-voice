@@ -34,6 +34,23 @@ func JSONRouteEnabled(raw string) bool {
 	return strings.ToLower(strings.TrimSpace(raw)) == JSONRouteSetting
 }
 
+// SingleCallSetting is the voice_router_tools value that keeps the route_only
+// policy but lets a live Ollama brain answer chat in the routing request
+// itself: a text answer is the reply, and a route call hands the turn off.
+const SingleCallSetting string = "single_call"
+
+// SingleCallEnabled reports whether a voice_router_tools value selects single_call.
+func SingleCallEnabled(raw string) bool {
+	return strings.ToLower(strings.TrimSpace(raw)) == SingleCallSetting
+}
+
+// singleCallConfigured reports whether a route_only turn of this brain answers
+// chat in its routing request. It is read from the brain's own configuration,
+// the same source as the system prompt's tool surface.
+func singleCallConfigured(cfg *config.Config) bool {
+	return cfg != nil && SingleCallEnabled(cfg.VoiceRouterTools)
+}
+
 func onlyRouteTool(tools api.Tools) bool {
 	return len(tools) == 1 && tools[0].Function.Name == "route"
 }
@@ -48,7 +65,7 @@ var unknownRouterToolsOnce sync.Once
 // Unknown values fail closed to route_only and log once.
 func NormalizeRouterToolsPolicy(raw string) RouterToolsPolicy {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case string(RouterToolsRouteOnly), JSONRouteSetting:
+	case string(RouterToolsRouteOnly), JSONRouteSetting, SingleCallSetting:
 		return RouterToolsRouteOnly
 	case "", string(RouterToolsDirect), string(RouterToolsLegacy):
 		return RouterToolsDirect
@@ -77,11 +94,14 @@ func configuredLiveToolsPolicy(cfg *config.Config) RouterToolsPolicy {
 // and legacy both keep the full worker list so tests and workers do not
 // silently lose web_search / files / shell.
 func RouterToolsForSession(policy RouterToolsPolicy, catalog []skills.Skill) api.Tools {
-	return routerToolsForSession(policy, catalog, nil)
+	return routerToolsForSession(policy, catalog, nil, false)
 }
 
-func routerToolsForSession(policy RouterToolsPolicy, catalog []skills.Skill, tiers *WorkerTierAvailability) api.Tools {
+func routerToolsForSession(policy RouterToolsPolicy, catalog []skills.Skill, tiers *WorkerTierAvailability, singleCall bool) api.Tools {
 	if policy == RouterToolsRouteOnly {
+		if singleCall {
+			return singleCallRouterTools(tiers)
+		}
 		return liveRouterTools(tiers)
 	}
 	return voiceAssistantTools(catalog)

@@ -695,6 +695,7 @@ Other brains decide the same question with a private classifier; for them
 | `direct` (default) | Offers file, command and lookup tools on the first request. |
 | `route_only` | Offers only the `route` tool. A chat decision is followed by a tools-free reply. |
 | `json_route` (experimental) | Asks for the same route as a JSON object, with no tools, on the reply's own messages. |
+| `single_call` | Offers only the `route` tool, and the model answers conversation in that same request. A route call hands the turn off. See [Single-call routing](#single-call-routing-single_call). |
 
 Existing configurations that select `legacy` use the same direct tool execution path.
 The CLI rejects unknown mode names on write. An unrecognized value loaded from
@@ -747,8 +748,84 @@ Everything else matches `route_only`:
   request does not end with the user's message, the turn uses the route tool as
   under `route_only`.
 - With `voice_tools_enabled: false` and no tiered workers there is no route step
-  in any mode. Decision shortcuts and skill selection run before routing and
+  in any mode, `single_call` included. Decision shortcuts and skill selection run before routing and
   are unchanged.
+
+### Single-call routing (`single_call`)
+
+Under `route_only` every chat turn is two requests: the route call, then a
+tools-free reply. Under `single_call` the model either answers in plain speech,
+and that text is the reply, or calls `route` with `kind=spawn` or
+`kind=narrate`. A chat turn is one request, and its reply streams to speech and
+the transcript as it is generated. Another persona's turns, and other brain
+providers, are unaffected; non-Ollama brains treat `single_call` as
+`route_only`.
+
+Enable it for one persona in its `personas/<id>/persona.yaml`:
+
+```yaml
+brain:
+  provider: ollama
+  model: muse-glimmer:30b-mlx
+  router: single_call
+```
+
+or for every persona in `config.yaml` with `voice_router_tools: single_call`
+(`obey-voice config set voice_router_tools single_call`). A persona's
+`brain.router` takes any `voice_router_tools` value and wins over the app
+setting; an empty one inherits it. Changes apply from the next conversation or
+persona switch.
+
+Coming from `direct` (the default), this is a change of mode, not only of
+speed: the speaking model no longer runs file, command or lookup tools itself.
+Those go to a worker, as under `route_only`.
+
+Measured routing accuracy depends on the model. It held on muse-glimmer and
+gemma4 and fell on qwen3.8, which also speaks tool syntax and writes text
+before its hand-off calls; keep qwen-family models on `route_only` or
+`json_route`.
+
+How each case is handled:
+
+- **Text, no tool call**: the text is the reply. Nothing else is sent.
+- **`route(spawn)` or `route(narrate)`**: dispatched exactly as under
+  `route_only`, including the worker effort tier and the spoken
+  acknowledgement. Text the model spoke before the call is treated like
+  pre-route speech in `direct` mode: a voice turn stops its playback and speaks
+  the acknowledgement.
+- **Text and `route(chat)`**: the text is the reply.
+- **`route(chat)` with no text**: a tools-free reply request follows, as under
+  `route_only`.
+- **No text and no tool call, or tool-call markup written as text**: the
+  existing route-recovery request decides, as for a missing route under
+  `route_only`. Recovered chat then gets the tools-free reply.
+- **Markup after text has already been spoken**: the turn fails as a
+  recoverable error with nothing dispatched, as in `direct` mode. A malformed
+  tool call Ollama itself rejects is retried once before anything is delivered.
+- **Activated skills**: the routing request leaves skill text out, as under
+  `route_only`, so on a turn that activated a skill the model's text only
+  selects chat. It is not spoken, and a tools-free reply that carries the skill
+  follows. These turns cost two requests, as today.
+- **Pictures**: replies on picture turns are held and checked for attachment
+  claims as under `route_only`.
+- **Failed-route repair** (`voice_failed_route_repair`) can act on a
+  single-call chat reply, as it does on `direct` replies, because no `route`
+  tool event fires on a chat turn.
+- **Unchanged**: skill selection, Layer 1 phrase routing, the decision model,
+  group discussions and turns with tools disabled. Those turns never reach the
+  routing request.
+
+The startup warmup sends the single-call request shape and skips the second,
+tools-free warmup, so turn 1 reuses the cached prefix. Each request is traced
+with the `route_reply` purpose.
+
+The wording lives in its own prompt document, `tool-surface-single-call`,
+together with the route tool's description. Overriding `tool-surface-live` does
+not change it. To customise it, copy that document into
+`prompts/system/tool-surface-single-call.yaml`.
+
+Conversation history written under `route_only` holds `route(chat)` exchanges,
+and a model may imitate them. Each one costs a second request; nothing breaks.
 
 ### `json_route` with thinking models: unverified
 

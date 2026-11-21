@@ -170,6 +170,7 @@ func (r *PreparedBrainReplacement) publish() {
 		_ = r.coordinator.RevokeBinding(r.scope)
 	}
 	r.pipeline.Brain = r.next
+	r.pipeline.applyRouterSetting(r.cfg)
 	if r.agency != nil {
 		r.agency.bindConversationWorkers(r.next)
 		r.agency.ReplaceWorker(r.worker, r.cfg, r.workerErr)

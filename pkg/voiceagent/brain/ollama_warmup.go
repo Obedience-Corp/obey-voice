@@ -106,7 +106,8 @@ func (o *OllamaBrain) WarmupTurn(ctx context.Context, opts StreamOptions) {
 	req := o.chatRequest(messages, tools, options)
 	req.Stream = new(false)
 	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%v num_batch=%v prefix_chars=%d tools=%d\n", o.model, options["num_ctx"], options["num_batch"], len(messages[0].Content), len(tools))
-	if err := o.sendWarmup(ctx, req); err != nil || len(req.Tools) == 0 {
+	// A single_call chat turn has no reply round to prime.
+	if err := o.sendWarmup(ctx, req); err != nil || len(req.Tools) == 0 || sess.singleCall {
 		return
 	}
 	// The reply round sends the same prefix without tools. On Ollama's MLX
