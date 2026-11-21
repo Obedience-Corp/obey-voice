@@ -182,3 +182,73 @@ func TestSTTWhisperCPPSelectionClearsPreviousFileOverride(t *testing.T) {
 		t.Fatalf("saved %v", saved)
 	}
 }
+
+func TestSTTWhisperCPPEnvironmentFileRefusesManagedSelectionAndInstall(t *testing.T) {
+	path := realWriterInstall(t, "# preserve me\nstt_provider: whispercpp\nwhispercpp_model: base.en\nwhispercpp_model_path: /saved/base.en.bin\n")
+	external := filepath.Join(t.TempDir(), "forced-model.bin")
+	t.Setenv("WHISPERCPP_MODEL_PATH", external)
+	cfg, err := config.LoadRaw()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newSettings(cfg, nil)
+	m.section, m.width, m.height = sectionSTT, 140, 40
+	m.sttSetup.ensure = func(context.Context, *config.Config, config.AssetRequest, func(config.AssetProgress)) error {
+		t.Fatal("installer ran despite forced external model file")
+		return nil
+	}
+	before := readWritten(t, path)
+	if cmd := m.selectSTTModel("whispercpp_model", "small.en"); cmd != nil {
+		t.Fatal("managed selection started an installation")
+	}
+	if cmd := m.startSTTSetup(); cmd != nil {
+		t.Fatal("repair started a managed installation")
+	}
+	if cfg.WhisperCPPModel != "base.en" || cfg.WhisperCPPModelPath != external || readWritten(t, path) != before {
+		t.Fatal("refused selection changed effective or persisted configuration")
+	}
+	for _, key := range []string{"whispercpp_model", "whispercpp_model_choices", "stt_install"} {
+		found := false
+		for _, row := range m.sttModelRows() {
+			if row.key == key {
+				found = true
+				if !row.disabled || !strings.Contains(row.reason, "WHISPERCPP_MODEL_PATH") {
+					t.Fatalf("%s remains selectable: %+v", key, row)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("missing model control: %s", key)
+		}
+	}
+	view := stripANSI(m.View())
+	effective := false
+	for _, row := range m.sttModelRows() {
+		if row.key == "whispercpp_effective_file" && row.value == external {
+			effective = true
+		}
+	}
+	if !effective || !strings.Contains(view, "Effective model file") || !strings.Contains(m.message, "WHISPERCPP_MODEL_PATH") {
+		t.Fatalf("external model was not reported: %s\n%s", view, m.message)
+	}
+	reloaded, err := config.LoadRaw()
+	if err != nil || reloaded.WhisperCPPModelPath != external || reloaded.WhisperCPPModel != "base.en" {
+		t.Fatal("next conversation would use different settings")
+	}
+}
+
+func TestSTTWhisperCPPEmptyEnvironmentFileStillAllowsManagedSelection(t *testing.T) {
+	t.Setenv("WHISPERCPP_MODEL_PATH", "")
+	m, _ := sttModel(t, &config.Config{STTProvider: "whispercpp", WhisperCPPModel: "base.en", WhisperCPPModelPath: "/saved/base.en.bin"}, "whisper-cli")
+	m.sttSetup.ensure = func(_ context.Context, cfg *config.Config, _ config.AssetRequest, _ func(config.AssetProgress)) error {
+		if cfg.WhisperCPPModel != "small.en" || cfg.WhisperCPPModelPath != "" {
+			t.Fatal("managed selection did not take effect")
+		}
+		return nil
+	}
+	cmd := m.selectSTTModel("whispercpp_model", "small.en")
+	if cmd == nil {
+		t.Fatalf("empty environment binding incorrectly refused: %s", m.message)
+	}
+	m.applySTTSetup(cmd().(tea.BatchMsg)[1]())
+}

@@ -49,7 +49,12 @@ impl VoiceApp {
         let saving = self.pending.values().any(|p| {
             matches!(
                 p,
-                Purpose::SettingSave(_) | Purpose::SettingsValues | Purpose::SettingsSchema
+                Purpose::SettingSave(_)
+                    | Purpose::STTProviderSave
+                    | Purpose::STTModelSave
+                    | Purpose::STTSettingsValues
+                    | Purpose::SettingsValues
+                    | Purpose::SettingsSchema
             )
         });
         let busy = self.setup.busy.is_some() || saving || self.starting;

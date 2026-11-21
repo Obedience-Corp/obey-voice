@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -35,9 +34,25 @@ func (s *sttSetup) stop() {
 	s.cancel, s.events, s.running = nil, nil, false
 }
 
+// The loader's source resolver includes non-empty environment bindings and aliases.
+func sttModelOverrideReason(key string) string {
+	if key == "whispercpp_model" && config.Source("whispercpp_model_path") == config.SourceEnv {
+		return "WHISPERCPP_MODEL_PATH selects an external model file; unset it before choosing or installing a managed model"
+	}
+	if config.Source(key) == config.SourceEnv {
+		spec, _ := config.SpecFor(key)
+		return spec.Env + " overrides this model setting"
+	}
+	return ""
+}
+
 // Installation shares the scoped, verified installer used by models ensure --stt --vad.
 func (m *settingsModel) startSTTSetup() tea.Cmd {
 	if m.sttSetup.running {
+		return nil
+	}
+	if spec, _, err := config.STTModelSetting(m.cfg); err == nil && spec.Key == "whispercpp_model" && config.Source("whispercpp_model_path") == config.SourceEnv {
+		m.message = sttModelOverrideReason(spec.Key)
 		return nil
 	}
 	m.sttSetup.stop()
@@ -100,8 +115,8 @@ func (m *settingsModel) selectSTTModel(key, value string) tea.Cmd {
 		m.message = "Recognizer changed; choose its model again"
 		return nil
 	}
-	if _, overridden := os.LookupEnv(spec.Env); overridden {
-		m.message = spec.Env + " overrides this model setting"
+	if reason := sttModelOverrideReason(key); reason != "" {
+		m.message = reason
 		return nil
 	}
 	value = strings.TrimSpace(value)
@@ -164,17 +179,25 @@ func (m settingsModel) sttModelRows() []settingRow {
 	if len(spec.Suggestions) > 0 {
 		rows = append(rows, settingRow{key: spec.Key + "_choices", name: "Available models", kind: rowPick, options: spec.Suggestions, current: indexOf(spec.Suggestions, value), disabled: m.sttSetup.running, reason: "Model installation is running", help: "Choose to download and use this model. The model field also accepts a custom supported name.", set: func(m *settingsModel, i int) tea.Cmd { return m.selectSTTModel(spec.Key, spec.Suggestions[i]) }})
 	}
-	if _, overridden := os.LookupEnv(spec.Env); overridden {
+	if reason := sttModelOverrideReason(spec.Key); reason != "" {
 		for i := range rows {
-			rows[i].disabled = true
-			rows[i].reason = spec.Env + " overrides this model setting"
+			rows[i].disabled, rows[i].reason = true, reason
 		}
+	}
+	pathOverride := spec.Key == "whispercpp_model" && config.Source("whispercpp_model_path") == config.SourceEnv
+	if pathOverride {
+		rows[0].value = "External file: " + m.cfg.WhisperCPPModelPath
+		rows = append(rows, settingRow{key: "whispercpp_effective_file", name: "Effective model file", kind: rowInfo, value: m.cfg.WhisperCPPModelPath, help: sttModelOverrideReason(spec.Key)})
 	}
 	rows = append(rows, settingRow{key: "stt_install", name: "Install / repair selected model", kind: rowAction,
 		disabled: m.sttSetup.running, reason: "Model installation is running",
 		help: "Downloads and verifies the selected speech model and voice activity detector. Reuses verified files. Retry here after a failed or canceled download.",
 		run:  func(m *settingsModel) tea.Cmd { return m.startSTTSetup() },
 	})
+	if pathOverride {
+		rows[len(rows)-1].disabled = true
+		rows[len(rows)-1].reason = sttModelOverrideReason(spec.Key)
+	}
 	if m.sttSetup.running {
 		rows = append(rows, settingRow{key: "stt_cancel", name: "Cancel model installation", kind: rowAction,
 			run: func(m *settingsModel) tea.Cmd {

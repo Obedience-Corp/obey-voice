@@ -262,6 +262,7 @@ pub enum Purpose {
     SettingSave(String),
     STTProviderSave,
     STTModelSave,
+    STTSettingsValues,
     Mutation(String),
     Library,
     Book,

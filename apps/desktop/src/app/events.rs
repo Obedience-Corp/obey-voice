@@ -243,7 +243,8 @@ impl VoiceApp {
             Purpose::SettingsSchema => {
                 self.schema = serde_json::from_value(v["keys"].clone()).unwrap_or_default()
             }
-            Purpose::SettingsValues => {
+            Purpose::SettingsValues | Purpose::STTSettingsValues => {
+                let install_stt = matches!(purpose, Purpose::STTSettingsValues);
                 let before = &self.values;
                 self.drafts
                     .retain(|key, value| *value != display(&before[key]["value"]));
@@ -276,8 +277,19 @@ impl VoiceApp {
                 if self.active && self.screen == Screen::Settings {
                     self.request("settings_refresh", json!({}), Purpose::Ignore);
                 }
+                if install_stt {
+                    self.start_stt_install();
+                }
             }
             Purpose::STTModelSave => {
+                if let Some(reason) = crate::screens::settings::stt::selection_override_reason(
+                    "whispercpp_model",
+                    &self.values,
+                ) {
+                    self.error = Some(reason);
+                    self.command(&["config", "get", "--json"], Purpose::SettingsValues);
+                    return;
+                }
                 self.cli(
                     vec![
                         "config".into(),
@@ -313,9 +325,10 @@ impl VoiceApp {
                 self.drafts.remove(&key);
                 self.status = format!("Saved {key}");
                 if crate::screens::settings::stt::installs_selection(&key, &self.values) {
-                    self.start_stt_install();
+                    self.command(&["config", "get", "--json"], Purpose::STTSettingsValues);
+                } else {
+                    self.command(&["config", "get", "--json"], Purpose::SettingsValues);
                 }
-                self.command(&["config", "get", "--json"], Purpose::SettingsValues);
             }
             Purpose::Mutation(label) => {
                 self.status = label;

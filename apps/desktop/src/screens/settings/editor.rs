@@ -6,11 +6,36 @@ use crate::theme::muted;
 use eframe::egui::{self, RichText};
 
 impl VoiceApp {
+    pub(crate) fn save_setting_choice(&mut self, key: &str, value: Option<String>) {
+        if let Some(reason) = stt::selection_override_reason(key, &self.values) {
+            self.error = Some(reason);
+            return;
+        }
+        let mut args = vec![
+            "config".into(),
+            if value.is_some() { "set" } else { "unset" }.into(),
+            key.into(),
+        ];
+        if let Some(value) = value {
+            args.push(value);
+        }
+        args.push("--json".into());
+        let purpose = match key {
+            "stt_provider" => Purpose::STTProviderSave,
+            "whispercpp_model" => Purpose::STTModelSave,
+            _ => Purpose::SettingSave(key.into()),
+        };
+        self.cli(args, purpose, false);
+    }
+
     pub(crate) fn setup_setting_editor(&mut self, ui: &mut egui::Ui, spec: &KeySpec) {
         let stt_selection = stt::is_selection(&spec.key);
         let installs_selection = stt::installs_selection(&spec.key, &self.values);
-        let enabled =
-            !stt_selection || (!self.stt_setup_busy() && self.values[&spec.key]["source"] != "env");
+        let override_reason = stt::selection_override_reason(&spec.key, &self.values);
+        let enabled = !stt_selection || (!self.stt_setup_busy() && override_reason.is_none());
+        if let Some(reason) = &override_reason {
+            ui.label(reason);
+        }
         ui.add_enabled_ui(enabled, |ui| {
             ui.push_id(&spec.key, |ui| {
                 card(ui, |ui| {
@@ -48,23 +73,7 @@ impl VoiceApp {
                         )
                         .clicked()
                     {
-                        self.cli(
-                            vec![
-                                "config".into(),
-                                "set".into(),
-                                spec.key.clone(),
-                                draft,
-                                "--json".into(),
-                            ],
-                            if spec.key == "stt_provider" {
-                                Purpose::STTProviderSave
-                            } else if spec.key == "whispercpp_model" {
-                                Purpose::STTModelSave
-                            } else {
-                                Purpose::SettingSave(spec.key.clone())
-                            },
-                            false,
-                        );
+                        self.save_setting_choice(&spec.key, Some(draft));
                     }
                 });
             });
@@ -73,8 +82,11 @@ impl VoiceApp {
     pub(crate) fn setting_editor(&mut self, ui: &mut egui::Ui, spec: &KeySpec) {
         let stt_selection = stt::is_selection(&spec.key);
         let installs_selection = stt::installs_selection(&spec.key, &self.values);
-        let enabled =
-            !stt_selection || (!self.stt_setup_busy() && self.values[&spec.key]["source"] != "env");
+        let override_reason = stt::selection_override_reason(&spec.key, &self.values);
+        let enabled = !stt_selection || (!self.stt_setup_busy() && override_reason.is_none());
+        if let Some(reason) = &override_reason {
+            ui.label(reason);
+        }
         ui.add_enabled_ui(enabled, |ui| {
             ui.push_id(&spec.key, |ui| {
                 card(ui, |ui| {
@@ -129,41 +141,10 @@ impl VoiceApp {
                             )
                             .clicked()
                         {
-                            self.cli(
-                                vec![
-                                    "config".into(),
-                                    "set".into(),
-                                    spec.key.clone(),
-                                    draft,
-                                    "--json".into(),
-                                ],
-                                if spec.key == "stt_provider" {
-                                    Purpose::STTProviderSave
-                                } else if spec.key == "whispercpp_model" {
-                                    Purpose::STTModelSave
-                                } else {
-                                    Purpose::SettingSave(spec.key.clone())
-                                },
-                                false,
-                            );
+                            self.save_setting_choice(&spec.key, Some(draft));
                         }
                         if ui.button("Reset to default").clicked() {
-                            self.cli(
-                                vec![
-                                    "config".into(),
-                                    "unset".into(),
-                                    spec.key.clone(),
-                                    "--json".into(),
-                                ],
-                                if spec.key == "stt_provider" {
-                                    Purpose::STTProviderSave
-                                } else if spec.key == "whispercpp_model" {
-                                    Purpose::STTModelSave
-                                } else {
-                                    Purpose::SettingSave(spec.key.clone())
-                                },
-                                false,
-                            );
+                            self.save_setting_choice(&spec.key, None);
                         }
                     });
                 });

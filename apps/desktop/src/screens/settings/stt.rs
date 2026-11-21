@@ -24,6 +24,21 @@ pub(crate) fn installs_selection(key: &str, values: &Value) -> bool {
     matches!(key, "stt_provider" | "stt_mode") || key == selected_model_key(values)
 }
 
+pub(crate) fn selection_override_reason(key: &str, values: &Value) -> Option<String> {
+    if key == "whispercpp_model" && values["whispercpp_model_path"]["source"] == "env" {
+        return Some(format!(
+            "WHISPERCPP_MODEL_PATH selects the external model file {}. Unset it before choosing or installing a managed model.",
+            values["whispercpp_model_path"]["value"]
+                .as_str()
+                .unwrap_or_default()
+        ));
+    }
+    if is_selection(key) && values[key]["source"] == "env" {
+        return Some("An environment variable overrides this model setting.".into());
+    }
+    None
+}
+
 pub(super) fn selected_model_key(values: &Value) -> &'static str {
     let provider = values["stt_provider"]["value"].as_str().unwrap_or("");
     match provider {
@@ -59,12 +74,22 @@ impl VoiceApp {
             || self.pending.values().any(|p| {
                 matches!(
                     p,
-                    Purpose::STTProviderSave | Purpose::STTModelSave | Purpose::SettingSave(_)
+                    Purpose::STTProviderSave
+                        | Purpose::STTModelSave
+                        | Purpose::STTSettingsValues
+                        | Purpose::SettingSave(_)
                 )
             })
     }
 
     pub(crate) fn start_stt_install(&mut self) {
+        if selected_model_key(&self.values) == "whispercpp_model"
+            && self.values["whispercpp_model_path"]["source"] == "env"
+        {
+            self.error = selection_override_reason("whispercpp_model", &self.values);
+            self.status = "The environment selects an external speech model file".into();
+            return;
+        }
         self.error = None;
         self.setup.download = Value::Null;
         self.start_task("Install selected speech model", arguments(true));
@@ -74,6 +99,12 @@ impl VoiceApp {
     pub(super) fn stt_model_setup(&mut self, ui: &mut egui::Ui) {
         card(ui, |ui| {
             ui.heading("Speech recognition models");
+            if selected_model_key(&self.values) == "whispercpp_model"
+                && self.values["whispercpp_model_path"]["source"] == "env"
+                && let Some(reason) = selection_override_reason("whispercpp_model", &self.values)
+            {
+                ui.label(reason);
+            }
             ui.label("Choose a recognizer and its model below. Save and install downloads the selected model and verifies existing files. Changes apply to a new conversation.");
             ui.label("Parakeet v2 is English-only. Choose Multilingual (25 languages) — Parakeet v3 for supported European languages.");
             ui.horizontal_wrapped(|ui| {
@@ -81,7 +112,15 @@ impl VoiceApp {
                     if ui.button("Check selected model").clicked() {
                         self.start_task("Speech model status", arguments(false));
                     }
-                    if ui.button("Install / repair selected model").clicked() {
+                    let external_file = selected_model_key(&self.values) == "whispercpp_model"
+                        && self.values["whispercpp_model_path"]["source"] == "env";
+                    if ui
+                        .add_enabled(
+                            !external_file,
+                            egui::Button::new("Install / repair selected model"),
+                        )
+                        .clicked()
+                    {
                         self.start_stt_install();
                     }
                 });

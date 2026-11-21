@@ -201,7 +201,9 @@ the shared installer. Existing verified files are reused. Progress, cancellation
 and **Install / repair selected model** for retries are available in STT settings;
 changes apply to a new conversation. Whisper.cpp requires its executable to be
 installed separately; choosing its managed model clears the previous model-file
-override. Whisper model suggestions are listed, while custom supported names
+override. If `WHISPERCPP_MODEL_PATH` selects an external file, STT settings show
+that file and disable managed model selection and installation until the variable
+is unset. Whisper model suggestions are listed, while custom supported names
 remain accepted.
 
 ## Seeded prompt files
