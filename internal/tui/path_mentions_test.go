@@ -339,3 +339,18 @@ func TestPathMentionEnterSendsTheDraftAsTyped(t *testing.T) {
 		t.Fatalf("sent %+v, want the typed text", last)
 	}
 }
+
+func TestPersonasReturnWhenAPathTokenLosesItsSlash(t *testing.T) {
+	m, root := pathConversation(t)
+	if err := os.MkdirAll(filepath.Join(root, "j", "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("@j/"), Paste: true})
+	if m.mentions.personas != 0 || !slices.Equal(paths(m), []string{"@j/notes/"}) {
+		t.Fatalf("pasted path token = %+v", m.visibleMentions())
+	}
+	m = press(m, tea.KeyBackspace)
+	if m.input.Value() != "@j" || m.mentions.personas != 2 {
+		t.Fatalf("draft %q, personas did not come back: %+v", m.input.Value(), m.visibleMentions())
+	}
+}

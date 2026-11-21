@@ -34,8 +34,11 @@ type mentionPalette struct {
 	matches  []mentionItem
 	personas int
 	profiles []*persona.Profile
-	load     func() ([]*persona.Profile, error)
-	err      error
+	// profilesRead is reset whenever the list closes, so each time it opens
+	// at the start of a message the roster is read fresh.
+	profilesRead bool
+	load         func() ([]*persona.Profile, error)
+	err          error
 	// paths supplies the @path root and campaign shortcuts; nil disables
 	// path completion. It is read once per conversation.
 	paths     func() (root string, shortcuts map[string]string)
@@ -98,7 +101,7 @@ func (m *conversationModel) mentionPaths() (string, map[string]string) {
 func (m *conversationModel) syncMentions() {
 	start, query, end, ok := m.mentionAt()
 	if !ok {
-		m.mentions.active = false
+		m.mentions.active, m.mentions.dismissed = false, ""
 		return
 	}
 	if key := m.mentionKey(start, end); key == m.mentions.dismissed {
@@ -108,12 +111,16 @@ func (m *conversationModel) syncMentions() {
 	m.mentions.dismissed = ""
 	atStart := start == 0
 	pathToken := strings.Contains(query, "/")
-	if atStart && !pathToken && (!m.mentions.active || m.mentions.start != 0) {
+	if !m.mentions.active || m.mentions.start != 0 {
+		m.mentions.profilesRead = false
+	}
+	if atStart && !pathToken && !m.mentions.profilesRead {
 		load := m.mentions.load
 		if load == nil {
 			load = persona.List
 		}
 		m.mentions.profiles, m.mentions.err = load()
+		m.mentions.profilesRead = true
 	}
 	if !m.mentions.active || query != m.mentions.query || start != m.mentions.start {
 		m.mentions.selected = 0
