@@ -13,6 +13,12 @@ func voiceTickCmd() tea.Cmd {
 }
 
 func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.Cmd) {
+	// Runs last, so it sees what this message left in the input.
+	defer func() {
+		if back := next.returnRefusedDraft(); back != nil {
+			cmd = tea.Batch(cmd, back)
+		}
+	}()
 	if cmd, handled := m.updateMedia(msg); handled {
 		return m, cmd
 	}
@@ -155,6 +161,10 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			m.commandError("paste failed: " + msg.err.Error())
 			return m, nil
 		}
+		if msg.returned != m.media.returned {
+			m.commandNotice("An unsent message came back to the input first. Paste again to add to it.")
+			return m, nil
+		}
 		if len(msg.image) > 0 {
 			return m, m.importMedia(nil, msg.image)
 		}
@@ -223,7 +233,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			m.removeMedia("")
 			return m, nil
 		case "ctrl+v", "ctrl+shift+v", "shift+insert":
-			return m, readClipboard(m.clipboard())
+			return m, m.pasteClipboard()
 		case "ctrl+y":
 			// Always available: yank last assistant reply without fighting quit.
 			m.copyLastAssistant()

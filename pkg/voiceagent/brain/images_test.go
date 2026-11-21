@@ -73,10 +73,11 @@ func TestOllamaImagesReachModelAndSurviveHistory(t *testing.T) {
 	}
 }
 
-// A new picture is refused before its turn is sent, while the draft can still
-// be changed. Once a turn is in the conversation the model answers it without
-// the picture: see TestTextOnlyModelKeepsANewPictureOnTheRecord.
-func TestOllamaRefusesANewPictureForATextOnlyModelBeforeItIsSent(t *testing.T) {
+// ValidateImages is the check for a model that must view its pictures, such as
+// a worker handed a picture job. A picture entering a conversation is checked
+// with ValidateNewImages, and the model answers the turn without it: see
+// TestTextOnlyModelKeepsANewPictureOnTheRecord.
+func TestOllamaRefusesPicturesForATextOnlyModelThatMustViewThem(t *testing.T) {
 	o := repetitionBrain(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/show" {
 			t.Error("a refused picture reached the model")
@@ -86,6 +87,6 @@ func TestOllamaRefusesANewPictureForATextOnlyModelBeforeItIsSent(t *testing.T) {
 	n := len(o.History())
 	err := o.ValidateImages(t.Context(), []chatmedia.Ref{{ID: "image"}})
 	if err == nil || !strings.Contains(err.Error(), "does not support images") || len(o.History()) != n {
-		t.Fatalf("admission of a picture for a text-only model: %v", err)
+		t.Fatalf("pictures for a text-only model that must view them: %v", err)
 	}
 }

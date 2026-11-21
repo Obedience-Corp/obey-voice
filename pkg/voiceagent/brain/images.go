@@ -10,8 +10,8 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-// ValidateImages checks new pictures before their turn is sent. A model that
-// cannot view them refuses them here, while the draft can still be changed.
+// ValidateImages checks pictures for a model that must view them, such as a
+// worker handed a picture job. A model that cannot refuses them.
 func (o *OllamaBrain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) error {
 	if len(refs) == 0 {
 		return nil
@@ -27,11 +27,42 @@ func (o *OllamaBrain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) 
 	return err
 }
 
+// ErrNativeImageInput refuses a picture for a persona that takes native audio.
+// Its requests carry recordings where a picture would go, so it can neither
+// view a picture nor hold one for another persona: its turn would fail.
+var ErrNativeImageInput = errors.New("this persona takes native audio and cannot be sent pictures; select a persona that views images")
+
+// ValidateNewImages checks pictures as they enter the conversation: how many
+// there are, and that each one loads. Whether this model can view them is not
+// asked. One that cannot answers without them, and they stay on the record
+// for a persona that can.
+func (o *OllamaBrain) ValidateNewImages(ctx context.Context, refs []chatmedia.Ref) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	if o.audioResolver != nil {
+		return ErrNativeImageInput
+	}
+	// Only whether the model can be asked matters here, not its answer: a
+	// server that cannot say would fail the turn once the draft is gone.
+	if _, err := o.viewsImages(ctx); err != nil {
+		return err
+	}
+	_, err := loadImageData(refs)
+	return err
+}
+
 // ValidateAdmittedImages checks the pictures of a turn that is already part of
 // the conversation. A model that cannot view them still answers the turn.
 func (o *OllamaBrain) ValidateAdmittedImages(ctx context.Context, refs []chatmedia.Ref) error {
 	if len(refs) == 0 {
 		return nil
+	}
+	if o.audioResolver != nil {
+		return ErrNativeImageInput
 	}
 	views, err := o.viewsImages(ctx)
 	if err != nil || !views {

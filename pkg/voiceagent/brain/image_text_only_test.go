@@ -1,6 +1,8 @@
 package brain
 
 import (
+	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -8,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"github.com/ollama/ollama/api"
 )
 
@@ -211,6 +214,42 @@ func TestProvidersWithoutImageInputAreToldAPictureWasNotShown(t *testing.T) {
 			}
 			if history := b.History(); history[0].Content != "What is on my screen?" || len(history[0].Attachments) != 1 {
 				t.Fatalf("the record changed: %+v", history[0])
+			}
+		})
+	}
+}
+
+// noRecordings resolves no audio; binding it makes a brain a native-audio one.
+type noRecordings struct{}
+
+func (noRecordings) ResolveAudio(context.Context, utterance.AudioRef) ([]byte, error) {
+	return nil, errors.New("no recording")
+}
+
+// A persona that takes native audio refuses every picture before a turn is
+// sent, whatever its model can view: the request itself would refuse it.
+func TestNativeAudioPersonaRefusesAPictureBeforeItsTurn(t *testing.T) {
+	for name, fake := range map[string]*visionFake{"model without vision": {textOnly: true}, "model with vision": {}} {
+		t.Run(name, func(t *testing.T) {
+			config.SetConfigDirForTest(t, t.TempDir())
+			refs := photos(t, 1, 32, 32)
+			o := fake.brain(t, budgetConfig(), "You are Echo.")
+			o.SetAudioResolver(noRecordings{})
+			if err := o.ValidateNewImages(t.Context(), refs); !errors.Is(err, ErrNativeImageInput) {
+				t.Fatalf("a new picture: %v", err)
+			}
+			if err := o.ValidateAdmittedImages(t.Context(), refs); !errors.Is(err, ErrNativeImageInput) {
+				t.Fatalf("a picture addressed to it: %v", err)
+			}
+			if err := o.ValidateNewImages(t.Context(), nil); err != nil {
+				t.Fatalf("a turn with no picture: %v", err)
+			}
+			// The refusal is what keeps the turn from failing here.
+			if _, err := o.ThinkFull(t.Context(), "What is this?", StreamOptions{Attachments: refs}); !errors.Is(err, ErrImageProjection) {
+				t.Fatalf("a picture sent anyway: %v", err)
+			}
+			if len(fake.sent()) != 0 {
+				t.Fatal("a refused picture reached the model")
 			}
 		})
 	}

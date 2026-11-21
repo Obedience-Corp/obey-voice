@@ -165,6 +165,8 @@ func StartDesktopController(ctx context.Context, rt *ConversationRuntime, publis
 }
 
 func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// The desktop app has its own text field.
+	m.app.conversation.media.inputElsewhere = true
 	var cmd tea.Cmd
 	if action, ok := msg.(DesktopAction); ok {
 		c := &m.app.conversation

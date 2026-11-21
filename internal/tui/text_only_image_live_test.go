@@ -66,3 +66,42 @@ func TestLiveTextOnlyModelAnswersAfterAPicture(t *testing.T) {
 	}
 	t.Logf("reply %q", reply.Content)
 }
+
+// The same model is selected when a new picture is sent. It answers without
+// the picture, which stays in the conversation.
+func TestLiveTextOnlyModelTakesANewPicture(t *testing.T) {
+	model := os.Getenv("OBEY_VOICE_TEXT_ONLY_MODEL")
+	if model == "" {
+		t.Skip("set OBEY_VOICE_TEXT_ONLY_MODEL to an installed local model without vision")
+	}
+	root := t.TempDir()
+	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
+	cfg := &config.Config{BrainProvider: "ollama", OllamaHost: "http://localhost:11434", OllamaModel: model, OllamaNumCtx: 32768, WorkDir: root, WorkerBoundary: root, PromptsDir: filepath.Join(root, "prompts"), SkillsDir: filepath.Join(root, "skills"), AgentName: "Venessa", MaxHistory: 20, ContinuityIntegrityEnabled: true}
+	live, err := brain.NewOllama(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	bus := events.NewBus()
+	p := &pipeline.Pipeline{Brain: live, Events: bus}
+	m := sizedConversation(t, 100, 42)
+	m.cfg = cfg
+	init := m.startConversation(conversationDeps{runner: p, ctx: ctx, bus: bus})
+	m.updateMedia(m.importMedia(nil, testmedia.PNG())())
+	m.input.SetValue("What is on my screen?")
+	h := &imageRepairTerminal{model: m, initial: init, wantImages: -1, stopOnTurnEnd: true}
+	var output bytes.Buffer
+	if _, err := tea.NewProgram(h, tea.WithContext(ctx), tea.WithoutSignalHandler(), tea.WithInput(nil), tea.WithOutput(&output)).Run(); err != nil {
+		t.Fatalf("terminal: %v\n%s", err, stripANSI(h.model.View()))
+	}
+	view := stripANSI(h.model.View())
+	if strings.Contains(view, "Error:") || strings.Contains(view, "does not support images") || !strings.Contains(view, "was not shown") {
+		t.Fatalf("terminal shows:\n%s", view)
+	}
+	history := live.History()
+	if len(history) < 2 || len(history[0].Attachments) != 1 || strings.TrimSpace(history[len(history)-1].Content) == "" {
+		t.Fatalf("history: %+v", history)
+	}
+	t.Logf("reply %q", history[len(history)-1].Content)
+}

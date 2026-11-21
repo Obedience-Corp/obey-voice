@@ -57,6 +57,8 @@ type voiceTurnDoneMsg struct {
 type textTurnDoneMsg struct {
 	lifetime    context.Context
 	input       string
+	refs        []chatmedia.Ref
+	media       *int
 	err         error
 	noticeEpoch uint64
 }
@@ -294,14 +296,13 @@ func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
 	m.turnState = turnTextRunning
 
 	runner, wg := m.deps.runner, m.deps.wg
-	noticeEpoch := m.noticeEpoch
-	lifetime := m.deps.ctx
+	done := textTurnDoneMsg{lifetime: m.deps.ctx, input: text, refs: refs, media: m.media.token, noticeEpoch: m.noticeEpoch}
 	return trackedCommand(m.deps.ctx, wg, func() tea.Msg {
 		defer cancel()
-		if ctx.Err() != nil {
-			return textTurnDoneMsg{lifetime: lifetime, input: text, err: ctx.Err(), noticeEpoch: noticeEpoch}
+		if done.err = ctx.Err(); done.err == nil {
+			done.err = runner.RunTurnTextMode(chatmedia.WithInput(ctx, refs), text)
 		}
-		return textTurnDoneMsg{lifetime: lifetime, input: text, err: runner.RunTurnTextMode(chatmedia.WithInput(ctx, refs), text), noticeEpoch: noticeEpoch}
+		return done
 	})
 }
 

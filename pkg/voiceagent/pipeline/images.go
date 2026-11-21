@@ -20,7 +20,15 @@ func (p *Pipeline) ValidateImages(ctx context.Context, refs []chatmedia.Ref) err
 }
 
 // Bind a provider at the serialized UI boundary before starting a read-only probe.
+//
+// A picture belongs to the conversation, not to the persona that is selected
+// when it is sent. A provider that keeps a picture on the record admits it
+// whether or not its own model can view it. A provider that would drop the
+// picture refuses it.
 func (p *Pipeline) ImageValidator() func(context.Context, []chatmedia.Ref) error {
+	keeper, keeps := p.Brain.(interface {
+		ValidateNewImages(context.Context, []chatmedia.Ref) error
+	})
 	validator, ok := p.Brain.(interface {
 		ValidateImages(context.Context, []chatmedia.Ref) error
 	})
@@ -28,11 +36,37 @@ func (p *Pipeline) ImageValidator() func(context.Context, []chatmedia.Ref) error
 		if len(refs) == 0 {
 			return nil
 		}
+		if keeps {
+			return keeper.ValidateNewImages(ctx, refs)
+		}
 		if !ok {
 			return errors.New("this provider does not support image input; choose a vision-capable Ollama model, Codex or Claude")
 		}
 		return validator.ValidateImages(ctx, refs)
 	}
+}
+
+// refusedImages is a turn refused over its pictures after its draft was sent.
+// Nothing went to a provider and nothing was recorded.
+type refusedImages struct{ err error }
+
+func (e refusedImages) Error() string { return e.err.Error() }
+func (e refusedImages) Unwrap() error { return e.err }
+
+// refuseImages marks a turn that failed its picture check as refused. A check
+// that was itself canceled gave no answer: that turn was interrupted.
+func refuseImages(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return err
+	}
+	return refusedImages{err}
+}
+
+// ImagesRefused reports whether a turn failed only because its pictures were
+// refused before any request, so a host can give the user their draft back.
+func ImagesRefused(err error) bool {
+	var refused refusedImages
+	return errors.As(err, &refused)
 }
 
 // validateAdmittedImages checks the pictures of a turn that is already part of

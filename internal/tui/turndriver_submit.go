@@ -35,7 +35,7 @@ func (m *conversationModel) handleSubmit() tea.Cmd {
 		if len(m.media.draft) == 0 {
 			return nil
 		}
-		text = "Attached image."
+		text = imageOnlyText
 	}
 	text = expandPaletteSelection(text, m.commandSelection)
 
@@ -376,6 +376,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
 	m.keyOwnsTurn(false)
+	held := m.holdRefusedDraft(msg)
 	// Barge-in during a text turn (agent speaking after a prior typed message)
 	// sets turnVoiceCanceling + pendingText, then cancel drains here — same
 	// path as voice barge-in via handleVoiceTurnDone.
@@ -432,7 +433,7 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	}
 	m.talkTurnEnded()
 
-	if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
+	if msg.err != nil && !errors.Is(msg.err, context.Canceled) && !held {
 		m.emit(events.Error{Message: msg.err.Error()})
 		m.emitAdmissionRetryNotice(msg.err, msg.input, msg.noticeEpoch)
 	}

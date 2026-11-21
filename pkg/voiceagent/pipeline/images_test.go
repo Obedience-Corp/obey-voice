@@ -2,14 +2,23 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 )
 
 func TestWithheldPictureIsSaidOnceForEachPersona(t *testing.T) {
@@ -58,6 +67,15 @@ func TestWithheldPictureIsSaidOnceForEachPersona(t *testing.T) {
 type reportsWithheld struct {
 	*streamClock
 	ref chatmedia.Ref
+	// validates makes it accept pictures, as a provider that views them does.
+	validates bool
+}
+
+func (b *reportsWithheld) ValidateImages(ctx context.Context, refs []chatmedia.Ref) error {
+	if b.validates {
+		return nil
+	}
+	return b.streamClock.ValidateImages(ctx, refs)
 }
 
 func (b *reportsWithheld) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
@@ -157,4 +175,135 @@ func TestProviderWithoutImageInputAnswersAndSaysSoWithItsRequest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A new picture is admitted to the conversation whatever the selected Ollama
+// model can view. The checks that keep a bad picture out of the record stay,
+// and a provider that would drop the picture still refuses it.
+func TestNewPictureAdmission(t *testing.T) {
+	root := t.TempDir()
+	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
+	var good []chatmedia.Ref
+	for i := range 5 {
+		ref, err := chatmedia.DefaultStore().Import(fmt.Sprintf("picture-%d.png", i), append(slices.Clone(testmedia.PNG()), byte(i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		good = append(good, ref)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/show":
+			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion"}})
+		case "/api/chat":
+			t.Error("an admission check reached the model")
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"models": []map[string]string{{"name": "fixture"}}})
+		}
+	}))
+	t.Cleanup(server.Close)
+	textOnly, err := brain.NewOllama(&config.Config{OllamaHost: server.URL, OllamaModel: "fixture", MaxHistory: 20, WorkDir: root, PromptsDir: filepath.Join(root, "prompts"), AgentName: "Venessa"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admit := (&Pipeline{Brain: textOnly}).ImageValidator()
+	if err := admit(t.Context(), good[:1]); err != nil {
+		t.Fatalf("a picture for the conversation was refused: %v", err)
+	}
+	if err := admit(t.Context(), good); err == nil || !strings.Contains(err.Error(), "at most four") {
+		t.Fatalf("five pictures: %v", err)
+	}
+	if err := admit(t.Context(), []chatmedia.Ref{{ID: "missing", Name: "gone.png", Format: "png"}}); err == nil {
+		t.Fatal("a picture that does not load was admitted")
+	}
+	if err := (&Pipeline{Brain: &noImageInput{}}).ImageValidator()(t.Context(), good[:1]); err == nil || !strings.Contains(err.Error(), "does not support image input") {
+		t.Fatalf("a provider that would drop the picture: %v", err)
+	}
+	// A native-audio persona's turn would fail on the picture, so neither
+	// check lets one through to it.
+	textOnly.SetAudioResolver(silentMedia{})
+	native := &Pipeline{Brain: textOnly}
+	if err := native.ImageValidator()(t.Context(), good[:1]); !errors.Is(err, brain.ErrNativeImageInput) {
+		t.Fatalf("a new picture for a native-audio persona: %v", err)
+	}
+	if err := native.validateAdmittedImages(t.Context(), good[:1]); !errors.Is(err, brain.ErrNativeImageInput) {
+		t.Fatalf("a picture addressed to a native-audio persona: %v", err)
+	}
+}
+
+type silentMedia struct{}
+
+func (silentMedia) ResolveAudio(context.Context, utterance.AudioRef) ([]byte, error) {
+	return nil, errors.New("no recording")
+}
+
+// A turn refused over its pictures is marked, whether the selected provider
+// refuses it or the one the message is routed to, so a host can give the
+// draft back. Neither sends anything.
+func TestTurnRefusedOverItsPicturesIsMarked(t *testing.T) {
+	ref := chatmedia.Ref{ID: "a", Name: "desk.png", Format: "png"}
+	ctx := chatmedia.WithInput(t.Context(), []chatmedia.Ref{ref})
+
+	selected := &noImageInput{}
+	err := (&Pipeline{Brain: selected, Events: events.NewBus()}).RunTurnTextMode(ctx, "What is this?")
+	if !ImagesRefused(err) || selected.requests != 0 {
+		t.Fatalf("selected provider: err=%v requests=%d", err, selected.requests)
+	}
+
+	viewer, routed := &reportsWithheld{streamClock: &streamClock{}}, &noImageInput{}
+	viewer.validates = true
+	p := &Pipeline{Brain: viewer, Events: events.NewBus()}
+	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+		p.Brain = routed
+		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "scout", DisplayName: "Scout"}}, nil
+	}
+	err = p.RunTurnTextMode(ctx, "Scout, what is this?")
+	if !ImagesRefused(err) || routed.requests != 0 || len(viewer.at) != 0 {
+		t.Fatalf("routed provider: err=%v requests=%d", err, routed.requests)
+	}
+	if ImagesRefused(errors.New("boom")) || ImagesRefused(nil) {
+		t.Fatal("an unrelated failure is marked as a refused picture")
+	}
+
+	// A check that was itself canceled gave no answer, at the first check and
+	// at the one after routing: that turn was interrupted, not refused.
+	canceled := fmt.Errorf("check image support: %w", context.Canceled)
+	err = (&Pipeline{Brain: &checkAnswers{err: canceled}, Events: events.NewBus()}).RunTurnTextMode(ctx, "What is this?")
+	if !errors.Is(err, context.Canceled) || ImagesRefused(err) {
+		t.Fatalf("a canceled first check: err=%v refused=%v", err, ImagesRefused(err))
+	}
+	viewer = &reportsWithheld{streamClock: &streamClock{}, validates: true}
+	p = &Pipeline{Brain: viewer, Events: events.NewBus()}
+	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+		p.Brain = &checkAnswers{err: canceled}
+		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r2", PersonaID: "scout", DisplayName: "Scout"}}, nil
+	}
+	err = p.RunTurnTextMode(ctx, "Scout, what is this?")
+	if !errors.Is(err, context.Canceled) || ImagesRefused(err) || len(viewer.at) != 0 {
+		t.Fatalf("a canceled check after routing: err=%v refused=%v", err, ImagesRefused(err))
+	}
+
+	// A check that did answer is a refusal even when the turn was canceled
+	// meanwhile. Nothing was sent, so the draft must not vanish.
+	interrupted, cancel := context.WithCancel(ctx)
+	answered := &checkAnswers{err: errors.New("this persona cannot be sent pictures"), cancel: cancel}
+	err = (&Pipeline{Brain: answered, Events: events.NewBus()}).RunTurnTextMode(interrupted, "What is this?")
+	if !ImagesRefused(err) || answered.requests != 0 {
+		t.Fatalf("a refusal that follows a cancel: err=%v requests=%d", err, answered.requests)
+	}
+}
+
+// checkAnswers is a provider whose picture check returns err, canceling the
+// turn first when cancel is set.
+type checkAnswers struct {
+	noImageInput
+	err    error
+	cancel context.CancelFunc
+}
+
+func (b *checkAnswers) ValidateImages(context.Context, []chatmedia.Ref) error {
+	if b.cancel != nil {
+		b.cancel()
+	}
+	return b.err
 }
