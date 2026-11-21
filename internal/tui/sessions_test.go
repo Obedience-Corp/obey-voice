@@ -369,6 +369,8 @@ func TestSessionsFitNarrowAndShortTerminals(t *testing.T) {
 		failed := m
 		failed.message, failed.messageErr = strings.Repeat("an error ", 10), true
 		states["message"] = failed
+		deleting, _ := pressSessions(t, m, runes("d"), runes("y"))
+		states["deleting"] = deleting
 		for name, state := range states {
 			lines := strings.Split(state.View(), "\n")
 			if len(lines) > size.Height {
@@ -380,6 +382,98 @@ func TestSessionsFitNarrowAndShortTerminals(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestSessionsDeletePromptKeepsItsKeysWhenNarrow(t *testing.T) {
+	saved := sessionRows(2)
+	saved[0].Summary = strings.Repeat("a long summary that will not fit ", 4)
+	for width, want := range map[int]string{
+		120: `Delete "a long summary that will not fit a long…"? y delete • any other key cancel`,
+		60:  "y delete • any other key cancel",
+		44:  "Delete? y delete • any other key cancel",
+		30:  "Delete? y yes • other no",
+		24:  "Delete? y/n",
+	} {
+		m, _ := sessionsWithFake(saved)
+		m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+		for name, state := range map[string]sessionsModel{"list": m, "view": func() sessionsModel {
+			v, _ := pressSessions(t, m, runes("v"))
+			return v
+		}()} {
+			state, _ = pressSessions(t, state, runes("d"))
+			lines := strings.Split(stripANSI(state.View()), "\n")
+			if last := lines[len(lines)-1]; !strings.Contains(last, want) {
+				t.Errorf("width %d %s: prompt %q does not show %q", width, name, last, want)
+			}
+		}
+	}
+}
+
+func TestSessionsViewTitleLeavesItsMarginRowBlank(t *testing.T) {
+	saved := sessionRows(1)
+	saved[0].Summary = strings.Repeat("a", 45)
+	m, _ := sessionsWithFake(saved)
+	m, _ = pressSessions(t, m, runes("v"))
+	lines := strings.Split(stripANSI(m.View()), "\n")
+	if !strings.Contains(lines[0], saved[0].Summary) || strings.TrimSpace(lines[1]) != "" {
+		t.Fatalf("title rows = %q, %q", lines[0], lines[1])
+	}
+}
+
+func TestSessionsViewStaysFilledWhenTheWindowGrows(t *testing.T) {
+	saved := sessionRows(1)
+	saved[0].Turns = nil
+	for i := 0; i < 60; i++ {
+		saved[0].Turns = append(saved[0].Turns, brain.Turn{Role: "user", Content: fmt.Sprintf("line %d", i)})
+	}
+	m, _ := sessionsWithFake(saved)
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	m, _ = pressSessions(t, m, runes("v"), runes("G"))
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	shown := stripANSI(m.viewport.View())
+	if turns := strings.Count(shown, "line "); turns < 7 || !strings.Contains(shown, "line 59") {
+		t.Fatalf("%d turns shown after growing:\n%s", turns, shown)
+	}
+}
+
+func TestSessionsViewHalfPageKeysLeaveDForDelete(t *testing.T) {
+	saved := sessionRows(1)
+	saved[0].Turns = nil
+	for i := 0; i < 60; i++ {
+		saved[0].Turns = append(saved[0].Turns, brain.Turn{Role: "user", Content: fmt.Sprintf("line %d", i)})
+	}
+	m, _ := sessionsWithFake(saved)
+	m, _ = pressSessions(t, m, runes("v"), runes("G"))
+	bottom := m.viewport.YOffset
+	if m, _ = pressSessions(t, m, runes("u")); m.viewport.YOffset != bottom {
+		t.Fatal("u scrolled although d is taken by delete")
+	}
+	if m, _ = pressSessions(t, m, tea.KeyMsg{Type: tea.KeyCtrlU}); m.viewport.YOffset >= bottom {
+		t.Fatal("ctrl+u did not scroll up")
+	}
+}
+
+func TestSessionsViewUsesTheNameSetAfterStartup(t *testing.T) {
+	saved := sessionRows(1)
+	saved[0].Turns = []brain.Turn{{Role: "user", Content: "hi", Speaker: "speaker-1"}}
+	cfg := &config.Config{}
+	app := newApp(cfg, nil, saved)
+	cfg.UserDisplayName = "Ada"
+	model, _ := app.Update(switchScreenMsg(screenSessions))
+	app = model.(App)
+	store := &fakeSessionStore{saved: map[string]*session.Session{"s0": &saved[0]}}
+	app.sessions.loadSession = store.load
+	model, _ = app.Update(runes("v"))
+	if view := stripANSI(model.(App).View()); !strings.Contains(view, "› Ada") {
+		t.Fatalf("view does not use the configured name:\n%s", view)
+	}
+}
+
+func TestSessionsListCountsOneTurnInTheSingular(t *testing.T) {
+	m, _ := sessionsWithFake(sessionRows(1))
+	if view := stripANSI(m.View()); !strings.Contains(view, "chat 0  1 turn  ") {
+		t.Fatalf("row = %s", view)
 	}
 }
 

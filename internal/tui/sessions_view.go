@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -26,6 +25,9 @@ func (m *sessionsModel) openView(id string) {
 	}
 	m.viewing = s
 	m.viewport = viewport.New(1, 1)
+	// d deletes here, so half pages stay on the ctrl keys alone.
+	m.viewport.KeyMap.HalfPageUp.SetKeys("ctrl+u")
+	m.viewport.KeyMap.HalfPageDown.SetKeys("ctrl+d")
 	m.layoutView()
 	m.viewport.GotoTop()
 }
@@ -58,6 +60,9 @@ func (m *sessionsModel) layoutView() {
 	// The list's row budget, so the list and the transcript share chrome.
 	m.viewport.Height = m.visibleRows()
 	m.viewport.SetContent(m.transcriptContent())
+	// SetContent leaves an offset past the new last page, which shows blank
+	// rows after the window grows.
+	m.viewport.SetYOffset(m.viewport.YOffset)
 }
 
 // transcriptContent renders saved turns with the conversation's own bubbles so
@@ -118,13 +123,16 @@ func (m sessionsModel) transcriptView() string {
 	var b strings.Builder
 	width := m.viewWidth()
 	s := m.viewing
+	// Cut the text, not the styled block: the title's margin row would
+	// otherwise take the ellipsis.
+	title := ansi.Truncate("  "+sessionSummary(*s), width, "…")
 	if m.compact() {
-		b.WriteString(ansi.Truncate(headerStyle.Render("  "+sessionSummary(*s)), width, "…"))
+		b.WriteString(headerStyle.Render(title))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(ansi.Truncate(titleStyle.Render("  "+sessionSummary(*s)), width, "…"))
+		b.WriteString(titleStyle.Render(title))
 		b.WriteString("\n")
-		b.WriteString(ansi.Truncate(subtitleStyle.Render("  "+transcriptMeta(*s)), width, "…"))
+		b.WriteString(subtitleStyle.Render(ansi.Truncate("  "+transcriptMeta(*s), width, "…")))
 		b.WriteString("\n\n")
 	}
 	b.WriteString(m.viewport.View())
@@ -134,7 +142,7 @@ func (m sessionsModel) transcriptView() string {
 }
 
 func transcriptMeta(s session.Session) string {
-	parts := []string{fmt.Sprintf("%d turns", len(s.Turns)), compactAge(s.UpdatedAt)}
+	parts := []string{turnCount(len(s.Turns)), compactAge(s.UpdatedAt)}
 	if name := strings.TrimSpace(s.SelectedPersonaDisplayName); name != "" {
 		parts = append(parts, name)
 	}

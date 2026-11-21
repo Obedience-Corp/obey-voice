@@ -208,6 +208,8 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		// Apply stored geometry immediately — Bubble Tea only re-emits
 		// WindowSize on actual resize, not on screen switches.
 		a.sessions = a.sessions.enter(a.width, a.height)
+		// Read here, not at startup: Settings can rename either one.
+		a.sessions.agentName, a.sessions.userName = a.cfg.AgentName, a.cfg.UserDisplayName
 		runCtx, wg := a.runCtx, a.wg
 		a.sessions.track = func(cmd tea.Cmd) tea.Cmd { return trackedCommand(runCtx, wg, cmd) }
 	case screenMeetingSetup:

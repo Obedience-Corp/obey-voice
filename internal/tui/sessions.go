@@ -246,7 +246,7 @@ func (m sessionsModel) View() string {
 				cursor, style = "▸ ", selectedStyle
 			}
 			age := compactAge(s.UpdatedAt)
-			line := fmt.Sprintf("%s  %d turns  %s", sessionSummary(s), len(s.Turns), age)
+			line := fmt.Sprintf("%s  %s  %s", sessionSummary(s), turnCount(len(s.Turns)), age)
 			maxWidth := max(width-6, 1)
 			line = ansi.Truncate(line, maxWidth, "…")
 			b.WriteString("  " + cursor + style.Render(line) + "\n")
@@ -276,7 +276,7 @@ func (m sessionsModel) footer(hint string) string {
 	case m.deletingID != "":
 		bottom = line(dimStyle.Render, "  Deleting…")
 	case m.confirmID != "":
-		bottom = line(warningStyle.Render, fmt.Sprintf("  Delete \"%s\"? y delete • any other key cancel", m.confirmSummary()))
+		bottom = line(warningStyle.Render, m.confirmPrompt(width))
 	case m.compact() && msg != "":
 		return msg
 	}
@@ -286,12 +286,23 @@ func (m sessionsModel) footer(hint string) string {
 	return msg + "\n" + bottom
 }
 
-func (m sessionsModel) confirmSummary() string {
+// confirmPrompt keeps the answer keys on screen: the summary shrinks first,
+// then the wording.
+func (m sessionsModel) confirmPrompt(width int) string {
+	const keys = "y delete • any other key cancel"
 	summary := "Untitled conversation"
 	if idx := m.indexOf(m.confirmID); idx >= 0 {
 		summary = sessionSummary(m.sessions[idx])
 	}
-	return ansi.Truncate(summary, 40, "…")
+	if room := width - ansi.StringWidth(`  Delete ""? `+keys); room >= 4 {
+		return fmt.Sprintf("  Delete \"%s\"? %s", ansi.Truncate(summary, min(room, 40), "…"), keys)
+	}
+	for _, short := range []string{"  Delete? " + keys, "  Delete? y yes • other no", "  Delete? y/n"} {
+		if ansi.StringWidth(short) <= width {
+			return short
+		}
+	}
+	return "  y/n"
 }
 
 func sessionSummary(s session.Session) string {
@@ -300,6 +311,13 @@ func sessionSummary(s session.Session) string {
 		return "Untitled conversation"
 	}
 	return summary
+}
+
+func turnCount(n int) string {
+	if n == 1 {
+		return "1 turn"
+	}
+	return fmt.Sprintf("%d turns", n)
 }
 
 func compactAge(t time.Time) string {
