@@ -20,14 +20,20 @@ import (
 
 // An installed local model uses its direct tools in a disposable workspace.
 func TestLiveDirectImageReachesTerminal(t *testing.T) {
-	runLiveImageConversation(t, false)
+	runLiveImageConversation(t, false, false)
 }
 
 func TestLivePendingImageReachesTerminal(t *testing.T) {
-	runLiveImageConversation(t, true)
+	runLiveImageConversation(t, true, false)
 }
 
-func runLiveImageConversation(t *testing.T, pending bool) {
+// The model repeats the form of its last reply, which wrote the reference at
+// the end of its sentence.
+func TestLiveInSentenceImageReachesTerminal(t *testing.T) {
+	runLiveImageConversation(t, false, true)
+}
+
+func runLiveImageConversation(t *testing.T, pending, inSentence bool) {
 	t.Helper()
 	model := os.Getenv("OBEY_VOICE_IMAGE_ROUTING_MODEL")
 	if model == "" {
@@ -67,6 +73,15 @@ func runLiveImageConversation(t *testing.T, pending bool) {
 			t.Fatal(err)
 		}
 		m.input.SetValue("Where is it then? It should be in your next response.")
+	}
+	if inSentence {
+		if err := live.ImportHistory([]brain.Turn{
+			{Role: "user", Content: "Show me a picture in this chat. Use the existing picture.png in the working directory."},
+			{Role: "assistant", Content: "Here it is, right here for you. ![Picture](" + filepath.Join(root, "picture.png") + ")"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		m.input.SetValue("I didn't see that one. Can you try again?")
 	}
 	h := &imageRepairTerminal{model: m, initial: init, wantImages: 1, stopOnTurnEnd: true}
 	var output bytes.Buffer
