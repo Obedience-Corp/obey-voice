@@ -192,6 +192,24 @@ when you select it.
 | `listen_timeout` | `10` | | Listen timeout in seconds |
 | `phrase_time_limit` | `30` | | Maximum phrase length in seconds |
 
+## Seeded prompt files
+
+On startup Obey Voice copies the shipped prompt documents into `prompts_dir`
+as `<kind>/<name>.yaml`, so you have a real file to edit. A file there takes
+precedence over the built-in text.
+
+- A missing file is written.
+- A file that is byte-for-byte a copy this product wrote earlier is replaced
+  with the current shipped text when an upgrade changes it. Copies from before
+  this check existed are recognised too.
+- Any other file, including one you changed by a single character, a file with
+  a name the product does not ship, and a symlink, is never touched.
+
+`prompts_dir/.seeded.json` records what was last written at each path. If it
+is lost, only copies of versions built into the binary are recognised. To get
+the shipped text back after editing a file, delete the file; it is rewritten on
+the next start.
+
 ## Where the working directory came from
 
 The agent's working directory decides where every file tool, shell tool and

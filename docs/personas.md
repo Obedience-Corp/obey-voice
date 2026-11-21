@@ -251,7 +251,9 @@ speech output path.
 Application and conversation instructions use the same versioned YAML format
 as persona/turn prompts. Packaged sources live under
 `pkg/voiceagent/prompts/defaults/system*.yaml`; startup seeds editable copies
-under `<prompts_dir>/system/` without overwriting existing edits. Use
+under `<prompts_dir>/system/`. A copy you have not changed is replaced with
+the new text when an upgrade changes it; a file you have edited is never
+overwritten (see [Seeded prompt files](configuration.md#seeded-prompt-files)). Use
 `obey-voice prompts list` and
 `obey-voice prompts show system --name application` to inspect them. Named
 system documents are shown as templates, with runtime placeholders intact.
