@@ -71,3 +71,10 @@ demo-agent-images:
     mkdir -p bin demos/frames
     go test -c -o bin/chat-media.test ./internal/tui
     vhs demos/agent-images.tape
+
+# Review @path completion and @path routing with a disposable campaign fixture.
+[no-cd]
+demo-chat-path-completion:
+    mkdir -p bin
+    go test -c -o bin/chat-path-completion.test ./internal/tui
+    vhs demos/chat-path-completion.tape
