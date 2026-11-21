@@ -28,7 +28,7 @@ type ExactControl struct {
 // must not skip that intermediary merely because a peer appears in the task.
 func (r *Roster) ResolveForegroundControl(text string) ExactControl {
 	matched := r.ResolveExactControl(text)
-	if matched.Kind != ExactControlNone || startsWithQuote(strings.TrimSpace(text)) {
+	if matched.Kind != ExactControlNone || startsWithQuote(strings.TrimSpace(text)) || leadingPathMention(text) {
 		return matched
 	}
 	address, err := r.Resolve(text)

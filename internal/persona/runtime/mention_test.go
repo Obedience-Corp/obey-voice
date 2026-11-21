@@ -29,3 +29,21 @@ func TestMentionSelectsPersonaAndPreservesRequestWithoutClassifier(t *testing.T)
 		t.Fatal("failed mention changed selection")
 	}
 }
+
+func TestLeadingPathMentionReachesTheSelectedPersona(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "samantha"))
+	defer f.close(t)
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		return brain.Addressee{Kind: "none"}, nil
+	})
+	before := f.selector.Snapshot().PersonaID
+	for _, input := range []string{"@projects/obey-voice/ what is this", "@./README.md summarize it", "@santa/notes.md read this"} {
+		got, err := f.selector.Route(t.Context(), input, false)
+		if err != nil || got.Request != input || got.LocalReply != "" || got.Envelope.PersonaID != before {
+			t.Fatalf("%q: admission=%+v err=%v", input, got, err)
+		}
+	}
+	if _, err := f.selector.Route(t.Context(), "@missing help", false); err == nil {
+		t.Fatal("unknown mention without a slash was not refused")
+	}
+}
