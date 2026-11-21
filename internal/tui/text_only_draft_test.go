@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"github.com/ollama/ollama/api"
 )
 
@@ -28,7 +31,21 @@ type textOnlyChat struct {
 	sent  []api.ChatRequest
 }
 
+// noRecordings resolves no audio: these conversations are typed.
+type noRecordings struct{}
+
+func (noRecordings) ResolveAudio(context.Context, utterance.AudioRef) ([]byte, error) {
+	return nil, errors.New("no recording")
+}
+
 func newTextOnlyChat(t *testing.T) *textOnlyChat {
+	t.Helper()
+	return newOllamaChat(t, false)
+}
+
+// newOllamaChat builds the conversation on the ordinary Ollama provider, or on
+// the one a native-audio persona runs on.
+func newOllamaChat(t *testing.T, nativeAudio bool) *textOnlyChat {
 	t.Helper()
 	root := t.TempDir()
 	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
@@ -54,7 +71,12 @@ func newTextOnlyChat(t *testing.T) *textOnlyChat {
 	t.Cleanup(server.Close)
 	cfg := &config.Config{BrainProvider: "ollama", OllamaHost: server.URL, OllamaModel: "fixture", OllamaNumCtx: 8192, WorkDir: root, PromptsDir: filepath.Join(root, "prompts"), AgentName: "Venessa", MaxHistory: 20}
 	var err error
-	if c.brain, err = brain.NewOllama(cfg); err != nil {
+	if nativeAudio {
+		c.brain, err = brain.NewNativeOllama(t.Context(), cfg, server.Client(), noRecordings{})
+	} else {
+		c.brain, err = brain.NewOllama(cfg)
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
 	bus := events.NewBus()
@@ -137,6 +159,30 @@ func TestUnreadablePictureDraftIsRefusedWhileATextOnlyModelIsSelected(t *testing
 	send, _ := c.model.updateMedia(check())
 	if c.model.media.err == "" || send != nil || len(c.model.media.draft) != 1 || c.model.input.Value() != "What is on my screen?" {
 		t.Fatalf("an unreadable picture was not refused with its draft kept: err=%q", c.model.media.err)
+	}
+	if len(c.requests()) != 0 || len(c.brain.History()) != 0 {
+		t.Fatal("a refused picture reached the model or the record")
+	}
+}
+
+// A persona that takes native audio cannot be sent a picture at all: its turn
+// would fail after the draft was gone. The draft is refused while it can
+// still be changed.
+func TestPictureDraftIsRefusedForANativeAudioPersona(t *testing.T) {
+	c := newOllamaChat(t, true)
+	c.attach(t)
+	c.model.input.SetValue("What is on my screen?")
+	check := c.model.handleSubmit()
+	if check == nil {
+		t.Fatal("missing draft check")
+	}
+	send, _ := c.model.updateMedia(check())
+	if send != nil {
+		done, _ := send().(textTurnDoneMsg)
+		t.Fatalf("the draft was sent and its turn ended with: %v", done.err)
+	}
+	if !strings.Contains(c.model.media.err, "native audio") || len(c.model.media.draft) != 1 || c.model.input.Value() != "What is on my screen?" {
+		t.Fatalf("the draft was not refused and kept: err=%q", c.model.media.err)
 	}
 	if len(c.requests()) != 0 || len(c.brain.History()) != 0 {
 		t.Fatal("a refused picture reached the model or the record")

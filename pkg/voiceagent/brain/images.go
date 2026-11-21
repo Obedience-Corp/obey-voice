@@ -27,6 +27,11 @@ func (o *OllamaBrain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) 
 	return err
 }
 
+// ErrNativeImageInput refuses a picture for a persona that takes native audio.
+// Its requests carry recordings where a picture would go, so it can neither
+// view a picture nor hold one for another persona: its turn would fail.
+var ErrNativeImageInput = errors.New("this persona takes native audio and cannot be sent pictures; select a persona that views images")
+
 // ValidateNewImages checks pictures as they enter the conversation: how many
 // there are, and that each one loads. Whether this model can view them is not
 // asked. One that cannot answers without them, and they stay on the record
@@ -34,6 +39,9 @@ func (o *OllamaBrain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) 
 func (o *OllamaBrain) ValidateNewImages(ctx context.Context, refs []chatmedia.Ref) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if len(refs) > 0 && o.audioResolver != nil {
+		return ErrNativeImageInput
 	}
 	_, err := loadImageData(refs)
 	return err
@@ -44,6 +52,9 @@ func (o *OllamaBrain) ValidateNewImages(ctx context.Context, refs []chatmedia.Re
 func (o *OllamaBrain) ValidateAdmittedImages(ctx context.Context, refs []chatmedia.Ref) error {
 	if len(refs) == 0 {
 		return nil
+	}
+	if o.audioResolver != nil {
+		return ErrNativeImageInput
 	}
 	views, err := o.viewsImages(ctx)
 	if err != nil || !views {

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 )
 
 func TestWithheldPictureIsSaidOnceForEachPersona(t *testing.T) {
@@ -208,4 +210,20 @@ func TestNewPictureAdmission(t *testing.T) {
 	if err := (&Pipeline{Brain: &noImageInput{}}).ImageValidator()(t.Context(), good[:1]); err == nil || !strings.Contains(err.Error(), "does not support image input") {
 		t.Fatalf("a provider that would drop the picture: %v", err)
 	}
+	// A native-audio persona's turn would fail on the picture, so neither
+	// check lets one through to it.
+	textOnly.SetAudioResolver(silentMedia{})
+	native := &Pipeline{Brain: textOnly}
+	if err := native.ImageValidator()(t.Context(), good[:1]); !errors.Is(err, brain.ErrNativeImageInput) {
+		t.Fatalf("a new picture for a native-audio persona: %v", err)
+	}
+	if err := native.validateAdmittedImages(t.Context(), good[:1]); !errors.Is(err, brain.ErrNativeImageInput) {
+		t.Fatalf("a picture addressed to a native-audio persona: %v", err)
+	}
+}
+
+type silentMedia struct{}
+
+func (silentMedia) ResolveAudio(context.Context, utterance.AudioRef) ([]byte, error) {
+	return nil, errors.New("no recording")
 }
