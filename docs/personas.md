@@ -274,9 +274,10 @@ reply as before:
 - The message names a known persona other than the one answering, without
   needing a model to tell who it is for. A message naming the persona who is
   answering, naming nobody, or naming an unknown persona stops the reply.
-- The reply has reached the model: it is thinking, running tools or speaking.
-  If it is still being transcribed or admitted, it is stopped. If it is
-  speaking, its speech stops at once.
+- The reply's model request is running: the persona is thinking, running
+  tools, or still writing while it speaks. A spoken reply that is moved stops
+  speaking at once. A turn still being transcribed or admitted, and a reply
+  whose model has already finished, are stopped as before.
 - The answering persona is on Ollama. Claude, Codex, Cursor, Grok, Muse Spark
   and Obey replies are stopped as before.
 - Background work uses the conversation's own job delivery (not the
