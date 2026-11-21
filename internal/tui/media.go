@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -24,6 +26,16 @@ type mediaState struct {
 	started                                          time.Time
 	placed                                           map[mediaBox]int
 	wantSignature                                    string
+
+	// refused holds submissions whose turns were refused over their pictures
+	// after they left the input, oldest first, until the input is free.
+	refused []refusedDraft
+}
+
+// refusedDraft is the text and pictures of a refused submission, and why.
+type refusedDraft struct {
+	text, reason string
+	refs         []chatmedia.Ref
 }
 type mediaPreview struct {
 	preview chatmedia.Preview
@@ -346,6 +358,58 @@ func mediaSummary(r chatmedia.Ref) string {
 		label += " · GIF (model input: first frame)"
 	}
 	return label
+}
+
+// holdRefusedDraft keeps a submission whose turn was refused over its pictures
+// after it left the input, for instance when the message named a persona that
+// cannot take one. That turn sent and recorded nothing. The refusal is
+// reported here, and returnRefusedDraft gives the submission back.
+func (m *conversationModel) holdRefusedDraft(msg textTurnDoneMsg) bool {
+	if !pipeline.ImagesRefused(msg.err) || len(msg.refs) == 0 || msg.media != m.media.token {
+		return false
+	}
+	text := msg.input
+	if text == imageOnlyText {
+		text = ""
+	}
+	m.emit(events.Error{Message: msg.err.Error()})
+	if len(m.media.refused) > 0 || !m.inputFree() {
+		pictures := "picture"
+		if len(msg.refs) > 1 {
+			pictures = "pictures"
+		}
+		m.emit(events.Info{Message: "That message was not sent. It returns to the input with its " + pictures + " once the input is empty."})
+	}
+	m.media.refused = append(m.media.refused, refusedDraft{text: text, reason: msg.err.Error(), refs: msg.refs})
+	return true
+}
+
+// inputFree reports an input with no text and no pictures, and none being
+// imported or waiting to be sent. A draft being checked still holds its
+// pictures.
+func (m *conversationModel) inputFree() bool {
+	return !m.media.importing && len(m.media.draft) == 0 && len(m.media.pending) == 0 && strings.TrimSpace(m.input.Value()) == ""
+}
+
+// returnRefusedDraft gives the oldest held submission back once the input is
+// free, with the reason beside its pictures as for a draft refused before it
+// was sent. Whatever the user has started since is never joined to it.
+func (m *conversationModel) returnRefusedDraft() tea.Cmd {
+	if len(m.media.refused) == 0 || !m.inputFree() {
+		return nil
+	}
+	held := m.media.refused[0]
+	m.media.refused = m.media.refused[1:]
+	m.media.draft = append([]chatmedia.Ref(nil), held.refs...)
+	m.media.approved = false
+	m.media.err = held.reason
+	previous := m.input.Value()
+	m.input.SetValue(held.text)
+	m.syncEditorFromTextarea()
+	m.editor.resetUndo()
+	m.syncComposer(previous)
+	m.reflow()
+	return m.mediaCommand()
 }
 
 // A canceled barge-in must not lend its images to the next unrelated message.

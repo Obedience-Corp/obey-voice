@@ -264,4 +264,24 @@ func TestTurnRefusedOverItsPicturesIsMarked(t *testing.T) {
 	if ImagesRefused(errors.New("boom")) || ImagesRefused(nil) {
 		t.Fatal("an unrelated failure is marked as a refused picture")
 	}
+
+	// A turn canceled while its pictures are checked was interrupted, whatever
+	// the check then answers.
+	canceled, cancel := context.WithCancel(ctx)
+	err = (&Pipeline{Brain: &interruptedCheck{cancel: cancel}, Events: events.NewBus()}).RunTurnTextMode(canceled, "What is this?")
+	if err == nil || ImagesRefused(err) {
+		t.Fatalf("a canceled turn: err=%v refused=%v", err, ImagesRefused(err))
+	}
+}
+
+// interruptedCheck is a provider whose turn is canceled while it checks the
+// pictures.
+type interruptedCheck struct {
+	noImageInput
+	cancel context.CancelFunc
+}
+
+func (b *interruptedCheck) ValidateImages(context.Context, []chatmedia.Ref) error {
+	b.cancel()
+	return errors.New("the model could not be described")
 }

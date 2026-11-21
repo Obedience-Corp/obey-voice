@@ -9,7 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/internal/app"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -377,6 +376,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
 	m.keyOwnsTurn(false)
+	held := m.holdRefusedDraft(msg)
 	// Barge-in during a text turn (agent speaking after a prior typed message)
 	// sets turnVoiceCanceling + pendingText, then cancel drains here — same
 	// path as voice barge-in via handleVoiceTurnDone.
@@ -433,33 +433,11 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	}
 	m.talkTurnEnded()
 
-	if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
-		if m.restoreRefusedDraft(msg) {
-			return m.reconcileBackground()
-		}
+	if msg.err != nil && !errors.Is(msg.err, context.Canceled) && !held {
 		m.emit(events.Error{Message: msg.err.Error()})
 		m.emitAdmissionRetryNotice(msg.err, msg.input, msg.noticeEpoch)
 	}
 	return m.reconcileBackground()
-}
-
-// restoreRefusedDraft gives back a draft whose turn was refused over its
-// pictures after it was sent, for instance when the message named a persona
-// that cannot take one. That turn sent and recorded nothing, so the text and
-// pictures return with the reason beside them, as for a draft refused before
-// sending. A draft the user has started since is left alone.
-func (m *conversationModel) restoreRefusedDraft(msg textTurnDoneMsg) bool {
-	if !pipeline.ImagesRefused(msg.err) || len(msg.refs) == 0 || len(m.media.draft) > 0 || strings.TrimSpace(m.input.Value()) != "" {
-		return false
-	}
-	m.initMedia()
-	m.media.draft = append([]chatmedia.Ref(nil), msg.refs...)
-	m.media.err = msg.err.Error()
-	if msg.input != imageOnlyText {
-		m.input.SetValue(msg.input)
-	}
-	m.reflow()
-	return true
 }
 
 // requestCompact runs /compact when the pipeline is free, or cancels a

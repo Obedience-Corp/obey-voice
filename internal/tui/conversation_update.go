@@ -13,6 +13,12 @@ func voiceTickCmd() tea.Cmd {
 }
 
 func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.Cmd) {
+	// Runs last, so it sees what this message left in the input.
+	defer func() {
+		if back := next.returnRefusedDraft(); back != nil {
+			cmd = tea.Batch(cmd, back)
+		}
+	}()
 	if cmd, handled := m.updateMedia(msg); handled {
 		return m, cmd
 	}

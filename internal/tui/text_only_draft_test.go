@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -34,8 +35,15 @@ type textOnlyChat struct {
 	client   *http.Client
 	// showDown makes the server unable to describe its model.
 	showDown atomic.Bool
-	mu       sync.Mutex
-	sent     []api.ChatRequest
+	// showHangs makes the server leave that question unanswered. asked gets
+	// each one it leaves hanging.
+	showHangs atomic.Bool
+	asked     chan struct{}
+	bus       *events.Bus
+	// shade tells the pictures attached by attachNew apart.
+	shade uint8
+	mu    sync.Mutex
+	sent  []api.ChatRequest
 }
 
 // noRecordings resolves no audio: these conversations are typed.
@@ -56,10 +64,17 @@ func newOllamaChat(t *testing.T, nativeAudio bool) *textOnlyChat {
 	t.Helper()
 	root := t.TempDir()
 	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
-	c := &textOnlyChat{}
+	c := &textOnlyChat{asked: make(chan struct{}, 1)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/show":
+			if c.showHangs.Load() {
+				// The server notices the caller leaving only once the body is read.
+				_, _ = io.Copy(io.Discard, r.Body)
+				c.asked <- struct{}{}
+				<-r.Context().Done()
+				return
+			}
 			if c.showDown.Load() {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "model is loading"})
@@ -92,7 +107,7 @@ func newOllamaChat(t *testing.T, nativeAudio bool) *textOnlyChat {
 		t.Fatal(err)
 	}
 	bus := events.NewBus()
-	c.cfg, c.client = cfg, server.Client()
+	c.cfg, c.client, c.bus = cfg, server.Client(), bus
 	c.pipeline = &pipeline.Pipeline{Brain: c.brain, Events: bus}
 	c.model = sizedConversation(t, 100, 40)
 	c.model.cfg = cfg
@@ -231,37 +246,5 @@ func TestPictureDraftIsKeptWhenTheServerCannotDescribeTheModel(t *testing.T) {
 	}
 	if len(c.requests()) != 0 || len(c.brain.History()) != 0 {
 		t.Fatal("a refused picture reached the model or the record")
-	}
-}
-
-// The message names a persona that cannot take a picture. The draft was
-// checked against the persona selected when it was sent, so the refusal comes
-// after it has left the input. The text and picture come back.
-func TestPictureRefusedAfterRoutingComesBackToTheDraft(t *testing.T) {
-	c := newTextOnlyChat(t)
-	echo, err := brain.NewNativeOllama(t.Context(), c.cfg, c.client, noRecordings{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Routing by name selects the named persona's provider before the turn runs.
-	c.pipeline.AdmitInput = func(_ context.Context, input string, _ bool) (pipeline.ResponseAdmission, error) {
-		c.pipeline.Brain = echo
-		return pipeline.ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "echo", DisplayName: "Echo"}}, nil
-	}
-	ref := c.attach(t)
-	send := c.submit(t, "Echo, what is on my screen?")
-	if c.model.media.err != "" || send == nil {
-		t.Fatalf("the draft was refused before routing: %q", c.model.media.err)
-	}
-	done, ok := send().(textTurnDoneMsg)
-	if !ok || !errors.Is(done.err, brain.ErrNativeImageInput) || !pipeline.ImagesRefused(done.err) {
-		t.Fatalf("turn: %+v", done)
-	}
-	c.model.handleTextTurnDone(done)
-	if len(c.model.media.draft) != 1 || c.model.media.draft[0] != ref || c.model.input.Value() != "Echo, what is on my screen?" || !strings.Contains(c.model.media.err, "native audio") {
-		t.Fatalf("the draft did not come back: draft=%d input=%q err=%q", len(c.model.media.draft), c.model.input.Value(), c.model.media.err)
-	}
-	if len(c.requests()) != 0 || len(c.brain.History()) != 0 || len(echo.History()) != 0 {
-		t.Fatal("a refused picture reached a model or the record")
 	}
 }

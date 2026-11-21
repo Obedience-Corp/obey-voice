@@ -53,6 +53,15 @@ type refusedImages struct{ err error }
 func (e refusedImages) Error() string { return e.err.Error() }
 func (e refusedImages) Unwrap() error { return e.err }
 
+// refuseImages marks a turn that failed its picture check as refused. A turn
+// canceled during the check was interrupted, whatever the check then returned.
+func refuseImages(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return err
+	}
+	return refusedImages{err}
+}
+
 // ImagesRefused reports whether a turn failed only because its pictures were
 // refused before any request, so a host can give the user their draft back.
 func ImagesRefused(err error) bool {

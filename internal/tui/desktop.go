@@ -327,6 +327,10 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			c.setStatus(fmt.Sprintf("Unknown desktop action: %s", action.Kind), true)
 		}
+		// Actions drive the conversation directly, past its own Update.
+		if back := c.returnRefusedDraft(); back != nil {
+			cmd = tea.Batch(cmd, back)
+		}
 	} else if result, ok := msg.(desktopOutputResult); ok {
 		m.outputActionBusy = false
 		m.outputMessage, m.outputError = result.message, result.err != nil
