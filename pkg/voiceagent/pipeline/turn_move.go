@@ -269,7 +269,7 @@ func (a *Agency) movedHandOff(ctx context.Context, metrics *turnMetrics, task st
 		history := brain.CloneTurns(rec.movable.history.Canonical)
 		rec.mu.Unlock()
 		if spawnLacksTask(history, strings.TrimSpace(task)) {
-			return "", errors.New(spawnClarifier)
+			return "", errors.New("the reply handed work off without saying what the work is; ask again")
 		}
 		run, budget := a.spawnRun(ctx, started, task, task, history, rec.provider, w)
 		id := job.IDFromContext(jobCtx)

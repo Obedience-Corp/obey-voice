@@ -157,7 +157,7 @@ func (a *Agency) admitSpawn(ctx context.Context, tier config.WorkerTierName, sou
 		return w, err
 	}
 	if a.workEnabled() && w.plan == nil && providerName(w.cfg) != "ollama" {
-		return w, errors.New("Experimental work requires a local worker; paid and unknown providers are disabled.")
+		return w, errors.New("experimental work requires a local worker; paid and unknown providers are disabled")
 	}
 	return w, nil
 }
