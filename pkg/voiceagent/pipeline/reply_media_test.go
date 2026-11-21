@@ -155,7 +155,18 @@ func TestWorkerImagesSurviveAdmissionAndPersistReply(t *testing.T) {
 func TestForegroundImageReplyBecomesGroupCompletion(t *testing.T) {
 	_, provider, ref, _, _, release := imageWorkerFixture(t, true)
 	close(release)
-	p := &Pipeline{Brain: provider, Events: events.NewBus()}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{Brain: provider, TTS: &fakeTTS{}, Player: player, Events: events.NewBus()}
+	var image events.ReplyImagesReady
+	events.Subscribe(p.Events, func(e events.ReplyImagesReady) { image = e })
+	spoke := false
+	events.Subscribe(p.Events, func(events.GeneratingVoice) {
+		spoke = true
+		if len(image.Attachments) != 1 {
+			t.Error("typed reply began synthesis before delivering its image")
+		}
+	})
 	var response events.ResponseReady
 	events.Subscribe(p.Events, func(e events.ResponseReady) { response = e })
 	state := &completionState{}
@@ -163,7 +174,7 @@ func TestForegroundImageReplyBecomesGroupCompletion(t *testing.T) {
 	if err := p.RunTurnTextMode(ctx, "Inspect and return the animation"); err != nil {
 		t.Fatal(err)
 	}
-	if len(response.Attachments) != 1 || strings.Contains(response.Response, "![") {
+	if !spoke || len(response.Attachments) != 1 || len(image.Attachments) != 1 || image.Attachments[0] != response.Attachments[0] || strings.Contains(response.Response, "![") {
 		t.Fatalf("response %+v", response)
 	}
 	// The group completion consumes the same durable reply, not a second import.
@@ -197,21 +208,34 @@ func TestVoiceReplyImageSurvivesPlaybackInterruption(t *testing.T) {
 	defer player.Close()
 	capture := newFakeCapture()
 	bus := events.NewBus()
-	p := &Pipeline{Brain: provider, STT: &fakeSTT{text: "Show me a picture"}, Capture: capture, VAD: &fakeVAD{}, BargeInVAD: &fakeVAD{}, TTS: &fakeTTS{}, Player: player, Events: bus}
+	p := &Pipeline{VoiceFailedRouteRepair: true, Brain: provider, STT: &fakeSTT{text: "Show me a picture"}, Capture: capture, VAD: &fakeVAD{}, BargeInVAD: &fakeVAD{}, TTS: &fakeTTS{}, Player: player, Events: bus}
 	var ready events.ResponseReady
 	events.Subscribe(bus, func(e events.ResponseReady) { ready = e })
-	modelDone := make(chan struct{}, 1)
-	events.Subscribe(bus, func(events.ThinkingComplete) { modelDone <- struct{}{} })
+	images := make(chan events.ReplyImagesReady, 1)
+	events.Subscribe(bus, func(e events.ReplyImagesReady) { images <- e })
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { _, err := p.RunTurn(ctx); done <- err }()
-	for _, ch := range []<-chan struct{}{modelDone, player.StartedSignal()} {
-		select {
-		case <-ch:
-		case <-ctx.Done():
-			t.Fatal("no completed reply with active playback")
+	var early events.ReplyImagesReady
+	select {
+	case early = <-images:
+		if len(early.Attachments) != 1 || strings.Contains(early.Response, "![") {
+			t.Fatalf("early image reply: %+v", early)
 		}
+	case <-ctx.Done():
+		t.Fatal("no image during the spoken turn")
+	}
+	select {
+	case <-player.StartedSignal():
+	case <-ctx.Done():
+		t.Fatal("playback did not start")
+	}
+	if !player.IsPlaying() {
+		t.Fatal("the image waited for playback to finish")
+	}
+	if err := os.Remove(source); err != nil {
+		t.Fatal(err)
 	}
 	time.Sleep(bargeInArmDelay + 80*time.Millisecond)
 	for range bargeInMinSpeechChunks {
@@ -226,16 +250,13 @@ func TestVoiceReplyImageSurvivesPlaybackInterruption(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if !ready.Interrupted || len(ready.Attachments) != 1 || strings.Contains(ready.Response, "![") {
+	if !ready.Interrupted || len(ready.Attachments) != 1 || ready.Attachments[0] != early.Attachments[0] || ready.Response != early.Response {
 		t.Fatalf("interrupted chat reply: %+v", ready)
 	}
 	history := provider.History()
 	last := history[len(history)-1]
 	if len(last.Attachments) != 1 || last.Attachments[0] != ready.Attachments[0] {
 		t.Fatalf("recorded reply: %+v", last)
-	}
-	if err := os.Remove(source); err != nil {
-		t.Fatal(err)
 	}
 	if _, err := chatmedia.DefaultStore().Preview(last.Attachments[0]); err != nil {
 		t.Fatal(err)

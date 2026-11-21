@@ -11,7 +11,6 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
@@ -68,11 +67,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		<-observeDone
 		// Speech segmentation joins sentences with spaces. Keep standalone
 		// attachment lines intact in the chat version of a media reply.
-		if raw := original.String(); strings.Contains(raw, "![") {
-			cleaned := brain.CleanForVoice(raw)
-			if chatmedia.ReplyProse(cleaned) != cleaned {
-				response = cleaned
-			}
+		if reply := imageReplyText(original.String()); reply != "" {
+			response = reply
 		}
 	}()
 	// Raw segments: the voice gate needs the markdown fences CleanForVoice
@@ -561,7 +557,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		}()
 	}
 
-	for sentences != nil || pending > 0 || modelDone != nil {
+	var imageTextDone <-chan struct{}
+	for sentences != nil || pending > 0 || modelDone != nil || imageTextDone != nil {
 		// Pause sentence intake while the playback queue is full so the loop
 		// always returns to select and can drain playbackEvents. Blocking here
 		// to acquire a slot would deadlock the turn once the queue fills.
@@ -576,6 +573,12 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				return strings.TrimSpace(fullResponse.String()), interrupted, nil
 			}
 			return strings.TrimSpace(fullResponse.String()), interrupted, ctx.Err()
+
+		case <-imageTextDone:
+			imageTextDone = nil
+			if !interrupted && !metrics.degraded {
+				p.publishStreamImages(metrics, original.String(), repair)
+			}
 
 		case <-stalled:
 			if metrics.sinkAtArm == audio.SinkNone {
@@ -720,6 +723,12 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				if _, _, ok := repair.routedKind(); ok && p.Player != nil {
 					p.Player.Stop()
 				}
+			}
+			// The provider has committed its reply. Join the text observer
+			// before reading original, independently of queued speech.
+			// Synthetic announcements (no router) have no provider reply.
+			if result.Err == nil && repair != nil {
+				imageTextDone = observeDone
 			}
 			if result.Err != nil && !interrupted {
 				if errors.Is(result.Err, brain.ErrResponseLimit) || errors.Is(result.Err, brain.ErrResponseRepetition) {

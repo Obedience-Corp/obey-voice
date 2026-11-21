@@ -305,6 +305,12 @@ func isToolPromise(text string) bool {
 	return toolPromiseRE.MatchString(text)
 }
 
+// spokenToolPromise reads cleaned reply text as failed-route repair does,
+// without stage directions or line breaks, so every caller agrees on a promise.
+func spokenToolPromise(cleaned string) bool {
+	return isToolPromise(strings.Join(strings.Fields(stripVocalTags(cleaned)), " "))
+}
+
 // promiseRepairState tracks Layer 3 failed-route repair during streamResponse.
 // Repair runs after ThinkStream: if the model spoke a tool promise with no tool
 // events, drop TTS and classify spawn instead of ending the turn as chat.
@@ -328,11 +334,7 @@ func (r *promiseRepairState) shouldRepair(accumulated string) bool {
 	if r == nil || !r.enabled || r.toolsFired || r.spawn || routeKindSkipsBrain(r.kind) {
 		return false
 	}
-	cleaned := strings.TrimSpace(accumulated)
-	if cleaned == "" {
-		return false
-	}
-	if isToolPromise(cleaned) {
+	if spokenToolPromise(accumulated) {
 		r.spawn = true
 		r.kind = RouteSpawn
 		r.source = "repair"

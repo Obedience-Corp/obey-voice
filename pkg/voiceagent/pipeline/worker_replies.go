@@ -27,6 +27,8 @@ type workerReply struct {
 	Attachments []chatmedia.Ref
 	workerOrigin
 	Text string
+	// saved marks a held reply already offered to history when it was shown.
+	saved bool
 }
 
 func (a *Agency) discardPendingSpeech() {
@@ -45,20 +47,19 @@ func (a *Agency) discardPendingSpeech() {
 // Worker callbacks publish their own reply without borrowing the foreground
 // response's streaming buffers. History mutations belong to the serialized
 // host, at admission or an idle background turn.
-func (a *Agency) queueWorkerReply(id, text string, held bool) {
-	refs := a.workerReplyMedia(id)
+func (a *Agency) queueWorkerReply(id, text string, refs []chatmedia.Ref, held, shown bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	reply := workerReply{workerOrigin: a.workerOrigins[id], Text: text, Attachments: refs}
+	if shown && strings.TrimSpace(text) != "" {
+		a.workerReplies = append(a.workerReplies, reply)
+	}
 	if held {
 		if a.heldReplies == nil {
 			a.heldReplies = make(map[string]workerReply)
 		}
+		reply.saved = shown
 		a.heldReplies[id] = reply
-		return
-	}
-	if strings.TrimSpace(text) != "" {
-		a.workerReplies = append(a.workerReplies, reply)
 	}
 }
 

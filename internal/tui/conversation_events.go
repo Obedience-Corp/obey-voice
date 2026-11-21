@@ -259,6 +259,11 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.setVoiceMode(anim.ModeIdle)
 		m.setStatus("turn interrupted ("+e.Reason+")", false)
 
+	case events.ReplyImagesReady:
+		m.displayResponse(events.ResponseReady{Response: e.Response, Attachments: e.Attachments, Trace: e.Trace, Envelope: e.Envelope})
+		if e.Trace != nil && e.Trace.TurnID != nil {
+			m.media.shownTurn = *e.Trace.TurnID
+		}
 	case events.ResponseReady:
 		m.appendActivity("turn", "response ready", 0)
 		// Text-only / no-TTS turns never emit SpeakingComplete; clear the
@@ -271,44 +276,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			m.setVoiceMode(anim.ModeIdle)
 			m.setStatus("", false)
 		}
-		// Finalize the streamed turn: clear the live buffers first so they are
-		// not rendered twice. Thinking is stored on the agent item but hidden
-		// until showThink; the spoken bubble comes from e.Response when present.
-		thought, liveSpoken := m.takeStreamingTurn()
-		spoken := strings.TrimSpace(e.Response)
-		if spoken == "" {
-			spoken = liveSpoken
-		} else if t, b := textclean.SplitThink(spoken); t != "" {
-			if thought == "" {
-				thought = t
-			}
-			spoken = b
-		}
-		name := m.agentName
-		hosted := false
-		if e.Envelope != nil && e.Envelope.DisplayName != "" {
-			name = e.Envelope.DisplayName
-		}
-		if e.Envelope != nil {
-			hosted = e.Envelope.Hosted
-		}
-		if spoken != "" {
-			m.rememberAssistant(spoken)
-			m.attachAssistantMedia(e.Attachments)
-			m.appendAgentTurn(chatItem{name: name, hosted: hosted, think: thought, spoken: spoken, attachments: e.Attachments})
-		} else if e.Interrupted || e.Degraded {
-			m.refreshContent()
-			m.applyFollow()
-		} else if thought != "" {
-			// Thinking-only empty: keep the thought for Ctrl+K; stay off the
-			// thread while showThink is false so we do not paint a blank bubble.
-			m.appendActivity("model", fmt.Sprintf("thought %d chars", len(thought)), 0)
-			m.appendAgentTurn(chatItem{name: name, hosted: hosted, think: thought})
-		} else {
-			// Tool-only or empty model finishes must still leave a visible
-			// trail so "looking into it" never ends in total silence.
-			m.appendTranscript(dimStyle.Render("  (no reply — model finished without text)"))
-		}
+		m.displayResponse(e)
 
 	case events.ConversationCleared:
 		m.providerHealth = nil
@@ -474,5 +442,51 @@ func (m *conversationModel) handleEvent(e events.Event) {
 
 	case events.JobAborted:
 		m.jobAborted(e)
+	}
+}
+
+// displayResponse commits the bubble once, including when its images arrive
+// during playback and a worker posts another reply before the terminal event.
+func (m *conversationModel) displayResponse(e events.ResponseReady) {
+	if e.Trace != nil && e.Trace.TurnID != nil && *e.Trace.TurnID == m.media.shownTurn {
+		return
+	}
+	// Finalize the streamed turn: clear the live buffers first so they are
+	// not rendered twice. Thinking is stored on the agent item but hidden
+	// until showThink; the spoken bubble comes from e.Response when present.
+	thought, liveSpoken := m.takeStreamingTurn()
+	spoken := strings.TrimSpace(e.Response)
+	if spoken == "" {
+		spoken = liveSpoken
+	} else if t, b := textclean.SplitThink(spoken); t != "" {
+		if thought == "" {
+			thought = t
+		}
+		spoken = b
+	}
+	name := m.agentName
+	hosted := false
+	if e.Envelope != nil && e.Envelope.DisplayName != "" {
+		name = e.Envelope.DisplayName
+	}
+	if e.Envelope != nil {
+		hosted = e.Envelope.Hosted
+	}
+	if spoken != "" {
+		m.rememberAssistant(spoken)
+		m.attachAssistantMedia(e.Attachments)
+		m.appendAgentTurn(chatItem{name: name, hosted: hosted, think: thought, spoken: spoken, attachments: e.Attachments})
+	} else if e.Interrupted || e.Degraded {
+		m.refreshContent()
+		m.applyFollow()
+	} else if thought != "" {
+		// Thinking-only empty: keep the thought for Ctrl+K; stay off the
+		// thread while showThink is false so we do not paint a blank bubble.
+		m.appendActivity("model", fmt.Sprintf("thought %d chars", len(thought)), 0)
+		m.appendAgentTurn(chatItem{name: name, hosted: hosted, think: thought})
+	} else {
+		// Tool-only or empty model finishes must still leave a visible
+		// trail so "looking into it" never ends in total silence.
+		m.appendTranscript(dimStyle.Render("  (no reply — model finished without text)"))
 	}
 }

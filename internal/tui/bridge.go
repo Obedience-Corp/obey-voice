@@ -67,6 +67,7 @@ func (b *eventBridge) attach(bus *events.Bus) {
 	forward[events.SpeakingComplete](b, bus)
 	forward[events.SpeakingInterrupted](b, bus)
 	forward[events.TurnInterrupted](b, bus)
+	forward[events.ReplyImagesReady](b, bus)
 	forward[events.ResponseReady](b, bus)
 	forward[events.PersonaSelection](b, bus)
 	forward[events.DiscussionUpdated](b, bus)
@@ -103,7 +104,7 @@ func isDurableBridgeMsg(msg tea.Msg) bool {
 		return false
 	}
 	switch be.event.(type) {
-	case events.UserInput, events.InputTranscriptUpdated, events.ResponseReady, events.PersonaSelection, events.ConversationCleared, events.Error,
+	case events.UserInput, events.InputTranscriptUpdated, events.ReplyImagesReady, events.ResponseReady, events.PersonaSelection, events.ConversationCleared, events.Error,
 		events.ContinuityBudget, events.CompactionProgress,
 		events.ToolCallStarted, events.ToolCallFinished,
 		events.JobQueued, events.JobStarted, events.JobFinished, events.JobResultDelivered, events.JobFailed, events.JobAborted:

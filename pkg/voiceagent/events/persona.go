@@ -122,6 +122,9 @@ func Attribute(event Event, envelope ResponseEnvelope) Event {
 	case SpeakingInterrupted:
 		e.Envelope = &envelope
 		return e
+	case ReplyImagesReady:
+		e.Envelope = &envelope
+		return e
 	case ResponseReady:
 		e.Envelope = &envelope
 		return e
@@ -161,6 +164,8 @@ func ResponseIdentity(event Event) *ResponseEnvelope {
 	case SpeakingComplete:
 		envelope = e.Envelope
 	case SpeakingInterrupted:
+		envelope = e.Envelope
+	case ReplyImagesReady:
 		envelope = e.Envelope
 	case ResponseReady:
 		envelope = e.Envelope

@@ -102,9 +102,9 @@ func (m *conversationModel) jobFinished(e events.JobFinished) {
 	}
 	m.workerRepliesSeen[e.ID] = true
 	m.jobEnded(e.ID, "finished", " · done in "+roundSeconds(e.Elapsed), e.Elapsed)
-	// A reply that is queued to be spoken joins the thread when its speech
-	// starts, so reading order matches hearing order.
-	if !e.SpeechPending {
+	// Image results are readable immediately, even behind another speaker.
+	// Text-only results join the thread in spoken order.
+	if e.ShownAtFinish() {
 		m.showWorkerReply(e.ID, e.Summary, e.Envelope, e.Attachments)
 	}
 }

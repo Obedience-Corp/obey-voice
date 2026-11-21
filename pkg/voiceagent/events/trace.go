@@ -99,6 +99,8 @@ func TraceOf(event Event) *TraceContext {
 		return e.Trace
 	case ResponseDelta:
 		return e.Trace
+	case ReplyImagesReady:
+		return e.Trace
 	case ResponseReady:
 		return e.Trace
 	case ResponseSpeakableStarted:
@@ -196,6 +198,9 @@ func AttributeTrace(event Event, trace TraceContext) Event {
 		e.Trace = &trace
 		return e
 	case ResponseDelta:
+		e.Trace = &trace
+		return e
+	case ReplyImagesReady:
 		e.Trace = &trace
 		return e
 	case ResponseReady:

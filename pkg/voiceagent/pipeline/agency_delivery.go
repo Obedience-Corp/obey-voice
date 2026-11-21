@@ -28,8 +28,8 @@ type pendingDelivery struct {
 }
 
 // queueResult queues a finished job's answer for history and idle speech and
-// returns its JobFinished. An answer that will be spoken is held: the chat
-// and history take it when its speech starts, or when that speech is given up.
+// returns its JobFinished. History takes an answer when the chat shows it: at
+// once for image results, otherwise when playback starts or is given up.
 func (a *Agency) queueResult(id, task, result string, refs []chatmedia.Ref, elapsed time.Duration) events.JobFinished {
 	a.mu.Lock()
 	origin, ok := a.workerOrigins[id]
@@ -41,7 +41,7 @@ func (a *Agency) queueResult(id, task, result string, refs []chatmedia.Ref, elap
 	finishedEnvelope, deliveredEnvelope := origin.Envelope, origin.Envelope
 	finished := events.JobFinished{ID: id, Task: task, Summary: result, Attachments: refs, Elapsed: elapsed, Envelope: &finishedEnvelope, Scope: origin.Scope}
 	finished.SpeechPending = a.pipeline.canSpeak(primary)
-	a.queueWorkerReply(id, result, finished.SpeechPending)
+	a.queueWorkerReply(id, result, refs, finished.SpeechPending, finished.ShownAtFinish())
 	var delivered *events.JobResultDelivered
 	if finished.SpeechPending {
 		delivered = &events.JobResultDelivered{ID: id, Task: task, Summary: result, Attachments: refs, Envelope: &deliveredEnvelope, Scope: origin.Scope}
@@ -51,7 +51,8 @@ func (a *Agency) queueResult(id, task, result string, refs []chatmedia.Ref, elap
 }
 
 // deliverResult releases a held answer once: the chat shows it and history
-// may take it. Later calls for the same job do nothing.
+// may take it, unless it already did when shown. Later calls for the same job
+// do nothing.
 func (a *Agency) deliverResult(d pendingDelivery, spoken bool) {
 	if d.result == nil {
 		return
@@ -60,7 +61,7 @@ func (a *Agency) deliverResult(d pendingDelivery, spoken bool) {
 	reply, held := a.heldReplies[d.JobID]
 	if held {
 		delete(a.heldReplies, d.JobID)
-		if strings.TrimSpace(reply.Text) != "" {
+		if !reply.saved && strings.TrimSpace(reply.Text) != "" {
 			a.workerReplies = append(a.workerReplies, reply)
 		}
 	}

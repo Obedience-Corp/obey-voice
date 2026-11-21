@@ -70,6 +70,43 @@ func (p *Pipeline) finalizeMedia(metrics *turnMetrics, response string) events.R
 	metrics.mediaReply = &e
 	return e
 }
+
+// publishReplyMedia imports once. The terminal reply reuses the same stored assets.
+func (p *Pipeline) publishReplyMedia(metrics *turnMetrics, response string) string {
+	reply := p.finalizeMedia(metrics, response)
+	if len(reply.Attachments) > 0 {
+		p.emitResponse(metrics, events.ReplyImagesReady{Response: reply.Response, Attachments: reply.Attachments})
+	}
+	return reply.Response
+}
+
+func (p *Pipeline) publishStreamImages(metrics *turnMetrics, raw string, repair *promiseRepairState) {
+	if _, _, routed := repair.routedKind(); routed {
+		return
+	}
+	reply := imageReplyText(raw)
+	if reply == "" {
+		return
+	}
+	// A tool promise may still route to a worker as queued sentences reach
+	// the speech gate. Let the routed turn own its eventual chat response.
+	if repair.enabled && !repair.toolsFired && spokenToolPromise(reply) {
+		return
+	}
+	p.publishReplyMedia(metrics, reply)
+}
+
+// imageReplyText preserves standalone image directives that speech segmentation joins.
+func imageReplyText(raw string) string {
+	if strings.Contains(raw, "![") {
+		cleaned := brain.CleanForVoice(raw)
+		if chatmedia.ReplyProse(cleaned) != cleaned {
+			return cleaned
+		}
+	}
+	return ""
+}
+
 func (p *Pipeline) replyMediaEvent(metrics *turnMetrics, event events.Event) events.Event {
 	e, ok := event.(events.ResponseReady)
 	if !ok || len(e.Attachments) > 0 {

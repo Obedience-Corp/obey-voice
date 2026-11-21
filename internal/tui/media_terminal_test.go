@@ -139,7 +139,7 @@ func (r *mediaTerminalRunner) RunTurnTextMode(ctx context.Context, text string) 
 	r.refs = chatmedia.Input(ctx)
 	r.bus.Emit(events.UserInput{Text: text})
 	if r.agent {
-		r.bus.Emit(events.JobFinished{ID: "image-worker", Task: "Inspect and return images", Summary: r.reply, Attachments: r.output})
+		r.bus.Emit(events.JobFinished{ID: "image-worker", SpeechPending: true, Task: "Inspect and return images", Summary: r.reply, Attachments: r.output})
 		return nil
 	}
 	r.bus.Emit(events.ResponseReady{Response: "Two colored blocks and an animated bar are attached. The GIF's first frame is used for model input."})
