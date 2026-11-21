@@ -71,3 +71,10 @@ demo-agent-images:
     mkdir -p bin demos/frames
     go test -c -o bin/chat-media.test ./internal/tui
     vhs demos/agent-images.tape
+
+# Review a worker reply whose picture references are written inside its sentence.
+[no-cd]
+demo-agent-images-in-sentence:
+    mkdir -p bin
+    go test -c -o bin/chat-media.test ./internal/tui
+    vhs demos/agent-images-in-sentence.tape

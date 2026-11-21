@@ -226,6 +226,20 @@
       }
     },
     {
+      "path": "demos/agent-images-in-sentence.gif",
+      "source": "Project-produced UI recording. Deterministic provider and generated geometric image fixtures.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "a1eb5748ca5b0eb9580e5bead526b7aec5393983b27309f5b8c5180e7323e26a",
+      "review": {
+        "reviewer": "Claude",
+        "reviewed_at": "2026-11-21",
+        "content_evidence": "Regenerated with the real Bubble Tea terminal harness using deterministic geometric fixtures and disposable configuration. Inspected frames extracted at 0.3, 1.2, 2.2, 3.5, 10, 12.9, 14.5 and 15.6 s: the worker sentence, the Result and Animation captions, and the result.png and animated result.gif previews are visible, with no raw Markdown image reference, file path, user name or home directory. Selected-frame review, not every-frame inspection. No personal source screenshots, live model, or microphone used; see docs/chat-images.md#what-the-recordings-establish.",
+        "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
+      }
+    },
+    {
       "path": "demos/chat-images.gif",
       "source": "Project-produced UI recording. Deterministic provider and generated geometric image fixtures.",
       "disposition": "retain_public",
