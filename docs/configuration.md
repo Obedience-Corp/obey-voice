@@ -815,9 +815,11 @@ How each case is handled:
   group discussions and turns with tools disabled. Those turns never reach the
   routing request.
 
-The startup warmup sends the single-call request shape and skips the second,
-tools-free warmup, so turn 1 reuses the cached prefix. Each request is traced
-with the `route_reply` purpose.
+The startup warmup sends the single-call request shape twice, differing only
+in the user's words, instead of a routed and a tools-free request. Ollama's MLX
+runner resumes only from a point where an earlier request left the cached
+prompt; the second warmup leaves that point where turn 1's own words begin.
+Each request is traced with the `route_reply` purpose.
 
 The wording lives in its own prompt document, `tool-surface-single-call`,
 together with the route tool's description. Overriding `tool-surface-live` does

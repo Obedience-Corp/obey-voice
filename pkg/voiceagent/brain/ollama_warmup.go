@@ -82,11 +82,15 @@ func (o *OllamaBrain) WarmupTurn(ctx context.Context, opts StreamOptions) {
 	}
 	// Ollama rejects a chat with no user message (ollama#17778). The line sits
 	// after the prefix the first turn restores, so its words do not matter.
-	user := api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, "hi")}
-	messages := o.buildMessagesFrom(turnView{prompt: prompt, history: []api.Message{user}}, "", false, opts)
-	if opts.canHandOff() {
-		messages[0].Content += "\n\n" + systemPrompt(o.cfg, "live-background-work", nil)
+	build := func(words string) []api.Message {
+		user := api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, words)}
+		messages := o.buildMessagesFrom(turnView{prompt: prompt, history: []api.Message{user}}, "", false, opts)
+		if opts.canHandOff() {
+			messages[0].Content += "\n\n" + systemPrompt(o.cfg, "live-background-work", nil)
+		}
+		return messages
 	}
+	messages := build("hi")
 	// json_route asks for the route on the reply's own messages, without tools.
 	if sess != nil && sess.routerPolicy == RouterToolsRouteOnly && opts.RouteJSON && jsonRouteEligible(tools, messages) {
 		tools = nil
@@ -106,17 +110,22 @@ func (o *OllamaBrain) WarmupTurn(ctx context.Context, opts StreamOptions) {
 	req := o.chatRequest(messages, tools, options)
 	req.Stream = new(false)
 	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%v num_batch=%v prefix_chars=%d tools=%d\n", o.model, options["num_ctx"], options["num_batch"], len(messages[0].Content), len(tools))
-	// A single_call chat turn has no reply round to prime.
-	if err := o.sendWarmup(ctx, req); err != nil || len(req.Tools) == 0 || sess.singleCall {
+	if err := o.sendWarmup(ctx, req); err != nil || len(req.Tools) == 0 {
 		return
 	}
-	// The reply round sends the same prefix without tools. On Ollama's MLX
-	// runner, which resumes only from saved cache points, the routed request
-	// alone left no point the first reply could resume from once the prefix
-	// grew past about 1,800 tokens, and the reply re-read the whole prompt.
-	reply := *req
-	reply.Tools = nil
-	_ = o.sendWarmup(ctx, &reply)
+	// Ollama's MLX runner resumes only from a point where an earlier request
+	// left the cached prompt. The routed request alone left none that the
+	// first turn could use, and that turn re-read the whole prompt. Under
+	// route_only the reply round's tools-free request leaves one. A
+	// single_call turn has no reply round, so the second request differs from
+	// the first only in the user's words and leaves the point there.
+	second := *req
+	if sess.singleCall {
+		second.Messages = build("hello")
+	} else {
+		second.Tools = nil
+	}
+	_ = o.sendWarmup(ctx, &second)
 }
 
 func (o *OllamaBrain) sendWarmup(ctx context.Context, req *api.ChatRequest) error {

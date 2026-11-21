@@ -82,16 +82,12 @@ func TestPersonaRouterDecidesItsTurnsAndWarmup(t *testing.T) {
 	p.AdmitInput = selector.Route
 
 	selector.Warmup(t.Context())
-	select {
-	case <-warmed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("no warmup request")
-	}
-	// A second, tools-free warmup would leave the reply's prefix cached last.
-	select {
-	case <-warmed:
-		t.Fatal("single_call sent a reply-shaped warmup")
-	case <-time.After(300 * time.Millisecond):
+	for range 2 {
+		select {
+		case <-warmed:
+		case <-time.After(5 * time.Second):
+			t.Fatal("want two warmup requests")
+		}
 	}
 	turn := func(text string) []api.ChatRequest {
 		t.Helper()
@@ -119,9 +115,16 @@ func TestPersonaRouterDecidesItsTurnsAndWarmup(t *testing.T) {
 		t.Fatalf("single_call turn sent %d request(s); tools %+v", len(first), first[0].Tools)
 	}
 	mu.Lock()
-	warmup := chats[0]
+	warmups := append([]api.ChatRequest(nil), chats[:2]...)
 	mu.Unlock()
-	samePrefix(t, "single_call", warmup, first[0])
+	// Both warmups carry the turn's prefix and differ only in the user's words,
+	// so the cache keeps a resume point where turn 1's own words begin.
+	for i, warm := range warmups {
+		samePrefix(t, "single_call", warm, first[0])
+		if len(warm.Messages) != 2 || (i == 1 && warm.Messages[1].Content == warmups[0].Messages[1].Content) {
+			t.Fatalf("warmup %d messages: %+v", i, warm.Messages)
+		}
+	}
 	if !strings.Contains(first[0].Messages[0].Content, "answer directly in plain speech") {
 		t.Fatal("the system prompt does not describe single_call")
 	}
