@@ -160,6 +160,7 @@ type grounding struct {
 	date   string
 	brain  string
 	models []InstalledModel
+	paths  string
 }
 
 // InstalledModel is one model a brain's server reports as installed.
@@ -189,6 +190,9 @@ Environment:
 - Hostname: %s
 - OS: %s
 - All file paths are relative to the working directory unless absolute`, env.User, workDir, campaignLine(workDir), env.Hostname, env.OS)
+	if g.paths != "" {
+		fmt.Fprintf(&b, "\n- %s", g.paths)
+	}
 	if g.brain != "" {
 		fmt.Fprintf(&b, "\n- Running on: %s", g.brain)
 	}
@@ -281,6 +285,17 @@ func campaignLine(workDir string) string {
 		return c.Describe()
 	}
 	return "none — the working directory is not inside a campaign"
+}
+
+// pathMentionsLine tells the model what an @path in the user's message is
+// relative to: the same root the chat composer completes against. Without a
+// config there is no conversation to complete in.
+func pathMentionsLine(cfg *config.Config, workDir string) string {
+	if cfg == nil {
+		return ""
+	}
+	root, _ := config.MentionRoot(cfg, workDir)
+	return strings.TrimSpace(systemPrompt(cfg, "path-mentions", map[string]string{"mention_root": root}))
 }
 
 // SkillContext renders the progressive-disclosure skills menu for the Ollama

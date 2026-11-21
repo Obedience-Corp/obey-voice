@@ -1,0 +1,14 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: path-mentions
+  kind: system
+  system_prompt: >-
+    An @path in the user's message, such as @projects/app/ or @./README.md,
+    names a file or directory relative to {mention_root}; it is a path, not an
+    agent address.
+metadata:
+  version: 1
+  description: >-
+    One environment-block line saying what @path mentions in chat are relative
+    to. Runtime value: mention_root (the campaign root of the conversation's
+    default directory, or that directory outside a campaign).

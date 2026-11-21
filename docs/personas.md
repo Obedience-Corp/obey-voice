@@ -266,7 +266,8 @@ system documents are shown as templates, with runtime placeholders intact.
 `application.yaml` groups app capabilities into named sections. `group-chat`,
 `group-available`, `group-spoken`, `group-reply`, `peer-reply`, and
 `conversation-history` own conversation context; `addressee` and `acoustic-name`
-own private routing instructions. Metadata in each file names its runtime
+own private routing instructions; `path-mentions` says what an `@path` in a chat
+message is relative to. Metadata in each file names its runtime
 variables. Go supplies values such as the current persona, public roster and
 Calibre enablement. Edits take effect on the next relevant request; invalid YAML or
 unknown placeholders report a warning and use the packaged YAML. Unchanged

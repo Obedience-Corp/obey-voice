@@ -37,7 +37,7 @@ func TestMentionRootIsTheCampaignRootOfTheDefaultDirectory(t *testing.T) {
 		t.Fatal("test needs personas with different directories")
 	}
 	for name, cfg := range map[string]*Config{"unbound": base, "alpha": alpha, "beta": beta} {
-		got, campaign := MentionRoot(cfg)
+		got, campaign := MentionRoot(cfg, "")
 		if canonicalDir(t, got) != root || !campaign {
 			t.Fatalf("%s: MentionRoot = %q, %v; want %q, true", name, got, campaign, root)
 		}
@@ -53,8 +53,23 @@ func TestMentionRootOutsideACampaignIsTheDefaultDirectory(t *testing.T) {
 	if err := BindPersonaDirectory(cfg, "alpha", pinned); err != nil {
 		t.Fatal(err)
 	}
-	got, campaign := MentionRoot(cfg)
+	got, campaign := MentionRoot(cfg, "")
 	if canonicalDir(t, got) != launch || campaign {
 		t.Fatalf("MentionRoot = %q, %v; want %q, false", got, campaign, launch)
+	}
+}
+
+func TestMentionRootFallsBackToTheGivenWorkDir(t *testing.T) {
+	root := writeCampaignMarker(t, canonicalDir(t, t.TempDir()), validMarker)
+	nested := filepath.Join(root, "docs")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, campaign := MentionRoot(&Config{}, nested); got != root || !campaign {
+		t.Fatalf("MentionRoot = %q, %v; want %q, true", got, campaign, root)
+	}
+	outside := canonicalDir(t, t.TempDir())
+	if got, campaign := MentionRoot(nil, outside); got != outside || campaign {
+		t.Fatalf("MentionRoot = %q, %v; want %q, false", got, campaign, outside)
 	}
 }

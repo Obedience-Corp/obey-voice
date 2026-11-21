@@ -91,12 +91,12 @@ func TestOllamaEnvironmentBlockIsByteStableAcrossTurnsAndListOrder(t *testing.T)
 	}
 }
 
-// environmentLines returns the block's lines; the working directory differs
-// between brains built from separate temp configs.
+// environmentLines returns the block's lines; the working directory, and the
+// lines derived from it, differ between brains built from separate temp configs.
 func environmentLines(prompt string) string {
 	var keep []string
 	for line := range strings.SplitSeq(prompt, "\n") {
-		if strings.HasPrefix(line, "- ") && !strings.HasPrefix(line, "- Working directory:") && !strings.HasPrefix(line, "- Campaign:") {
+		if strings.HasPrefix(line, "- ") && !strings.HasPrefix(line, "- Working directory:") && !strings.HasPrefix(line, "- Campaign:") && !strings.HasPrefix(line, "- An @path") {
 			keep = append(keep, line)
 		}
 	}

@@ -261,6 +261,13 @@ rather than assuming:
 - Campaign: My_Tools (root: /Users/you/Dev/My_Tools)
 ```
 
+The block also says what an `@path` typed in the chat box is relative to: the
+campaign root of the conversation's starting directory, or that directory
+outside a campaign. It is the same root the composer completes `@` against, so
+`@projects/app/` means one place whichever persona answers. The wording is the
+`path-mentions` prompt document (`prompts/system/path-mentions.yaml`), with the
+root supplied as `{mention_root}`.
+
 ### The environment block
 
 Every provider's system prompt carries the same `Environment:` block right
