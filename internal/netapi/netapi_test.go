@@ -21,6 +21,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -611,6 +612,10 @@ func TestEncodeEventEnvelopes(t *testing.T) {
 		{
 			events.ResponseReady{Response: "hi", Interrupted: true},
 			map[string]any{"type": "response_ready", "response": "hi", "interrupted": true},
+		},
+		{
+			events.ReplyImagesReady{Response: "A diagram.", Attachments: []chatmedia.Ref{{ID: "diagram", Name: "diagram.png"}}},
+			map[string]any{"type": "reply_images_ready", "response": "A diagram."},
 		},
 		{
 			events.ThinkingComplete{Response: "r", Elapsed: 1500 * time.Millisecond},

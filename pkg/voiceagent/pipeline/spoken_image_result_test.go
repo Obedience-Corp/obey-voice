@@ -3,6 +3,7 @@ package pipeline
 import (
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -152,9 +153,8 @@ func shownImageResultReachesHistory(t *testing.T, skipped bool) {
 	}
 }
 
-// A text-only result stays out of history until its speech starts, while a
-// shown image result held beside it is saved at once. Saved order follows
-// what the user saw and heard.
+// Results held behind speech are saved in the order the chat shows them:
+// image results when they finish, a text-only result when its speech starts.
 func TestHeldTextAndImageResultsKeepShownOrder(t *testing.T) {
 	player := newFakePlayer(time.Millisecond)
 	defer player.Close()
@@ -163,25 +163,69 @@ func TestHeldTextAndImageResultsKeepShownOrder(t *testing.T) {
 	if err := p.BeginConversationIdentity("mixed-held"); err != nil {
 		t.Fatal(err)
 	}
+	var mu sync.Mutex
+	var shown, spoken []string
+	delivered := make(chan struct{}, 3)
+	p.Events.SubscribeAll(func(e events.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch e := e.(type) {
+		case events.JobFinished:
+			if e.ShownAtFinish() {
+				shown = append(shown, e.Summary)
+			}
+		case events.JobResultDelivered:
+			if len(e.Attachments) == 0 {
+				shown = append(shown, e.Summary)
+			}
+			delivered <- struct{}{}
+		case events.SpeakingStarted:
+			spoken = append(spoken, e.Text)
+		}
+	})
 	a := NewAgency(p, nil, nil, &config.Config{}, nil)
 	p.Agency = a
 	p.incActiveTurn()
-	text := a.queueResult("text", "t", "Text result.", nil, 0)
-	image := a.queueResult("image", "i", "Image result.", []chatmedia.Ref{{ID: "pic"}}, 0)
-	if !text.SpeechPending || !image.SpeechPending {
-		t.Fatalf("results not held for speech: %+v %+v", text, image)
+	for _, r := range []struct {
+		id, text string
+		refs     []chatmedia.Ref
+	}{
+		{"a", "First image.", []chatmedia.Ref{{ID: "a"}}},
+		{"b", "Text result.", nil},
+		{"c", "Second image.", []chatmedia.Ref{{ID: "c"}}},
+	} {
+		a.emitJobTrace(r.id, a.queueResult(r.id, "task", r.text, r.refs, 0))
 	}
 	if err := p.commitWorkerReplies(); err != nil {
 		t.Fatal(err)
 	}
-	if got := b.Log(); !slices.Equal(got, []string{"appended: Image result.", "media: Image result. [pic]"}) {
-		t.Fatalf("history while held = %v, want only the shown image result", got)
+	wantHeld := []string{"appended: First image.", "media: First image. [a]", "appended: Second image.", "media: Second image. [c]"}
+	if got := b.Log(); !slices.Equal(got, wantHeld) {
+		t.Fatalf("history while held = %v, want only the shown image results", got)
 	}
-	a.discardPendingSpeech()
+	p.decActiveTurn()
+	for range 3 {
+		select {
+		case <-delivered:
+		case <-time.After(3 * time.Second):
+			t.Fatal("held speech did not resolve")
+		}
+	}
 	if err := p.commitWorkerReplies(); err != nil {
 		t.Fatal(err)
 	}
-	if got := b.Log(); !slices.Equal(got, []string{"appended: Image result.", "media: Image result. [pic]", "appended: Text result."}) {
-		t.Fatalf("history = %v", got)
+	mu.Lock()
+	defer mu.Unlock()
+	if want := []string{"First image.", "Text result.", "Second image."}; !slices.Equal(spoken, want) {
+		t.Fatalf("spoken = %v, want %v", spoken, want)
+	}
+	var saved []string
+	for _, line := range b.Log() {
+		if text, ok := strings.CutPrefix(line, "appended: "); ok {
+			saved = append(saved, text)
+		}
+	}
+	if !slices.Equal(saved, shown) || len(saved) != 3 {
+		t.Fatalf("history order %v, chat order %v", saved, shown)
 	}
 }

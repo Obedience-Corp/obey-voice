@@ -90,7 +90,7 @@ func (p *Pipeline) publishStreamImages(metrics *turnMetrics, raw string, repair 
 	}
 	// A tool promise may still route to a worker as queued sentences reach
 	// the speech gate. Let the routed turn own its eventual chat response.
-	if repair.enabled && !repair.toolsFired && isToolPromise(strings.Join(strings.Fields(reply), " ")) {
+	if repair.enabled && !repair.toolsFired && spokenToolPromise(reply) {
 		return
 	}
 	p.publishReplyMedia(metrics, reply)

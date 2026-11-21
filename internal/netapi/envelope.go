@@ -169,7 +169,8 @@ func encodeEvent(e events.Event) map[string]any {
 		env["reason"] = e.Reason
 		env["since_playback_start_ms"] = ms(e.SincePlaybackStart)
 	case events.ReplyImagesReady:
-		env["response"], env["attachments"] = e.Response, e.Attachments
+		// Like response_ready: remote clients cannot fetch stored images.
+		env["response"] = e.Response
 	case events.ResponseReady:
 		env["response"] = e.Response
 		env["interrupted"] = e.Interrupted
