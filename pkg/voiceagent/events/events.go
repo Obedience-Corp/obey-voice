@@ -724,6 +724,9 @@ type JobFinished struct {
 	// SpeechPending means Summary is queued to be spoken. Display image
 	// results immediately and text-only results at JobResultDelivered.
 	SpeechPending bool
+	// CutShort means Summary is only the part of the reply that arrived
+	// before it failed; the reason is reported as an Error.
+	CutShort bool `json:"cut_short,omitempty"`
 }
 
 func (e JobFinished) eventType() string { return "job_finished" }

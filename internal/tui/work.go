@@ -102,7 +102,11 @@ func (m *conversationModel) jobFinished(e events.JobFinished) {
 		m.workerRepliesSeen = make(map[string]bool)
 	}
 	m.workerRepliesSeen[e.ID] = true
-	m.jobEnded(e.ID, "finished", " · done in "+roundSeconds(e.Elapsed), e.Elapsed)
+	suffix := " · done in " + roundSeconds(e.Elapsed)
+	if e.CutShort {
+		suffix += " · cut short"
+	}
+	m.jobEnded(e.ID, "finished", suffix, e.Elapsed)
 	// Image results are readable immediately, even behind another speaker.
 	// Text-only results join the thread in spoken order.
 	if e.ShownAtFinish() {

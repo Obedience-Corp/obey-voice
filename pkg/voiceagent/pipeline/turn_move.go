@@ -224,7 +224,7 @@ func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *tra
 			start, end := a.foldingToolHooks(id)
 			p.markMoved(rec, id, partial, workDir, start, end)
 		},
-		Run: p.drainMoved(rec, stream, carried, handOff),
+		Run: p.drainMoved(rec, stream, partial != "", carried, handOff),
 	})
 	if err != nil {
 		origin.releaseVoice()
@@ -362,7 +362,7 @@ func (w *idleWatch) stop() bool {
 // drainMoved is a moved request's job: it reads the rest of the stream and
 // returns the text the turn had not read, or runs the work the reply handed
 // off.
-func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, carried string, handOff func(context.Context, config.WorkerTierName) (string, error)) func(context.Context) (string, error) {
+func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, kept bool, carried string, handOff func(context.Context, config.WorkerTierName) (string, error)) func(context.Context) (string, error) {
 	return func(jobCtx context.Context) (string, error) {
 		idle := p.watchMovedIdle(rec)
 		var rest strings.Builder
@@ -384,25 +384,56 @@ func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, ca
 				idle.touch()
 			}
 		}
-		result := <-stream.Done
+		result, ok := <-stream.Done
+		if !ok {
+			result.Err = errors.New("provider ended without a result")
+		}
 		stalled := idle.stop()
 		if err := jobCtx.Err(); err != nil {
 			return "", err
 		}
+		failure := result.Err
 		if stalled {
-			return "", fmt.Errorf("the model sent nothing for %s, so the reply was stopped", idle.limit)
+			failure, result.Recovered = fmt.Errorf("the model sent nothing for %s, so the reply was stopped", idle.limit), false
 		}
-		if result.Err != nil && !result.Recovered {
-			return "", result.Err
-		}
+		id := job.IDFromContext(jobCtx)
 		switch kind := routeKindFromBrain(result.Route); {
-		case kind == RouteSpawn:
+		case kind == RouteSpawn && (failure == nil || result.Recovered):
+			if failure != nil {
+				p.emit(events.Error{Stage: "brain", Message: id + ": " + failure.Error()})
+			}
 			return handOff(jobCtx, result.RouteTier)
-		case routeKindSkipsBrain(kind):
+		case routeKindSkipsBrain(kind) && failure == nil:
 			return "", fmt.Errorf("the reply asked to %s, which only works in the live conversation; ask again", result.Route)
 		}
-		return p.finishMovedText(jobCtx, rec, carried+rest.String())
+		text, err := p.finishMovedText(jobCtx, rec, carried+rest.String())
+		if err != nil {
+			return "", err
+		}
+		if failure != nil {
+			if strings.TrimSpace(text) == "" {
+				return "", fmt.Errorf("the reply ended before the rest of it arrived: %w", failure)
+			}
+			// Like a live reply that fails partway, the part that arrived is
+			// delivered and saved as unfinished, and the reason is reported.
+			p.Agency.noteIncomplete(id, failure)
+			p.emit(events.Error{Stage: "brain", Message: id + ": the reply was cut short: " + failure.Error()})
+			return text, nil
+		}
+		if strings.TrimSpace(text) == "" && !kept {
+			return "", errors.New("the reply ended without any text")
+		}
+		return text, nil
 	}
+}
+
+// noteIncomplete records that job id's reply ended before it was finished.
+func (a *Agency) noteIncomplete(id string, reason error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	origin := a.workerOrigins[id]
+	origin.incomplete = reason
+	a.workerOrigins[id] = origin
 }
 
 // finishMovedText gives a moved reply what a worker's answer gets before it

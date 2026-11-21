@@ -286,6 +286,13 @@ before handing off is not part of it. A moved reply that ends by asking to narra
 fails its job with a line saying to ask again, since narration needs the live
 conversation.
 
+If the moved reply fails partway, as a live reply can, the part that arrived
+is still delivered as that persona's reply and spoken in her voice, and the
+reason is shown as an error. The reply is saved marked unfinished, as an
+interrupted live reply is, and its job row says "cut short". If nothing more
+arrived before the failure, or the reply ended with no text at all, the job
+fails with the reason instead.
+
 The turn moves only when all of these hold; otherwise the message stops the
 reply as before:
 
@@ -305,9 +312,9 @@ reply as before:
 Only typed messages move a turn. The talk key and the open microphone still
 stop the reply. A moved reply counts as a running job: it starts at once even
 when `voice_worker_max_concurrent` is reached, and later jobs queue behind it.
-It keeps the limit a live reply has, and no other: it is stopped as a failed
-job once the model has sent nothing, no text, thinking or tool activity, for
-three minutes, and `voice_worker_job_budget` does not
+It keeps the limit a live reply has, and no other: it is stopped once the
+model has sent nothing, no text, thinking or tool activity, for three minutes,
+which is handled like any other failure partway (see above), and `voice_worker_job_budget` does not
 apply to it, so a move never shortens how long the persona may work. Work it
 hands off is held to the limits a spawned job has. Closing the conversation
 stops it. If the persona you named cannot take over, the moved reply is

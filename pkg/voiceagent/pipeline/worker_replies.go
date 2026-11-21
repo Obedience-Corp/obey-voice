@@ -24,6 +24,9 @@ type workerOrigin struct {
 	admission map[string]string
 	// continued marks a job that continues a reply moved off the live turn.
 	continued bool
+	// incomplete is why such a reply ended before it was finished; its
+	// result is the part that arrived.
+	incomplete error
 }
 type workerReply struct {
 	Attachments []chatmedia.Ref
@@ -105,6 +108,8 @@ func (p *Pipeline) commitWorkerReplies() error {
 		writer, supportsMedia := p.Brain.(brain.ReplyMediaWriter)
 		if len(reply.Attachments) > 0 && !supportsMedia {
 			writeErr = fmt.Errorf("provider cannot persist worker image replies")
+		} else if reply.incomplete != nil {
+			writeErr = p.appendIncompleteReply(p.Brain, reply.Text, identity, brain.IncompleteDisposition(reply.incomplete))
 		} else {
 			writeErr = p.appendReply(p.Brain, reply.Text, identity, reply.Attachments)
 		}
@@ -128,6 +133,24 @@ func (p *Pipeline) commitWorkerReplies() error {
 		}
 	}
 	return nil
+}
+
+// appendIncompleteReply records a reply that ended before it was finished
+// with its disposition, as a stopped live reply is recorded, where the
+// provider's history can carry one.
+func (p *Pipeline) appendIncompleteReply(provider brain.Provider, text string, identity *brain.TurnIdentity, disposition string) error {
+	turn := assistantTurn(text, identity, time.Now().UTC())
+	turn.Disposition = disposition
+	if continuity, ok := provider.(brain.ContinuityTransferProvider); ok {
+		return appendContinuityHistory(continuity, []brain.Turn{turn})
+	}
+	if t := p.transcriptFor(provider); t != nil {
+		if err := appendResponse(provider, text, identity); err != nil {
+			return err
+		}
+		return p.appendTranscript(t, turn)
+	}
+	return p.appendReply(provider, text, identity, nil)
 }
 
 // Capture only on the worker's own call stack. Reading a provider's history

@@ -39,7 +39,7 @@ func (a *Agency) queueResult(id, task, result string, refs []chatmedia.Ref, elap
 		primary = origin.Voices.primary
 	}
 	finishedEnvelope, deliveredEnvelope := origin.Envelope, origin.Envelope
-	finished := events.JobFinished{ID: id, Task: task, Summary: result, Attachments: refs, Elapsed: elapsed, Envelope: &finishedEnvelope, Scope: origin.Scope}
+	finished := events.JobFinished{ID: id, Task: task, Summary: result, Attachments: refs, Elapsed: elapsed, Envelope: &finishedEnvelope, Scope: origin.Scope, CutShort: origin.incomplete != nil}
 	finished.SpeechPending = a.pipeline.canSpeak(primary)
 	a.queueWorkerReply(id, result, refs, finished.SpeechPending, finished.ShownAtFinish())
 	var delivered *events.JobResultDelivered

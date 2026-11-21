@@ -30,11 +30,16 @@ type workingBrain struct {
 	held    chan struct{}
 	fail    error
 	route   string
-	before  []string
-	last    string
-	trickle int
-	steps   int
-	gap     time.Duration
+	// failText is sent before the request ends with fail, reported as
+	// recovered when recovered is set; noResult ends it with no result.
+	failText  string
+	recovered bool
+	noResult  bool
+	before    []string
+	last      string
+	trickle   int
+	steps     int
+	gap       time.Duration
 
 	mu        sync.Mutex
 	turns     []brain.Turn
@@ -119,8 +124,14 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 		if opts.OnToolEnd != nil {
 			opts.OnToolEnd(brain.ToolResult{ToolCall: brain.ToolCall{ID: "call-2", Name: "read_file"}})
 		}
-		if b.fail != nil {
-			done <- brain.StreamResult{Err: b.fail}
+		if b.fail != nil || b.noResult {
+			if b.failText != "" && !send(b.failText) {
+				done <- brain.StreamResult{Err: ctx.Err()}
+				return
+			}
+			if !b.noResult {
+				done <- brain.StreamResult{Err: b.fail, Recovered: b.recovered, Route: b.route}
+			}
 			return
 		}
 		if b.route != "" {
@@ -227,6 +238,7 @@ func (b *workingBrain) requestLog() []string {
 type movingConversation struct {
 	readMu sync.Mutex
 	read   strings.Builder
+	errs   []events.Error
 	t      *testing.T
 	p      *Pipeline
 	jobs   *job.Table
@@ -264,6 +276,11 @@ func newMovingConversation(t *testing.T, opts ...job.Option) *movingConversation
 		c.readMu.Unlock()
 	})
 	events.Subscribe(c.p.Events, func(e events.TurnMetrics) { keep(e) })
+	events.Subscribe(c.p.Events, func(e events.Error) {
+		c.readMu.Lock()
+		c.errs = append(c.errs, e)
+		c.readMu.Unlock()
+	})
 	return c
 }
 
@@ -867,5 +884,152 @@ func TestMovedVoiceReplyKeepsWhatItFinishedSaying(t *testing.T) {
 				t.Fatalf("kept %q + delivered %q", ready.Response, finished.Summary)
 			}
 		})
+	}
+}
+
+// endMovedReply moves Anika's held reply, switches to Obey with voices of
+// their own, releases the reply, and returns how its job ended and Obey's
+// provider, which takes what the job delivers.
+func endMovedReply(t *testing.T, c *movingConversation) (events.Event, *workingBrain, *fakeTTS) {
+	t.Helper()
+	anikaVoice := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	t.Cleanup(func() { _ = player.Close() })
+	c.p.ReplaceTTS(anikaVoice, nil)
+	c.p.Player = player
+	c.holdTurn()
+	c.move()
+	obey := newWorkingBrain()
+	if err := c.p.ReplaceConversationBrain(obey, nil, &config.Config{AgentName: "Obey", ActivePersona: "obey"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	c.p.ReplaceTTS(&fakeTTS{}, nil)
+	close(c.anika.release)
+	ended := c.next(func(e events.Event) bool {
+		switch e.(type) {
+		case events.JobFinished, events.JobFailed, events.JobAborted:
+			return true
+		}
+		return false
+	})
+	return ended, obey, anikaVoice
+}
+
+func (c *movingConversation) errorEvent(t *testing.T, contains string) events.Error {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.readMu.Lock()
+		errs := slices.Clone(c.errs)
+		c.readMu.Unlock()
+		for _, err := range errs {
+			if strings.Contains(err.Message, contains) {
+				return err
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no error mentioning %q among %+v", contains, errs)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// A moved reply that fails partway after some text arrived, whether the
+// provider recovered or not, delivers that text as its persona's unfinished
+// reply, speaks it in her voice, saves it marked unfinished, and reports why.
+func TestMovedReplyCutShortDeliversWhatArrivedAndSaysWhy(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		recovered bool
+		noResult  bool
+		reason    string
+	}{
+		{"recovered", true, false, "stream broke"},
+		{"not recovered", false, false, "stream broke"},
+		{"ended without a result", false, true, "without a result"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newMovingConversation(t)
+			if !tc.noResult {
+				c.anika.fail = errors.New("stream broke")
+			}
+			c.anika.noResult, c.anika.recovered, c.anika.failText = tc.noResult, tc.recovered, "Found three"
+			ended, obey, voice := endMovedReply(t, c)
+			finished, ok := ended.(events.JobFinished)
+			if !ok || !finished.CutShort || finished.Summary != " Found three" || finished.Envelope.PersonaID != "anika" {
+				t.Fatalf("the cut-short reply ended as %+v", ended)
+			}
+			if err := c.errorEvent(t, tc.reason); !strings.Contains(err.Message, finished.ID) || !strings.Contains(err.Message, "cut short") {
+				t.Fatalf("reason reported as %+v", err)
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for !slices.Contains(voice.Texts(), "Found three") {
+				if time.Now().After(deadline) {
+					t.Fatalf("Anika's voice said %q", voice.Texts())
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			var history []brain.Turn
+			for len(history) == 0 {
+				if time.Now().After(deadline) {
+					t.Fatal("the delivered reply was never saved")
+				}
+				if err := c.p.RunBackgroundTurn(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				history = obey.History()
+				time.Sleep(5 * time.Millisecond)
+			}
+			saved := history[len(history)-1]
+			if saved.PersonaID != "anika" || saved.Content != "Found three" || saved.Disposition != brain.IncompleteDisposition(errors.New("x")) {
+				t.Fatalf("saved reply = %+v", saved)
+			}
+		})
+	}
+}
+
+// A moved reply that fails before any more text arrives is a failed job
+// with the reason, not a reply with nothing to report.
+func TestMovedReplyFailingWithNoTextFailsItsJob(t *testing.T) {
+	c := newMovingConversation(t)
+	c.anika.fail, c.anika.recovered = errors.New("stream broke"), true
+	ended, obey, _ := endMovedReply(t, c)
+	failed, ok := ended.(events.JobFailed)
+	if !ok || !strings.Contains(failed.Err, "stream broke") {
+		t.Fatalf("the failed reply ended as %+v", ended)
+	}
+	if err := c.p.RunBackgroundTurn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if history := obey.History(); len(history) != 0 {
+		t.Fatalf("a failed reply was saved: %+v", history)
+	}
+}
+
+// A moved reply that hands its work off and reports a recovered error does
+// the work and reports the error.
+func TestMovedHandOffWithARecoveredErrorDoesTheWorkAndSaysWhy(t *testing.T) {
+	c := newMovingConversation(t)
+	worker := &recordingWorker{reply: "Checked by Anika's worker."}
+	c.p.Agency.ReplaceWorker(worker, &config.Config{AgentName: "Anika", ActivePersona: "anika"}, nil)
+	c.anika.route, c.anika.fail, c.anika.recovered = "spawn", errors.New("stream broke"), true
+	c.holdTurn()
+	c.move()
+	close(c.anika.release)
+	c.errorEvent(t, "stream broke")
+	finished := c.next(func(e events.Event) bool { _, ok := e.(events.JobFinished); return ok }).(events.JobFinished)
+	if finished.Summary != "Checked by Anika's worker." || finished.Envelope.PersonaID != "anika" || worker.calls() != 1 {
+		t.Fatalf("the handed-off work ended as %+v after %d worker runs", finished, worker.calls())
+	}
+}
+
+// A moved reply that ends without any text, before or after the move, is a
+// failed job rather than a reply with nothing to report.
+func TestMovedReplyWithNoTextAtAllFailsItsJob(t *testing.T) {
+	c := newMovingConversation(t)
+	c.anika.before, c.anika.last = []string{" "}, "\n"
+	ended, _, _ := endMovedReply(t, c)
+	if failed, ok := ended.(events.JobFailed); !ok || !strings.Contains(failed.Err, "without any text") {
+		t.Fatalf("an empty moved reply ended as %+v", ended)
 	}
 }
