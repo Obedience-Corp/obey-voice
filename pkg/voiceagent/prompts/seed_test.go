@@ -130,7 +130,6 @@ func TestSeedRefreshesCopiesFromAnEarlierRelease(t *testing.T) {
 // An install seeded before the manifest existed holds byte-exact copies of
 // earlier releases; the real ones recorded in testdata must be refreshed.
 func TestSeedRefreshesReleasedCopiesWithoutManifest(t *testing.T) {
-	dir := t.TempDir()
 	for name, rel := range map[string]string{
 		"conversation-history.old.yaml": "system/conversation-history.yaml",
 		"worker-image-repair.old.yaml":  "system/worker-image-repair.yaml",
@@ -139,6 +138,7 @@ func TestSeedRefreshesReleasedCopiesWithoutManifest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		dir := t.TempDir()
 		dst := filepath.Join(dir, filepath.FromSlash(rel))
 		writeFile(t, dst, old)
 

@@ -90,7 +90,7 @@ func seed(dir string, sources []seedSource, history map[string][]string) (writte
 		default:
 			current, readErr := os.ReadFile(dst)
 			if readErr != nil {
-				return written, fmt.Errorf("reading %s: %w", dst, readErr)
+				continue
 			}
 			sum := sha256Hex(current)
 			if sum == shipped {
