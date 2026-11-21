@@ -239,3 +239,50 @@ func TestReplyCandidatesOnlyOffersDecodableWorkspaceFiles(t *testing.T) {
 		t.Fatalf("discovery wrote to the store: %v", err)
 	}
 }
+
+func TestOneLineCodeSpanDoesNotOpenAFence(t *testing.T) {
+	root := t.TempDir()
+	store := Store{Dir: t.TempDir()}
+	p := writePictures(t, root, 2)
+	chart, example := p[0], p[1]
+	text, refs, err := store.ImportReply("```example```\nHere is the chart. ![Chart]("+chart+")", root)
+	if err != nil || len(refs) != 1 || text != "```example```\nHere is the chart.\nChart" {
+		t.Fatalf("after a one-line span: %q %d %v", text, len(refs), err)
+	}
+	for _, reply := range []string{
+		"```![Example](<" + example + ">)```\nHere is the chart. ![Chart](<" + chart + ">)",
+		"```\nExample: ![Example](<" + example + ">)\n```\nHere is the chart. ![Chart](<" + chart + ">)",
+	} {
+		for _, cleaned := range []string{reply, strings.ReplaceAll(ProtectImageExamples(reply), "```", "")} {
+			_, refs, err := store.ImportReply(cleaned, root)
+			if err != nil || len(refs) != 1 || refs[0].Name != filepath.Base(chart) {
+				t.Errorf("%q: %+v %v", cleaned, refs, err)
+			}
+		}
+	}
+}
+
+func TestEscapedReferenceStaysText(t *testing.T) {
+	root := t.TempDir()
+	store := Store{Dir: t.TempDir()}
+	real := writePictures(t, root, 1)[0]
+	for _, text := range []string{
+		"For syntax, write \\![demo](missing.png).",
+		"For syntax, write \\![demo](<" + real + ">).",
+		"\\![demo](<" + real + ">)",
+		"Both \\![a](missing.png) and \\\\\\![b](missing.png) are text.",
+	} {
+		got, refs, err := store.ImportReply(text, root)
+		if got != text || len(refs) != 0 || err != nil || store.CheckReplyFiles(text, root) != nil {
+			t.Errorf("%q: %q %d %v", text, got, len(refs), err)
+		}
+		if SeparateImageReferences(text) != text || ReplyProse(text) != text {
+			t.Errorf("%q: lifted an escaped reference", text)
+		}
+	}
+	// An escaped backslash leaves the reference live.
+	got, refs, err := store.ImportReply("\\\\![Chart](<"+real+">)", root)
+	if err != nil || len(refs) != 1 || got != "\\\\\nChart" {
+		t.Fatalf("escaped backslash: %q %d %v", got, len(refs), err)
+	}
+}

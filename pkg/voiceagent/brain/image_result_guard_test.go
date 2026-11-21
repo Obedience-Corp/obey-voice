@@ -606,3 +606,23 @@ func TestPictureHowToQuotingThePlaceholder(t *testing.T) {
 		}
 	}
 }
+
+func TestEscapedReferenceIsNotAPicture(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	root := t.TempDir()
+	real := filepath.Join(root, "bird.png")
+	if err := os.WriteFile(real, testmedia.PNG(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	o := &OllamaBrain{cfg: &config.Config{WorkDir: root}, workDir: root}
+	text := "I've attached it. For syntax, write \\![Blue bird](<" + real + ">)."
+	if !strings.Contains(cleanForVoice(text), "\\![Blue bird]") {
+		t.Fatalf("cleanup dropped the escape: %q", cleanForVoice(text))
+	}
+	if _, ok := o.imageClaimProse(text); !ok {
+		t.Fatal("an escaped reference excused the claim check")
+	}
+	if err := o.imageReplyError(text, "Where is it then?", owedImageFollowup, false); !errors.Is(err, errMissingImageReference) {
+		t.Fatalf("escaped reference satisfied an owed picture: %v", err)
+	}
+}

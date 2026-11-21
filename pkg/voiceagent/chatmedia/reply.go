@@ -238,7 +238,7 @@ func separateLine(line string) []string {
 		var at [][]int
 		spans := codeSpans(line)
 		for _, m := range inlineImage.FindAllStringIndex(line, -1) {
-			if !inCodeSpan(spans, m, 1) {
+			if !inCodeSpan(spans, m, 1) && !escaped(line, m[0]) {
 				at = append(at, m)
 			}
 		}
@@ -284,9 +284,22 @@ func joinProse(left, right string) string {
 	return left + right
 }
 
+// isFence reports whether a line opens or closes a fenced block. As in the
+// voice gate, an odd count of ``` toggles a block and an even count is a span
+// on the line. ~~~ has no inline form, so it toggles as a prefix.
 func isFence(line string) bool {
-	line = strings.TrimSpace(line)
-	return strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~")
+	return strings.Count(line, "```")%2 == 1 || strings.HasPrefix(strings.TrimSpace(line), "~~~")
+}
+
+// escaped reports whether the byte at i is preceded by an odd number of
+// backslashes, as in the literal Markdown "\![caption](path)".
+func escaped(line string, i int) bool {
+	n := 0
+	for i > 0 && line[i-1] == '\\' {
+		n++
+		i--
+	}
+	return n%2 == 1
 }
 
 // codeSpans returns backtick code spans on one line as start, end and the

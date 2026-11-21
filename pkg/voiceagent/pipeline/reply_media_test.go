@@ -427,3 +427,10 @@ func TestSpeechResumesAfterANonImageBang(t *testing.T) {
 		t.Fatalf("next line = %q", got)
 	}
 }
+
+func TestSpeechKeepsAnEscapedReferenceOutOfVoice(t *testing.T) {
+	got := NewSpeechProjection().Speak("Write \\![demo](missing.png) like this.").Speakable
+	if strings.Contains(got, "missing") || strings.Contains(got, "png") || strings.Contains(got, "demo") {
+		t.Fatalf("spoken %q", got)
+	}
+}
