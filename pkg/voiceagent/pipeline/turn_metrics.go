@@ -49,29 +49,26 @@ type turnMetrics struct {
 	ordinary           *ordinaryCompletion
 	delivery           *completionPlayback
 	recording          *transcriptRecording
-	// moveRequested closes when the turn is asked to hand its model stream
-	// to a background job; nil while it may not be moved.
-	moveRequested    <-chan struct{}
-	start            time.Time
-	sttFinal         time.Time
-	acousticName     string // current finalized voice input only; never reused across turns
-	speaker          string // live speaker label of this voice input; typed input has none
-	firstModelChunk  time.Time
-	modelComplete    time.Time
-	modelRequest     time.Time
-	modelOutcome     string
-	firstSegment     time.Time
-	firstAudioReady  time.Time
-	playbackStart    time.Time
-	playbackComplete time.Time
-	firstToken       time.Time
-	firstThink       time.Time
-	firstSpeakable   time.Time
-	firstAdmit       time.Time
-	synthFirstFrame  time.Time
-	ttfa             time.Time
-	audibleSink      string
-	sinkAtArm        string
+	start              time.Time
+	sttFinal           time.Time
+	acousticName       string // current finalized voice input only; never reused across turns
+	speaker            string // live speaker label of this voice input; typed input has none
+	firstModelChunk    time.Time
+	modelComplete      time.Time
+	modelRequest       time.Time
+	modelOutcome       string
+	firstSegment       time.Time
+	firstAudioReady    time.Time
+	playbackStart      time.Time
+	playbackComplete   time.Time
+	firstToken         time.Time
+	firstThink         time.Time
+	firstSpeakable     time.Time
+	firstAdmit         time.Time
+	synthFirstFrame    time.Time
+	ttfa               time.Time
+	audibleSink        string
+	sinkAtArm          string
 	// bargeInMu guards bargeIn and speech cancellation shared by the turn and
 	// the TUI's out-of-band keystroke stop.
 	bargeInMu    sync.Mutex
@@ -120,6 +117,9 @@ type turnMetrics struct {
 	// onAudible runs when a standalone line's audio starts, before
 	// SpeakingStarted.
 	onAudible func()
+	// moveRequested closes when the turn is asked to hand its model stream
+	// to a background job; nil while it may not be moved.
+	moveRequested <-chan struct{}
 }
 
 // Speech has its own lifetime: typing stops output while the model continues
