@@ -3,36 +3,99 @@ package brain
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 )
 
-// WorkerFactsPrompt renders only bounded canonical job facts for a live turn.
-// It deliberately excludes task text, provider/model names, and pricing.
-func WorkerFactsPrompt(facts []WorkerFact) string {
-	if len(facts) == 0 {
-		return ""
+const (
+	workerFactLimit = 8
+	// workerFactsBytes holds workerFactLimit jobs at their field limits.
+	workerFactsBytes        = 6 << 10
+	workerFactTaskBytes     = 160
+	workerFactProgressBytes = 200
+	workerFactStarterBytes  = 48
+	workerFactsOpen         = "\n<active_work>"
+	workerFactsClose        = "\n</active_work>"
+)
+
+// WorkerFactsPrompt renders the host's record of background jobs for a live
+// turn, behind the lead-in that says what the list is. A job the model is not
+// told about is one it will deny, so a described job carries its task, how
+// long it has run, what it has done and who started it. Provider and model
+// names and pricing are deliberately excluded.
+func WorkerFactsPrompt(cfg *config.Config, facts []WorkerFact) string {
+	if len(facts) > workerFactLimit {
+		facts = facts[:workerFactLimit]
 	}
-	if len(facts) > 8 {
-		facts = facts[:8]
-	}
-	var b strings.Builder
-	b.WriteString("\n<active_work>")
+	var lines strings.Builder
 	for _, fact := range facts {
-		id := strings.TrimSpace(fact.ID)
-		state := strings.TrimSpace(fact.State)
-		if !safeWorkerFactID(id) || !validWorkerFactState(state) || !validWorkerFactTier(fact.Tier) {
+		line := workerFactLine(fact)
+		if line == "" {
 			continue
 		}
-		line := fmt.Sprintf("\njob=%q tier=%q state=%q", id, fact.Tier, state)
-		if b.Len()+len(line)+len("\n</active_work>") > 2048 {
+		if len(workerFactsOpen)+lines.Len()+len(line)+len(workerFactsClose) > workerFactsBytes {
 			break
 		}
-		b.WriteString(line)
+		lines.WriteString(line)
 	}
-	b.WriteString("\n</active_work>")
+	if lines.Len() == 0 {
+		return ""
+	}
+	return "\n" + systemPrompt(cfg, "active-work", nil) + workerFactsOpen + lines.String() + workerFactsClose
+}
+
+func workerFactLine(fact WorkerFact) string {
+	id := strings.TrimSpace(fact.ID)
+	state := strings.TrimSpace(fact.State)
+	if !safeWorkerFactID(id) || !validWorkerFactState(state) || !validWorkerFactTier(fact.Tier) {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "\njob=%q tier=%q state=%q", id, fact.Tier, state)
+	switch starter := oneLine(fact.Starter); {
+	case fact.Own:
+		b.WriteString(` started_by="you"`)
+	case starter != "":
+		fmt.Fprintf(&b, " started_by=%q", continuity.Clip(starter, workerFactStarterBytes))
+	}
+	if state == "running" && fact.Running > 0 {
+		fmt.Fprintf(&b, " running_for=%q", workerFactDuration(fact.Running))
+	}
+	if task := oneLine(fact.Task); task != "" {
+		fmt.Fprintf(&b, " task=%q", continuity.Clip(task, workerFactTaskBytes))
+	}
+	if progress := oneLine(fact.Progress); progress != "" {
+		fmt.Fprintf(&b, " progress=%q", continuity.Clip(progress, workerFactProgressBytes))
+	}
 	return b.String()
+}
+
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// workerFactDuration is a running time as a person would say it. Seconds
+// stop mattering after the first minute.
+func workerFactDuration(d time.Duration) string {
+	unit := func(n int, name string) string {
+		if n == 1 {
+			return "1 " + name
+		}
+		return fmt.Sprintf("%d %ss", n, name)
+	}
+	if d < time.Minute {
+		return unit(max(int(d/time.Second), 1), "second")
+	}
+	hours, minutes := int(d/time.Hour), int(d%time.Hour/time.Minute)
+	switch {
+	case hours == 0:
+		return unit(minutes, "minute")
+	case minutes == 0:
+		return unit(hours, "hour")
+	default:
+		return unit(hours, "hour") + " " + unit(minutes, "minute")
+	}
 }
 
 func safeWorkerFactID(id string) bool {

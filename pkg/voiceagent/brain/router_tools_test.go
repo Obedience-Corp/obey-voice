@@ -115,17 +115,17 @@ func TestTieredRouteSchemaAndMetadata(t *testing.T) {
 	}
 }
 
-func TestWorkerFactsPromptIsBoundedAndLabelFree(t *testing.T) {
+func TestWorkerFactsPromptIsBoundedAndNamesNoBackend(t *testing.T) {
 	facts := make([]WorkerFact, 10)
 	for i := range facts {
 		facts[i] = WorkerFact{ID: "job", Tier: config.WorkerTierSimple, State: "queued"}
 	}
-	got := WorkerFactsPrompt(facts)
+	got := WorkerFactsPrompt(nil, facts)
 	if strings.Count(got, "job=") != 8 || strings.Contains(got, "provider") || strings.Contains(got, "model") {
 		t.Fatalf("facts prompt = %q", got)
 	}
-	invalid := WorkerFactsPrompt([]WorkerFact{{ID: strings.Repeat("x", 129), Tier: config.WorkerTierSimple, State: "running"}, {ID: "ok", Tier: config.WorkerTierSimple, State: "invented"}})
-	if invalid != "\n<active_work>\n</active_work>" {
+	invalid := WorkerFactsPrompt(nil, []WorkerFact{{ID: strings.Repeat("x", 129), Tier: config.WorkerTierSimple, State: "running"}, {ID: "ok", Tier: config.WorkerTierSimple, State: "invented"}})
+	if invalid != "" {
 		t.Fatalf("invalid facts prompt = %q", invalid)
 	}
 }

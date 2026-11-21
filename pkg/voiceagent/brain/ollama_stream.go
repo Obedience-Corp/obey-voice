@@ -71,7 +71,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	}
 	baseSkillCtx := skillCtx
 	skillCtx += WorkResultsPrompt(opts.WorkResults)
-	skillCtx += WorkerFactsPrompt(opts.WorkerFacts)
+	skillCtx += WorkerFactsPrompt(o.cfg, opts.WorkerFacts)
 	o.ensureContextBudget(skillCtx)
 	o.maybeEmitContinuityBudget(skillCtx)
 

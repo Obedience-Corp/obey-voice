@@ -236,7 +236,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		AudioRetained:     metrics.audioRetained,
 		Discussion:        admission.Discussion,
 		WorkerTiers:       p.workerTierAvailability(),
-		WorkerFacts:       p.workerFacts(),
+		WorkerFacts:       p.workerFacts(!isContinuation),
 		Identity:          metrics.responseIdentity(),
 		OriginalInput:     original,
 		AgentContinuation: isContinuation,

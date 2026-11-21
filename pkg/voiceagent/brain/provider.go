@@ -34,8 +34,8 @@ type StreamOptions struct {
 	// BackgroundWorker lets an ordinary live Ollama turn hand its original
 	// request to the host before performing side effects.
 	BackgroundWorker bool
-	// WorkerFacts are bounded identifiers for existing jobs, supplied for
-	// grounded status references. They contain no task text or provider data.
+	// WorkerFacts are the host's record of existing jobs, supplied so a reply
+	// can speak about them truthfully. They contain no provider data.
 	WorkerFacts []WorkerFact
 	// OriginalInput preserves finalized user text when the host routes a
 	// stripped request. It changes canonical storage, not the model request.
@@ -185,6 +185,16 @@ type WorkerFact struct {
 	ID    string
 	Tier  config.WorkerTierName
 	State string
+	// Task is the request the job was started for, as the user gave it.
+	Task string
+	// Running is how long the job has run; zero while it waits.
+	Running time.Duration
+	// Progress is the job's tool activity so far, folded for display.
+	Progress string
+	// Own marks a job the responding persona started. Starter names the
+	// persona that started any other job, when the host knows it.
+	Own     bool
+	Starter string
 }
 
 // Stream carries a streamed model response and its terminal result.
