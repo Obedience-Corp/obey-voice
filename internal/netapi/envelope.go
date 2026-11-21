@@ -168,6 +168,8 @@ func encodeEvent(e events.Event) map[string]any {
 	case events.TurnInterrupted:
 		env["reason"] = e.Reason
 		env["since_playback_start_ms"] = ms(e.SincePlaybackStart)
+	case events.ReplyImagesReady:
+		env["response"], env["attachments"] = e.Response, e.Attachments
 	case events.ResponseReady:
 		env["response"] = e.Response
 		env["interrupted"] = e.Interrupted

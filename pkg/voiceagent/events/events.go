@@ -575,6 +575,16 @@ type TurnInterrupted struct {
 
 func (e TurnInterrupted) eventType() string { return "turn_interrupted" }
 
+// ReplyImagesReady carries a committed image reply while its audio may still be playing.
+type ReplyImagesReady struct {
+	Response    string            `json:"response"`
+	Attachments []chatmedia.Ref   `json:"attachments"`
+	Trace       *TraceContext     `json:"trace,omitempty"`
+	Envelope    *ResponseEnvelope `json:"envelope,omitempty"`
+}
+
+func (ReplyImagesReady) eventType() string { return "reply_images_ready" }
+
 // ResponseReady carries the final display text.
 type ResponseReady struct {
 	Attachments []chatmedia.Ref `json:"attachments,omitempty"`
@@ -705,14 +715,14 @@ type JobFinished struct {
 	Task     string
 	Summary  string
 	Elapsed  time.Duration
-	// SpeechPending means Summary is queued to be spoken. A display shows it
-	// from JobResultDelivered, when that speech starts, not from this event.
+	// SpeechPending means Summary is queued to be spoken. Display image
+	// results immediately and text-only results at JobResultDelivered.
 	SpeechPending bool
 }
 
 func (e JobFinished) eventType() string { return "job_finished" }
 
-// JobResultDelivered is the moment a SpeechPending result reaches the user:
+// JobResultDelivered resolves speech for a SpeechPending result:
 // Spoken when its audio started, false when its speech was skipped, failed
 // or dropped. It carries the whole reply and is emitted once per such job.
 type JobResultDelivered struct {

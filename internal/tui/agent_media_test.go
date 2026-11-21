@@ -69,3 +69,30 @@ func TestWorkerInspectorRendersInputAndResultImages(t *testing.T) {
 		t.Fatal("worker did not render media")
 	}
 }
+
+func TestImageRepliesAreVisibleOnceDuringSpeech(t *testing.T) {
+	m, _ := mediaTestModel(t)
+	refs := m.media.draft
+	m.media.draft = nil
+	turnID := "image-turn"
+	trace := &events.TraceContext{TurnID: &turnID}
+	persona := &events.ResponseEnvelope{DisplayName: "Juniper"}
+	m.handleEvent(events.SpeakingStarted{})
+	m.handleEvent(events.ReplyImagesReady{Trace: trace, Envelope: persona, Response: "A diagram.", Attachments: refs})
+	if view := stripANSI(m.viewport.View()); !strings.Contains(view, "Juniper") || !strings.Contains(view, "▀") {
+		t.Fatalf("image missing during speech: %s", view)
+	}
+	m.handleEvent(events.JobFinished{ID: "worker", SpeechPending: true, Summary: "Second diagram.", Attachments: refs})
+	app := newApp(m.cfg, nil, nil)
+	app.conversation = m
+	desktop := desktopModel{app: app, rt: fakeRuntime()}
+	turns := desktop.state().Turns
+	if len(turns) != 2 || turns[0].Name != "Juniper" || len(turns[0].Attachments) != 1 || len(turns[1].Attachments) != 1 {
+		t.Fatalf("desktop before playback completed: %+v", turns)
+	}
+	m.handleEvent(events.JobResultDelivered{ID: "worker", Summary: "Second diagram.", Attachments: refs})
+	m.handleEvent(events.ResponseReady{Trace: trace, Response: "A diagram.", Attachments: refs, Interrupted: true})
+	if len(m.plainTurns) != 2 {
+		t.Fatalf("duplicate image replies: %+v", m.plainTurns)
+	}
+}

@@ -13,6 +13,7 @@ import (
 )
 
 type mediaState struct {
+	shownTurn                                        string
 	err                                              string
 	draft, pending                                   []chatmedia.Ref
 	cache                                            map[string]mediaPreview

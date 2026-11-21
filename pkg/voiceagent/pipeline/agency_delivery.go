@@ -28,8 +28,8 @@ type pendingDelivery struct {
 }
 
 // queueResult queues a finished job's answer for history and idle speech and
-// returns its JobFinished. An answer that will be spoken is held: the chat
-// and history take it when its speech starts, or when that speech is given up.
+// returns its JobFinished. History takes a spoken answer when playback starts
+// or is given up. Chat can already display attachments from JobFinished.
 func (a *Agency) queueResult(id, task, result string, refs []chatmedia.Ref, elapsed time.Duration) events.JobFinished {
 	a.mu.Lock()
 	origin, ok := a.workerOrigins[id]

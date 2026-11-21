@@ -245,7 +245,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 	}
 
-	response = p.finalizeMedia(metrics, response).Response
+	response = p.publishReplyMedia(metrics, response)
 	metrics.modelComplete = time.Now()
 	p.emitResponse(metrics, events.ThinkingComplete{
 		Response: response,
