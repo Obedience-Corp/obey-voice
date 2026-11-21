@@ -29,11 +29,12 @@ import (
 // reply and hold the request until it is stopped.
 const ollamaStall = "HOLD ON"
 
-// ollamaRelease after ollamaStall holds the request until release closes
-// instead, then finishes the reply with ollamaReleased.
+// ollamaRelease after ollamaStall holds the request after ollamaReleasePartial
+// until release closes instead, then finishes the reply with ollamaReleased.
 const (
-	ollamaRelease  = "UNTIL RELEASED"
-	ollamaReleased = "The build is green."
+	ollamaRelease        = "UNTIL RELEASED"
+	ollamaReleasePartial = "I read the notes. Let me think "
+	ollamaReleased       = "about it. The build is green."
 )
 
 // localConversation is a conversation among personas whose backends are a
@@ -169,7 +170,11 @@ func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if strings.Contains(lastUserLine(req.Messages), ollamaStall) {
-		_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": false, "message": map[string]string{"role": "assistant", "content": "Let me think about "}})
+		partial := "Let me think about "
+		if strings.Contains(lastUserLine(req.Messages), ollamaRelease) {
+			partial = ollamaReleasePartial
+		}
+		_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": false, "message": map[string]string{"role": "assistant", "content": partial}})
 		if strings.Contains(lastUserLine(req.Messages), ollamaStall+" LONG") {
 			for i := range 20 {
 				_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": false, "message": map[string]string{"role": "assistant", "content": fmt.Sprintf("w%d ", i)}})

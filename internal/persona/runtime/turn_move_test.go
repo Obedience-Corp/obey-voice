@@ -86,7 +86,7 @@ func (c *movingLocalConversation) holdAndMove(next string) {
 	streaming := make(chan struct{})
 	var once sync.Once
 	stop := events.SubscribeDetachable(c.p.Events, func(e events.ResponseDelta) {
-		if strings.Contains(e.Text, "Let me think") {
+		if strings.Contains(e.Text, "Let me think") || strings.Contains(e.Text, "I read the notes.") {
 			once.Do(func() { close(streaming) })
 		}
 	})
@@ -138,8 +138,8 @@ func TestMovedTurnRunsOnWhileAnotherPersonaAnswers(t *testing.T) {
 	}
 	sent := c.requests()
 	obeyRequest := string(sent[len(sent)-1])
-	if !strings.Contains(obeyRequest, "what is the vault code?") || !strings.Contains(obeyRequest, ollamaRelease) || !strings.Contains(obeyRequest, "Let me think about") {
-		t.Fatalf("Obey was not sent Anika's line and partial reply:\n%s", obeyRequest)
+	if !strings.Contains(obeyRequest, "what is the vault code?") || !strings.Contains(obeyRequest, ollamaRelease) || !strings.Contains(obeyRequest, "I read the notes.") || strings.Contains(obeyRequest, "Let me think") {
+		t.Fatalf("Obey was not sent Anika's line and the finished sentences of her reply:\n%s", obeyRequest)
 	}
 	if strings.Contains(obeyRequest, "notes.txt") {
 		t.Fatalf("Obey was sent the tool round of Anika's running request:\n%s", obeyRequest)
@@ -159,7 +159,7 @@ func TestMovedTurnRunsOnWhileAnotherPersonaAnswers(t *testing.T) {
 	close(c.release)
 	select {
 	case finished := <-c.finished:
-		if finished.Envelope == nil || finished.Envelope.PersonaID != "anika" || !strings.Contains(finished.Summary, ollamaReleased) {
+		if finished.Envelope == nil || finished.Envelope.PersonaID != "anika" || finished.Summary != " Let me think "+ollamaReleased {
 			t.Fatalf("job finished = %+v", finished)
 		}
 	case <-time.After(10 * time.Second):
