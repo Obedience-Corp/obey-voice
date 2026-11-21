@@ -145,12 +145,12 @@ func modelKeys() []KeySpec {
 			Help: "The zipformer model used in streaming mode.",
 		},
 		{
-			Key: "whisper_model", Type: TypeString, Default: "small",
+			Key: "whisper_model", Type: TypeString, Default: "small", Suggestions: copyStrings(sherpaWhisperKnownModels),
 			Group: GroupModels, Title: "Whisper size",
 			Help: "Which Whisper model size sherpa loads. Bigger is more accurate and slower.",
 		},
 		{
-			Key: "parakeet_model", Type: TypeEnum, Default: DefaultParakeetModel, Enum: ParakeetModelNames(),
+			Key: "parakeet_model", Type: TypeEnum, Default: DefaultParakeetModel, Enum: ParakeetModelNames(), EnumLabels: parakeetModelLabels(),
 			Group: GroupModels, Title: "Parakeet model",
 			Help: "Which NVIDIA Parakeet TDT model the sherpa-parakeet provider loads. tdt-0.6b-v2 is English and the most accurate; tdt-0.6b-v3 adds 25 languages; tdt-110m is small and fast.",
 		},
@@ -165,7 +165,7 @@ func modelKeys() []KeySpec {
 			Help: "Where the whisper.cpp command lives. A bare name is looked up on PATH.",
 		},
 		{
-			Key: "whispercpp_model", Type: TypeString, Default: "base.en",
+			Key: "whispercpp_model", Type: TypeString, Default: "base.en", Suggestions: []string{"base.en", "small.en"},
 			Group: GroupModels, Title: "whisper.cpp model",
 			Help: "Which ggml model whisper.cpp loads.",
 		},

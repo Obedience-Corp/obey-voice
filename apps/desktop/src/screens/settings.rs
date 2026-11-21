@@ -2,6 +2,7 @@ mod decision_setup;
 mod editor;
 mod layout;
 pub(crate) mod storage;
+pub(crate) mod stt;
 #[cfg(test)]
 mod tests;
 
@@ -99,6 +100,7 @@ impl VoiceApp {
             .show(ui, |ui| {
  if self.group=="brain" && self.search.is_empty() {self.decision_model_setup(ui);}
                 if self.group == "models" && self.search.is_empty() { self.model_storage(ui); }
+                if self.group == "stt" && self.search.is_empty() { self.stt_model_setup(ui); }
                 if self.group == "brain" && provider == "obey" && self.search.is_empty() {
                     card(ui, super::provider_choices::obey_route_notice);
                     self.obey_catalog_ui(ui);
@@ -142,6 +144,7 @@ impl VoiceApp {
                     if !self.search.is_empty() {
                         ui.label(RichText::new(layout::title(layout::section(spec))).small().color(muted(ui)));
                     }
+                    if self.group == "stt" && self.search.is_empty() && stt::is_model_key(&spec.key) && spec.key != stt::selected_model_key(&self.values) { continue; }
                     self.setting_editor(ui, spec);
                 }
                 if provider == "ollama"

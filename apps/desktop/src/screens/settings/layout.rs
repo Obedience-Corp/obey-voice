@@ -142,7 +142,12 @@ fn priority(key: &str) -> usize {
         | "input_device"
         | "tts_place"
         | "user_display_name" => 0,
-        "ollama_model"
+        "parakeet_model"
+        | "whisper_model"
+        | "sherpa_streaming_model"
+        | "whispercpp_model"
+        | "transcribecpp_model"
+        | "ollama_model"
         | "grok_model"
         | "claude_model"
         | "cursor_model"

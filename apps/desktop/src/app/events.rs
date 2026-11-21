@@ -184,6 +184,14 @@ impl VoiceApp {
         let v = match result {
             Ok(v) => v,
             Err(err) => {
+                if matches!(purpose, Purpose::Task)
+                    && self.task_title == "Install selected speech model"
+                {
+                    self.status =
+                        "Speech model installation stopped; use Install / repair to retry".into();
+                    self.error = Some(crate::setup::error_message(&err));
+                    return;
+                }
                 if self.persona_form.open
                     && matches!(&purpose, Purpose::Mutation(label) if label.starts_with("Persona"))
                 {
@@ -269,6 +277,31 @@ impl VoiceApp {
                     self.request("settings_refresh", json!({}), Purpose::Ignore);
                 }
             }
+            Purpose::STTModelSave => {
+                self.cli(
+                    vec![
+                        "config".into(),
+                        "set".into(),
+                        "whispercpp_model_path".into(),
+                        "".into(),
+                        "--json".into(),
+                    ],
+                    Purpose::SettingSave("whispercpp_model".into()),
+                    false,
+                );
+            }
+            Purpose::STTProviderSave => {
+                self.cli(
+                    vec![
+                        "config".into(),
+                        "unset".into(),
+                        "stt_mode".into(),
+                        "--json".into(),
+                    ],
+                    Purpose::SettingSave("stt_provider".into()),
+                    false,
+                );
+            }
             Purpose::SettingSave(key) => {
                 if super::speech_catalog::affects_speech_catalog(&key) {
                     self.speech_catalog = Default::default();
@@ -279,6 +312,9 @@ impl VoiceApp {
                 self.invalidate_ollama_catalog();
                 self.drafts.remove(&key);
                 self.status = format!("Saved {key}");
+                if crate::screens::settings::stt::installs_selection(&key, &self.values) {
+                    self.start_stt_install();
+                }
                 self.command(&["config", "get", "--json"], Purpose::SettingsValues);
             }
             Purpose::Mutation(label) => {
@@ -382,7 +418,12 @@ impl VoiceApp {
                 self.command(&["meeting", "list", "--json"], Purpose::Meetings);
             }
             Purpose::Task => {
-                self.status = "Completed".into();
+                self.status = if self.task_title == "Install selected speech model" {
+                    "Speech model installed and verified; applies to a new conversation"
+                } else {
+                    "Completed"
+                }
+                .into();
                 // A task such as a model move can change saved settings.
                 self.command(&["config", "get", "--json"], Purpose::SettingsValues);
                 push_log(

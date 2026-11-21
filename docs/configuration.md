@@ -192,6 +192,18 @@ when you select it.
 | `listen_timeout` | `10` | | Listen timeout in seconds |
 | `phrase_time_limit` | `30` | | Maximum phrase length in seconds |
 
+In Settings → STT, choose the recognizer and its model. Parakeet offers
+**English — Parakeet v2 (600M)**, **Multilingual (25 languages) — Parakeet v3 (600M)**,
+and **English — Parakeet small (110M)**. The English default remains v2.
+The desktop's **Save and install**, or selecting a model in the terminal,
+downloads the selected STT assets and enabled voice activity detector through
+the shared installer. Existing verified files are reused. Progress, cancellation,
+and **Install / repair selected model** for retries are available in STT settings;
+changes apply to a new conversation. Whisper.cpp requires its executable to be
+installed separately; choosing its managed model clears the previous model-file
+override. Whisper model suggestions are listed, while custom supported names
+remain accepted.
+
 ## Seeded prompt files
 
 On startup Obey Voice copies the shipped prompt documents into `prompts_dir`

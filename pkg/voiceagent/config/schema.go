@@ -61,10 +61,12 @@ func Groups() []string {
 // control for it, and for `config set` to validate a value without knowing
 // anything about the key.
 type KeySpec struct {
-	Key     string    `json:"key"`
-	Type    ValueType `json:"type"`
-	Default any       `json:"default"`
-	Enum    []string  `json:"enum,omitempty"`
+	Key         string            `json:"key"`
+	Type        ValueType         `json:"type"`
+	Default     any               `json:"default"`
+	Enum        []string          `json:"enum,omitempty"`
+	EnumLabels  map[string]string `json:"enum_labels,omitempty"`
+	Suggestions []string          `json:"suggestions,omitempty"`
 	// AllowsEmpty reports that `config set <key> ""` is accepted: every text
 	// key, plus the enums whose own default is the empty string. For those
 	// enums "" is the unset state, so writing it back is how a user returns

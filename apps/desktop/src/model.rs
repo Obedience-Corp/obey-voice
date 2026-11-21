@@ -205,6 +205,8 @@ pub struct KeySpec {
     pub kind: String,
     #[serde(rename = "enum")]
     pub choices: Vec<String>,
+    pub suggestions: Vec<String>,
+    pub enum_labels: std::collections::HashMap<String, String>,
     pub editable: bool,
     pub secret: bool,
     pub restart_required: bool,
@@ -258,6 +260,8 @@ pub enum Purpose {
     OllamaCatalog(String),
     SpeechVoices,
     SettingSave(String),
+    STTProviderSave,
+    STTModelSave,
     Mutation(String),
     Library,
     Book,

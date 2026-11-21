@@ -16,6 +16,7 @@ func (m *settingsModel) cancelPreview() {
 
 func (m *settingsModel) closePreview() {
 	m.preview.close()
+	m.sttSetup.stop()
 	m.speechSetup.stop()
 	m.decisionSetup.stop()
 	if m.qwenInstallCancel != nil {

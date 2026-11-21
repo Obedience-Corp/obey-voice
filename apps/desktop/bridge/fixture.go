@@ -24,4 +24,5 @@ func init() {
 		panic("desktop fixture requires an existing config directory")
 	}
 	config.SetConfigDirForTest(fixtureScope{}, dir)
+	runSTTModelFixture(dir)
 }

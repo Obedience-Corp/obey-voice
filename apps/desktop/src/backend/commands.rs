@@ -140,7 +140,11 @@ impl Backend {
                     }
                     .into());
                 }
+                let was_cancelled = cancelled.lock().unwrap().remove(&id);
                 if !status.success() {
+                    if was_cancelled {
+                        return Err("Cancelled".into());
+                    }
                     return Err((if stdout.trim().is_empty() {
                         stderr.trim()
                     } else {
