@@ -98,6 +98,14 @@ func (m *conversationModel) mentionPaths() (string, map[string]string) {
 	return m.mentions.root, m.mentions.shortcuts
 }
 
+// mentionsCarryRoot is true when the prompt will not say what an @path is
+// relative to. A completed path is then written in full. It reads the session
+// config, which a persona switch or a Settings reload replaces along with the
+// brain's.
+func (m conversationModel) mentionsCarryRoot() bool {
+	return !config.MentionRootStated(m.cfg)
+}
+
 func (m *conversationModel) syncMentions() {
 	start, query, end, ok := m.mentionAt()
 	if !ok {
@@ -133,7 +141,7 @@ func (m *conversationModel) syncMentions() {
 	m.mentions.personas = len(m.mentions.matches)
 	if m.composerTakesText() {
 		if root, shortcuts := m.mentionPaths(); root != "" {
-			for _, c := range pathcomplete.Candidates(query, root, shortcuts) {
+			for _, c := range pathcomplete.Candidates(pathcomplete.Unrooted(query, root), root, shortcuts) {
 				m.mentions.matches = append(m.mentions.matches, mentionItem{path: c})
 			}
 		}
@@ -259,13 +267,17 @@ func (m *conversationModel) acceptPersonaMention(end int, id string) {
 }
 
 // acceptPathMention replaces the token up to the cursor with path and keeps
-// whatever follows the cursor. A directory leaves the cursor after its "/" so
+// whatever follows the cursor. The list shows paths relative to the root; the
+// inserted text is absolute when the prompt does not state that root. A directory leaves the cursor after its "/" so
 // the list moves into it; a file at the end of the draft gets a space.
 func (m *conversationModel) acceptPathMention(start int, path string) {
 	previous := m.input.Value()
 	runes := []rune(previous)
 	tail := string(runes[m.textareaCursorOffset():])
 	insert := path
+	if root, _ := m.mentionPaths(); m.mentionsCarryRoot() {
+		insert = pathcomplete.Rooted(path, root)
+	}
 	if !strings.HasSuffix(path, "/") && tail == "" {
 		insert += " "
 	}
@@ -282,15 +294,19 @@ func (m *conversationModel) expandMentionShortcut() {
 	if !ok || !strings.HasSuffix(query, "/") {
 		return
 	}
-	_, shortcuts := m.mentionPaths()
+	root, shortcuts := m.mentionPaths()
 	path, ok := pathcomplete.ExpandShortcut(strings.TrimSuffix(query, "/"), shortcuts)
 	if !ok {
 		return
 	}
+	expanded := "@" + path
+	if m.mentionsCarryRoot() {
+		expanded = pathcomplete.Rooted(expanded, root)
+	}
 	runes := []rune(m.input.Value())
 	cursor := m.textareaCursorOffset()
-	m.input.SetValue(string(runes[:start+1]) + path + string(runes[cursor:]))
-	m.moveTextareaCursorToOffset(start + 1 + runeLen(path))
+	m.input.SetValue(string(runes[:start]) + expanded + string(runes[cursor:]))
+	m.moveTextareaCursorToOffset(start + runeLen(expanded))
 }
 
 func (m conversationModel) mentionPaletteRows() int {

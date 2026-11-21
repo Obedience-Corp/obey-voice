@@ -291,7 +291,7 @@ func campaignLine(workDir string) string {
 // relative to: the same root the chat composer completes against. Without a
 // config there is no conversation to complete in.
 func pathMentionsLine(cfg *config.Config, workDir string) string {
-	if cfg == nil {
+	if cfg == nil || !config.MentionRootStated(cfg) {
 		return ""
 	}
 	root, _ := config.MentionRoot(cfg, workDir)

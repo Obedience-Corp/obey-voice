@@ -108,7 +108,7 @@ func TestPathMentionsTerminal(t *testing.T) {
 		ActivePersona: "samantha", AgentName: "Samantha", Persona: "samantha",
 		BrainProvider: "ollama", OllamaModel: "samantha-fixture",
 		PromptsDir: filepath.Join(config.ConfigDir(), "prompts"), WorkDir: launch, WorkDirSource: "launch-dir",
-		VoiceWorkEnabled: true, VoiceWorkerProvider: "stub",
+		VoiceWorkEnabled: true, VoiceWorkerProvider: "stub", EnvironmentContextEnabled: true,
 	}
 	catalog := persona.Catalog{Dir: filepath.Join(config.ConfigDir(), "personas")}
 	initial, err := catalog.ResolveBinding(base, "samantha")
@@ -118,9 +118,7 @@ func TestPathMentionsTerminal(t *testing.T) {
 	if config.WorkDirFrom(initial.Config()) != pinned {
 		t.Fatalf("persona directory = %q, want %q", config.WorkDirFrom(initial.Config()), pinned)
 	}
-	bound := *initial.Config()
-	bound.EnvironmentContextEnabled = true
-	grounding := brain.AssembleSystemPrompt(brain.SystemPromptInput{Provider: "ollama", Persona: "P", WorkDir: pinned, Cfg: &bound})
+	grounding := brain.AssembleSystemPrompt(brain.SystemPromptInput{Provider: "ollama", Persona: "P", WorkDir: pinned, Cfg: initial.Config()})
 	if !strings.Contains(grounding, "relative to "+campaign+";") {
 		t.Fatalf("grounding does not name the campaign root %q:\n%s", campaign, grounding)
 	}

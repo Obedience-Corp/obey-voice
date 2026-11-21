@@ -73,3 +73,12 @@ func TestMentionRootFallsBackToTheGivenWorkDir(t *testing.T) {
 		t.Fatalf("MentionRoot = %q, %v; want %q, false", got, campaign, outside)
 	}
 }
+
+func TestMentionRootIsStatedOnlyWithTheEnvironmentBlock(t *testing.T) {
+	if !MentionRootStated(nil) || !MentionRootStated(&Config{EnvironmentContextEnabled: true}) {
+		t.Fatal("the environment block states the mention root")
+	}
+	if MentionRootStated(&Config{}) {
+		t.Fatal("without the environment block nothing states the mention root")
+	}
+}

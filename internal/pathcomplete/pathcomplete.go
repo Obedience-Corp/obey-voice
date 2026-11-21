@@ -49,6 +49,31 @@ func ExpandShortcut(key string, shortcuts map[string]string) (string, bool) {
 	return path, ok && path != ""
 }
 
+// Rooted writes a candidate as an absolute path under root: "@projects/app/"
+// becomes "@/root/projects/app/" and "@./README.md" becomes "@/root/README.md".
+func Rooted(candidate, root string) string {
+	rel := strings.TrimPrefix(strings.TrimPrefix(candidate, "@"), "./")
+	return "@" + rootPrefix(root) + rel
+}
+
+// Unrooted turns a query written as an absolute path under root back into the
+// relative query Candidates takes. Any other query is returned unchanged, so
+// an absolute path outside root still lists nothing.
+func Unrooted(query, root string) string {
+	if root == "" {
+		return query
+	}
+	rel, ok := strings.CutPrefix(query, rootPrefix(root))
+	if !ok {
+		return query
+	}
+	return rel
+}
+
+func rootPrefix(root string) string {
+	return strings.TrimSuffix(filepath.ToSlash(root), "/") + "/"
+}
+
 // AtQuery finds an @ token at cursor in text. The "@" must start the text or
 // follow whitespace, so "user@example.com" is not a token. Offsets are runes.
 // It returns the text between "@" and cursor and the offset of "@", or -1.

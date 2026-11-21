@@ -80,6 +80,7 @@ func TestLeadingPathMentionIsNotAnIdentityControl(t *testing.T) {
 		{"@joker/ hi", ExactControlNone},
 		{"@./README.md summarize this", ExactControlNone},
 		{"@workflow/design/", ExactControlNone},
+		{"@/home/me/camp/projects/joker/ what is this", ExactControlNone},
 		{"@missing help", ExactControlInvalid},
 		{"@ help", ExactControlInvalid},
 		{"@joker help", ExactControlValid},

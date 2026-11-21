@@ -407,3 +407,42 @@ func TestLoadShortcutsEmptyBlockMeansNone(t *testing.T) {
 		t.Fatalf("shortcuts = %v", got)
 	}
 }
+
+func TestRootedWritesTheFullPathAndUnrootedReadsItBack(t *testing.T) {
+	for _, tc := range []struct{ candidate, root, want string }{
+		{"@projects/app/", "/camp", "@/camp/projects/app/"},
+		{"@projects/app/main.go", "/camp/", "@/camp/projects/app/main.go"},
+		{"@./README.md", "/camp", "@/camp/README.md"},
+		{"@./docs/", "/camp", "@/camp/docs/"},
+	} {
+		if got := Rooted(tc.candidate, tc.root); got != tc.want {
+			t.Errorf("Rooted(%q, %q) = %q, want %q", tc.candidate, tc.root, got, tc.want)
+		}
+	}
+	for _, tc := range []struct{ query, root, want string }{
+		{"/camp/projects/ap", "/camp", "projects/ap"},
+		{"/camp/", "/camp", ""},
+		{"/camp", "/camp", "/camp"},
+		{"/campaign/x", "/camp", "/campaign/x"},
+		{"/elsewhere/x", "/camp", "/elsewhere/x"},
+		{"projects/ap", "/camp", "projects/ap"},
+		{"/x", "", "/x"},
+	} {
+		if got := Unrooted(tc.query, tc.root); got != tc.want {
+			t.Errorf("Unrooted(%q, %q) = %q, want %q", tc.query, tc.root, got, tc.want)
+		}
+	}
+}
+
+func TestAbsoluteQueryListsOnlyUnderTheRoot(t *testing.T) {
+	root := t.TempDir()
+	mkdirs(t, root, "projects/app")
+	if got := Candidates(Unrooted(root+"/projects/", root), root, nil); !slices.Equal(got, []string{"@projects/app/"}) {
+		t.Fatalf("absolute query under the root = %v", got)
+	}
+	for _, query := range []string{filepath.Dir(root) + "/", "/", root} {
+		if got := Candidates(Unrooted(query, root), root, nil); len(got) != 0 {
+			t.Errorf("Candidates(%q) = %v, want none", query, got)
+		}
+	}
+}

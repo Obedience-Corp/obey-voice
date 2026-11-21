@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -352,5 +353,49 @@ func TestPersonasReturnWhenAPathTokenLosesItsSlash(t *testing.T) {
 	m = press(m, tea.KeyBackspace)
 	if m.input.Value() != "@j" || m.mentions.personas != 2 {
 		t.Fatalf("draft %q, personas did not come back: %+v", m.input.Value(), m.visibleMentions())
+	}
+}
+
+func TestPathMentionsCarryTheRootWhenThePromptDoesNotStateIt(t *testing.T) {
+	m, root := pathConversation(t)
+	m.cfg = &config.Config{EnvironmentContextEnabled: false, PromptsDir: t.TempDir()}
+	if prompt := brain.AssembleSystemPrompt(brain.SystemPromptInput{Provider: "ollama", Persona: "P", WorkDir: root, Cfg: m.cfg}); strings.Contains(prompt, root) {
+		t.Fatalf("this configuration should leave the root out of the prompt:\n%s", prompt)
+	}
+
+	m = typeRunes(t, m, "look at @p/")
+	if want := "look at @" + root + "/projects/"; m.input.Value() != want || m.textareaCursorOffset() != runeLen(want) {
+		t.Fatalf("shortcut = %q cursor %d, want %q", m.input.Value(), m.textareaCursorOffset(), want)
+	}
+	if got := paths(m); !slices.Equal(got, []string{"@projects/camp/", "@projects/obey-voice/"}) {
+		t.Fatalf("list under a full path = %v", got)
+	}
+	m = press(m, tea.KeyTab)
+	if want := "look at @" + root + "/projects/camp/"; m.input.Value() != want {
+		t.Fatalf("directory accept = %q, want %q", m.input.Value(), want)
+	}
+	if got := paths(m); !slices.Equal(got, []string{"@projects/camp/main.go"}) {
+		t.Fatalf("list did not move into the directory: %v", got)
+	}
+	m = press(m, tea.KeyTab)
+	if want := "look at @" + root + "/projects/camp/main.go "; m.input.Value() != want || m.mentionsShowing() {
+		t.Fatalf("file accept = %q showing=%v, want %q", m.input.Value(), m.mentionsShowing(), want)
+	}
+
+	m, root = pathConversation(t)
+	m.cfg = &config.Config{EnvironmentContextEnabled: false}
+	m = press(typeRunes(t, m, "open @READ"), tea.KeyTab)
+	if want := "open @" + root + "/README.md "; m.input.Value() != want {
+		t.Fatalf("root file accept = %q, want %q", m.input.Value(), want)
+	}
+	m = press(typeRunes(t, m, "and @proj"), tea.KeyTab)
+	if want := "open @" + root + "/README.md and @" + root + "/projects/"; m.input.Value() != want {
+		t.Fatalf("typed relative token accept = %q, want %q", m.input.Value(), want)
+	}
+
+	m.cfg = &config.Config{EnvironmentContextEnabled: true}
+	m = press(m, tea.KeyTab)
+	if want := "open @" + root + "/README.md and @projects/camp/"; m.input.Value() != want {
+		t.Fatalf("accept after the setting was turned back on = %q, want %q", m.input.Value(), want)
 	}
 }

@@ -247,7 +247,9 @@ the list for that word, and Enter always sends the message exactly as typed.
 Every completed path contains a `/` (a top-level file is written `@./name`),
 so a message such as `@projects/obey-voice/ what is this?` goes to the current
 persona instead of being refused as an unknown persona. Names containing spaces
-cannot be completed, because the word ends at the space.
+cannot be completed, because the word ends at the space. When the Machine
+context setting (`environment_context_enabled`) is off, the model is not told
+which directory paths are relative to, so Tab inserts the full path.
 
 Use `/menu` (or `/back`) to save the current chat and return to the launcher
 inside the same terminal UI. The app drains the conversation runtime before

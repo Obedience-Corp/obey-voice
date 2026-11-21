@@ -81,6 +81,10 @@ func TestEveryProviderIsToldWhatAtPathsAreRelativeTo(t *testing.T) {
 			t.Fatalf("%s: missing the @path line next to the path rule:\n%s", provider, got)
 		}
 	}
+	worker := config.WorkerBrainConfig(cfg)
+	if got := AssembleSystemPrompt(SystemPromptInput{Provider: worker.BrainProvider, Persona: "P", WorkDir: pinned, Cfg: worker}); !strings.Contains(got, want) {
+		t.Fatalf("a delegated worker is not told the same @path root:\n%s", got)
+	}
 	cfg.EnvironmentContextEnabled = false
 	if got := AssembleSystemPrompt(SystemPromptInput{Provider: providerOllama, Persona: "P", WorkDir: pinned, Cfg: cfg}); strings.Contains(got, "An @path") {
 		t.Fatalf("@path line without the environment block:\n%s", got)

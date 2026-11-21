@@ -37,7 +37,7 @@ func TestLeadingPathMentionReachesTheSelectedPersona(t *testing.T) {
 		return brain.Addressee{Kind: "none"}, nil
 	})
 	before := f.selector.Snapshot().PersonaID
-	for _, input := range []string{"@projects/obey-voice/ what is this", "@./README.md summarize it", "@santa/notes.md read this"} {
+	for _, input := range []string{"@projects/obey-voice/ what is this", "@./README.md summarize it", "@santa/notes.md read this", "@/home/me/camp/projects/santa/ what is this"} {
 		got, err := f.selector.Route(t.Context(), input, false)
 		if err != nil || got.Request != input || got.LocalReply != "" || got.Envelope.PersonaID != before {
 			t.Fatalf("%q: admission=%+v err=%v", input, got, err)

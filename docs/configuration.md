@@ -282,6 +282,12 @@ outside a campaign. It is the same root the composer completes `@` against, so
 `path-mentions` prompt document (`prompts/system/path-mentions.yaml`), with the
 root supplied as `{mention_root}`.
 
+With `environment_context_enabled: false` the block is not sent, so nothing
+tells the model what a relative `@path` means. In that case the composer
+inserts the full path instead: the list still shows `@projects/app/`, and Tab
+writes `@/Users/you/Dev/My_Tools/projects/app/`. A path typed out by hand is
+sent as typed.
+
 ### The environment block
 
 Every provider's system prompt carries the same `Environment:` block right
@@ -311,9 +317,10 @@ server:
   of a cold prompt read at 180 tokens/s, and nothing on turns that hit the
   cache.
 - Workers get the date and their own model, but not the installed list.
-- `environment_context_enabled: false` removes the whole block.
-- The block is built in code, not from a prompt document, so no file under
-  `prompts/` can override it.
+- `environment_context_enabled: false` removes the whole block, including the
+  `@path` line.
+- Apart from the `@path` line, the block is built in code, not from a prompt
+  document, so no other file under `prompts/` can override it.
 
 An embedder that passes its own `voiceagent.Options.Env` controls these lines
 too: `Location` sets the zone the date is reckoned in, `OmitDate` and

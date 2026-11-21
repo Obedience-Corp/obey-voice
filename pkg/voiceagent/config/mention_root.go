@@ -26,3 +26,10 @@ func MentionRoot(cfg *Config, workDir string) (root string, campaign bool) {
 	}
 	return dir, false
 }
+
+// MentionRootStated reports whether the model's prompt says what an @path is
+// relative to. That line is part of the environment block, so with the block
+// off a completed path has to carry the root itself.
+func MentionRootStated(cfg *Config) bool {
+	return cfg == nil || cfg.EnvironmentContextEnabled
+}
