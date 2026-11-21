@@ -67,6 +67,15 @@ func TestWithheldPictureIsSaidOnceForEachPersona(t *testing.T) {
 type reportsWithheld struct {
 	*streamClock
 	ref chatmedia.Ref
+	// validates makes it accept pictures, as a provider that views them does.
+	validates bool
+}
+
+func (b *reportsWithheld) ValidateImages(ctx context.Context, refs []chatmedia.Ref) error {
+	if b.validates {
+		return nil
+	}
+	return b.streamClock.ValidateImages(ctx, refs)
 }
 
 func (b *reportsWithheld) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
@@ -226,4 +235,33 @@ type silentMedia struct{}
 
 func (silentMedia) ResolveAudio(context.Context, utterance.AudioRef) ([]byte, error) {
 	return nil, errors.New("no recording")
+}
+
+// A turn refused over its pictures is marked, whether the selected provider
+// refuses it or the one the message is routed to, so a host can give the
+// draft back. Neither sends anything.
+func TestTurnRefusedOverItsPicturesIsMarked(t *testing.T) {
+	ref := chatmedia.Ref{ID: "a", Name: "desk.png", Format: "png"}
+	ctx := chatmedia.WithInput(t.Context(), []chatmedia.Ref{ref})
+
+	selected := &noImageInput{}
+	err := (&Pipeline{Brain: selected, Events: events.NewBus()}).RunTurnTextMode(ctx, "What is this?")
+	if !ImagesRefused(err) || selected.requests != 0 {
+		t.Fatalf("selected provider: err=%v requests=%d", err, selected.requests)
+	}
+
+	viewer, routed := &reportsWithheld{streamClock: &streamClock{}}, &noImageInput{}
+	viewer.validates = true
+	p := &Pipeline{Brain: viewer, Events: events.NewBus()}
+	p.AdmitInput = func(_ context.Context, input string, _ bool) (ResponseAdmission, error) {
+		p.Brain = routed
+		return ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "scout", DisplayName: "Scout"}}, nil
+	}
+	err = p.RunTurnTextMode(ctx, "Scout, what is this?")
+	if !ImagesRefused(err) || routed.requests != 0 || len(viewer.at) != 0 {
+		t.Fatalf("routed provider: err=%v requests=%d", err, routed.requests)
+	}
+	if ImagesRefused(errors.New("boom")) || ImagesRefused(nil) {
+		t.Fatal("an unrelated failure is marked as a refused picture")
+	}
 }

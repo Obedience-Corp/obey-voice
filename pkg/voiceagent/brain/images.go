@@ -40,8 +40,16 @@ func (o *OllamaBrain) ValidateNewImages(ctx context.Context, refs []chatmedia.Re
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if len(refs) > 0 && o.audioResolver != nil {
+	if len(refs) == 0 {
+		return nil
+	}
+	if o.audioResolver != nil {
 		return ErrNativeImageInput
+	}
+	// Only whether the model can be asked matters here, not its answer: a
+	// server that cannot say would fail the turn once the draft is gone.
+	if _, err := o.viewsImages(ctx); err != nil {
+		return err
 	}
 	_, err := loadImageData(refs)
 	return err

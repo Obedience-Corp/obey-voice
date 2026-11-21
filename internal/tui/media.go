@@ -12,6 +12,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// imageOnlyText is the line a draft with pictures and no text is sent as.
+const imageOnlyText = "Attached image."
+
 type mediaState struct {
 	err                                              string
 	draft, pending                                   []chatmedia.Ref
@@ -291,7 +294,7 @@ func (m *conversationModel) updateMedia(msg tea.Msg) (tea.Cmd, bool) {
 		m.media.validating = false
 		text := strings.TrimSpace(m.input.Value())
 		if text == "" {
-			text = "Attached image."
+			text = imageOnlyText
 		}
 		provider, model := m.activeBrain()
 		if text != v.text || provider+"/"+model != v.model || !reflect.DeepEqual(v.refs, m.media.draft) {

@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 // stopAfterFirstText runs input as a turn and stops it once its first text
@@ -210,6 +211,33 @@ func TestPictureSentToATextOnlyPersonaReachesThePersonaThatViewsImages(t *testin
 	}
 	if errs := c.errorEvents(); len(errs) > 0 {
 		t.Fatalf("errors: %+v", errs)
+	}
+}
+
+// The message names a persona whose provider takes no image input. Its turn
+// is refused over the picture before anything is sent or recorded, and is
+// marked so the host can give the draft back.
+func TestPictureForANamedPersonaThatCannotTakeItIsRefusedWithoutARecord(t *testing.T) {
+	c := newLocalConversation(t, 20, "ember", "scout=muse-spark")
+	blind := testProfile("ember", "Ember", "ember")
+	blind.Brain.Model = textOnlyModel
+	writeTestProfile(t, c.catalog.Dir, blind)
+	c.start("ember", nil, nil)
+	ref, err := chatmedia.DefaultStore().Import("diagram.png", append(slices.Clone(testmedia.PNG()), 11))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	err = c.p.RunTurnTextMode(chatmedia.WithInput(ctx, []chatmedia.Ref{ref}), "Scout, what is in this diagram?")
+	if !pipeline.ImagesRefused(err) {
+		t.Fatalf("turn: %v", err)
+	}
+	if turns := c.selector.Transcript(); len(turns) != 0 {
+		t.Fatalf("a refused turn was recorded: %+v", turns)
+	}
+	if sent := c.requests(); len(sent) != 0 {
+		t.Fatalf("a refused turn sent %d requests", len(sent))
 	}
 }
 

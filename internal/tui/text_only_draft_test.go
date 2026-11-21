@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
@@ -19,16 +20,22 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ollama/ollama/api"
 )
 
 // textOnlyChat is a conversation whose selected persona runs on an Ollama
 // model that cannot view images, with the real provider and pipeline.
 type textOnlyChat struct {
-	model conversationModel
-	brain *brain.OllamaBrain
-	mu    sync.Mutex
-	sent  []api.ChatRequest
+	model    conversationModel
+	brain    *brain.OllamaBrain
+	pipeline *pipeline.Pipeline
+	cfg      *config.Config
+	client   *http.Client
+	// showDown makes the server unable to describe its model.
+	showDown atomic.Bool
+	mu       sync.Mutex
+	sent     []api.ChatRequest
 }
 
 // noRecordings resolves no audio: these conversations are typed.
@@ -53,6 +60,11 @@ func newOllamaChat(t *testing.T, nativeAudio bool) *textOnlyChat {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/show":
+			if c.showDown.Load() {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "model is loading"})
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion"}})
 		case "/api/chat":
 			var req api.ChatRequest
@@ -80,10 +92,25 @@ func newOllamaChat(t *testing.T, nativeAudio bool) *textOnlyChat {
 		t.Fatal(err)
 	}
 	bus := events.NewBus()
+	c.cfg, c.client = cfg, server.Client()
+	c.pipeline = &pipeline.Pipeline{Brain: c.brain, Events: bus}
 	c.model = sizedConversation(t, 100, 40)
 	c.model.cfg = cfg
-	c.model.deps = conversationDeps{runner: &pipeline.Pipeline{Brain: c.brain, Events: bus}, ctx: t.Context(), bus: bus}
+	c.model.deps = conversationDeps{runner: c.pipeline, ctx: t.Context(), bus: bus}
 	return c
+}
+
+// submit sends the draft through its check. It returns the command that runs
+// the turn, or nil when the draft was refused.
+func (c *textOnlyChat) submit(t *testing.T, text string) tea.Cmd {
+	t.Helper()
+	c.model.input.SetValue(text)
+	check := c.model.handleSubmit()
+	if check == nil {
+		t.Fatal("missing draft check")
+	}
+	send, _ := c.model.updateMedia(check())
+	return send
 }
 
 // attach puts one picture in the draft, as a paste or a dropped file does.
@@ -186,5 +213,55 @@ func TestPictureDraftIsRefusedForANativeAudioPersona(t *testing.T) {
 	}
 	if len(c.requests()) != 0 || len(c.brain.History()) != 0 {
 		t.Fatal("a refused picture reached the model or the record")
+	}
+}
+
+// A server that cannot describe its model refuses the draft while it can
+// still be changed, as it did when admission asked what the model can view.
+func TestPictureDraftIsKeptWhenTheServerCannotDescribeTheModel(t *testing.T) {
+	c := newTextOnlyChat(t)
+	c.attach(t)
+	c.showDown.Store(true)
+	if send := c.submit(t, "What is on my screen?"); send != nil {
+		done, _ := send().(textTurnDoneMsg)
+		t.Fatalf("the draft was sent and its turn ended with: %v", done.err)
+	}
+	if !strings.Contains(c.model.media.err, "check image support") || len(c.model.media.draft) != 1 || c.model.input.Value() != "What is on my screen?" {
+		t.Fatalf("the draft was not refused and kept: err=%q", c.model.media.err)
+	}
+	if len(c.requests()) != 0 || len(c.brain.History()) != 0 {
+		t.Fatal("a refused picture reached the model or the record")
+	}
+}
+
+// The message names a persona that cannot take a picture. The draft was
+// checked against the persona selected when it was sent, so the refusal comes
+// after it has left the input. The text and picture come back.
+func TestPictureRefusedAfterRoutingComesBackToTheDraft(t *testing.T) {
+	c := newTextOnlyChat(t)
+	echo, err := brain.NewNativeOllama(t.Context(), c.cfg, c.client, noRecordings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Routing by name selects the named persona's provider before the turn runs.
+	c.pipeline.AdmitInput = func(_ context.Context, input string, _ bool) (pipeline.ResponseAdmission, error) {
+		c.pipeline.Brain = echo
+		return pipeline.ResponseAdmission{Request: input, Envelope: events.ResponseEnvelope{ResponseID: "r1", PersonaID: "echo", DisplayName: "Echo"}}, nil
+	}
+	ref := c.attach(t)
+	send := c.submit(t, "Echo, what is on my screen?")
+	if c.model.media.err != "" || send == nil {
+		t.Fatalf("the draft was refused before routing: %q", c.model.media.err)
+	}
+	done, ok := send().(textTurnDoneMsg)
+	if !ok || !errors.Is(done.err, brain.ErrNativeImageInput) || !pipeline.ImagesRefused(done.err) {
+		t.Fatalf("turn: %+v", done)
+	}
+	c.model.handleTextTurnDone(done)
+	if len(c.model.media.draft) != 1 || c.model.media.draft[0] != ref || c.model.input.Value() != "Echo, what is on my screen?" || !strings.Contains(c.model.media.err, "native audio") {
+		t.Fatalf("the draft did not come back: draft=%d input=%q err=%q", len(c.model.media.draft), c.model.input.Value(), c.model.media.err)
+	}
+	if len(c.requests()) != 0 || len(c.brain.History()) != 0 || len(echo.History()) != 0 {
+		t.Fatal("a refused picture reached a model or the record")
 	}
 }

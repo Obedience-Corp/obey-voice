@@ -46,6 +46,20 @@ func (p *Pipeline) ImageValidator() func(context.Context, []chatmedia.Ref) error
 	}
 }
 
+// refusedImages is a turn refused over its pictures after its draft was sent.
+// Nothing went to a provider and nothing was recorded.
+type refusedImages struct{ err error }
+
+func (e refusedImages) Error() string { return e.err.Error() }
+func (e refusedImages) Unwrap() error { return e.err }
+
+// ImagesRefused reports whether a turn failed only because its pictures were
+// refused before any request, so a host can give the user their draft back.
+func ImagesRefused(err error) bool {
+	var refused refusedImages
+	return errors.As(err, &refused)
+}
+
 // validateAdmittedImages checks the pictures of a turn that is already part of
 // the conversation. A provider that keeps a picture on the record for a model
 // that cannot view it answers the turn; any other is asked as for new input.
