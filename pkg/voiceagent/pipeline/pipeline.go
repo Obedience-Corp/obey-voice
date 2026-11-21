@@ -121,6 +121,10 @@ type Pipeline struct {
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.
 	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)
+	// NamesOtherPersona reports, without a model call, whether a typed line is
+	// addressed to a known persona other than the one answering now. Nil names
+	// nobody.
+	NamesOtherPersona func(input string) bool
 	// HostedNotice is asked, once the responding persona is known and before
 	// anything is sent to the live provider, whether the user must first be told
 	// that the persona's backend is hosted.

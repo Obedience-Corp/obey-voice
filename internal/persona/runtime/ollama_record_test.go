@@ -29,6 +29,13 @@ import (
 // reply and hold the request until it is stopped.
 const ollamaStall = "HOLD ON"
 
+// ollamaRelease after ollamaStall holds the request until release closes
+// instead, then finishes the reply with ollamaReleased.
+const (
+	ollamaRelease  = "UNTIL RELEASED"
+	ollamaReleased = "The build is green."
+)
+
 // localConversation is a conversation among personas whose backends are a
 // fake Ollama server, answering from a fixed script with live tool routing,
 // and optionally Codex. It keeps every request body Ollama was sent.
@@ -52,6 +59,9 @@ type localConversation struct {
 	errors []events.Error
 	// stalled receives the request held by ollamaStall once its partial reply is sent.
 	stalled chan struct{}
+	// release ends a request held by ollamaRelease; heldStopped closes if the
+	// host stops that request first.
+	release, heldStopped chan struct{}
 }
 
 // newLocalConversation starts on the first of personas. Each is "id" or
@@ -63,7 +73,7 @@ func newLocalConversation(t *testing.T, maxHistory int, personas ...string) *loc
 
 func newLocalConversationWithTools(t *testing.T, maxHistory int, routerTools string, personas ...string) *localConversation {
 	t.Helper()
-	c := &localConversation{t: t, stalled: make(chan struct{}, 1)}
+	c := &localConversation{t: t, stalled: make(chan struct{}, 1), release: make(chan struct{}), heldStopped: make(chan struct{})}
 	c.root, _ = filepath.EvalSymlinks(t.TempDir())
 	// Attachments are stored under the install directory.
 	config.SetConfigDirForTest(t, t.TempDir())
@@ -167,6 +177,15 @@ func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) 
 		}
 		w.(http.Flusher).Flush()
 		c.stalled <- struct{}{}
+		if strings.Contains(lastUserLine(req.Messages), ollamaRelease) {
+			select {
+			case <-c.release:
+				_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": true, "done_reason": "stop", "message": map[string]string{"role": "assistant", "content": ollamaReleased}})
+			case <-r.Context().Done():
+				close(c.heldStopped)
+			}
+			return
+		}
 		<-r.Context().Done()
 		return
 	}

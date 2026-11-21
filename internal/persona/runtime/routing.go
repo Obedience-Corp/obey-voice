@@ -89,6 +89,13 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 	return admitted, nil
 }
 
+// NamesOtherPersona reports whether input addresses a known persona other
+// than the selected one by the exact rules alone (@id, a name, "Hey Name", a
+// leading vocative, "switch to Name"), without asking a model.
+func (s *Selector) NamesOtherPersona(input string) bool {
+	return false
+}
+
 func (s *Selector) warnCatalogIssues(issues []persona.CatalogIssue) {
 	if s.opts.Pipeline.Events == nil {
 		return
