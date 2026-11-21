@@ -291,10 +291,7 @@ func (m *conversationModel) seedTranscript(turns []brain.Turn) {
 	for _, t := range turns {
 		switch t.Role {
 		case "user":
-			display := utterance.DisplayText(t.Content, t.Utterance)
-			if t.TypedInput != "" {
-				display = utterance.DisplayAudioInput(t.TypedInput, t.Utterance)
-			}
+			display := storedUserText(t)
 			m.rememberUser(display, m.displaySpeakerLabel(t.Speaker))
 			m.appendTranscript(renderSpeakerUserTurn(m.displaySpeakerLabel(t.Speaker), display))
 			if t.Utterance != nil {
@@ -311,15 +308,7 @@ func (m *conversationModel) seedTranscript(turns []brain.Turn) {
 				}
 			}
 		case "assistant":
-			name := t.PersonaDisplayName
-			if name == "" {
-				name = t.PersonaID
-			}
-			if name == "" {
-				name = m.agentName
-			}
-			item := agentItemFromStored(name, t.Content)
-			item.attachments = t.Attachments
+			item := storedAgentItem(t, m.agentName)
 			if item.spoken != "" {
 				m.rememberAssistant(item.spoken)
 				m.attachAssistantMedia(t.Attachments)
@@ -327,4 +316,27 @@ func (m *conversationModel) seedTranscript(turns []brain.Turn) {
 			m.appendAgentTurn(item)
 		}
 	}
+}
+
+// storedUserText is what a persisted user turn shows in the transcript.
+func storedUserText(t brain.Turn) string {
+	if t.TypedInput != "" {
+		return utterance.DisplayAudioInput(t.TypedInput, t.Utterance)
+	}
+	return utterance.DisplayText(t.Content, t.Utterance)
+}
+
+// storedAgentItem rebuilds a persisted assistant turn. fallback names a turn
+// saved without its persona.
+func storedAgentItem(t brain.Turn, fallback string) chatItem {
+	name := t.PersonaDisplayName
+	if name == "" {
+		name = t.PersonaID
+	}
+	if name == "" {
+		name = fallback
+	}
+	item := agentItemFromStored(name, t.Content)
+	item.attachments = t.Attachments
+	return item
 }

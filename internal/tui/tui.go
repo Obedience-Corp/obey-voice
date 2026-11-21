@@ -156,6 +156,8 @@ func newApp(cfg *config.Config, providers []discovery.ProviderInfo, saved []sess
 	savedSessions := resumableSessions(saved)
 	conversation := newConversation(cfg.AgentName)
 	conversation.cfg = cfg
+	sessions := newSessions(savedSessions)
+	sessions.agentName, sessions.userName = cfg.AgentName, cfg.UserDisplayName
 
 	return App{
 		screen:       screenLauncher,
@@ -164,7 +166,7 @@ func newApp(cfg *config.Config, providers []discovery.ProviderInfo, saved []sess
 		launcher:     newLauncher(cfg, providers, savedSessions),
 		settings:     newSettings(cfg, providers),
 		conversation: conversation,
-		sessions:     newSessions(savedSessions),
+		sessions:     sessions,
 		audiobook:    newAudiobook(cfg),
 		pickBook:     newPickBook(cfg),
 		library:      newLibrary(cfg),
@@ -339,6 +341,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.onBookPicked(msg)
 	case libraryAudiobookMsg:
 		return a.onLibraryAudiobook(msg)
+	case sessionDeletedMsg:
+		return a.onSessionDeleted(msg)
 	case workerSettingsSavedMsg:
 		return a.onWorkerSettingsSaved(msg)
 	case settingsDoneMsg:

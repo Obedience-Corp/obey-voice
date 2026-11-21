@@ -207,6 +207,24 @@ func newLauncher(cfg *config.Config, providers []discovery.ProviderInfo, saved .
 	return m
 }
 
+// withSessions rebuilds the session-derived entries (Continue, Browse
+// sessions) and keeps everything else, the cursor's entry included.
+func (m launcherModel) withSessions(saved []session.Session) launcherModel {
+	var current launcherAction = -1
+	if m.cursor >= 0 && m.cursor < len(m.items) {
+		current = m.items[m.cursor].action
+	}
+	m.items = newLauncher(m.cfg, m.providers, saved).items
+	m.cursor = 0
+	for i, item := range m.items {
+		if item.action == current {
+			m.cursor = i
+			break
+		}
+	}
+	return m
+}
+
 func (m launcherModel) Update(msg tea.Msg) (launcherModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
