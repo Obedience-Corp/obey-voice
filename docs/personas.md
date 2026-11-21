@@ -264,9 +264,20 @@ persona's name and spoken in that persona's voice once the conversation is
 quiet, like any job it started; it appears as a job row, its tool runs after
 the move are listed on that row, and `/workers` or "kill it" stops it. The
 part of the reply you had already seen stays in the conversation as that
-persona's line. The persona you named stays selected afterwards. Addressing the
-first persona again before its job finishes gives it a fresh session, which
-knows the conversation up to your line and the part of its reply you saw.
+persona's line. An image the reply links to is attached to it, as for a
+worker's answer, rather than shown or spoken as a path. The persona you named
+stays selected afterwards. Addressing the first persona again before its job
+finishes gives it a fresh session, which knows the conversation up to your
+line and the part of its reply you saw.
+
+If the moved reply ends by handing its work off (the persona chose
+`start_background_work`, `web_search` or `fetch_url`), the same job goes on to
+do that work, as a spawned job of the first persona would: on its own backend
+or its worker, as its `brain.work` setting chose when the reply started, with
+that persona's name and voice, whoever is selected by then. Its answer is
+delivered like any job's. A moved reply that ends by asking to narrate
+fails its job with a line saying to ask again, since narration needs the live
+conversation.
 
 The turn moves only when all of these hold; otherwise the message stops the
 reply as before:
@@ -287,9 +298,13 @@ reply as before:
 Only typed messages move a turn. The talk key and the open microphone still
 stop the reply. A moved reply counts as a running job: it starts at once even
 when `voice_worker_max_concurrent` is reached, and later jobs queue behind it.
-It is bound by `voice_worker_job_budget` like other jobs, not by the live
-reply's idle timeout. Closing the conversation stops it. If the persona you
-named cannot take over, the moved reply is stopped, as if it had never moved.
+It keeps the limit a live reply has, and no other: it is stopped as a failed
+job once the model has sent nothing, no text, thinking or tool activity, for
+three minutes, and `voice_worker_job_budget` does not
+apply to it, so a move never shortens how long the persona may work. Work it
+hands off is held to the limits a spawned job has. Closing the conversation
+stops it. If the persona you named cannot take over, the moved reply is
+stopped, as if it had never moved.
 
 Use `/menu` (or `/back`) to save the current chat and return to the launcher
 inside the same terminal UI. The app drains the conversation runtime before
