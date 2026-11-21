@@ -563,6 +563,7 @@ func TestDeliveryAnnouncementNeedsTheChatOrAPicture(t *testing.T) {
 }
 
 func TestInSentencePictureIsCheckedLikeAWholeLineOne(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "bird.png"), testmedia.PNG(), 0600); err != nil {
 		t.Fatal(err)
@@ -585,6 +586,7 @@ func TestInSentencePictureIsCheckedLikeAWholeLineOne(t *testing.T) {
 
 // Explaining the reference syntax quotes the placeholder from the prompt.
 func TestPictureHowToQuotingThePlaceholder(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	o := &OllamaBrain{cfg: &config.Config{WorkDir: t.TempDir()}}
 	const input = "How do I share a picture in the chat?"
 	direct, _ := o.directImageRequest(input, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect})

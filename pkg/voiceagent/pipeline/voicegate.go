@@ -91,7 +91,7 @@ func (g *voiceGate) filter(text string) (string, int) {
 	for _, line := range lines {
 		line, cut := g.withoutImages(line)
 		changed = changed || cut
-		if (cut && strings.TrimSpace(line) == "") || g.suppress(line) {
+		if (cut && chatmedia.BareMarker(line)) || g.suppress(line) {
 			dropped++
 			continue
 		}
@@ -127,7 +127,7 @@ func (g *voiceGate) withoutImages(line string) (string, bool) {
 	}
 	line = chatmedia.RemoveImageReferences(line)
 	if start := strings.Index(line, "!["); start >= 0 {
-		line, g.inImage = line[:start], true
+		line, g.inImage = line[:start], !strings.Contains(line[start:], ")")
 	}
 	return indent + strings.TrimLeft(line, " \t"), true
 }

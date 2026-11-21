@@ -82,6 +82,21 @@ func TestReplyImportsReferencesWrittenInsideASentence(t *testing.T) {
 	}
 }
 
+func TestListOfPicturesLeavesNoMarkers(t *testing.T) {
+	root := t.TempDir()
+	store := Store{Dir: t.TempDir()}
+	p := writePictures(t, root, 2)
+	for _, list := range []string{
+		"- ![A](" + p[0] + ")\n- ![B](" + p[1] + ")",
+		"1. ![A](<" + p[0] + ">)\n2. ![B](<" + p[1] + ">)",
+	} {
+		text, refs, err := store.ImportReply(list, root)
+		if err != nil || len(refs) != 2 || text != "A\nB" {
+			t.Errorf("%q: got %q, %d images, %v", list, text, len(refs), err)
+		}
+	}
+}
+
 func TestInSentenceReferenceFailsLikeAWholeLineOne(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside.png")
@@ -136,6 +151,10 @@ func TestSeparateImageReferences(t *testing.T) {
 		"Write `![A](/w/a.png)` like this.":       "Write `![A](/w/a.png)` like this.",
 		"Write ``![A](/w/a.png)`` here.":          "Write ``![A](/w/a.png)`` here.",
 		"Unfinished ![A](/w/a":                    "Unfinished ![A](/w/a",
+		"- ![A](/w/a.png)\n- ![B](/w/b.png)":      "![A](/w/a.png)\n![B](/w/b.png)",
+		"1. ![A](/w/a.png)\n2) ![B](/w/b.png)":    "![A](/w/a.png)\n![B](/w/b.png)",
+		"> ![A](/w/a.png)":                        "![A](/w/a.png)",
+		"- Here it is ![A](/w/a.png)":             "- Here it is\n![A](/w/a.png)",
 	} {
 		got := SeparateImageReferences(in)
 		if got != want {

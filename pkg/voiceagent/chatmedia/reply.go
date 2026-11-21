@@ -18,6 +18,7 @@ const imageReference = `!\[([^\]\r\n]*)\]\((?:<([^>\r\n]+)>|([^()\r\n]+))\)`
 var (
 	inlineImage = regexp.MustCompile(imageReference)
 	replyImage  = regexp.MustCompile(`^[\t ]*` + imageReference + `[\t ]*$`)
+	bareMarker  = regexp.MustCompile(`^[\t ]*(?:>[\t ]*)*(?:[-*+•]|[0-9]+[.)])?[\t ]*$`)
 )
 
 // ImportReply runs on the owning response/job goroutine, before publication.
@@ -258,10 +259,16 @@ func separateLine(line string) []string {
 	if len(refs) == 0 {
 		return []string{line}
 	}
-	if strings.TrimSpace(line) == "" {
+	if BareMarker(line) {
 		return refs
 	}
 	return append([]string{strings.TrimRight(line, " \t\r")}, refs...)
+}
+
+// BareMarker reports whether what is left of a line is blank or only a list
+// or quote marker, as after removing the pictures from "- ![A](a.png)".
+func BareMarker(line string) bool {
+	return bareMarker.MatchString(line)
 }
 
 // joinProse closes the gap a removed reference leaves without doubling spaces.

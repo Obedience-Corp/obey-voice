@@ -405,3 +405,25 @@ func TestSpeechSkipsEveryReferenceSplitAcrossSegments(t *testing.T) {
 		t.Fatalf("spoken %q", spoken)
 	}
 }
+
+func TestSpeechSkipsAListOfReferences(t *testing.T) {
+	projection := NewSpeechProjection()
+	var spoken []string
+	for _, chunk := range []string{"Here they are.\n- ![A](</w/a.png>)\n1. ![B](</w/b.", "png>)\n> ![C](/w/c.png)\n* ![D](</w/d.", "png>)\nThat is all."} {
+		if got := projection.Speak(chunk).Speakable; got != "" {
+			spoken = append(spoken, got)
+		}
+	}
+	if strings.Join(spoken, " ") != "Here they are. That is all." {
+		t.Fatalf("spoken %q", spoken)
+	}
+}
+
+// A "![" that is not a picture does not silence the lines after it.
+func TestSpeechResumesAfterANonImageBang(t *testing.T) {
+	g := &voiceGate{}
+	g.filter("Wow![1] (see note) and more.")
+	if got, _ := g.filter("Next sentence."); got != "Next sentence." {
+		t.Fatalf("next line = %q", got)
+	}
+}
