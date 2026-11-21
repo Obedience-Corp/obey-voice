@@ -71,6 +71,7 @@ func assertWorkingAligned(t *testing.T, o *OllamaBrain) {
 	}
 	for i, m := range o.history {
 		content := strings.TrimSuffix(m.Content, agedImageNote(o.working[i].Attachments))
+		content = strings.TrimSuffix(content, unseenImageNote(o.working[i].Attachments))
 		if o.working[i].Role != m.Role || (m.Role == "user" && o.working[i].Content != content) {
 			t.Fatalf("working[%d]=%s %q, history %s %q", i, o.working[i].Role, o.working[i].Content, m.Role, m.Content)
 		}

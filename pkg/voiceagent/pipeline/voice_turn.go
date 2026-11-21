@@ -206,6 +206,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		turn.finish(TurnInterrupted)
 		return original, err
 	}
+	p.noteUnviewedImages(metrics)
 
 	// turnCtx scopes the whole turn so the playback watchdog can abort the brain
 	// stream too — not just the derived playback context. Brain work is further
@@ -250,6 +251,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
+		OnImagesWithheld:  p.imagesWithheldHook(metrics),
 	}
 	if admission.Discussion != nil {
 		streamOpts.WorkerTiers = nil

@@ -117,9 +117,13 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		turn.finish(TurnFailed)
 		return err
 	}
-	if err := p.ValidateImages(ctx, chatmedia.Input(ctx)); err != nil {
-		turn.finish(TurnFailed)
-		return err
+	// A continuation or background turn is sent no attachments of its own:
+	// its pictures are already in the history checked above.
+	if !isContinuation && !background {
+		if err := p.validateAdmittedImages(ctx, chatmedia.Input(ctx)); err != nil {
+			turn.finish(TurnFailed)
+			return err
+		}
 	}
 	if !isRetry {
 		if err := p.prepareTurn(ctx, input, metrics, turn); err != nil {
@@ -149,6 +153,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		turn.finish(TurnInterrupted)
 		return err
 	}
+	p.noteUnviewedImages(metrics)
 
 	requestCtx := ctx
 	var ordinary *ordinaryCompletion
@@ -190,6 +195,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
+		OnImagesWithheld:  p.imagesWithheldHook(metrics),
 	}
 	if isContinuation || background {
 		streamOpts.Attachments = nil

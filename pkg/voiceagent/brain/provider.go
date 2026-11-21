@@ -82,6 +82,9 @@ type StreamOptions struct {
 	// a warm KV prefix cache it should track the size of the new turn, not
 	// the whole transcript — and gen is the tokens generated.
 	OnUsage func(prefill, gen int)
+	// OnImagesWithheld reports the pictures of this request that model was not
+	// sent because it cannot view images (optional; for UI).
+	OnImagesWithheld func(model string, refs []chatmedia.Ref)
 	// OnSessionWarn reports that the provider's replayed session prompt has
 	// crossed the configured warn threshold (optional; for UI). Fired at most
 	// once per underlying session; the session itself is left alone.

@@ -102,6 +102,8 @@ type OllamaBrain struct {
 	groupHistory      bool               // foreign canonical speakers; guarded by stateMu
 	// stopped is what the last streamed request left for RecordStoppedRequest.
 	stopped ollamaStopped
+	// imagesWithheld is set for a request whose model cannot view images.
+	imagesWithheld bool
 }
 
 // NewOllama creates an Ollama brain provider.

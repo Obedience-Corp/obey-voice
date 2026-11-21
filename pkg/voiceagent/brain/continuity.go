@@ -91,8 +91,8 @@ func (o *OllamaBrain) archiveLine(m api.Message, t *Turn) string {
 		return ""
 	}
 	role, content := m.Role, m.Content
-	if t != nil && t.Role == "user" && len(t.Attachments) > 0 {
-		content = strings.TrimSuffix(content, agedImageNote(t.Attachments))
+	if t != nil && t.Role == "user" {
+		content = withoutImageNotes(content, t.Attachments)
 	}
 	if role == "user" {
 		content = o.userLine(content)
@@ -322,6 +322,9 @@ func (o *OllamaBrain) recallNotes() string {
 		return ""
 	}
 	_, input := decodeOllamaUser(o.history[index].Content)
+	if index < len(o.working) {
+		input = withoutImageNotes(input, o.working[index].Attachments)
+	}
 	input = strings.ToLower(input)
 	earlier := strings.Contains(input, "earlier") || strings.Contains(input, "previous") || strings.Contains(input, "what did we")
 	var refs []string

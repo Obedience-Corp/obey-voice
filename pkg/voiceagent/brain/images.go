@@ -10,25 +10,48 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
+// ValidateImages checks new pictures before their turn is sent. A model that
+// cannot view them refuses them here, while the draft can still be changed.
 func (o *OllamaBrain) ValidateImages(ctx context.Context, refs []chatmedia.Ref) error {
 	if len(refs) == 0 {
 		return nil
 	}
-	info, err := o.client.Show(ctx, &api.ShowRequest{Model: o.model})
+	views, err := o.viewsImages(ctx)
 	if err != nil {
-		return fmt.Errorf("check image support: %w", err)
+		return err
 	}
-	vision := false
-	for _, capability := range info.Capabilities {
-		if string(capability) == "vision" {
-			vision = true
-		}
-	}
-	if !vision {
+	if !views {
 		return fmt.Errorf("model %s does not support images; select a vision-capable Ollama model", o.model)
 	}
 	_, err = loadImageData(refs)
 	return err
+}
+
+// ValidateAdmittedImages checks the pictures of a turn that is already part of
+// the conversation. A model that cannot view them still answers the turn.
+func (o *OllamaBrain) ValidateAdmittedImages(ctx context.Context, refs []chatmedia.Ref) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	views, err := o.viewsImages(ctx)
+	if err != nil || !views {
+		return err
+	}
+	_, err = loadImageData(refs)
+	return err
+}
+
+func (o *OllamaBrain) viewsImages(ctx context.Context) (bool, error) {
+	info, err := o.client.Show(ctx, &api.ShowRequest{Model: o.model})
+	if err != nil {
+		return false, fmt.Errorf("check image support: %w", err)
+	}
+	for _, capability := range info.Capabilities {
+		if string(capability) == "vision" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 func loadImageData(refs []chatmedia.Ref) ([]api.ImageData, error) {
 	if len(refs) > chatmedia.MaxAttachments {
@@ -136,18 +159,37 @@ func modelImageType(ref chatmedia.Ref) string {
 	}
 	return "image/" + ref.Format
 }
-func (o *OllamaBrain) prepareImageHistory(ctx context.Context, refs []chatmedia.Ref) error {
+
+// prepareImageHistory readies the pictures a request carries: this turn's, and
+// those of the turns still in the image window. A model that cannot view
+// images is sent none. That does not fail the turn: the pictures stay on the
+// conversation record for a model that can view them.
+func (o *OllamaBrain) prepareImageHistory(ctx context.Context, opts StreamOptions) error {
 	keep := turnWindowStart(o.history, imageTurns-1)
-	if len(refs) == 0 {
-		for i, turn := range o.working {
-			if i >= keep && turn.Role == "user" && len(turn.Attachments) > 0 {
-				refs = turn.Attachments
-				break
-			}
+	o.imagesWithheld = false
+	// current is what a model that views images would be sent with this request.
+	var current []chatmedia.Ref
+	for i, turn := range o.working {
+		if i >= keep && turn.Role == "user" {
+			current = append(current, turn.Attachments...)
 		}
 	}
-	if err := o.ValidateImages(ctx, refs); err != nil {
-		return err
+	current = append(current, opts.Attachments...)
+	if len(current) > 0 {
+		views, err := o.viewsImages(ctx)
+		if err != nil {
+			return err
+		}
+		if !views {
+			o.withholdImages()
+			if opts.OnImagesWithheld != nil {
+				opts.OnImagesWithheld(o.model, current)
+			}
+			return nil
+		}
+		if _, err := loadImageData(opts.Attachments); err != nil {
+			return err
+		}
 	}
 	for i, t := range o.working {
 		if i < keep || t.Role != "user" || len(t.Attachments) == 0 {
@@ -171,7 +213,69 @@ func (o *OllamaBrain) attachInputImages(refs []chatmedia.Ref, images []api.Image
 	}
 	o.canonical[len(o.canonical)-1].Attachments = append([]chatmedia.Ref(nil), refs...)
 	o.working[len(o.working)-1].Attachments = append([]chatmedia.Ref(nil), refs...)
+	if o.imagesWithheld {
+		o.history[len(o.history)-1].Content += unseenImageNote(refs)
+		return
+	}
 	o.history[len(o.history)-1].Images = images
+}
+
+// withholdImages takes the pictures off every turn of the prompt history and
+// says on each that this model was not shown them. The transcript, the
+// working view and the attachment store keep every picture.
+func (o *OllamaBrain) withholdImages() {
+	o.imagesWithheld = true
+	for i := range o.history {
+		m := &o.history[i]
+		if m.Role != "user" {
+			continue
+		}
+		var t Turn
+		if i < len(o.working) {
+			t = o.working[i]
+		}
+		// A recording rides in the same field as a picture. Past the working
+		// view only a native-audio model can hold one.
+		if t.Utterance == nil && (i < len(o.working) || o.audioResolver == nil) {
+			m.Images = nil
+		}
+		if t.Role != "user" || len(t.Attachments) == 0 {
+			continue
+		}
+		note := unseenImageNote(t.Attachments)
+		if !strings.HasSuffix(m.Content, note) && !strings.HasSuffix(m.Content, agedImageNote(t.Attachments)) {
+			m.Content += note
+		}
+	}
+}
+
+// unseenImageNote names each picture a turn carries that this model cannot
+// view, so the turn still makes sense and the model does not describe it.
+func unseenImageNote(refs []chatmedia.Ref) string {
+	var b strings.Builder
+	for _, ref := range refs {
+		b.WriteString("\n" + attachedImageLabel(ref) + " not shown, because this model cannot view images.")
+	}
+	return b.String()
+}
+
+// withoutImageNotes is what the user said in a turn. A note about its pictures
+// carries a file name and is not theirs.
+func withoutImageNotes(content string, refs []chatmedia.Ref) string {
+	if len(refs) == 0 {
+		return content
+	}
+	content = strings.TrimSuffix(content, unseenImageNote(refs))
+	return strings.TrimSuffix(content, agedImageNote(refs))
+}
+
+// unviewedTurn is a turn as a provider with no image input receives it: its
+// text says the model was not shown the pictures the record names.
+func unviewedTurn(t Turn) Turn {
+	if t.Role == "user" && len(t.Attachments) > 0 {
+		t.Content += unseenImageNote(t.Attachments)
+	}
+	return t
 }
 
 // imageTurns is how many of the most recent user turns keep their images in
@@ -195,7 +299,7 @@ func (o *OllamaBrain) retireAgedImages() {
 			continue
 		}
 		note := agedImageNote(t.Attachments)
-		if !strings.HasSuffix(o.history[i].Content, note) {
+		if !strings.HasSuffix(o.history[i].Content, note) && !strings.HasSuffix(o.history[i].Content, unseenImageNote(t.Attachments)) {
 			o.history[i].Content += note
 		}
 		o.history[i].Images = nil

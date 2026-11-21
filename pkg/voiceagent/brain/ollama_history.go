@@ -448,9 +448,12 @@ func (o *OllamaBrain) appendProjectedToolResult(tc api.ToolCall, raw string, ide
 }
 
 func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) error {
-	images, err := loadImageData(opts.Attachments)
-	if err != nil {
-		return err
+	var images []api.ImageData
+	if !o.imagesWithheld {
+		var err error
+		if images, err = loadImageData(opts.Attachments); err != nil {
+			return err
+		}
 	}
 	o.appendMessage(api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)}, nil)
 	if opts.OriginalInput != "" && opts.OriginalInput != input {

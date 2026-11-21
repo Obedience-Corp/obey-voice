@@ -24,7 +24,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	if err := o.prepareAudioHistory(ctx, opts); err != nil {
 		return nil, err
 	}
-	if err := o.prepareImageHistory(ctx, opts.Attachments); err != nil {
+	if err := o.prepareImageHistory(ctx, opts); err != nil {
 		return nil, err
 	}
 	if opts.Identity != nil {
