@@ -61,6 +61,9 @@ var numericSpeechRE = regexp.MustCompile(`^[+-]?(?:[\$€£¥]\s*)?(?:\d{1,2}:\d
 // rest of the turn. Silence is a worse failure than a stray line.
 const regionLineCap = 50
 
+// maxPendingImage bounds an unfinished image reference held across segments.
+const maxPendingImage = 1024
+
 // voiceGate decides what may be spoken. It is a turn-scoped state machine, not
 // a line matcher: a tool transcript or a fenced block is a *region* whose
 // payload lines carry no marker of their own, and a region routinely spans
@@ -71,10 +74,11 @@ const regionLineCap = 50
 // It runs before brain.CleanForVoice, which strips the ``` markers a fenced
 // region is recognized by.
 type voiceGate struct {
-	inImage     bool
-	inFence     bool
-	inTool      bool
-	regionLines int
+	inImage      bool
+	pendingImage string
+	inFence      bool
+	inTool       bool
+	regionLines  int
 }
 
 // filter returns the speakable part of one segment and the number of lines
@@ -89,6 +93,13 @@ func (g *voiceGate) filter(text string) (string, int) {
 	dropped := 0
 	changed := false
 	for _, line := range lines {
+		// Inside a region a reference line is dropped whole: its prose must
+		// not read as the model returning to conversation.
+		if (g.inFence || g.inTool) && (g.inImage || strings.Contains(line, "![")) {
+			g.withoutImages(line)
+			dropped++
+			continue
+		}
 		line, cut := g.withoutImages(line)
 		changed = changed || cut
 		if (cut && chatmedia.BareMarker(line)) || g.suppress(line) {
@@ -104,32 +115,49 @@ func (g *voiceGate) filter(text string) (string, int) {
 }
 
 // withoutImages removes image references from a line and reports whether it
-// removed anything. The prose around a reference is still spoken. References
-// may span sentence chunks (periods in filenames), so an unfinished one stays
-// out of speech until its closing delimiter.
+// changed the line. The prose around a reference is still spoken. A reference
+// may span sentence chunks (periods in filenames), so an unfinished one is held
+// until it closes. A line whose reference is in code or is not well formed is
+// dropped whole, so no path is spoken.
 func (g *voiceGate) withoutImages(line string) (string, bool) {
-	indent := ""
+	cut := false
 	if g.inImage {
-		end := strings.Index(line, ">)")
-		if end >= 0 {
-			end++
-		} else {
-			end = strings.IndexByte(line, ')')
-		}
-		if end < 0 {
+		cut = true
+		pending := g.pendingImage + line
+		g.inImage, g.pendingImage = false, ""
+		switch end := chatmedia.LeadingImageReference(pending); {
+		case end > 0:
+			line = strings.TrimLeft(pending[end:], " \t")
+		case chatmedia.UnfinishedImageReference(pending) && len(pending) <= maxPendingImage:
+			g.inImage, g.pendingImage = true, pending
+			return "", true
+		case chatmedia.ImageReferenceAttempt(pending):
 			return "", true
 		}
-		line, g.inImage = line[end+1:], false
-	} else if strings.Contains(line, "![") {
-		indent = line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-	} else {
-		return line, false
 	}
-	line = chatmedia.RemoveImageReferences(line)
-	if start := strings.Index(line, "!["); start >= 0 {
-		line, g.inImage = line[:start], !strings.Contains(line[start:], ")")
+	if !strings.Contains(line, "![") {
+		return line, cut
 	}
-	return indent + strings.TrimLeft(line, " \t"), true
+	if chatmedia.ImageInCodeSpan(line) {
+		return "", true
+	}
+	if prose, refs := chatmedia.ImageLineProse(line); len(refs) > 0 {
+		line, cut = prose, true
+	}
+	for i := 0; ; i += 2 {
+		start := strings.Index(line[i:], "![")
+		if start < 0 {
+			return line, cut
+		}
+		i += start
+		switch rest := line[i:]; {
+		case chatmedia.UnfinishedImageReference(rest):
+			g.inImage, g.pendingImage = true, rest
+			return strings.TrimRight(line[:i], " \t"), true
+		case chatmedia.ImageReferenceAttempt(rest):
+			return "", true
+		}
+	}
 }
 
 // suppress advances the region state for one line and reports whether it must

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -419,12 +420,47 @@ func TestSpeechSkipsAListOfReferences(t *testing.T) {
 	}
 }
 
-// A "![" that is not a picture does not silence the lines after it.
-func TestSpeechResumesAfterANonImageBang(t *testing.T) {
+func gateSpeaks(lines ...string) []string {
 	g := &voiceGate{}
-	g.filter("Wow![1] (see note) and more.")
-	if got, _ := g.filter("Next sentence."); got != "Next sentence." {
-		t.Fatalf("next line = %q", got)
+	var spoken []string
+	for _, line := range lines {
+		if got, _ := g.filter(line); got != "" {
+			spoken = append(spoken, got)
+		}
+	}
+	return spoken
+}
+
+// A "![" that is not a picture leaves its line and the lines after it alone.
+func TestSpeechResumesAfterANonImageBang(t *testing.T) {
+	for _, tc := range []struct {
+		lines, want []string
+	}{
+		{[]string{"let v = vec![1, 2, 3];", "Next sentence here."}, []string{"let v = vec![1, 2, 3];", "Next sentence here."}},
+		{[]string{"Great![laughs] That's wonderful.", "Next sentence here."}, []string{"Great![laughs] That's wonderful.", "Next sentence here."}},
+		{[]string{"Oh wow![laughs]", "Next sentence here."}, []string{"Oh wow![laughs]", "Next sentence here."}},
+		{[]string{"Look ![a](b (1).png) now, okay.", "Next sentence here."}, []string{"Next sentence here."}},
+		{[]string{"![a](<my (1).", "png>) Here is the chart."}, []string{"Here is the chart."}},
+		{[]string{"See ![a](x.png): the chart."}, []string{"See: the chart."}},
+		{[]string{"Write `![a](b.png)` to show a picture.", "Next sentence here."}, []string{"Next sentence here."}},
+	} {
+		if got := gateSpeaks(tc.lines...); !slices.Equal(got, tc.want) {
+			t.Errorf("%q: spoken %q, want %q", tc.lines, got, tc.want)
+		}
+	}
+}
+
+// A reference inside a fenced or tool region does not end the region.
+func TestSpeechKeepsRegionsAroundAReference(t *testing.T) {
+	for _, tc := range []struct {
+		lines, want []string
+	}{
+		{[]string{"Here is the markup.", "```", "![alt](a.png) renders the logo image here.", "let logo = load(path)", "```", "Okay."}, []string{"Here is the markup.", "Okay."}},
+		{[]string{"I called the search tool.", "![a](b.png) shows the output of the run.", "line two raw"}, nil},
+	} {
+		if got := gateSpeaks(tc.lines...); !slices.Equal(got, tc.want) {
+			t.Errorf("%q: spoken %q, want %q", tc.lines, got, tc.want)
+		}
 	}
 }
 

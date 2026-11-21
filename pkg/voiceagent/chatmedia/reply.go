@@ -19,6 +19,9 @@ var (
 	inlineImage = regexp.MustCompile(imageReference)
 	replyImage  = regexp.MustCompile(`^[\t ]*` + imageReference + `[\t ]*$`)
 	bareMarker  = regexp.MustCompile(`^[\t ]*(?:>[\t ]*)*(?:[-*+•]|[0-9]+[.)])?[\t ]*$`)
+	leadImage   = regexp.MustCompile(`^` + imageReference)
+	openImage   = regexp.MustCompile(`^!\[[^\]\r\n]*(?:\]\((?:<[^>\r\n]*>?|[^()<\r\n]*))?$`)
+	imageTry    = regexp.MustCompile(`^!\[[^\]\r\n]*\]\(`)
 )
 
 // ImportReply runs on the owning response/job goroutine, before publication.
@@ -192,9 +195,37 @@ func ProtectImageExamples(text string) string {
 
 func inertImage(ref string) string { return ref[1:] }
 
-// RemoveImageReferences deletes every complete image reference, code included.
-func RemoveImageReferences(text string) string {
-	return inlineImage.ReplaceAllString(text, "")
+// LeadingImageReference returns the end of a complete reference that starts
+// text, or -1.
+func LeadingImageReference(text string) int {
+	if m := leadImage.FindStringIndex(text); m != nil {
+		return m[1]
+	}
+	return -1
+}
+
+// UnfinishedImageReference reports whether text, from its "![", could still
+// become a reference: the caption or the target is not closed yet.
+func UnfinishedImageReference(text string) bool {
+	return openImage.MatchString(text)
+}
+
+// ImageReferenceAttempt reports whether text starts like a reference, "![…](",
+// whether or not the rest is valid.
+func ImageReferenceAttempt(text string) bool {
+	return imageTry.MatchString(text)
+}
+
+// ImageInCodeSpan reports whether a complete reference on the line sits in a
+// backtick code span.
+func ImageInCodeSpan(line string) bool {
+	spans := codeSpans(line)
+	for _, m := range inlineImage.FindAllStringIndex(line, -1) {
+		if inCodeSpan(spans, m, 1) {
+			return true
+		}
+	}
+	return false
 }
 
 // ReplyProse omits complete image directives when judging spoken sentence
@@ -233,6 +264,20 @@ func SeparateImageReferences(text string) string {
 }
 
 func separateLine(line string) []string {
+	prose, refs := ImageLineProse(line)
+	if len(refs) == 0 {
+		return []string{line}
+	}
+	if BareMarker(prose) {
+		return refs
+	}
+	return append([]string{prose}, refs...)
+}
+
+// ImageLineProse splits one line into its prose and the references written in
+// it. References in code spans or escaped with a backslash stay prose. The
+// prose closes the gaps the references leave.
+func ImageLineProse(line string) (string, []string) {
 	var refs []string
 	for {
 		var at [][]int
@@ -257,12 +302,9 @@ func separateLine(line string) []string {
 		line = prose
 	}
 	if len(refs) == 0 {
-		return []string{line}
+		return line, nil
 	}
-	if BareMarker(line) {
-		return refs
-	}
-	return append([]string{strings.TrimRight(line, " \t\r")}, refs...)
+	return strings.TrimRight(line, " \t\r"), refs
 }
 
 // BareMarker reports whether what is left of a line is blank or only a list
