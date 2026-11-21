@@ -80,3 +80,9 @@ linux:
 images:
     just dist mac
     python3 scripts/ui-fixture.py --images
+
+# Real STT model choices and config writes; deterministic failure/cancel/retry downloads
+[macos]
+stt-models:
+    just dist mac
+    python3 scripts/ui-fixture.py --stt-models

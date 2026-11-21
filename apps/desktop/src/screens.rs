@@ -12,7 +12,7 @@ mod persona_editor;
 mod personas;
 mod provider_choices;
 mod remote;
-mod settings;
+pub(crate) mod settings;
 mod setup;
 mod work_cue;
 mod workers;

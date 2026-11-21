@@ -20,14 +20,16 @@ import (
 
 // VHS uses the actual conversation model, paste messages and text admission.
 // Only the provider is a fixture. No microphone, playback or external requests.
-func TestChatMediaTerminal(t *testing.T)         { runMediaTerminal(t, false, false) }
-func TestAgentMediaTerminal(t *testing.T)        { runMediaTerminal(t, true, false) }
-func TestChatMediaRejectedTerminal(t *testing.T) { runMediaTerminal(t, false, true) }
+func TestChatMediaTerminal(t *testing.T)           { runMediaTerminal(t, false, false, false) }
+func TestAgentMediaTerminal(t *testing.T)          { runMediaTerminal(t, true, false, false) }
+func TestAgentMediaTerminalEndOfLine(t *testing.T) { runMediaTerminal(t, true, false, true) }
+func TestChatMediaRejectedTerminal(t *testing.T)   { runMediaTerminal(t, false, true, false) }
 func TestChatMediaRejectedTerminalSlowValidation(t *testing.T) {
-	runMediaTerminal(t, false, true, 250*time.Millisecond)
+	runMediaTerminal(t, false, true, false, 250*time.Millisecond)
 }
 
-func runMediaTerminal(t *testing.T, agent, reject bool, validationDelay ...time.Duration) {
+// endOfLine writes the agent's picture references at the end of its line.
+func runMediaTerminal(t *testing.T, agent, reject, endOfLine bool, validationDelay ...time.Duration) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	path := filepath.Join(t.TempDir(), "Screenshot with spaces.png")
 	fixture := testmedia.PNG()
@@ -58,10 +60,16 @@ func runMediaTerminal(t *testing.T, agent, reject bool, validationDelay ...time.
 			}
 		}
 		text := "Two colored blocks inspected. Here are the returned image and animation.\n![Result](<" + filepath.Join(root, "result.png") + ">)\n![Animation](<" + filepath.Join(root, "result.gif") + ">)"
+		if endOfLine {
+			text = "Two colored blocks inspected. Both results are written at the end of this sentence. ![Result](<" + filepath.Join(root, "result.png") + ">) ![Animation](<" + filepath.Join(root, "result.gif") + ">)"
+		}
 		var err error
 		runner.reply, runner.output, err = chatmedia.DefaultStore().ImportReply(text, root)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if endOfLine && runner.reply != "Two colored blocks inspected. Both results are written at the end of this sentence.\nResult\nAnimation" {
+			t.Fatalf("reply = %q", runner.reply)
 		}
 	}
 	m := sizedConversation(t, 100, 42)
@@ -97,6 +105,9 @@ func runMediaTerminal(t *testing.T, agent, reject bool, validationDelay ...time.
 			view := stripANSI(h.model.viewport.View())
 			if !strings.Contains(view, "result.gif") || !strings.Contains(view, "result.png") {
 				t.Fatalf("returned previews absent from viewport: %s; items=%+v", view, h.model.items)
+			}
+			if endOfLine && (strings.Contains(view, "![") || !strings.Contains(view, "end of this sentence")) {
+				t.Fatalf("end-of-line reply rendered wrong: %s", view)
 			}
 		}
 		if agent && (len(h.model.plainTurns) < 2 || len(h.model.plainTurns[len(h.model.plainTurns)-1].attachments) != 2) {

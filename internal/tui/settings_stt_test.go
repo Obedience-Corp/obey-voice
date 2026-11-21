@@ -335,9 +335,9 @@ func TestSTTSectionRendersRows(t *testing.T) {
 	m.section = sectionSTT
 	m.width, m.height = 120, 30
 
-	// The recognizer is one list, drawn whole.
-	if got := len(m.sectionRows()); got != 1 {
-		t.Fatalf("rows = %d, want the one Recognizer list", got)
+	// The recognizer, selected model, and installer all belong to STT.
+	if got := len(m.sectionRows()); got < 3 {
+		t.Fatalf("rows = %d, want recognizer, model, and installation controls", got)
 	}
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "STT") {

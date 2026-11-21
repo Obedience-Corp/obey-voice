@@ -187,3 +187,44 @@ fn a_cancelled_model_move_is_signalled_once_and_never_killed() {
     let _ = std::fs::remove_file(&log);
     assert_eq!(terms.lines().count(), 1, "signals received: {terms:?}");
 }
+
+#[cfg(unix)]
+#[test]
+fn stt_download_cancel_releases_job_and_allows_retry() {
+    let mut backend = Backend::new(eframe::egui::Context::default(), true);
+    backend.engine =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/stt-install.sh");
+    backend.cli(71, vec!["wait".into()], true);
+    loop {
+        match backend.events.recv_timeout(Duration::from_secs(5)).unwrap() {
+            Event::Log { id: 71, line } if line.contains("download") => break,
+            Event::Result { id: 71, result } => panic!("download ended before cancel: {result:?}"),
+            _ => {}
+        }
+    }
+    backend.cancel(71);
+    loop {
+        if let Event::Result { id: 71, result } =
+            backend.events.recv_timeout(Duration::from_secs(5)).unwrap()
+        {
+            assert_eq!(result.unwrap_err(), "Cancelled");
+            break;
+        }
+    }
+    assert!(!backend.jobs.lock().unwrap().contains_key(&71));
+    backend.cli(72, vec![], true);
+    loop {
+        if let Event::Result { id: 72, result } =
+            backend.events.recv_timeout(Duration::from_secs(5)).unwrap()
+        {
+            assert!(
+                result
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .contains("\"installed\":[\"tdt-0.6b-v3\"]")
+            );
+            break;
+        }
+    }
+}

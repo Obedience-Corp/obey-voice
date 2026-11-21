@@ -30,6 +30,7 @@ const (
 	editDecision
 	editDecisionKey
 	editStorageMove
+	editSTTModel
 )
 
 // settingsEditor is a one-line value editor for settings a list cannot express
@@ -95,6 +96,11 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 			m.cancelEdit()
 			cmd := m.commitDecisionEdit(key, value)
 			return m, cmd
+		}
+		if kind == editSTTModel {
+			key := m.edit.decisionKey
+			m.cancelEdit()
+			return m, m.selectSTTModel(key, value)
 		}
 		if kind == editStorageMove {
 			m.cancelEdit()
