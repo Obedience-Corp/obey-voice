@@ -150,6 +150,8 @@ func TestEndsMidSentence(t *testing.T) {
 		"Here it is: ![x](/w/x.png)":  false,
 		"Here it is ![x](/w/x.png)":   true,
 		"Here it is: ![x](/w/x":       true,
+		"![a](/w/a.png) Next one:":    true,
+		"Here is the first: ![a](/w/a.png) and here is the second:": true,
 	} {
 		if got := endsMidSentence(text); got != want {
 			t.Errorf("endsMidSentence(%q) = %v, want %v", text, got, want)

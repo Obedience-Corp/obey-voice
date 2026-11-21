@@ -37,10 +37,10 @@ func TestReplyImportsOnlyExplicitOwnedImages(t *testing.T) {
 	if err = os.WriteFile(path, testmedia.GIF(), 0600); err != nil {
 		t.Fatal(err)
 	}
-	// A reference in a sentence is a picture directive, not an example.
+	// A reference that ends its line is a picture directive, not an example.
 	text, refs, err = store.ImportReply("Example: ![x](<"+path+">)", root)
 	if err != nil || len(refs) != 1 || text != "Example:\nx" {
-		t.Fatalf("in-sentence reference: %q %+v %v", text, refs, err)
+		t.Fatalf("trailing reference: %q %+v %v", text, refs, err)
 	}
 }
 
@@ -56,7 +56,7 @@ func writePictures(t *testing.T, root string, n int) []string {
 	return paths
 }
 
-func TestReplyImportsReferencesWrittenInsideASentence(t *testing.T) {
+func TestReplyImportsReferencesThatEndTheLine(t *testing.T) {
 	root := t.TempDir()
 	store := Store{Dir: t.TempDir()}
 	p := writePictures(t, root, 3)
@@ -68,7 +68,9 @@ func TestReplyImportsReferencesWrittenInsideASentence(t *testing.T) {
 		{"Here they are, freshly made. ![A](" + p[0] + ") ![B](" + p[1] + ")", "Here they are, freshly made.\nA\nB", 2},
 		{"Fresh pictures, here they are. ![A](" + p[0] + ") ![B](" + p[1] + ") ![C](" + p[2] + ")", "Fresh pictures, here they are.\nA\nB\nC", 3},
 		{"Here it is: ![Chart](<" + p[0] + ">)", "Here it is:\nChart", 1},
-		{"Here ![Chart](<" + p[0] + ">) it is.", "Here it is.\nChart", 1},
+		{"Here: ![the `main` chart](<" + p[0] + ">)", "Here:\nthe `main` chart", 1},
+		{"Text. ![A](<" + p[0] + ">)\r\nnext", "Text.\r\nA\r\nnext", 1},
+		{"Intro\r\n![A](<" + p[0] + ">)\r\nnext", "Intro\r\nA\r\nnext", 1},
 		{"![A](" + p[0] + ") ![B](" + p[1] + ")", "A\nB", 2},
 		{"First the chart.\n![A](<" + p[0] + ">)\nThen the other two. ![B](<" + p[1] + ">) ![C](<" + p[2] + ">)\nThat is all.", "First the chart.\nA\nThen the other two.\nB\nC\nThat is all.", 3},
 	} {
@@ -82,22 +84,59 @@ func TestReplyImportsReferencesWrittenInsideASentence(t *testing.T) {
 	}
 }
 
-func TestListOfPicturesLeavesNoMarkers(t *testing.T) {
+// Bullets beside pictures are dropped. A number may be the answer, so it stays.
+func TestListOfPicturesKeepsOnlyMeaningfulMarkers(t *testing.T) {
 	root := t.TempDir()
 	store := Store{Dir: t.TempDir()}
 	p := writePictures(t, root, 2)
-	for _, list := range []string{
-		"- ![A](" + p[0] + ")\n- ![B](" + p[1] + ")",
-		"1. ![A](<" + p[0] + ">)\n2. ![B](<" + p[1] + ">)",
+	for list, want := range map[string]string{
+		"- ![A](" + p[0] + ")\n- ![B](" + p[1] + ")":       "A\nB",
+		"1. ![A](<" + p[0] + ">)\n2. ![B](<" + p[1] + ">)": "1.\nA\n2.\nB",
+		"Answer:\n42. ![chart](<" + p[0] + ">)":            "Answer:\n42.\nchart",
 	} {
 		text, refs, err := store.ImportReply(list, root)
-		if err != nil || len(refs) != 2 || text != "A\nB" {
+		if err != nil || len(refs) != strings.Count(list, "![") || text != want {
 			t.Errorf("%q: got %q, %d images, %v", list, text, len(refs), err)
 		}
 	}
 }
 
-func TestInSentenceReferenceFailsLikeAWholeLineOne(t *testing.T) {
+// A reference followed by other text on its line is a mention, as before.
+func TestMentionedReferenceIsLeftAsWritten(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.png")
+	if err := os.WriteFile(outside, testmedia.PNG(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := Store{Dir: t.TempDir()}
+	p := writePictures(t, root, 2)
+	a, b := "<"+p[0]+">", "<"+p[1]+">"
+	for _, text := range []string{
+		"Here ![Chart](" + a + ") it is.",
+		"Here it is. ![Blue bird](<" + filepath.Join(root, "missing.png") + ">) Enjoy.",
+		"Here it is. ![Blue bird](<" + outside + ">) Enjoy.",
+		"Here it is. ![Blue bird](https://example.com/image.png) Enjoy.",
+		"Here's the picture: ![cat](" + a + "). Let me know!",
+		"Here are both: ![A](" + a + ") and ![B](" + b + ").",
+		"I drew ![a cat](" + a + ") for you.",
+		"(see ![a](" + a + "))",
+		"| A | ![A](" + a + ") |",
+		"[![Build](https://example.com/b.svg)](https://example.com/ci)",
+		"![a](" + a + "), ![b](" + b + ").",
+		"Here it is: ![cat](" + a + ").",
+		"Look ![a]![z](" + a + ")(" + b + ") ok",
+	} {
+		got, refs, err := store.ImportReply(text, root)
+		if got != text || len(refs) != 0 || err != nil || store.CheckReplyFiles(text, root) != nil {
+			t.Errorf("%q: %q %d %v", text, got, len(refs), err)
+		}
+		if SeparateImageReferences(text) != text || ReplyProse(text) != text {
+			t.Errorf("%q: lifted a mention", text)
+		}
+	}
+}
+
+func TestTrailingReferenceFailsLikeAWholeLineOne(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside.png")
 	if err := os.WriteFile(outside, testmedia.PNG(), 0600); err != nil {
@@ -105,13 +144,13 @@ func TestInSentenceReferenceFailsLikeAWholeLineOne(t *testing.T) {
 	}
 	store := Store{Dir: t.TempDir()}
 	for _, path := range []string{filepath.Join(root, "missing.png"), outside, "https://example.com/image.png"} {
-		text, refs, err := store.ImportReply("Here it is. ![Blue bird](<"+path+">) Enjoy.", root)
-		if err == nil || len(refs) != 0 || text != "Here it is. Enjoy.\n[Image unavailable: Blue bird]" {
+		text, refs, err := store.ImportReply("Here it is. ![Blue bird](<"+path+">)", root)
+		if err == nil || len(refs) != 0 || text != "Here it is.\n[Image unavailable: Blue bird]" {
 			t.Errorf("%s: %q %+v %v", path, text, refs, err)
 		}
-		_, _, whole := store.ImportReply("Here it is. Enjoy.\n![Blue bird](<"+path+">)", root)
+		_, _, whole := store.ImportReply("Here it is.\n![Blue bird](<"+path+">)", root)
 		if whole == nil || err.Error() != whole.Error() {
-			t.Errorf("%s: in-sentence error %v, whole-line error %v", path, err, whole)
+			t.Errorf("%s: trailing error %v, whole-line error %v", path, err, whole)
 		}
 		if store.CheckReplyFiles("Here it is. ![Blue bird](<"+path+">)", root) == nil {
 			t.Errorf("%s: check accepted an unusable reference", path)
@@ -119,7 +158,7 @@ func TestInSentenceReferenceFailsLikeAWholeLineOne(t *testing.T) {
 	}
 }
 
-func TestInSentenceReferencesShareTheLimitAndDeduplicate(t *testing.T) {
+func TestTrailingReferencesShareTheLimitAndDeduplicate(t *testing.T) {
 	root := t.TempDir()
 	store := Store{Dir: t.TempDir()}
 	p := writePictures(t, root, 5)
@@ -140,21 +179,25 @@ func TestInSentenceReferencesShareTheLimitAndDeduplicate(t *testing.T) {
 
 func TestSeparateImageReferences(t *testing.T) {
 	for in, want := range map[string]string{
-		"Sentence. ![A](/w/a.png) ![B](/w/b.png)": "Sentence.\n![A](/w/a.png)\n![B](/w/b.png)",
-		"Here ![A](/w/a.png) it is.":              "Here it is.\n![A](/w/a.png)",
-		"![A](/w/a.png) ![B](/w/b.png)":           "![A](/w/a.png)\n![B](/w/b.png)",
-		"Look: ![A](</w/with space.png>)":         "Look:\n![A](</w/with space.png>)",
-		"Look: ![A](/w/with space.png)":           "Look:\n![A](/w/with space.png)",
-		"  ![A](/w/a.png)  ":                      "  ![A](/w/a.png)  ",
-		"```\nSee ![A](/w/a.png)\n```":            "```\nSee ![A](/w/a.png)\n```",
-		"~~~\n![A](/w/a.png) ![B](/w/b.png)\n~~~": "~~~\n![A](/w/a.png) ![B](/w/b.png)\n~~~",
-		"Write `![A](/w/a.png)` like this.":       "Write `![A](/w/a.png)` like this.",
-		"Write ``![A](/w/a.png)`` here.":          "Write ``![A](/w/a.png)`` here.",
-		"Unfinished ![A](/w/a":                    "Unfinished ![A](/w/a",
-		"- ![A](/w/a.png)\n- ![B](/w/b.png)":      "![A](/w/a.png)\n![B](/w/b.png)",
-		"1. ![A](/w/a.png)\n2) ![B](/w/b.png)":    "![A](/w/a.png)\n![B](/w/b.png)",
-		"> ![A](/w/a.png)":                        "![A](/w/a.png)",
-		"- Here it is ![A](/w/a.png)":             "- Here it is\n![A](/w/a.png)",
+		"Sentence. ![A](/w/a.png) ![B](/w/b.png)":  "Sentence.\n![A](/w/a.png)\n![B](/w/b.png)",
+		"Here ![A](/w/a.png) it is.":               "Here ![A](/w/a.png) it is.",
+		"Here: ![the `main` chart](/w/a.png)":      "Here:\n![the `main` chart](/w/a.png)",
+		"Text. ![A](/w/a.png)\r":                   "Text.\r\n![A](/w/a.png)\r",
+		"Intro\r\n![A](/w/a.png)\r\nnext":          "Intro\r\n![A](/w/a.png)\r\nnext",
+		"Look ![a]![z](</w/a.png>)(</w/b.png>) ok": "Look ![a]![z](</w/a.png>)(</w/b.png>) ok",
+		"![A](/w/a.png) ![B](/w/b.png)":            "![A](/w/a.png)\n![B](/w/b.png)",
+		"Look: ![A](</w/with space.png>)":          "Look:\n![A](</w/with space.png>)",
+		"Look: ![A](/w/with space.png)":            "Look:\n![A](/w/with space.png)",
+		"  ![A](/w/a.png)  ":                       "  ![A](/w/a.png)  ",
+		"```\nSee ![A](/w/a.png)\n```":             "```\nSee ![A](/w/a.png)\n```",
+		"~~~\n![A](/w/a.png) ![B](/w/b.png)\n~~~":  "~~~\n![A](/w/a.png) ![B](/w/b.png)\n~~~",
+		"Write `![A](/w/a.png)` like this.":        "Write `![A](/w/a.png)` like this.",
+		"Write ``![A](/w/a.png)`` here.":           "Write ``![A](/w/a.png)`` here.",
+		"Unfinished ![A](/w/a":                     "Unfinished ![A](/w/a",
+		"- ![A](/w/a.png)\n- ![B](/w/b.png)":       "![A](/w/a.png)\n![B](/w/b.png)",
+		"1. ![A](/w/a.png)\n2) ![B](/w/b.png)":     "1.\n![A](/w/a.png)\n2)\n![B](/w/b.png)",
+		"> ![A](/w/a.png)":                         "![A](/w/a.png)",
+		"- Here it is ![A](/w/a.png)":              "- Here it is\n![A](/w/a.png)",
 	} {
 		got := SeparateImageReferences(in)
 		if got != want {

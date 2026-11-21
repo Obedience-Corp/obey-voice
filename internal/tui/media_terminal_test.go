@@ -20,16 +20,16 @@ import (
 
 // VHS uses the actual conversation model, paste messages and text admission.
 // Only the provider is a fixture. No microphone, playback or external requests.
-func TestChatMediaTerminal(t *testing.T)            { runMediaTerminal(t, false, false, false) }
-func TestAgentMediaTerminal(t *testing.T)           { runMediaTerminal(t, true, false, false) }
-func TestAgentMediaTerminalInSentence(t *testing.T) { runMediaTerminal(t, true, false, true) }
-func TestChatMediaRejectedTerminal(t *testing.T)    { runMediaTerminal(t, false, true, false) }
+func TestChatMediaTerminal(t *testing.T)           { runMediaTerminal(t, false, false, false) }
+func TestAgentMediaTerminal(t *testing.T)          { runMediaTerminal(t, true, false, false) }
+func TestAgentMediaTerminalEndOfLine(t *testing.T) { runMediaTerminal(t, true, false, true) }
+func TestChatMediaRejectedTerminal(t *testing.T)   { runMediaTerminal(t, false, true, false) }
 func TestChatMediaRejectedTerminalSlowValidation(t *testing.T) {
 	runMediaTerminal(t, false, true, false, 250*time.Millisecond)
 }
 
-// inSentence writes the agent's picture references at the end of its sentence.
-func runMediaTerminal(t *testing.T, agent, reject, inSentence bool, validationDelay ...time.Duration) {
+// endOfLine writes the agent's picture references at the end of its line.
+func runMediaTerminal(t *testing.T, agent, reject, endOfLine bool, validationDelay ...time.Duration) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	path := filepath.Join(t.TempDir(), "Screenshot with spaces.png")
 	fixture := testmedia.PNG()
@@ -60,7 +60,7 @@ func runMediaTerminal(t *testing.T, agent, reject, inSentence bool, validationDe
 			}
 		}
 		text := "Two colored blocks inspected. Here are the returned image and animation.\n![Result](<" + filepath.Join(root, "result.png") + ">)\n![Animation](<" + filepath.Join(root, "result.gif") + ">)"
-		if inSentence {
+		if endOfLine {
 			text = "Two colored blocks inspected. Both results are written at the end of this sentence. ![Result](<" + filepath.Join(root, "result.png") + ">) ![Animation](<" + filepath.Join(root, "result.gif") + ">)"
 		}
 		var err error
@@ -68,7 +68,7 @@ func runMediaTerminal(t *testing.T, agent, reject, inSentence bool, validationDe
 		if err != nil {
 			t.Fatal(err)
 		}
-		if inSentence && runner.reply != "Two colored blocks inspected. Both results are written at the end of this sentence.\nResult\nAnimation" {
+		if endOfLine && runner.reply != "Two colored blocks inspected. Both results are written at the end of this sentence.\nResult\nAnimation" {
 			t.Fatalf("reply = %q", runner.reply)
 		}
 	}
@@ -106,8 +106,8 @@ func runMediaTerminal(t *testing.T, agent, reject, inSentence bool, validationDe
 			if !strings.Contains(view, "result.gif") || !strings.Contains(view, "result.png") {
 				t.Fatalf("returned previews absent from viewport: %s; items=%+v", view, h.model.items)
 			}
-			if inSentence && (strings.Contains(view, "![") || !strings.Contains(view, "end of this sentence")) {
-				t.Fatalf("in-sentence reply rendered wrong: %s", view)
+			if endOfLine && (strings.Contains(view, "![") || !strings.Contains(view, "end of this sentence")) {
+				t.Fatalf("end-of-line reply rendered wrong: %s", view)
 			}
 		}
 		if agent && (len(h.model.plainTurns) < 2 || len(h.model.plainTurns[len(h.model.plainTurns)-1].attachments) != 2) {

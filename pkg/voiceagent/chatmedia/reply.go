@@ -11,14 +11,16 @@ import (
 	"strings"
 )
 
-// Reply images are explicit Markdown image references outside code, not
-// filenames found in arbitrary prose or tool output. Never fetch remote URLs.
+// Reply images are explicit Markdown image references that end their line,
+// outside code, not filenames found in arbitrary prose or tool output. A
+// reference followed by other text is a mention. Never fetch remote URLs.
 const imageReference = `!\[([^\]\r\n]*)\]\((?:<([^>\r\n]+)>|([^()\r\n]+))\)`
 
 var (
 	inlineImage = regexp.MustCompile(imageReference)
-	replyImage  = regexp.MustCompile(`^[\t ]*` + imageReference + `[\t ]*$`)
+	replyImage  = regexp.MustCompile(`^[\t ]*` + imageReference + `[\t ]*\r?$`)
 	bareMarker  = regexp.MustCompile(`^[\t ]*(?:>[\t ]*)*(?:[-*+•]|[0-9]+[.)])?[\t ]*$`)
+	bulletOnly  = regexp.MustCompile(`^[\t ]*(?:>[\t ]*)*(?:[-*+•][\t ]*)?$`)
 	leadImage   = regexp.MustCompile(`^` + imageReference)
 	openImage   = regexp.MustCompile(`^!\[[^\]\r\n]*(?:\]\((?:<[^>\r\n]*>?|[^()<\r\n]*))?$`)
 	imageTry    = regexp.MustCompile(`^!\[[^\]\r\n]*\]\(`)
@@ -62,12 +64,16 @@ func (s Store) processReply(text, workDir string, load func(string) (Ref, error)
 	fenced := false
 	attempts := 0
 	for i, line := range lines {
-		if isFence(line) {
+		if IsFence(line) {
 			fenced = !fenced
 			continue
 		}
 		if fenced {
 			continue
+		}
+		cr := ""
+		if strings.HasSuffix(line, "\r") {
+			cr = "\r"
 		}
 		match := replyImage.FindStringSubmatch(line)
 		if match == nil {
@@ -92,7 +98,7 @@ func (s Store) processReply(text, workDir string, load func(string) (Ref, error)
 		}
 		if err != nil {
 			failures = append(failures, fmt.Errorf("image result %q (%q): %w", name, path, err))
-			lines[i] = "[Image unavailable: " + name + "]"
+			lines[i] = "[Image unavailable: " + name + "]" + cr
 			continue
 		}
 		if !seen[ref.ID] {
@@ -102,7 +108,7 @@ func (s Store) processReply(text, workDir string, load func(string) (Ref, error)
 		if name == "" {
 			name = ref.Name
 		}
-		lines[i] = name
+		lines[i] = name + cr
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n")), refs, errors.Join(failures...)
 }
@@ -167,7 +173,7 @@ func ProtectImageExamples(text string) string {
 	lines := strings.Split(text, "\n")
 	fenced := false
 	for i, line := range lines {
-		fence := isFence(line)
+		fence := IsFence(line)
 		if fence || fenced {
 			lines[i] = inlineImage.ReplaceAllStringFunc(line, inertImage)
 			if fence {
@@ -216,16 +222,10 @@ func ImageReferenceAttempt(text string) bool {
 	return imageTry.MatchString(text)
 }
 
-// ImageInCodeSpan reports whether a complete reference on the line sits in a
-// backtick code span.
-func ImageInCodeSpan(line string) bool {
-	spans := codeSpans(line)
-	for _, m := range inlineImage.FindAllStringIndex(line, -1) {
-		if inCodeSpan(spans, m, 1) {
-			return true
-		}
-	}
-	return false
+// HasImageReference reports whether text holds a complete reference anywhere,
+// in code or escaped included.
+func HasImageReference(text string) bool {
+	return inlineImage.MatchString(text)
 }
 
 // ReplyProse omits complete image directives when judging spoken sentence
@@ -241,9 +241,9 @@ func ReplyProse(text string) string {
 	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
-// SeparateImageReferences moves each image reference written inside a line of
-// prose onto its own line after that prose, so a reference counts the same
-// wherever the model wrote it. Code and every other line are left as written.
+// SeparateImageReferences moves the references that end a line of prose onto
+// their own lines after it. Code, mentions followed by other text, and every
+// other line are left as written.
 func SeparateImageReferences(text string) string {
 	if !strings.Contains(text, "![") {
 		return text
@@ -252,7 +252,7 @@ func SeparateImageReferences(text string) string {
 	out := make([]string, 0, len(lines))
 	fenced := false
 	for _, line := range lines {
-		if isFence(line) {
+		if IsFence(line) {
 			fenced = !fenced
 		} else if !fenced && !replyImage.MatchString(line) {
 			out = append(out, separateLine(line)...)
@@ -264,72 +264,62 @@ func SeparateImageReferences(text string) string {
 }
 
 func separateLine(line string) []string {
-	prose, refs := ImageLineProse(line)
+	prose, refs := TrailingImageReferences(line)
 	if len(refs) == 0 {
 		return []string{line}
 	}
-	if BareMarker(prose) {
-		return refs
+	cr := ""
+	if strings.HasSuffix(line, "\r") {
+		cr = "\r"
 	}
-	return append([]string{prose}, refs...)
+	out := make([]string, 0, len(refs)+1)
+	if !bulletOnly.MatchString(prose) {
+		out = append(out, prose+cr)
+	}
+	for _, ref := range refs {
+		out = append(out, ref+cr)
+	}
+	return out
 }
 
-// ImageLineProse splits one line into its prose and the references written in
-// it. References in code spans or escaped with a backslash stay prose. The
-// prose closes the gaps the references leave.
-func ImageLineProse(line string) (string, []string) {
-	var refs []string
-	for {
-		var at [][]int
-		spans := codeSpans(line)
-		for _, m := range inlineImage.FindAllStringIndex(line, -1) {
-			if !inCodeSpan(spans, m, 1) && !escaped(line, m[0]) {
-				at = append(at, m)
-			}
-		}
-		if len(at) == 0 {
+// TrailingImageReferences splits a line into its prose and the run of
+// references that ends it, with only spaces between them. References in code
+// spans or escaped with a backslash do not count. With no such run it returns
+// the line unchanged.
+func TrailingImageReferences(line string) (string, []string) {
+	body := strings.TrimSuffix(line, "\r")
+	spans := codeSpans(body)
+	ms := inlineImage.FindAllStringIndex(body, -1)
+	end := len(strings.TrimRight(body, " \t"))
+	first := len(ms)
+	for i := len(ms) - 1; i >= 0; i-- {
+		m := ms[i]
+		if m[1] != end || inCodeSpan(spans, m, 1) || escaped(body, m[0]) {
 			break
 		}
-		prose := line[:at[0][0]]
-		for i, m := range at {
-			refs = append(refs, line[m[0]:m[1]])
-			end := len(line)
-			if i+1 < len(at) {
-				end = at[i+1][0]
-			}
-			prose = joinProse(prose, line[m[1]:end])
-		}
-		line = prose
+		first, end = i, len(strings.TrimRight(body[:m[0]], " \t"))
 	}
-	if len(refs) == 0 {
+	if first == len(ms) {
 		return line, nil
 	}
-	return strings.TrimRight(line, " \t\r"), refs
+	refs := make([]string, 0, len(ms)-first)
+	for _, m := range ms[first:] {
+		refs = append(refs, body[m[0]:m[1]])
+	}
+	return body[:end], refs
 }
 
 // BareMarker reports whether what is left of a line is blank or only a list
-// or quote marker, as after removing the pictures from "- ![A](a.png)".
+// or quote marker, ordinals included, as after removing "![A](a.png)" from
+// "1. ![A](a.png)".
 func BareMarker(line string) bool {
 	return bareMarker.MatchString(line)
 }
 
-// joinProse closes the gap a removed reference leaves without doubling spaces.
-func joinProse(left, right string) string {
-	switch {
-	case strings.TrimSpace(left) == "":
-		return left + strings.TrimLeft(right, " \t")
-	case strings.TrimSpace(right) == "":
-		return strings.TrimRight(left, " \t")
-	case strings.ContainsRune(" \t,.;:!?", rune(right[0])):
-		return strings.TrimRight(left, " \t") + right
-	}
-	return left + right
-}
-
-// isFence reports whether a line opens or closes a fenced block. As in the
+// IsFence reports whether a line opens or closes a fenced block. As in the
 // voice gate, an odd count of ``` toggles a block and an even count is a span
 // on the line. ~~~ has no inline form, so it toggles as a prefix.
-func isFence(line string) bool {
+func IsFence(line string) bool {
 	return strings.Count(line, "```")%2 == 1 || strings.HasPrefix(strings.TrimSpace(line), "~~~")
 }
 
@@ -379,7 +369,7 @@ func codeSpans(line string) [][3]int {
 
 func inCodeSpan(spans [][3]int, m []int, minTicks int) bool {
 	for _, s := range spans {
-		if s[2] >= minTicks && m[0] < s[1] && s[0] < m[1] {
+		if s[2] >= minTicks && s[0] <= m[0] && m[1] <= s[1] {
 			return true
 		}
 	}

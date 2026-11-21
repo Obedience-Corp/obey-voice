@@ -226,7 +226,7 @@
       }
     },
     {
-      "path": "demos/agent-images-in-sentence.gif",
+      "path": "demos/agent-images-end-of-line.gif",
       "source": "Project-produced UI recording. Deterministic provider and generated geometric image fixtures.",
       "disposition": "retain_public",
       "public_release": "cleared",

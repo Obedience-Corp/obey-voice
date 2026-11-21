@@ -562,7 +562,7 @@ func TestDeliveryAnnouncementNeedsTheChatOrAPicture(t *testing.T) {
 	}
 }
 
-func TestInSentencePictureIsCheckedLikeAWholeLineOne(t *testing.T) {
+func TestTrailingPictureIsCheckedLikeAWholeLineOne(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "bird.png"), testmedia.PNG(), 0600); err != nil {
@@ -572,15 +572,15 @@ func TestInSentencePictureIsCheckedLikeAWholeLineOne(t *testing.T) {
 	real := filepath.Join(root, "bird.png")
 	missing := filepath.Join(root, "missing.png")
 	if _, ok := o.imageClaimProse("I've attached it. ![Blue bird](<" + real + ">)"); ok {
-		t.Fatal("an in-sentence reference was judged as a bare claim")
+		t.Fatal("a trailing reference was judged as a bare claim")
 	}
 	if err := o.imageReplyError("Here it is. ![Blue bird](<"+real+">)", "Where is it then?", owedImageFollowup, false); err != nil {
-		t.Fatalf("in-sentence picture did not satisfy the owed picture: %v", err)
+		t.Fatalf("trailing picture did not satisfy the owed picture: %v", err)
 	}
-	inline := o.imageReplyError("Here it is. ![Blue bird](<"+missing+">)", "Where is it then?", owedImageFollowup, false)
+	trailing := o.imageReplyError("Here it is. ![Blue bird](<"+missing+">)", "Where is it then?", owedImageFollowup, false)
 	whole := o.imageReplyError("Here it is.\n![Blue bird](<"+missing+">)", "Where is it then?", owedImageFollowup, false)
-	if inline == nil || whole == nil || inline.Error() != whole.Error() {
-		t.Fatalf("missing file: in-sentence %v, whole-line %v", inline, whole)
+	if trailing == nil || whole == nil || trailing.Error() != whole.Error() {
+		t.Fatalf("missing file: trailing %v, whole-line %v", trailing, whole)
 	}
 }
 
@@ -598,7 +598,8 @@ func TestPictureHowToQuotingThePlaceholder(t *testing.T) {
 		rejected bool
 	}{
 		{"Put the reference on its own line:\n![Short caption](<absolute-path>)", true},
-		{"Write ![Short caption](<absolute-path>) on its own line.", true},
+		{"Use this form: ![Short caption](<absolute-path>)", true},
+		{"Write ![Short caption](<absolute-path>) on its own line.", false},
 		{"Write `![Short caption](<absolute-path>)` on its own line.", false},
 	} {
 		if err := o.imageReplyError(tc.reply, input, direct, false); (err != nil) != tc.rejected {
@@ -624,5 +625,28 @@ func TestEscapedReferenceIsNotAPicture(t *testing.T) {
 	}
 	if err := o.imageReplyError(text, "Where is it then?", owedImageFollowup, false); !errors.Is(err, errMissingImageReference) {
 		t.Fatalf("escaped reference satisfied an owed picture: %v", err)
+	}
+}
+
+// A remote reference followed by more text is a mention, not a delivery.
+func TestMentionedRemotePicturePassesTheGuard(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	root := t.TempDir()
+	o := &OllamaBrain{cfg: &config.Config{WorkDir: root}, workDir: root}
+	const reply = "The logo is ![logo](https://example.com/logo.png) if you want it."
+	for _, direct := range []imageRequestContext{imageMentioned, checkVolunteeredImage} {
+		if err := o.imageReplyError(reply, "What does the logo look like?", direct, false); err != nil {
+			t.Errorf("context %v: %v", direct, err)
+		}
+	}
+	text, refs, err := chatmedia.DefaultStore().ImportReply(reply, root)
+	if text != reply || len(refs) != 0 || err != nil {
+		t.Fatalf("import: %q %d %v", text, len(refs), err)
+	}
+}
+
+func TestOneLineCodeSpanKeepsTheClaimCheck(t *testing.T) {
+	if !(&OllamaBrain{}).unsupportedImageResult("```example```\nI've attached the PNG.", "") {
+		t.Fatal("prose after a one-line span escaped the claim check")
 	}
 }

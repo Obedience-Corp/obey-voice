@@ -397,7 +397,7 @@ func TestOneLineImageReplySpeaksItsSentence(t *testing.T) {
 func TestSpeechSkipsEveryReferenceSplitAcrossSegments(t *testing.T) {
 	projection := NewSpeechProjection()
 	var spoken []string
-	for _, chunk := range []string{"Here they are. ![A](</w/a.", "png>) ![B](</w/b.", "png>) ![C](/w/c.", "png) That is all."} {
+	for _, chunk := range []string{"Here they are. ![A](</w/a.", "png>) ![B](</w/b.", "png>) ![C](/w/c.", "png)", "That is all."} {
 		if got := projection.Speak(chunk).Speakable; got != "" {
 			spoken = append(spoken, got)
 		}
@@ -431,7 +431,8 @@ func gateSpeaks(lines ...string) []string {
 	return spoken
 }
 
-// A "![" that is not a picture leaves its line and the lines after it alone.
+// Speech keeps only the prose before references that end a line. Any other
+// reference drops its line, and a "![" that is not a picture is left alone.
 func TestSpeechResumesAfterANonImageBang(t *testing.T) {
 	for _, tc := range []struct {
 		lines, want []string
@@ -440,8 +441,10 @@ func TestSpeechResumesAfterANonImageBang(t *testing.T) {
 		{[]string{"Great![laughs] That's wonderful.", "Next sentence here."}, []string{"Great![laughs] That's wonderful.", "Next sentence here."}},
 		{[]string{"Oh wow![laughs]", "Next sentence here."}, []string{"Oh wow![laughs]", "Next sentence here."}},
 		{[]string{"Look ![a](b (1).png) now, okay.", "Next sentence here."}, []string{"Next sentence here."}},
-		{[]string{"![a](<my (1).", "png>) Here is the chart."}, []string{"Here is the chart."}},
-		{[]string{"See ![a](x.png): the chart."}, []string{"See: the chart."}},
+		{[]string{"![a](<my (1).", "png>)", "Here is the chart."}, []string{"Here is the chart."}},
+		{[]string{"![a](</w/a.", "png>) Here is the chart.", "Next sentence here."}, []string{"Next sentence here."}},
+		{[]string{"See ![a](x.png): the chart.", "Here ![a](x.png) it is.", "Next sentence here."}, []string{"Next sentence here."}},
+		{[]string{"Here it is: ![a](</w/a.png>) ![b](/w/b.png)"}, []string{"Here it is:"}},
 		{[]string{"Write `![a](b.png)` to show a picture.", "Next sentence here."}, []string{"Next sentence here."}},
 	} {
 		if got := gateSpeaks(tc.lines...); !slices.Equal(got, tc.want) {

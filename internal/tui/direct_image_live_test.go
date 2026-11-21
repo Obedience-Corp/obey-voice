@@ -28,12 +28,12 @@ func TestLivePendingImageReachesTerminal(t *testing.T) {
 }
 
 // The model repeats the form of its last reply, which wrote the reference at
-// the end of its sentence.
-func TestLiveInSentenceImageReachesTerminal(t *testing.T) {
+// the end of its line.
+func TestLiveEndOfLineImageReachesTerminal(t *testing.T) {
 	runLiveImageConversation(t, false, true)
 }
 
-func runLiveImageConversation(t *testing.T, pending, inSentence bool) {
+func runLiveImageConversation(t *testing.T, pending, endOfLine bool) {
 	t.Helper()
 	model := os.Getenv("OBEY_VOICE_IMAGE_ROUTING_MODEL")
 	if model == "" {
@@ -74,7 +74,7 @@ func runLiveImageConversation(t *testing.T, pending, inSentence bool) {
 		}
 		m.input.SetValue("Where is it then? It should be in your next response.")
 	}
-	if inSentence {
+	if endOfLine {
 		if err := live.ImportHistory([]brain.Turn{
 			{Role: "user", Content: "Show me a picture in this chat. Use the existing picture.png in the working directory."},
 			{Role: "assistant", Content: "Here it is, right here for you. ![Picture](" + filepath.Join(root, "picture.png") + ")"},

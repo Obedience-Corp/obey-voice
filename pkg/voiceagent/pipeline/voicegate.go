@@ -114,11 +114,11 @@ func (g *voiceGate) filter(text string) (string, int) {
 	return strings.TrimSpace(strings.Join(kept, "\n")), dropped
 }
 
-// withoutImages removes image references from a line and reports whether it
-// changed the line. The prose around a reference is still spoken. A reference
-// may span sentence chunks (periods in filenames), so an unfinished one is held
-// until it closes. A line whose reference is in code or is not well formed is
-// dropped whole, so no path is spoken.
+// withoutImages removes the references that end a line, as the importer
+// lifts them, and reports whether it changed the line. The prose before them
+// is still spoken. A line with any other complete or malformed reference is
+// dropped whole, so no path is spoken. A reference may span sentence chunks
+// (periods in filenames), so an unfinished one is held until it closes.
 func (g *voiceGate) withoutImages(line string) (string, bool) {
 	cut := false
 	if g.inImage {
@@ -127,7 +127,8 @@ func (g *voiceGate) withoutImages(line string) (string, bool) {
 		g.inImage, g.pendingImage = false, ""
 		switch end := chatmedia.LeadingImageReference(pending); {
 		case end > 0:
-			line = strings.TrimLeft(pending[end:], " \t")
+			g.withoutImages(pending[end:])
+			return "", true
 		case chatmedia.UnfinishedImageReference(pending) && len(pending) <= maxPendingImage:
 			g.inImage, g.pendingImage = true, pending
 			return "", true
@@ -138,26 +139,31 @@ func (g *voiceGate) withoutImages(line string) (string, bool) {
 	if !strings.Contains(line, "![") {
 		return line, cut
 	}
-	if chatmedia.ImageInCodeSpan(line) {
-		return "", true
-	}
-	if prose, refs := chatmedia.ImageLineProse(line); len(refs) > 0 {
+	if prose, refs := chatmedia.TrailingImageReferences(line); len(refs) > 0 {
 		line, cut = prose, true
 	}
+	whole := chatmedia.HasImageReference(line)
 	for i := 0; ; i += 2 {
 		start := strings.Index(line[i:], "![")
 		if start < 0 {
-			return line, cut
+			break
 		}
 		i += start
 		switch rest := line[i:]; {
 		case chatmedia.UnfinishedImageReference(rest):
 			g.inImage, g.pendingImage = true, rest
+			if whole {
+				return "", true
+			}
 			return strings.TrimRight(line[:i], " \t"), true
 		case chatmedia.ImageReferenceAttempt(rest):
-			return "", true
+			whole = true
 		}
 	}
+	if whole {
+		return "", true
+	}
+	return line, cut
 }
 
 // suppress advances the region state for one line and reports whether it must

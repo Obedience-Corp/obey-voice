@@ -67,9 +67,11 @@ reference on its own line:
 ![Generated chart](</absolute/work/directory/chart.png>)
 ```
 
-A reference written inside a sentence, such as `Here it is. ![Chart](</absolute/work/directory/chart.png>)`,
-is attached too: the chat shows the sentence, then each caption on its own line, and
-the sentence is still spoken.
+A reference at the end of a line, such as `Here it is. ![Chart](</absolute/work/directory/chart.png>)`,
+is attached too, as are several references that together end the line: the chat
+shows the prose, then each caption on its own line, and the prose is still spoken.
+A reference followed by other text on its line, such as `I drew ![a cat](cat.png) for you.`,
+is left as written: it is not imported, reported, or spoken.
 
 The file must be inside the agent's work directory (or the existing attachment store).
 The host validates and copies it into durable storage, replaces the reference with its
@@ -154,11 +156,11 @@ printed temporary directory so attachment transport can be checked as well as ap
 
 ![Image input and worker image/GIF reply](../demos/agent-images.gif)
 
-![Worker reply with both picture references written inside its sentence](../demos/agent-images-in-sentence.gif)
+![Worker reply with both picture references at the end of its line](../demos/agent-images-end-of-line.gif)
 
 Run `just demo-agent-images` for the actual Bubble Tea UI with deterministic worker
-completion events. `just demo-agent-images-in-sentence` records the same flow with
-both references written at the end of the worker's sentence. This recording proves display and interaction; separate local HTTP
+completion events. `just demo-agent-images-end-of-line` records the same flow with
+both references written at the end of the worker's line. This recording proves display and interaction; separate local HTTP
 and app-server subprocess tests verify native image payloads, worker admission,
 returned-file import, session persistence, and group handoff.
 
@@ -192,7 +194,7 @@ has no Kitty graphics protocol, so it shows the fallback.
 | GIF playback stops and resumes with F2 | Draft hint changes to **F2 play GIFs** while paused; the animated bar moves again after resume |
 | Input attachments survive sending | Both previews appear beside the submitted user turn |
 | Agent-returned PNG and GIF appear in chat | `agent-images.gif` shows `result.png` and `result.gif` after a fixture worker completion |
-| An agent reply whose references are written inside the sentence shows both pictures | `agent-images-in-sentence.gif` shows the sentence, both captions, and the `result.png` and `result.gif` previews, with no raw Markdown |
+| An agent reply whose references end its line shows both pictures | `agent-images-end-of-line.gif` shows the sentence, both captions, and the `result.png` and `result.gif` previews, with no raw Markdown |
 | Returned GIF stops and resumes | The returned bar stops near the end of the recording, then moves again |
 | Video attachments/playback | Not implemented; the attachment importer accepts PNG, JPEG, and GIF only |
 | Native desktop rendering | Not exercised by these terminal recordings; use the desktop fixture above |
@@ -213,7 +215,7 @@ confirm movement, a still interval, and movement after resume:
 These counts sample at 12 fps and exclude the cursor and other UI. They apply to
 these artifacts; rerunning the asynchronous UI harness can shift the timings.
 Reproduce with `just demo-chat-images`, `just demo-agent-images` and
-`just demo-agent-images-in-sentence`. Run the media
+`just demo-agent-images-end-of-line`. Run the media
 checks with:
 
 ```sh
