@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -129,6 +128,13 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	}
 }
 
+// userSentence is an error whose text is shown to the user as written.
+type userSentence string
+
+func (s userSentence) Error() string { return string(s) }
+
+const errExperimentalPaidWork = userSentence("Experimental work requires a local worker; paid and unknown providers are disabled.")
+
 // spawnWork is who runs a spawned job: the persona itself, under its routed
 // tier, or a worker admitted from the configuration at hand.
 type spawnWork struct {
@@ -157,7 +163,7 @@ func (a *Agency) admitSpawn(ctx context.Context, tier config.WorkerTierName, sou
 		return w, err
 	}
 	if a.workEnabled() && w.plan == nil && providerName(w.cfg) != "ollama" {
-		return w, errors.New("experimental work requires a local worker; paid and unknown providers are disabled")
+		return w, errExperimentalPaidWork
 	}
 	return w, nil
 }
