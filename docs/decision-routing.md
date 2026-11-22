@@ -87,9 +87,12 @@ below records it).
 Measured on 2026-11-21: the 26 labelled addressee cases were replayed once
 through two local decision models. The top answer matched the label on 11 of 26
 with Decider 2B v12 and on 18 of 26 with Liquid d1-3B, and the acceptance gate
-passed 1 of 26 for each. So when the live brain is not Ollama, a reply that names
-another persona by plain name normally stays with its speaker. An `@mention` in
-the reply is the reliable handoff: it is an exact control and calls no model (see
+passed 1 of 26 for each. The case set is not in this repository, and the other
+local models (`2b`, `0.8b`, `decider-4b-v3`) and the hosted providers were not
+part of this run. With either measured model as the decision model and a live
+brain that is not Ollama, a reply that names another persona by plain name
+normally stays with its speaker. An `@mention` in the reply hands over on every
+backend: it is an exact control and calls no model (see
 [personas](personas.md#shared-conversations)).
 
 ### What the addressee question sends

@@ -97,7 +97,7 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 		invited = nil
 	}
 	if state == nil || !state.ok {
-		p.reportUninvited(ctx, invited, visited, "the reply before theirs did not finish")
+		p.reportUninvited(ctx, invited, visited, "the reply before theirs was interrupted or failed")
 		return ResponseAdmission{}, nil, false, nil
 	}
 	if (p.RouteHandoff == nil && len(invited) == 0) || p.HasCapturedInput() {

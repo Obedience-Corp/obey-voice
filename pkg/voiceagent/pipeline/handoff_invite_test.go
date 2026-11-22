@@ -341,7 +341,7 @@ func TestFailedReplyEndsTheInvitationWithANotice(t *testing.T) {
 	if !slices.Equal(spoke, []string{"milo"}) || len(invites) != 0 {
 		t.Fatalf("spoke=%v invites=%v", spoke, invites)
 	}
-	want := "Vera and Nick were invited but did not get a turn: the reply before theirs did not finish."
+	want := "Vera and Nick were invited but did not get a turn: the reply before theirs was interrupted or failed."
 	if got := infos(); len(got) != 1 || got[0] != want {
 		t.Fatalf("info = %q, want %q", got, want)
 	}

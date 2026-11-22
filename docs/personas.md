@@ -413,7 +413,8 @@ persona that cannot be loaded is skipped with the same notice and the next
 one is asked. One message allows three handoffs after the first reply: invited
 personas who are still waiting when that limit is reached do not answer, and
 one notice names them. The same single notice, with its reason, names the
-personas still waiting when an invited persona's reply does not finish, or when
+personas still waiting when an invited persona's reply is interrupted or fails
+(a key that silences its speech counts), or when
 the persona who just answered runs on a backend that cannot pass the
 conversation on. Speaking while invited personas are waiting, or stopping the
 turn, ends the invitation without a notice. An invited persona is asked to

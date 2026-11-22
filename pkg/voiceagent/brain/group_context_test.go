@@ -104,7 +104,7 @@ func TestOllamaAgentContinuationDoesNotInventUserTurn(t *testing.T) {
 	o := &OllamaBrain{
 		client: api.NewClient(base, http.DefaultClient),
 		model:  "m",
-		cfg:    &config.Config{ActivePersona: "samantha", AgentName: "Samantha", MaxHistory: 10},
+		cfg:    &config.Config{ActivePersona: "samantha", AgentName: "Samantha", MaxHistory: 10, PromptsDir: t.TempDir()},
 	}
 	o.SetGroupParticipants([]GroupParticipant{{Name: "Samantha"}, {Name: "Alex"}})
 	o.LoadHistory([]Turn{
