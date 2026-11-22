@@ -282,7 +282,7 @@ is muted, fails or is dropped, `job_result_delivered` still arrives, unspoken.
 With speech off the answer appears with `job_finished`.
 
 "Cancel", "cancel that", "kill it" or "kill that" ends the work: every running
-and queued job in the conversation is aborted as one act, so no queued job
+and queued job is aborted as one act, so no queued job
 starts on a slot another one freed, and she says so once for the lot. Before
 she speaks she waits up to a second and a half for the cancelled workers to
 return. When they have, the line is "Stopped after 40 seconds.", or just

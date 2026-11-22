@@ -419,3 +419,30 @@ func TestCancelLine(t *testing.T) {
 		}
 	}
 }
+
+// A conversation cleared without the work inbox leaves its jobs running under
+// the old scope; they still hold their slots, so cancel-all still ends them.
+func TestCancelAllReachesJobsLeftRunningByAClear(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	h := newControlHarness(t, gatedHookWorker{release: release}, false)
+	p := h.agency.pipeline
+	if err := p.BeginConversationIdentity("cleared"); err != nil {
+		t.Fatal(err)
+	}
+	h.spawn("list the files here")
+	h.awaitTool(t)
+	if err := p.ClearConversation(); err != nil {
+		t.Fatal(err)
+	}
+	if !h.agency.jobs.Active() {
+		t.Fatal("the clear ended the job; this test needs it left running")
+	}
+	h.cancel("cancel")
+	if got := h.lastSpoken(); !strings.HasPrefix(got, "Stopped") {
+		t.Fatalf("spoken = %q, want the job left by the clear stopped", got)
+	}
+	if h.agency.jobs.Active() {
+		t.Fatal("the job left by the clear still holds its slot")
+	}
+}

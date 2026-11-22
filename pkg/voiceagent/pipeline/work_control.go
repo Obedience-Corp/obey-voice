@@ -220,12 +220,16 @@ func (a *Agency) cancelOne(id string) JobControl {
 }
 
 // cancelAll ends every table job in this conversation as one act, then asks
-// every live managed task to cancel.
+// every live managed task to cancel. Without the work inbox a cleared
+// conversation leaves its jobs running and holding their slots, with no other
+// way to reach them, so there it ends every job in the table.
 func (a *Agency) cancelAll(receipt *WorkReceipt) {
 	outside := map[string]bool{}
-	for _, info := range a.jobs.Status() {
-		if !a.jobInConversation(info.ID) {
-			outside[info.ID] = true
+	if a.workEnabled() {
+		for _, info := range a.jobs.Status() {
+			if !a.jobInConversation(info.ID) {
+				outside[info.ID] = true
+			}
 		}
 	}
 	for _, before := range a.jobs.CancelAll(func(id string) bool { return outside[id] }) {
