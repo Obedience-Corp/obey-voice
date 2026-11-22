@@ -162,6 +162,8 @@ type entry struct {
 	// budgetTimer fires the budget stop.
 	budgetTimer *time.Timer
 	budgetEnd   *atomic.Int64
+	// limit is a budget set on the running job by Limit.
+	limit time.Duration
 	// finished is set once the job reached a terminal state. A stop (cancel
 	// or budget) finishes the job without waiting for its run function, so
 	// a run function that returns late finds this set and changes nothing.
@@ -293,7 +295,11 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		budgetEnd: budgetEnd,
 	}
 	t.jobs[id] = e
-	if !spec.Immediate {
+	if spec.Immediate {
+		// Running from here, so a stop landing before it is accepted waits
+		// for it to be announced, as a stop during the start callback does.
+		e.info.State = StateRunning
+	} else {
 		t.queue = append(t.queue, id)
 	}
 	onQueued := t.onQueued
@@ -326,6 +332,41 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 // ids are a no-op.
 func (t *Table) Abort(id string) {
 	t.stop(id, errAborted)
+}
+
+// Stop ends a queued or running job as Abort does, with reason as its error.
+func (t *Table) Stop(id string, reason error) {
+	t.stop(id, reason)
+}
+
+// Limit gives a running job a runtime budget of d from now, in place of any
+// it had, enforced as a budget given at Start is.
+func (t *Table) Limit(id string, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e, ok := t.jobs[id]
+	if !ok || e.finished {
+		return
+	}
+	if e.budgetTimer != nil {
+		e.budgetTimer.Stop()
+	}
+	e.limit = d
+	e.budgetEnd.Store(time.Now().Add(d).UnixNano())
+	e.budgetTimer = time.AfterFunc(d, func() { t.exceedBudget(id) })
+}
+
+// Describe replaces the provider and model a job reports, once what runs it
+// is known.
+func (t *Table) Describe(id, provider, model string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if e, ok := t.jobs[id]; ok {
+		e.info.Provider, e.info.Model = provider, model
+	}
 }
 
 // SetEnabled controls admission only. Already queued work can still run.
@@ -581,7 +622,9 @@ func (t *Table) finishLocked(id string, state State, result string, err error) D
 func (t *Table) exceedBudget(id string) {
 	t.mu.Lock()
 	budget := t.budget
-	if e := t.jobs[id]; e != nil && e.spec.RuntimeBudget > 0 {
+	if e := t.jobs[id]; e != nil && e.limit > 0 {
+		budget = e.limit
+	} else if e != nil && e.spec.RuntimeBudget > 0 {
 		budget = e.spec.RuntimeBudget
 	}
 	t.mu.Unlock()

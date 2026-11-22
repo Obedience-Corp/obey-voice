@@ -113,3 +113,67 @@ func TestImmediateJobStartsPastTheLimitAndHoldsASlot(t *testing.T) {
 		t.Fatalf("started %q, want the queued job", got)
 	}
 }
+
+// A budget set on a running job ends it as a budget given at start does,
+// whether or not its run function stops.
+func TestLimitStopsARunningJobOverItsBudget(t *testing.T) {
+	table := NewTable(context.Background())
+	done := make(chan error, 1)
+	table.OnDone(func(_ string, state State, _ string, err error) {
+		if state != StateAborted {
+			err = errors.New("ended " + string(state))
+		}
+		done <- err
+	})
+	started := make(chan struct{})
+	id, err := table.Start(context.Background(), Spec{Task: "moved", RuntimeBudget: -1, Run: func(context.Context) (string, error) {
+		close(started)
+		select {}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	table.Limit(id, 50*time.Millisecond)
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrBudget) {
+			t.Fatalf("job ended with %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the job ran past the budget set on it")
+	}
+}
+
+// A stop that lands while work already under way is being accepted ends it
+// only after its acceptance has been published, and never runs it.
+func TestImmediateJobStoppedWhileAcceptedEndsAfterAcceptance(t *testing.T) {
+	table := NewTable(context.Background())
+	var order []string
+	done := make(chan struct{})
+	table.OnDone(func(_ string, state State, _ string, _ error) {
+		order = append(order, "done "+string(state))
+		close(done)
+	})
+	_, err := table.Start(context.Background(), Spec{Task: "moved", Immediate: true,
+		OnAccepted: func(string) {
+			table.AbortAll()
+			order = append(order, "accepted")
+		},
+		Run: func(context.Context) (string, error) {
+			order = append(order, "ran")
+			return "", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the stopped job never ended")
+	}
+	if strings.Join(order, ",") != "accepted,done aborted" {
+		t.Fatalf("order = %q", order)
+	}
+}
