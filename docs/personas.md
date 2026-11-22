@@ -256,69 +256,89 @@ which directory paths are relative to, so Tab inserts the full path.
 Sending a typed message while a persona is answering normally stops that
 reply and answers the message. In the TUI there is one exception: if the
 message names a different persona by an exact rule (`@obey …`, `Obey, …`,
-`Hey Obey, …`, or `switch to Obey`), a reply that is already under way keeps
-running as a background job of the persona who started it. Nothing is
-restarted and no tool runs twice. The named persona answers your message as
-usual. When the first persona's reply finishes, it is recorded under that
-persona's name and spoken in that persona's voice once the conversation is
-quiet, like any job it started; it appears as a job row, its tool runs after
-the move are listed on that row, which names the persona, and `/workers` or
-"kill it" stops it. The reply is divided at a sentence end. The complete
-sentences you had already been given stay in the conversation as that
-persona's line, marked "continues as job-1" (or whichever job it is), not as
-interrupted; in a spoken reply that is the sentences she had finished saying.
-Everything after them, starting with a sentence that was cut off, is the
-job's reply, so the two read as one reply with nothing repeated or missing. If
-no sentence was complete yet, the whole reply comes from the job and the chat
-shows only "Anika continues as job-1". An image the reply links to is attached to it, as for a
-worker's answer, rather than shown or spoken as a path. The persona you named
-stays selected afterwards. Addressing the first persona again before its job
-finishes gives it a fresh session, which knows the conversation up to your
-line and the part of its reply that stayed in the conversation.
+`Hey Obey, …`, `switch to Obey`, or just `Obey` or `@obey`), a reply that is
+already under way keeps running as a background job of the persona who
+started it. Nothing is restarted and no tool runs twice. The named persona
+answers your message as usual (a bare name gets "Obey here."), and stays
+selected afterwards.
+
+The reply is divided at a sentence end. The complete sentences you had
+already been given stay in the conversation as that persona's line, shown as
+she wrote them and marked "continues as job-1" (or whichever job it is), not
+as interrupted. In a spoken reply that is only the sentences whose speech had
+finished playing. Everything after them, starting with a sentence that was cut
+off or never heard, is the job's reply, so the two read as one reply with
+nothing repeated or missing. The division is moved earlier so that it never
+falls inside a fenced code block, and an image line travels with the job's
+reply, which attaches it as for a worker's answer rather than showing or
+speaking its path. If no sentence was complete yet, the whole reply comes from
+the job and the chat shows only "Anika continues as job-1".
+
+The job appears as a row that names the persona. A tool that was running at
+the move, and every tool run after it, is listed on that row with its
+outcome. `/workers` or "kill it" stops the job. When the reply finishes, the
+job's part is recorded under that persona's name and spoken in her voice once
+the conversation is quiet, like any job she started. If the part kept was the
+whole reply, the job finishes quietly. Addressing the first persona again
+before her job finishes gives her a fresh session, which knows the
+conversation up to your line and the part of her reply that stayed in it.
 
 If the moved reply ends by handing its work off (the persona chose
 `start_background_work`, `web_search` or `fetch_url`), the same job goes on to
-do that work, as a spawned job of the first persona would: on its own backend
-or its worker, as its `brain.work` setting chose when the reply started, with
-that persona's name and voice, whoever is selected by then. Its answer is
-delivered like any job's, and an unfinished sentence the reply had begun
-before handing off is not part of it. A moved reply that ends by asking to narrate
-fails its job with a line saying to ask again, since narration needs the live
-conversation.
+do that work, as a spawned job of the first persona would: on her own backend
+or her worker, as her `brain.work` setting chose when the reply started, with
+her name and voice, whoever is selected by then. That work is held to a
+spawned job's limits from when it starts, and `/workers` shows the backend
+that runs it. Its answer is delivered like any job's; an unfinished sentence
+the reply had begun before handing off is not part of it. A reply that ends by
+asking for something only the live conversation can do (narration, or
+stopping or reporting on jobs) fails its job with a line saying to ask again.
 
 If the moved reply fails partway, as a live reply can, the part that arrived
-is still delivered as that persona's reply and spoken in her voice, and the
-reason is shown as an error. The reply is saved marked unfinished, as an
-interrupted live reply is, and its job row says "cut short". If nothing more
-arrived before the failure, or the reply ended with no text at all, the job
-fails with the reason instead.
+is still delivered as her reply and spoken in her voice, and the reason is
+shown as an error; its job row says "cut short". At an output limit or a
+repetition the part is shown and saved but not spoken, since a live reply
+stops speaking there. If nothing more arrived before the failure, or the
+reply ended with no text at all, the job fails with the reason instead.
+
+Whenever a moved reply does not finish, whether it failed, went silent, or
+its job was stopped by you or by closing the conversation, it is recorded as
+a stopped live reply is: the part kept and the text that arrived after it,
+under her name and marked unfinished, which later models are told.
 
 The turn moves only when all of these hold; otherwise the message stops the
 reply as before:
 
 - The message names a known persona other than the one answering, without
-  needing a model to tell who it is for. A message naming the persona who is
-  answering, naming nobody, or naming an unknown persona stops the reply.
+  needing a model to tell who it is for, and that persona's profile loads
+  and can take the conversation. A message naming the persona who is
+  answering, naming nobody, or naming an unknown or broken persona stops the
+  reply.
 - The reply's model request is running: the persona is thinking, running
   tools, or still writing while it speaks. A spoken reply that is moved stops
   speaking at once. A turn still being transcribed or admitted, and a reply
   whose model has already finished, are stopped as before.
-- The answering persona is on Ollama. Claude, Codex, Cursor, Grok, Muse Spark
-  and Obey replies are stopped as before.
+- The answering persona is on Ollama and not in native audio mode. Claude,
+  Codex, Cursor, Grok, Muse Spark and Obey replies are stopped as before.
+- The reply answers your own message: a persona's reply to another persona
+  (agent handoff), a reply in a group discussion, and a repeated request after
+  an input error are stopped as before.
 - Background work uses the conversation's own job delivery (not the
   experimental `voice_work_enabled` inbox), and jobs are enabled in
   `/workers`.
 
 Only typed messages move a turn. The talk key and the open microphone still
-stop the reply. A moved reply counts as a running job: it starts at once even
-when `voice_worker_max_concurrent` is reached, and later jobs queue behind it.
-It keeps the limit a live reply has, and no other: it is stopped once the
-model has sent nothing, no text, thinking or tool activity, for three minutes,
-which is handled like any other failure partway (see above), and `voice_worker_job_budget` does not
-apply to it, so a move never shortens how long the persona may work. Work it
-hands off is held to the limits a spawned job has. Closing the conversation
-stops it. If the persona you named cannot take over, the moved reply is
-stopped, as if it had never moved.
+stop the reply. Speech the open microphone caught meanwhile is answered after
+the message that moved the turn. A moved reply counts as a running job: it
+starts at once even when `voice_worker_max_concurrent` is reached, and later
+jobs queue behind it. It keeps the limit a live reply has, and no other: it is
+stopped once the model has sent nothing, no text, thinking or tool activity,
+for three minutes, which is handled like any other failure partway, and
+`voice_worker_job_budget` does not apply to it, so a move never shortens how
+long the persona may work. Closing the conversation stops it. If the persona
+you named still cannot take over, the moved reply is stopped and recorded as
+a stopped reply, its label says "stopped: the persona you named could not take
+over", and its job row says so rather than that you stopped it.
 
 Use `/menu` (or `/back`) to save the current chat and return to the launcher
 inside the same terminal UI. The app drains the conversation runtime before
