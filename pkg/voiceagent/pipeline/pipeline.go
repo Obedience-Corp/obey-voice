@@ -401,8 +401,8 @@ type StopSource struct {
 }
 
 // StopPlaybackFrom is StopPlayback with its caller named. A keystroke stops
-// only a reply that has begun speaking; one that lands earlier is ignored and
-// the reply is spoken when it is ready.
+// only speech in flight: text handed to synthesis whose playback has not
+// finished. With nothing in flight it is ignored and later speech plays.
 func (p *Pipeline) StopPlaybackFrom(source StopSource) {
 	if p == nil || p.Player == nil {
 		return

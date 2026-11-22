@@ -120,7 +120,7 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 	if turn != nil {
 		turn.to(TurnSpeaking)
 	}
-	metrics.beginSpeech()
+	defer metrics.beginSpeech()()
 	if metrics != nil && metrics.firstSegment.IsZero() {
 		metrics.firstSegment = time.Now()
 	}
