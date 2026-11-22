@@ -289,6 +289,19 @@ func TestRequestMovedBeforeAnySentenceReadsAsHandedOff(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("Anika's moved request never finished")
 			}
+			c.say("Go on.")
+			for name, turns := range map[string][]brain.Turn{"transcript": c.selector.Transcript(), "saved": c.saved().Turns} {
+				lines := countTurns(turns, func(t brain.Turn) bool { return t.Role == "user" && t.Content == line })
+				replies := countTurns(turns, func(t brain.Turn) bool {
+					return t.Role == "assistant" && t.PersonaID == "anika" && strings.Contains(t.Content, ollamaReleased)
+				})
+				handedOff := countTurns(turns, func(t brain.Turn) bool {
+					return t.Role == "assistant" && t.PersonaID == "anika" && t.Content == "I'll work on that and report back."
+				})
+				if lines != 1 || replies != 1 || handedOff != 1 {
+					t.Fatalf("%s holds %d lines, %d replies and %d hand-offs of the moved request: %+v", name, lines, replies, handedOff, turns)
+				}
+			}
 		})
 	}
 }
@@ -362,7 +375,16 @@ func TestTurnOnAProviderKeepingItsOwnSessionIsNotMoved(t *testing.T) {
 // its kept part and the text after it, marked unfinished, which later models
 // are told.
 func TestStoppedMovedReplyIsSavedUnfinished(t *testing.T) {
+	for _, byteAtATime := range []bool{false, true} {
+		t.Run(map[bool]string{false: "whole", true: "byte at a time"}[byteAtATime], func(t *testing.T) {
+			stoppedMovedReplyIsSavedUnfinished(t, byteAtATime)
+		})
+	}
+}
+
+func stoppedMovedReplyIsSavedUnfinished(t *testing.T, byteAtATime bool) {
 	c := newMovingLocalConversation(t)
+	c.byteAtATime = byteAtATime
 	c.say("Note that the vault code is cobalt.", "switch to Anika")
 	aborted := make(chan events.JobAborted, 1)
 	events.Subscribe(c.p.Events, func(e events.JobAborted) { aborted <- e })
@@ -395,5 +417,21 @@ func TestStoppedMovedReplyIsSavedUnfinished(t *testing.T) {
 	sent := c.requests()
 	if last := string(sent[len(sent)-1]); !strings.Contains(last, "Incomplete assistant response") {
 		t.Fatalf("Obey was not told the reply was unfinished:\n%s", last)
+	}
+}
+
+// The fake backend scripts its reply from what the human said, not from the
+// context the host appends to that message, which can quote other requests.
+func TestFakeBackendReadsOnlyTheHumansLine(t *testing.T) {
+	last := "User:\nHey Obey, what is the vault code?\n\n[Background jobs as the host records them right now.]\n" +
+		"<active_work>\njob=\"job-1\" state=\"running\" started_by=\"Anika\" task=\"" + anikaHeldLine + "\"\n</active_work>\n\n[Host conversation context.]"
+	for _, tc := range []struct{ content, want string }{
+		{last, "Hey Obey, what is the vault code?"},
+		{"Read the notes", "Read the notes"},
+		{"Mira user:\nhello\n\nmore", "hello"},
+	} {
+		if got := lastUserLine([]struct{ Role, Content string }{{"user", tc.content}, {"assistant", "ok"}}); got != tc.want {
+			t.Errorf("lastUserLine(%q) = %q, want %q", tc.content, got, tc.want)
+		}
 	}
 }
