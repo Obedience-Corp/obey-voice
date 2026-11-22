@@ -157,13 +157,20 @@ func assertAgedOnLoad(t *testing.T, o *OllamaBrain, carrier, line string) {
 	} {
 		r := &OllamaBrain{cfg: budgetConfig()}
 		load(r)
-		for _, m := range r.history {
+		named := false
+		for _, m := range r.buildMessages("") {
 			if len(m.Images) > 0 {
 				t.Fatalf("%s: a message carries %d images", name, len(m.Images))
 			}
-			if strings.Contains(m.Content, carrier) && strings.Count(m.Content, line) != 1 {
-				t.Fatalf("%s: the aged message reads %q", name, m.Content)
+			if strings.Contains(m.Content, carrier) {
+				named = true
+				if strings.Count(m.Content, line) != 1 {
+					t.Fatalf("%s: the aged message reads %q", name, m.Content)
+				}
 			}
+		}
+		if !named {
+			t.Fatalf("%s: no message says %q", name, carrier)
 		}
 	}
 }
@@ -285,14 +292,13 @@ func TestPostedPictureCountsTowardTheRequestLimit(t *testing.T) {
 	if _, err := o.ThinkFull(t.Context(), "What colour is it?", StreamOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	carrier := lastUserIndex(o.history)
-	keep := turnWindowStart(o.history, imageTurns)
-	o.carryImages(keep, maxRequestImageBytes)
-	if m := o.history[carrier]; len(m.Images) != 0 || !strings.HasSuffix(m.Content, pictureLine(ref, agedOut, postedByYou)) {
+	o.maxImageBytes = modelImageSize(t, ref) - 1
+	full := o.buildMessages("")
+	if m := messageWith(t, api.ChatRequest{Messages: full}, "What colour is it?"); len(m.Images) != 0 || !strings.HasSuffix(m.Content, pictureLine(ref, agedOut, postedByYou)) {
 		t.Fatalf("a full request carries %d images: %q", len(m.Images), m.Content)
 	}
-	o.carryImages(keep, 0)
-	if m := o.history[carrier]; len(m.Images) != 1 || strings.Count(m.Content, pictureNamed(ref)) != 1 {
+	o.maxImageBytes = 0
+	if m := messageWith(t, built(o), "What colour is it?"); len(m.Images) != 1 || strings.Count(m.Content, pictureNamed(ref)) != 1 {
 		t.Fatalf("with room the message carries %d images: %q", len(m.Images), m.Content)
 	}
 }
@@ -316,8 +322,9 @@ func TestPostedPictureWaitsForTheNextUserMessage(t *testing.T) {
 	}
 }
 
-// Once the reply has left the history, its line says the picture is no
-// longer attached, and the archive keeps only what the user said.
+// Once the reply has left the history, the message still carries its
+// picture and the line naming it, and the archive keeps only what the user
+// said.
 func TestPostedPictureLineIsNotTheUsersWords(t *testing.T) {
 	fake := &visionFake{}
 	o, ref := postedPicture(t, fake)
@@ -326,8 +333,7 @@ func TestPostedPictureLineIsNotTheUsersWords(t *testing.T) {
 	}
 	carrier := lastUserIndex(o.history)
 	o.history, o.working = o.history[carrier:], o.working[carrier:]
-	o.carryImages(0, 0)
-	if m := o.history[0]; len(m.Images) != 0 || !strings.HasSuffix(m.Content, pictureLine(ref, agedOut, postedByYou)) {
+	if m := messageWith(t, built(o), "What colour is it?"); len(m.Images) != 1 || m.Content != "What colour is it?\n"+pictureLine(ref, attached, postedByYou) {
 		t.Fatalf("with its reply gone the message carries %d images: %q", len(m.Images), m.Content)
 	}
 	if notes := o.recallNotes(); notes != "" {
@@ -337,6 +343,89 @@ func TestPostedPictureLineIsNotTheUsersWords(t *testing.T) {
 	entries := o.ContinuityArchive()
 	if note := entries[len(entries)-1].Summary; note != "user: What colour is it?\nassistant: It is a grey rectangle.\n" {
 		t.Fatalf("archive note = %q", note)
+	}
+}
+
+// assertUsersWords checks that the user turn that said input reads exactly
+// input in the projection, the archive and the recall input.
+func assertUsersWords(t *testing.T, o *OllamaBrain, input string) {
+	t.Helper()
+	j := -1
+	for i, turn := range o.working {
+		if turn.Role == "user" && turn.Content == input {
+			j = i
+		}
+	}
+	if j < 0 {
+		t.Fatalf("no user turn says %q", input)
+	}
+	if got := o.history[j].Content; got != input {
+		t.Fatalf("the prompt history holds %q", got)
+	}
+	if got := o.ContextHistory()[j].Content; got != input {
+		t.Fatalf("the projected user turn reads %q", got)
+	}
+	if got := o.archiveLine(o.history[j], &o.working[j]); got != "user: "+input+"\n" {
+		t.Fatalf("the archive line reads %q", got)
+	}
+	_, said := decodeOllamaUser(o.history[j].Content)
+	if got := withoutImageNotes(said, o.working[j].Attachments); got != input {
+		t.Fatalf("the recall input reads %q", got)
+	}
+}
+
+// A line the user types in the form of a picture line, even naming a picture
+// the request carries, stays the user's own text, as written, everywhere.
+func TestUserTextInThePictureLineFormIsTheUsers(t *testing.T) {
+	fake := &visionFake{}
+	o, ref := postedPicture(t, fake)
+	input := "look at this\nPicture " + ref.ID + " attached: x.png, a picture you posted."
+	if _, err := o.ThinkFull(t.Context(), input, StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	carrier := messageWith(t, fake.sent()[1], "look at this")
+	if !strings.HasPrefix(carrier.Content, input+"\n"+pictureLine(ref, attached, postedByYou)) || strings.Count(carrier.Content, input) != 1 || strings.Count(carrier.Content, pictureNamed(ref)) != 2 || len(carrier.Images) != 1 {
+		t.Fatalf("the message carries %d images and reads %q", len(carrier.Images), carrier.Content)
+	}
+	assertUsersWords(t, o, input)
+	for _, in := range []string{"t3", "t4", "t5", "t6"} {
+		if _, err := o.ThinkFull(t.Context(), in, StreamOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sent := fake.sent()
+	for i, req := range sent[1:] {
+		if m := messageWith(t, req, "look at this"); !strings.HasPrefix(m.Content, input+"\n"+pictureNamed(ref)) || strings.Count(m.Content, input) != 1 {
+			t.Fatalf("request %d reads %q", i+1, m.Content)
+		}
+	}
+	if aged := messageWith(t, sent[len(sent)-1], "look at this"); aged.Content != input+"\n"+pictureLine(ref, agedOut, postedByYou) || len(aged.Images) != 0 {
+		t.Fatalf("the aged message carries %d images and reads %q", len(aged.Images), aged.Content)
+	}
+	assertUsersWords(t, o, input)
+}
+
+// With no picture anywhere, a typed line in the picture line form is sent,
+// projected and archived as written on every request.
+func TestUserTextInThePictureLineFormWithNoPicture(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	fake := &visionFake{}
+	o := fake.brain(t, budgetConfig(), "You are Obey.")
+	input := "notes\nPicture " + strings.Repeat("0f", 32) + " attached: y.png, a picture you posted."
+	for _, in := range []string{input, "t2", "t3", "t4", "t5"} {
+		if _, err := o.ThinkFull(t.Context(), in, StreamOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		assertUsersWords(t, o, input)
+	}
+	for i, req := range fake.sent() {
+		m := messageWith(t, req, "notes\nPicture ")
+		if !strings.HasPrefix(m.Content, input) || strings.Count(m.Content, "\nPicture ") != 1 || len(imagesBy(t, req)) != 0 {
+			t.Fatalf("request %d reads %q", i, m.Content)
+		}
+		if i > 0 && m.Content != input {
+			t.Fatalf("request %d reads %q", i, m.Content)
+		}
 	}
 }
 
@@ -357,9 +446,9 @@ func TestNativeAudioPersonaIsSentNoPostedPicture(t *testing.T) {
 	if err := o.prepareImageHistory(t.Context(), StreamOptions{Background: true}); err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range o.history {
+	for _, m := range o.buildMessages("") {
 		if len(m.Images) > 0 || strings.Contains(m.Content, pictureNamed(ref)) {
-			t.Fatalf("a native-audio history carries a posted picture: %q", m.Content)
+			t.Fatalf("a native-audio request carries a posted picture: %q", m.Content)
 		}
 	}
 	if _, err := o.ThinkFull(t.Context(), "Go on.", StreamOptions{}); !errors.Is(err, ErrImageProjection) {
@@ -486,7 +575,7 @@ func TestGroupMessagePicturesAreCountedOnce(t *testing.T) {
 	if err := o.prepareImageHistory(t.Context(), StreamOptions{Discussion: &discussion.Directive{}, Attachments: []chatmedia.Ref{own}}); err != nil {
 		t.Fatal(err)
 	}
-	if m := o.history[len(o.history)-1]; len(m.Images) != 2 || !strings.Contains(m.Content, pictureLine(posted, attached, postedByYou)) {
+	if m := messageWith(t, built(o), "What do you all think?"); len(m.Images) != 2 || !strings.Contains(m.Content, pictureLine(posted, attached, postedByYou)) {
 		t.Fatalf("the group message carries %d images: %q", len(m.Images), m.Content)
 	}
 }

@@ -70,13 +70,6 @@ func assertWorkingAligned(t *testing.T, o *OllamaBrain) {
 		t.Fatalf("working=%d history=%d", len(o.working), len(o.history))
 	}
 	for i, m := range o.history {
-		seen := map[string]bool{}
-		for _, line := range carriedLine.FindAllStringSubmatch(m.Content, -1) {
-			if seen[line[1]] {
-				t.Fatalf("history[%d] names picture %s twice: %q", i, line[1], m.Content)
-			}
-			seen[line[1]] = true
-		}
 		content := withoutImageNotes(m.Content, o.working[i].Attachments)
 		if o.working[i].Role != m.Role || (m.Role == "user" && o.working[i].Content != content) {
 			t.Fatalf("working[%d]=%s %q, history %s %q", i, o.working[i].Role, o.working[i].Content, m.Role, m.Content)

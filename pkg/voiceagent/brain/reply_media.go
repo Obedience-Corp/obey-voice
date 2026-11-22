@@ -65,7 +65,7 @@ func (o *OllamaBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
 		return err
 	}
 	// The reply stays text at assistant authority. Its images ride on the user
-	// message after it, which carryImages gives them on the next request.
+	// message after it when the next request is built.
 	for i := len(o.history) - 1; i >= 0; i-- {
 		if o.history[i].Role == "assistant" && len(o.history[i].ToolCalls) == 0 && o.history[i].Content == original {
 			o.history[i].Content = text

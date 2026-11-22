@@ -208,7 +208,7 @@ func TestViewImageOnANativeAudioPersona(t *testing.T) {
 	writePNG(t, filepath.Join(o.workDir, "shot.png"))
 	o.SetAudioResolver(noRecordings{})
 	o.appendMessage(api.Message{Role: "user", Content: "Look at shot.png."}, nil)
-	if result := o.viewImage(t.Context(), "shot.png"); result != cannotViewImages {
+	if result, _ := o.viewImage(t.Context(), "shot.png"); result != cannotViewImages {
 		t.Fatalf("tool result = %q", result)
 	}
 	if len(o.canonical[0].OpenedImages) != 0 {
@@ -322,11 +322,11 @@ func TestViewImageThatIsNotCarriedIsNotRecorded(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	o, sent := toolModel(t, true, opensThenAnswers("shot.png"))
 	writePNG(t, filepath.Join(o.workDir, "shot.png"))
-	o.maxImageBytes = 1
+	o.maxImageBytes = 10
 	if _, err := o.ThinkFull(t.Context(), "Look at shot.png.", directTools); err != nil {
 		t.Fatal(err)
 	}
-	if result := toolResult(t, sent()[1], "view_image"); !strings.Contains(result, "could not be attached") || !strings.Contains(result, "32 MiB") {
+	if result := toolResult(t, sent()[1], "view_image"); !strings.Contains(result, "could not be attached") || !strings.Contains(result, "(10 bytes)") {
 		t.Fatalf("tool result = %q", result)
 	}
 	if carrier := messageWith(t, sent()[1], "Look at shot.png."); len(carrier.Images) != 0 || strings.Contains(carrier.Content, "Picture ") {
@@ -335,7 +335,7 @@ func TestViewImageThatIsNotCarriedIsNotRecorded(t *testing.T) {
 	if len(o.History()[0].OpenedImages) != 0 {
 		t.Fatal("a picture that was not attached is recorded as opened")
 	}
-	if again := o.viewImage(t.Context(), "shot.png"); strings.Contains(again, "already attached") {
+	if again, _ := o.viewImage(t.Context(), "shot.png"); strings.Contains(again, "already attached") {
 		t.Fatalf("a second try reads %q", again)
 	}
 	o.maxImageBytes = 0
@@ -346,14 +346,17 @@ func TestViewImageThatIsNotCarriedIsNotRecorded(t *testing.T) {
 		t.Fatal("a picture that was not attached reached a later request")
 	}
 
-	// A request sent without images gives that reason.
-	o.appendMessage(api.Message{Role: "user", Content: "Look again."}, nil)
-	o.imagesWithheld = true
-	if result := o.viewImage(t.Context(), "shot.png"); !strings.Contains(result, "cannot view images") || strings.Contains(result, "MiB") {
+	// A model that cannot view images is given that reason.
+	blind, blindSent := toolModel(t, false, opensThenAnswers("shot.png"))
+	writePNG(t, filepath.Join(blind.workDir, "shot.png"))
+	if _, err := blind.ThinkFull(t.Context(), "Look at shot.png.", directTools); err != nil {
+		t.Fatal(err)
+	}
+	if result := toolResult(t, blindSent()[1], "view_image"); !strings.Contains(result, "cannot view images") || strings.Contains(result, "bytes") || strings.Contains(result, "MiB") {
 		t.Fatalf("tool result = %q", result)
 	}
-	if len(o.canonical[len(o.canonical)-1].OpenedImages) != 0 {
-		t.Fatal("a withheld picture is recorded as opened")
+	if len(blind.History()[0].OpenedImages) != 0 {
+		t.Fatal("a picture a model cannot view is recorded as opened")
 	}
 }
 
@@ -393,15 +396,22 @@ func callTools(w http.ResponseWriter, req api.ChatRequest, names ...string) {
 	answer(w, req, api.Message{Role: "assistant", ToolCalls: calls}, "stop")
 }
 
-// Asking for background work hands the turn off as it always has, with or
-// after view_image. A picture in a response that is handed off is not opened.
-func TestBackgroundWorkIsHandedOffBesideViewImage(t *testing.T) {
+// After a picture is opened, only an explicit request for background work
+// hands the turn off; a look that fails changes nothing.
+func TestHandOffAfterALookAtAPicture(t *testing.T) {
 	for name, tc := range map[string]struct {
-		rounds [][]string
-		opened int
+		picture bool
+		rounds  [][]string
+		route   string
+		opened  int
 	}{
-		"same response":  {[][]string{{"view_image", backgroundWorkTool}}, 0},
-		"after one look": {[][]string{{"view_image"}, {backgroundWorkTool}}, 1},
+		"failed look then read_file":       {false, [][]string{{"view_image"}, {"read_file"}}, "spawn", 0},
+		"read_file then read_file":         {false, [][]string{{"read_file"}, {"read_file"}}, "spawn", 0},
+		"look then read_file":              {true, [][]string{{"view_image"}, {"read_file"}}, "", 1},
+		"look then web_search":             {true, [][]string{{"view_image"}, {"web_search"}}, "", 1},
+		"look and web_search together":     {true, [][]string{{"view_image", "web_search"}}, "", 1},
+		"look then background work":        {true, [][]string{{"view_image"}, {backgroundWorkTool}}, "spawn", 1},
+		"look and background work at once": {true, [][]string{{"view_image", backgroundWorkTool}}, "spawn", 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			config.SetConfigDirForTest(t, t.TempDir())
@@ -412,12 +422,23 @@ func TestBackgroundWorkIsHandedOffBesideViewImage(t *testing.T) {
 				}
 				answer(w, req, api.Message{Role: "assistant", Content: "Done."}, "stop")
 			})
-			writePNG(t, filepath.Join(o.workDir, "shot.png"))
+			if tc.picture {
+				writePNG(t, filepath.Join(o.workDir, "shot.png"))
+			}
 			opts := directTools
 			opts.BackgroundWorker = true
-			turn := runRoutedTurn(t, o, "Look at shot.png, then research it in the background.", opts)
-			if turn.result.Err != nil || turn.result.Route != "spawn" || len(sent()) != len(tc.rounds) {
-				t.Fatalf("route=%q err=%v requests=%d", turn.result.Route, turn.result.Err, len(sent()))
+			turn := runRoutedTurn(t, o, "Look at shot.png and find out more.", opts)
+			if turn.result.Err != nil || turn.result.Route != tc.route {
+				t.Fatalf("route=%q err=%v", turn.result.Route, turn.result.Err)
+			}
+			requests := sent()
+			if tc.route == "" {
+				final := requests[len(requests)-1]
+				for _, round := range tc.rounds {
+					for _, tool := range round {
+						toolResult(t, final, tool)
+					}
+				}
 			}
 			opened := 0
 			for _, t := range o.canonical {
@@ -427,27 +448,5 @@ func TestBackgroundWorkIsHandedOffBesideViewImage(t *testing.T) {
 				t.Fatalf("%d pictures recorded as opened, want %d", opened, tc.opened)
 			}
 		})
-	}
-}
-
-// After a look at a picture, a further local step stays with the persona.
-func TestALookAtAPictureIsNotFollowedByAnImplicitHandOff(t *testing.T) {
-	config.SetConfigDirForTest(t, t.TempDir())
-	o, sent := toolModel(t, true, func(w http.ResponseWriter, n int, req api.ChatRequest) {
-		switch n {
-		case 1:
-			callTools(w, req, "view_image")
-		case 2:
-			callTool(w, req, "read_file", map[string]any{"path": "notes.txt"})
-		default:
-			answer(w, req, api.Message{Role: "assistant", Content: "A grey rectangle."}, "stop")
-		}
-	})
-	writePNG(t, filepath.Join(o.workDir, "shot.png"))
-	opts := directTools
-	opts.BackgroundWorker = true
-	turn := runRoutedTurn(t, o, "Look at shot.png and check the notes.", opts)
-	if turn.result.Err != nil || turn.result.Route != "" || len(sent()) != 3 {
-		t.Fatalf("route=%q err=%v requests=%d", turn.result.Route, turn.result.Err, len(sent()))
 	}
 }

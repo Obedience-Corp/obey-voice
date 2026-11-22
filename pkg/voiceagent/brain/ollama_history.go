@@ -2,6 +2,7 @@ package brain
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
@@ -174,6 +175,7 @@ func (o *OllamaBrain) ClearHistory() {
 	o.inputTranscripts.Clear()
 	o.canonical = nil
 	o.working = nil
+	o.carriedData = nil
 }
 
 // SessionInfo reports the in-process conversation for /session display:
@@ -202,7 +204,6 @@ func (o *OllamaBrain) ContextHistory() []Turn {
 		content, speaker := m.Content, ""
 		if m.Role == "user" {
 			speaker, content = decodeOllamaUser(m.Content)
-			content = withoutCarriedLines(content)
 		}
 		turns[i] = Turn{
 			Role:       m.Role,
@@ -369,6 +370,9 @@ func (o *OllamaBrain) loadHistoryProjectionForPersona(turns []Turn, archiveProje
 		}
 		m := o.projectTurn(t, turns, i, sharedUnowned)
 		history = append(history, m)
+		if t.Role == "user" && t.PostedImages == nil {
+			t.PostedImages = postedBefore(turns, i)
+		}
 		working = append(working, t)
 	}
 	o.history = sanitizeOllamaHistory(history)
@@ -395,6 +399,7 @@ func deepCopyTurns(in []Turn) []Turn {
 		out[i].Utterance = cloneUtterance(in[i].Utterance)
 		out[i].Attachments = append([]chatmedia.Ref(nil), in[i].Attachments...)
 		out[i].OpenedImages = append([]chatmedia.Ref(nil), in[i].OpenedImages...)
+		out[i].PostedImages = append([]PostedImage(nil), in[i].PostedImages...)
 		out[i].ToolCalls = append([]TurnToolCall(nil), in[i].ToolCalls...)
 	}
 	return out
@@ -421,13 +426,18 @@ func (o *OllamaBrain) appendMessage(m api.Message, identity *TurnIdentity, dispo
 	if m.Role == "assistant" && identity == nil && o.activePersona() != "" {
 		t.PersonaID, t.PersonaDisplayName = o.activePersona(), o.cfg.AgentName
 	}
+	if t.Role == "user" {
+		t.PostedImages = postedBefore(o.working, len(o.working))
+	}
 	o.canonical = append(o.canonical, t)
 	if t.Role == "assistant" && t.PersonaID != "" && t.PersonaID != o.activePersona() {
 		o.stateMu.Lock()
 		o.groupHistory = true
 		o.stateMu.Unlock()
 	}
-	o.working = append(o.working, t)
+	w := t
+	w.PostedImages = slices.Clone(t.PostedImages)
+	o.working = append(o.working, w)
 	m = o.projectTurn(t, o.canonical, len(o.canonical)-1, false)
 	o.history = append(o.history, m)
 }
@@ -467,7 +477,7 @@ func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) error {
 		}
 	}
 	o.attachInputImages(opts.Attachments, images)
-	o.carryImages(turnWindowStart(o.history, imageTurns), 0)
+	o.imageWindow = imageTurns
 	if opts.Utterance != nil {
 		last := len(o.canonical) - 1
 		o.canonical[last].TypedInput = input

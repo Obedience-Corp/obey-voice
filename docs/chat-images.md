@@ -164,10 +164,17 @@ Ollama server cannot say whether the model views images and only posted pictures
 are involved, that request names them as not attached to it, the turn goes on,
 and the next request that can ask shows them. Pictures posted since the last user message wait for the next one: a
 request with no new user message, such as a background report or another persona
-continuing, does not carry them, though earlier messages keep theirs. A
-native-audio persona is sent none; as before, it refuses a conversation whose
-retained turns hold a picture. Only the model request changes: the transcript and
-the saved conversation keep the picture on the reply.
+continuing, does not carry them. Such a request uses the window as it stands
+after the last reply, the two latest user messages, so a picture on the
+third-latest is already named as no longer attached. The line and the picture
+are added to each request as it is built and never stored with the message, so
+text a user types in the same form is sent and kept as written. A message keeps
+its posted pictures when the reply that posted them is trimmed from the retained
+history or the conversation is compacted. They are saved with the message,
+apart from what the user attached; a conversation saved before that takes them
+from the replies still saved. A native-audio persona is sent none; as before, it
+refuses a conversation whose retained turns hold a picture. The chat shows the
+picture only on the reply, never as sent by the user.
 
 A speaking persona on Ollama with direct tools can look at an image file with the
 `view_image` tool. The file must be a PNG, JPEG or GIF inside the work directory
@@ -176,12 +183,18 @@ store is not opened. Symbolic links and `..` are resolved before the check. The 
 being answered as a picture the persona opened, kept apart from what the user
 attached: the chat never shows it as sent by the user, and the saved conversation
 keeps it. The turn's next request carries it on that message, and later turns
-follow the window, aging and 32 MiB rules above. A picture that request cannot
-carry is not recorded, and the answer gives the reason. A persona can open four
-pictures while answering one message. A model that cannot view images, or a
-native-audio persona, gets an answer saying so and the turn goes on. Opening a
-picture keeps a round of local tools from turning into a background job by
-itself, though the persona can still start background work explicitly. The
+follow the window, aging and 32 MiB rules above. A picture the request cannot
+carry when it is opened is not recorded, and the answer gives the reason. If a
+new picture leaves no room for one opened earlier, the answer names the one no
+longer attached; that one stays recorded, is named as no longer attached, and
+can be opened again to bring it back. A picture the request already attaches to
+the message is reported as already there. A persona can open
+four pictures while answering one message. A model that cannot view images, or a
+native-audio persona, gets an answer saying so and the turn goes on. In the round
+that opens a picture, and in every round after one has been opened, the turn goes
+to a background worker only when the persona asks for background work itself;
+web searches and further local steps run in its own turn. A look that fails
+leaves hand-off as it was. The
 speaking persona's tool list names `view_image`; workers, routed
 (`route_only`) turns, background reports and group discussion turns are not
 offered the tool. `read_file` on an image file no longer returns its bytes; it

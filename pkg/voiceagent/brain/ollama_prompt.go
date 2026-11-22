@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -131,6 +132,7 @@ func (o *OllamaBrain) buildMessagesFrom(view turnView, skillCtx string, agentCon
 		system += "\n" + systemPrompt(o.cfg, "peer-reply", nil)
 	}
 	msgs = append(msgs, api.Message{Role: "system", Content: system})
+	extras, _ := o.carried(history, working)
 	// shared marks the other speakers' turns and current the message being
 	// answered, both by position in msgs.
 	shared, current := map[int]bool{}, map[int]bool{}
@@ -145,6 +147,12 @@ func (o *OllamaBrain) buildMessagesFrom(view turnView, skillCtx string, agentCon
 			current[len(msgs)] = true
 		}
 		if m.Role == "user" {
+			if extra, ok := extras[i]; ok {
+				m.Content += extra.lines
+				if len(extra.images) > 0 {
+					m.Images = slices.Concat(m.Images, extra.images)
+				}
+			}
 			m.Content = o.formatStoredUser(m.Content)
 		}
 		if i == lastUser && skillCtx != "" {

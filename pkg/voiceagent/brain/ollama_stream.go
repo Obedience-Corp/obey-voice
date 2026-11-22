@@ -109,8 +109,6 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		rounds := newToolRounds(o.cfg, opts)
 		workerAvailable := opts.canHandOff()
 		inspectedLocally := false
-		// viewed is set once the persona has opened a picture this turn.
-		viewed := false
 		for i := 0; rounds.more(i); i++ {
 			finalAnswer, finalInstruction := rounds.final(ctx, i)
 			handoff := workerAvailable && !finalAnswer && continuation == "" && !repetitionRetry
@@ -335,13 +333,18 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if len(toolCalls) > 0 {
 				hadTools = true
 				kind := LiveRouterDecision(sess.routerPolicy, toolCalls)
-				// A worker has no view_image: a turn that opens a picture is
-				// not handed off unless the persona asks for that itself.
-				opening := callsTool(toolCalls, viewImageToolName)
-				if handoff && (directWorkerHandoff(toolCalls) || (inspectedLocally && !opening && !viewed)) {
-					kind = "spawn"
+				// A worker has no view_image: a round that opens a picture, and
+				// every round after one was opened, is handed off only when the
+				// persona asks for background work itself.
+				if handoff {
+					if callsTool(toolCalls, viewImageToolName) || sess.viewed {
+						if callsTool(toolCalls, backgroundWorkTool) {
+							kind = "spawn"
+						}
+					} else if inspectedLocally || directWorkerHandoff(toolCalls) {
+						kind = "spawn"
+					}
 				}
-				viewed = viewed || opening
 				if kind != "" {
 					done <- o.finishStreamRoute(sess, toolCalls, kind, jsonRouting, inspectedLocally)
 					return

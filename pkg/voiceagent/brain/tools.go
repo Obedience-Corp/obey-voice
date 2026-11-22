@@ -52,9 +52,11 @@ type toolSession struct {
 	commandTimeout time.Duration
 	// boundary fences file and shell tools to the worker's campaign root.
 	boundary Boundary
-	// viewImage runs view_image for the persona answering; nil where the
-	// tool is not offered.
-	viewImage func(context.Context, string) string
+	// viewImage runs view_image for the persona answering and reports
+	// whether the picture was recorded; nil where the tool is not offered.
+	viewImage func(context.Context, string) (string, bool)
+	// viewed is set once a view_image call of this turn recorded a picture.
+	viewed bool
 	// Optional UI hooks (from StreamOptions).
 	onStart func(ToolCall)
 	onEnd   func(ToolResult)
@@ -202,7 +204,9 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 			observed = failedToolOutcome(started.Summary, "view_image is not available in this turn")
 			return "error: view_image is not available in this turn"
 		}
-		return s.viewImage(ctx, toolCallArg(call, "path"))
+		result, recorded := s.viewImage(ctx, toolCallArg(call, "path"))
+		s.viewed = s.viewed || recorded
+		return result
 	case "read_file":
 		return toolReadFileFor(workDir, call.Function.Arguments.ToMap(), s.viewImage != nil)
 	}
