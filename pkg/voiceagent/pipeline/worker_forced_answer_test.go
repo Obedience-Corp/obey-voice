@@ -306,3 +306,44 @@ func TestWorkInboxResultOfForcedAnswerIsPartial(t *testing.T) {
 		})
 	}
 }
+
+// When a moved reply hands off and its worker is made to answer, only the
+// worker's answer is cut short: the sentences kept before the move finished.
+func TestMovedHandOffForcedAnswerLeavesTheKeptPartFinished(t *testing.T) {
+	c := newMovingConversation(t)
+	worker := &forcedWorker{answer: "Two files were read; the rest remain.", reason: brain.ForcedByRepeat}
+	c.p.Agency.ReplaceWorker(worker, &config.Config{VoiceWorkerProvider: "ollama", VoiceWorkerModel: "worker-model"}, nil)
+	c.anika.route = "spawn"
+	c.anika.before = []string{"Let me check the files. "}
+	ended, obey, _ := endMovedReply(t, c)
+	finished, ok := ended.(events.JobFinished)
+	if !ok || !finished.CutShort || finished.CutShortReason != string(brain.ForcedByRepeat) {
+		t.Fatalf("job ended as %+v", ended)
+	}
+	c.p.Agency.mu.Lock()
+	keptID := c.p.Agency.workerOrigins[finished.ID].keptResponseID
+	c.p.Agency.mu.Unlock()
+	if keptID == "" {
+		t.Fatal("nothing was kept before the move")
+	}
+	// The sentences given before the move, as the conversation recorded them.
+	obey.LoadHistory(append(obey.History(), brain.Turn{Role: "assistant", Content: "Let me check the files.", ResponseID: keptID}))
+	var kept, answer *brain.Turn
+	for deadline := time.Now().Add(5 * time.Second); answer == nil && time.Now().Before(deadline); {
+		if err := c.p.RunBackgroundTurn(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		for _, turn := range assistantTurns(obey.History()) {
+			switch turn.Content {
+			case "Let me check the files.":
+				kept = &turn
+			case worker.answer:
+				answer = &turn
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if kept == nil || answer == nil || kept.Disposition != "" || answer.Disposition != brain.IncompleteDisposition(brain.ForcedByRepeat) {
+		t.Fatalf("saved replies = %+v", assistantTurns(obey.History()))
+	}
+}

@@ -115,7 +115,10 @@ func (p *Pipeline) commitWorkerReplies() error {
 			writeErr = fmt.Errorf("provider cannot persist worker image replies")
 		} else if reply.incomplete != nil {
 			disposition := brain.IncompleteDisposition(reply.incomplete)
-			writeErr = markReplyUnfinished(p.Brain, reply.keptResponseID, disposition)
+			// The part kept before a hand-off finished; only the worker was forced.
+			if brain.ForcedAnswerReason(reply.incomplete) == "" {
+				writeErr = markReplyUnfinished(p.Brain, reply.keptResponseID, disposition)
+			}
 			if writeErr == nil && strings.TrimSpace(reply.Text) != "" {
 				writeErr = p.appendIncompleteReply(p.Brain, reply.Text, identity, disposition)
 			}
