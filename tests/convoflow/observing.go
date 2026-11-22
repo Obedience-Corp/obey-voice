@@ -31,6 +31,34 @@ type observingOllama struct {
 	*brain.OllamaBrain
 }
 
+// observingClaude does for a Claude provider what observingOllama does: its
+// group roster and its own session stay visible to the selector, so a Claude
+// persona gets the group prompt and its replies can hand the floor on.
+type observingClaude struct {
+	*observing
+	*brain.Brain
+}
+
+func (o *observingClaude) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	o.observeStream(opts)
+	return o.Brain.ThinkStream(ctx, input, opts)
+}
+func (o *observingClaude) ThinkFull(ctx context.Context, input string, opts brain.StreamOptions) (string, error) {
+	o.observeFull(opts)
+	return o.Brain.ThinkFull(ctx, input, opts)
+}
+
+// Fresh keeps a worker copy observed, as observingOllama.Fresh does.
+func (o *observingClaude) Fresh() brain.Provider {
+	fresh := o.Brain.Fresh().(*brain.Brain)
+	return &observingClaude{observing: o.observing, Brain: fresh}
+}
+
+func (o *observingClaude) History() []brain.Turn      { return o.Brain.History() }
+func (o *observingClaude) ClearHistory()              { o.Brain.ClearHistory() }
+func (o *observingClaude) LoadHistory(t []brain.Turn) { o.Brain.LoadHistory(t) }
+func (o *observingClaude) Close() error               { return brain.CloseProvider(o.Brain) }
+
 // Preserve harness routing without making Ollama or scripted providers appear
 // to support a second routing mechanism.
 type observingHarness struct {
@@ -72,6 +100,9 @@ func observeProvider(inner brain.Provider) (brain.Provider, *observing) {
 	core := &observing{inner: inner}
 	if b, ok := inner.(*brain.OllamaBrain); ok {
 		return &observingOllama{observing: core, OllamaBrain: b}, core
+	}
+	if b, ok := inner.(*brain.Brain); ok {
+		return &observingClaude{observing: core, Brain: b}, core
 	}
 	if classifier, ok := inner.(brain.LiveRouteClassifier); ok {
 		return &observingHarness{observing: core, LiveRouteClassifier: classifier}, core

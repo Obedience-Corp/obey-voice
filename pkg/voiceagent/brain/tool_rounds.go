@@ -70,8 +70,10 @@ type toolRounds struct {
 	budget      *WorkerBudget
 	instruction string
 	stop        string
-	recent      []string
-	stale       int
+	// forced is why a worker's final round was imposed; empty otherwise.
+	forced ForcedAnswer
+	recent []string
+	stale  int
 }
 
 func newToolRounds(cfg *config.Config, opts StreamOptions) *toolRounds {
@@ -107,11 +109,12 @@ func (r *toolRounds) final(ctx context.Context, i int) (bool, string) {
 func (r *toolRounds) limitInstruction(ctx context.Context, i int) string {
 	deadline, timed := WorkerDeadline(ctx)
 	if timed && time.Until(deadline) <= workerTimeReserve(deadline.Sub(r.start)) {
-		r.stop = stopTime
+		r.stop, r.forced = stopTime, ForcedByTime
 		return toolTimeAnswerInstruction
 	}
 	left, counted := r.budget.RemainingRequests()
 	if counted && left <= 1 {
+		r.forced = ForcedByRequests
 		return toolLimitAnswerInstruction
 	}
 	return ""
@@ -161,7 +164,7 @@ func (r *toolRounds) observe(calls []api.ToolCall, results []string) {
 	}
 	stuck := r.stale >= maxRepeatedToolRounds-1 && count(r.recent, sig) >= maxRepeatedToolRounds
 	if r.instruction == "" && stuck {
-		r.instruction, r.stop = toolRepeatAnswerInstruction, stopRepeat
+		r.instruction, r.stop, r.forced = toolRepeatAnswerInstruction, stopRepeat, ForcedByRepeat
 	}
 }
 

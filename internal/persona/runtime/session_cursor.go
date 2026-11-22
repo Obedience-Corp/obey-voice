@@ -1,6 +1,7 @@
 package personaruntime
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"slices"
@@ -13,20 +14,47 @@ import (
 
 // sessionShareStart is where a provider keeping its own session begins to
 // receive this conversation: where its persona is addressed while bound to it,
-// at the end of the transcript or at the reply that handed it the floor. The
+// at the end of the transcript or at the reply that handed it the floor. A
+// persona invited together with others is handed the floor by the reply that
+// invited them all (invitedBy), which is no longer the last; when that reply is
+// not in turns, the last reply is used. The
 // persona's cursor keeps that point for as long as it stays on the provider;
 // lines from before it, including the persona's own on another backend, are
 // never sent. The exceptions are a conversation the persona inherits (see
 // inheritedConversation) and the user's choice to share the whole
 // conversation; either way it receives the conversation from the start.
-func sessionShareStart(turns []brain.Turn, handoff, inherited, whole bool) int {
-	switch {
-	case inherited || whole:
+func sessionShareStart(turns []brain.Turn, handoff bool, invitedBy string, inherited, whole bool) int {
+	if inherited || whole {
 		return 0
-	case handoff && len(turns) > 0 && turns[len(turns)-1].Role == "assistant":
+	}
+	if !handoff {
+		return len(turns)
+	}
+	if invitedBy != "" {
+		if i := slices.IndexFunc(turns, func(t brain.Turn) bool { return t.Role == "assistant" && t.ResponseID == invitedBy }); i >= 0 {
+			return i
+		}
+	}
+	if len(turns) > 0 && turns[len(turns)-1].Role == "assistant" {
 		return len(turns) - 1
 	}
 	return len(turns)
+}
+
+type invitingReplyKey struct{}
+
+// withInvitingReply marks a handoff selection as the turn of a persona invited,
+// with others, by the reply responseID.
+func withInvitingReply(ctx context.Context, responseID string) context.Context {
+	if responseID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, invitingReplyKey{}, responseID)
+}
+
+func invitingReply(ctx context.Context) string {
+	id, _ := ctx.Value(invitingReplyKey{}).(string)
+	return id
 }
 
 // cursorProvider is the backend a cursor belongs to. A cursor saved before
@@ -76,7 +104,7 @@ func answeredBy(personaID string) func(brain.Turn) bool {
 // it is selected, so for it only an answer shows it was addressed. It also
 // reports whether the persona lost its place: it held part of turns on
 // provider, but its cursor no longer matches them.
-func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn, handoff, hostedShare bool) (brain.PersonaContext, bool) {
+func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn, handoff bool, invitedBy string, hostedShare bool) (brain.PersonaContext, bool) {
 	if cursor, ok := s.transcript.session(personaID, turns); ok && cursorProvider(cursor) == provider {
 		from := cursor.Session.From
 		if (!hostedShare && cursor.Through > from) || slices.ContainsFunc(turns[from:], answeredBy(personaID)) {
@@ -85,7 +113,7 @@ func (s *Selector) sessionCursor(personaID, provider string, turns []brain.Turn,
 	}
 	held, ok := s.transcript.heldCursor(personaID)
 	lost := ok && cursorProvider(held) == provider && held.Through > held.Session.From && !held.Matches(turns) && len(turns) > 0
-	from := sessionShareStart(turns, handoff, s.restored.inheritedConversation(personaID, provider, turns), s.sharesWholeConversation())
+	from := sessionShareStart(turns, handoff, invitedBy, s.restored.inheritedConversation(personaID, provider, turns), s.sharesWholeConversation())
 	return brain.SessionContext(turns, brain.SessionCursor{From: from, Provider: provider}, from), lost
 }
 

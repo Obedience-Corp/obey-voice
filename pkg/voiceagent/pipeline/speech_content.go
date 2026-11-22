@@ -424,7 +424,7 @@ func speakableSegment(s string) bool {
 // Segment granularity is the whole point. speakableSegment on the entire reply
 // cannot work: "Hmm. <recovery>" satisfies both halves as soon as the recovery
 // text is present, so the filler rides along. Only splitting first exposes it.
-func speakableFromResponse(gated string, isAgentControl func(string) bool) string {
+func speakableFromResponse(gated string, agentMentionName func(string) (string, bool)) string {
 	if gated == "" {
 		return ""
 	}
@@ -435,7 +435,7 @@ func speakableFromResponse(gated string, isAgentControl func(string) bool) strin
 	var kept []string
 	seen := make(map[string]struct{})
 	for segment := range brain.ChunkSentencesRaw(input) {
-		cleaned := brain.CleanForVoice(textclean.StripAgentMentions(segment, isAgentControl))
+		cleaned := brain.CleanForVoice(textclean.SpeakAgentMentions(segment, agentMentionName))
 		if !speakableSegment(cleaned) {
 			continue
 		}

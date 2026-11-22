@@ -276,7 +276,7 @@ func TestOllamaHandsTheFloorToAGrokOrCursorPersonaByName(t *testing.T) {
 			if got, want := promptRecords(t, request.Prompt), recordsOf(transcript[1:2]); !slices.Equal(got, want) {
 				t.Fatalf("handoff catch-up = %+v, want %+v", got, want)
 			}
-			requireContains(t, request.Prompt, "The latest agent is handing you the floor")
+			requireContains(t, request.Prompt, "Another agent has handed you the floor")
 			requireOmits(t, request.Prompt, "door is teal", "\nUser:")
 			// A handoff is not a line the user said.
 			for _, turn := range c.p.Brain.History() {

@@ -173,7 +173,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if keepLive {
 				nextBrain, turns, stagedContexts = oldBrain, s.sharedTurns(), s.contexts.Clone()
 				if brain.KeepsPersonaSession(nextBrain) {
-					cursor, lost := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, false, false)
+					cursor, lost := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, false, "", false)
 					targetCursor, lostPlace = &cursor, lost
 				}
 				if s.opts.Voices != nil && (s.opts.Native == nil || !s.opts.Native.Silent) {
@@ -291,7 +291,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			// every turn but is given only its persona's share to send.
 			hostedShare := brain.HostedSharedHistory(nextBrain)
 			if keepsSession || hostedShare {
-				cursor, lost := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, reason == "agent-handoff", hostedShare)
+				cursor, lost := s.sessionCursor(binding.PersonaID, binding.BrainProvider, turns, reason == "agent-handoff", invitingReply(ctx), hostedShare)
 				targetCursor, lostPlace = &cursor, lostPlace || lost
 				delete(stagedContexts, binding.PersonaID)
 			}

@@ -263,6 +263,16 @@ func TestJobEndSealsTheJobLine(t *testing.T) {
 			want:  "done in 35s",
 		},
 		{
+			name:  "cut short with its reason",
+			event: events.JobFinished{ID: "job-1", Task: "audit the config", Elapsed: 41 * time.Second, CutShort: true, CutShortReason: "repeated the same tool call"},
+			want:  "done in 41s · cut short: repeated the same tool call",
+		},
+		{
+			name:  "cut short without a reason",
+			event: events.JobFinished{ID: "job-1", Task: "audit the config", Elapsed: 41 * time.Second, CutShort: true},
+			want:  "done in 41s · cut short",
+		},
+		{
 			name:  "failed",
 			event: events.JobFailed{ID: "job-1", Task: "audit the config", Err: "worker exploded"},
 			want:  "failed: worker exploded",

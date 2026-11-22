@@ -397,6 +397,42 @@ also selects the named listener directly and preserves the full request. Joker
 takes the first turn and can then invite Venessa to answer. Instructions to
 “you and Venessa” to keep talking go to the current responder first.
 
+A persona's reply hands the floor to another persona with an `@` mention of
+that persona's ID, alias or display name (`@Milo, what do you think?`), except
+in a conversation whose personas all keep their own session (Claude, Grok,
+Cursor), which moves only when you switch. The
+mention is one word, so a multi-word display name is written with its first
+word or with the ID. The chat shows the mention as written. In speech the `@`
+is not said and the persona's display name is heard in its place, whichever of
+its ID, alias or name was written, so a listener hears who is asked: `@Milo
+@Vera, what do you two think?` is spoken as "Milo, Vera, what do you two
+think?". A name the same sentence already says in plain words is said once
+(`@Milo Hey Milo!` is spoken as "Hey Milo!"). An `@` handle that is not a
+persona in the conversation is spoken as written. One
+reply can invite several personas, `@Milo @Vera, what do you two think?`, and
+they answer in the order they were mentioned, each after the one before has
+finished. The replies of invited personas still waiting their turn are not
+checked for a new handoff; once every invited persona has answered, the last
+reply is checked as usual. A persona mentioned twice is invited once; the
+persona replying and any persona who has already answered your message are
+left out. An unknown or ambiguous `@` name anywhere in the reply cancels the
+whole invitation with an "Agent handoff skipped" notice, and an invited
+persona that cannot be loaded, the first one included, is skipped with the
+same notice and the next one is asked. One message allows three handoffs after the first reply: invited
+personas who are still waiting when that limit is reached do not answer, and
+one notice names them. The same single notice, with its reason, names the
+personas still waiting when an invited persona's reply is interrupted or fails
+(a key that silences its speech counts), when
+the persona who just answered runs on a backend that cannot pass the
+conversation on, or when the personas the reply mentions or the persona
+selection change before their turn. Speaking while invited personas are waiting, or stopping the
+turn, ends the invitation without a notice. An invited persona is asked to
+answer the message that invited it; it may build on the answers given before
+its turn but does not reply to them. A reply that
+names a persona without `@` hands over only when a classifier decides it is
+addressed to that persona (see
+[decision routing](decision-routing.md#who-is-being-addressed)).
+
 Incidental mentions such as `Santa is a persona` do not select Santa. Semantic
 routing can select only a configured agent name or alias; human names and topic
 names such as LFM3 stay with the current responder. Unknown exact `@id` or
@@ -501,7 +537,9 @@ addressed while on that backend in the conversation, unless
 before that point are not sent,
 including the persona's own replies from when it ran on another backend. When
 another agent hands it the floor, that agent's message is the first line it
-receives. The one exception is a conversation saved before replies named their
+receives; a persona invited together with others starts at the message that
+invited them, so it also receives the answers of those invited before it. The
+one exception is a conversation saved before replies named their
 persona: when it is resumed with the persona it was saved with, on the backend
 its session was created on, and no reply in it names a persona, that persona
 receives it from the start. The point is saved with the conversation and still
@@ -566,7 +604,8 @@ that answers next is handed all of it. What it sends its backend is only its
 share, by the same rules as a persona on Claude: nothing said before it was
 first addressed while on that backend unless `hosted_persona_sharing` is
 `whole_conversation`; when another agent hands it the floor, that agent's
-message is its first line; and the same exception applies to a conversation
+message is its first line (for a persona invited together with others, the
+message that invited them); and the same exception applies to a conversation
 saved before replies named their persona. Lines said while it was away are added
 to its share when it is addressed again. Muse Spark and Obey hold no session:
 each request replays the share as quoted conversation records. Codex keeps its

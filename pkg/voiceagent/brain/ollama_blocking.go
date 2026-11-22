@@ -295,6 +295,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if !opts.TransientHistory {
 			o.trimHistory()
 		}
+		if finalAnswer && rounds.forced != "" && opts.OnForcedAnswer != nil {
+			opts.OnForcedAnswer(rounds.forced)
+		}
 		return text, nil
 	}
 

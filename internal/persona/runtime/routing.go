@@ -40,7 +40,7 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 	if err != nil {
 		return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
 	}
-	admitted.AgentMentionControl = agentMentionControl(roster)
+	admitted.AgentMentionName = agentMentionName(roster)
 	bare := false
 	if !background {
 		exact := roster.ResolveForegroundControl(input)
@@ -58,7 +58,7 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 		}
 		if s.groupParticipation() {
 			groupAdmission, err := s.routeAudience(ctx, input)
-			groupAdmission.AgentMentionControl = admitted.AgentMentionControl
+			groupAdmission.AgentMentionName = admitted.AgentMentionName
 			return groupAdmission, err
 		}
 		address, err := s.resolveAddress(ctx, input, "user", s.humanSpeakerName(admission.Speaker(ctx)), roster, participants)
@@ -185,7 +185,7 @@ func (s *Selector) routeExplicitHandover(ctx context.Context, input string, back
 		// The conversation stays without a roster, as Admit leaves it.
 		s.setGroupParticipants(nil)
 	}
-	admitted.AgentMentionControl = agentMentionControl(roster)
+	admitted.AgentMentionName = agentMentionName(roster)
 	return admitted, true, err
 }
 

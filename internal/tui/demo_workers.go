@@ -77,6 +77,9 @@ func demoWorkers(inner workerController) workerController {
 	if demoWorkCueEnabled() {
 		task = demoWorkCueTask
 	}
+	if demoWorkCueVariant() == demoWorkCueCutShort {
+		return &demoWorkerController{inner: inner}
+	}
 	return &demoWorkerController{
 		inner: inner,
 		items: []pipeline.WorkerInfo{{

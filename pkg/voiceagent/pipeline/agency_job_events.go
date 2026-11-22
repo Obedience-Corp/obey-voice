@@ -86,8 +86,16 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		status := work.OutcomeSucceeded
 		text := a.cleanSummary(result)
 		termination := "known"
+		limitations := ""
 		startedAt, endedAt, terminalElapsed := a.jobTiming(id)
 		switch state {
+		case job.StateDone:
+			a.mu.Lock()
+			reason := brain.ForcedAnswerReason(a.workerOrigins[id].incomplete)
+			a.mu.Unlock()
+			if reason != "" {
+				status, limitations = work.OutcomePartial, "cut short: "+reason
+			}
 		case job.StateFailed:
 			status, text = work.OutcomeFailed, errorText(err, result)
 			if errors.Is(err, brain.ErrWorkerOutOfTime) {
@@ -102,7 +110,7 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		if errors.Is(err, brain.ErrWorkerBudgetExceeded) || errors.Is(err, job.ErrBudget) || errors.Is(err, context.DeadlineExceeded) {
 			termination = "unknown"
 		}
-		_, publishErr := c.Publish(key, work.Outcome{Scope: key.Scope, JobID: id, Status: status, Text: text, Attachments: refs, Termination: termination, StartedAt: startedAt, EndedAt: endedAt, Elapsed: terminalElapsed})
+		_, publishErr := c.Publish(key, work.Outcome{Scope: key.Scope, JobID: id, Status: status, Text: text, Attachments: refs, Limitations: limitations, Termination: termination, StartedAt: startedAt, EndedAt: endedAt, Elapsed: terminalElapsed})
 		if publishErr != nil {
 			return
 		}

@@ -653,6 +653,7 @@ func (s *servePersonaSwitcher) initialize() error {
 	s.pipeline.HostedNotice = s.selector.HostedNotice
 	s.pipeline.LiveHostedNotice = s.selector.LiveHostedNotice
 	s.pipeline.RouteHandoff = s.selector.RouteHandoff
+	s.pipeline.InviteHandoff = s.selector.InviteHandoff
 	s.pipeline.EndDiscussion = s.selector.EndDiscussion
 	s.pipeline.CompleteDiscussion = s.selector.RecordDiscussionResponse
 	return nil
