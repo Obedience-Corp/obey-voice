@@ -138,12 +138,13 @@ func (m *conversationModel) stopRunnerPlayback(source pipeline.StopSource) {
 	}
 }
 
-// keystrokeBargeIn silences TTS the moment the user types a printable rune
-// while a response is in flight — the behavior the composer label promises
-// ("type to barge in"). Unlike the Enter path, only playback stops: the turn
-// keeps streaming so the reply text still lands, and the keystroke proceeds
-// into the composer as the start of the user's next message. vim-normal and
-// vim-visual keys never reach here, so transcript navigation stays silent.
+// keystrokeBargeIn asks the pipeline to silence a reply when the user types a
+// printable rune while a response is in flight. The pipeline stops only a reply
+// that has begun speaking ("Speaking — type to barge in"); a keystroke before
+// that is ignored. Unlike the Enter path, only playback stops: the turn keeps
+// streaming so the reply text still lands, and the keystroke proceeds into the
+// composer as the start of the user's next message. vim-normal and vim-visual
+// keys never reach here, so transcript navigation stays silent.
 func (m *conversationModel) keystrokeBargeIn(msg tea.KeyMsg) {
 	if msg.Type != tea.KeyRunes || msg.Alt {
 		return
@@ -151,7 +152,7 @@ func (m *conversationModel) keystrokeBargeIn(msg tea.KeyMsg) {
 	if m.turnState != turnVoiceResponding && m.turnState != turnTextRunning {
 		return
 	}
-	m.stopRunnerPlayback(pipeline.StopSource{Name: "keystroke", KeyRunes: len(msg.Runes), KeyPaste: msg.Paste})
+	m.stopRunnerPlayback(pipeline.StopSource{Name: pipeline.StopSourceKeystroke, KeyRunes: len(msg.Runes), KeyPaste: msg.Paste})
 }
 
 // discardDraft drops a barged-in draft that /compact beat to the cancel drain.

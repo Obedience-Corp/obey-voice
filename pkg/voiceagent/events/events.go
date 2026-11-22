@@ -215,7 +215,8 @@ type TurnMetrics struct {
 // carries typed text.
 type SpeechStop struct {
 	// Source is the first stop's caller: keystroke, text_submit, talk_key,
-	// desktop, narration, replay or unspecified.
+	// desktop, narration, replay or unspecified. A keystroke counts only once
+	// the reply has begun speaking.
 	Source string `json:"source"`
 	// Count is how many stops landed while the turn was active.
 	Count int `json:"count"`

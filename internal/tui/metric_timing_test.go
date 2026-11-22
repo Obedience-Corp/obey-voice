@@ -46,3 +46,26 @@ func TestMetricsDisplayDoesNotCallInterruptedPlaybackDone(t *testing.T) {
 		t.Fatalf("missing durable interruption marker: %s", line)
 	}
 }
+
+func TestMetricsLineSaysWhatStoppedTheSpeech(t *testing.T) {
+	cases := map[string]string{
+		"keystroke":   "speech stopped by typing",
+		"text_submit": "interrupted by your message",
+		"talk_key":    "interrupted by the talk key",
+		"unspecified": "speech stopped",
+	}
+	for source, want := range cases {
+		e := events.TurnMetrics{
+			Outcome: "interrupted", Interrupted: true, AudibleSink: "local_speaker",
+			STTFinalElapsed: time.Second, ModelCompleteElapsed: 3 * time.Second,
+			SpeechStop: &events.SpeechStop{Source: source, Count: 1, KeyRunes: 1},
+		}
+		line := formatTurnMetrics(e)
+		if !strings.HasSuffix(line, " · "+want) || strings.Contains(line, "\n") {
+			t.Errorf("%s: line %q, want it to end with %q", source, line, want)
+		}
+	}
+	if line := formatTurnMetrics(events.TurnMetrics{Outcome: "interrupted", Interrupted: true, SpeechStop: &events.SpeechStop{Source: "keystroke", Count: 1}}); line != "speech stopped by typing" {
+		t.Fatalf("bare stopped line = %q", line)
+	}
+}

@@ -55,6 +55,8 @@ type speechStopHarness struct {
 	typed     chan string
 	responses chan speechStopSnapshot
 	heard     chan struct{} // optional: the TUI has taken the voice turn's input
+	speaking  chan struct{} // optional: the TUI has seen the reply start speaking
+	settled   chan string   // optional: the view once the turn's metrics land
 }
 
 func (h *speechStopHarness) Init() tea.Cmd {
@@ -81,12 +83,24 @@ func (h *speechStopHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if response, ok := msg.event.(events.ResponseReady); ok {
 			h.responses <- speechStopSnapshot{response: response, view: stripANSI(h.model.View()), draft: h.model.input.Value()}
 		}
+		if _, ok := msg.event.(events.SpeakingStarted); ok && h.speaking != nil {
+			select {
+			case h.speaking <- struct{}{}:
+			default:
+			}
+		}
+		if e, ok := msg.event.(events.TurnMetrics); ok && h.settled != nil && e.Outcome != "" && e.Outcome != "timed_out" {
+			select {
+			case h.settled <- stripANSI(h.model.View()):
+			default:
+			}
+		}
 	}
 	return h, cmd
 }
 func (h *speechStopHarness) View() string { return h.model.View() }
 
-func TestTypingDuringThinkingSilencesSpeechInTerminal(t *testing.T) {
+func TestTypingDuringThinkingLeavesTypedReplySpokenInTerminal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
 	bus := events.NewBus()
@@ -139,14 +153,14 @@ func TestTypingDuringThinkingSilencesSpeechInTerminal(t *testing.T) {
 	close(provider.release)
 	select {
 	case snapshot := <-h.responses:
-		if !snapshot.response.Interrupted || snapshot.response.Degraded || snapshot.draft != "x" || !strings.Contains(snapshot.view, "canonical context") {
-			t.Fatalf("stopped response lost its text, draft or outcome: %+v", snapshot)
+		if snapshot.response.Interrupted || snapshot.response.Degraded || snapshot.draft != "x" || !strings.Contains(snapshot.view, "canonical context") {
+			t.Fatalf("reply lost its text, draft or outcome: %+v", snapshot)
 		}
 	case <-ctx.Done():
-		t.Fatal("typed stop canceled text generation or held the turn open")
+		t.Fatal("keystroke canceled text generation or held the turn open")
 	}
-	if voice.calls.Load() != 0 || failures.Load() != 0 {
-		t.Fatalf("stopped turn synthesized speech or emitted errors: synthesis=%d errors=%d", voice.calls.Load(), failures.Load())
+	if voice.calls.Load() == 0 || failures.Load() != 0 {
+		t.Fatalf("reply was not spoken or emitted errors: synthesis=%d errors=%d", voice.calls.Load(), failures.Load())
 	}
 }
 
@@ -172,10 +186,9 @@ func (s *oneUtteranceSTT) Start(context.Context) (stt.Session, error) {
 }
 func (*oneUtteranceSTT) Available() bool { return true }
 
-// The live failure: a voice reply that never played, logged only as
-// interrupted. The turn's metrics must say a keystroke silenced it before any
-// audio, and how the key message was shaped, without recording what was typed.
-func TestKeystrokeDuringVoiceThinkingIsNamedInTurnMetrics(t *testing.T) {
+// A keystroke while the persona is still working, before the reply has said
+// anything, must not cost the reply its voice.
+func TestKeystrokeDuringVoiceThinkingLeavesReplySpoken(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
 	bus := events.NewBus()
@@ -226,8 +239,8 @@ func TestKeystrokeDuringVoiceThinkingIsNamedInTurnMetrics(t *testing.T) {
 	close(provider.release)
 	select {
 	case snapshot := <-h.responses:
-		if !snapshot.response.Interrupted {
-			t.Fatalf("a typed stop no longer silences the reply: %+v", snapshot.response)
+		if snapshot.response.Interrupted {
+			t.Fatalf("an early keystroke silenced the reply: %+v", snapshot.response)
 		}
 	case <-ctx.Done():
 		t.Fatal("voice turn did not finish")
@@ -238,12 +251,133 @@ func TestKeystrokeDuringVoiceThinkingIsNamedInTurnMetrics(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("no turn metrics")
 	}
-	want := events.SpeechStop{Source: "keystroke", Count: 1, BeforeAudio: true, KeyRunes: 1}
+	if got.Outcome != "completed" || got.Interrupted || got.SpeechStop != nil {
+		t.Fatalf("outcome=%q interrupted=%v speech stop=%+v", got.Outcome, got.Interrupted, got.SpeechStop)
+	}
+	if voice.calls.Load() == 0 {
+		t.Fatal("reply was never synthesized")
+	}
+}
+
+// speakingPlayer keeps each playback audible until it is stopped.
+type speakingPlayer struct {
+	mu      sync.Mutex
+	cancels []context.CancelFunc
+	playing atomic.Bool
+}
+
+func (p *speakingPlayer) IsPlaying() bool { return p.playing.Load() }
+func (p *speakingPlayer) Stop() {
+	p.mu.Lock()
+	cancels := p.cancels
+	p.cancels = nil
+	p.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+func (p *speakingPlayer) Close() error { p.Stop(); return nil }
+func (p *speakingPlayer) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audio.Playback, error) {
+	child, cancel := context.WithCancel(ctx)
+	p.mu.Lock()
+	p.cancels = append(p.cancels, cancel)
+	p.mu.Unlock()
+	started, done := make(chan struct{}), make(chan audio.PlaybackResult, 1)
+	go func() {
+		defer close(done)
+		defer cancel()
+		began := false
+		frames := stream.Frames()
+		for frames != nil {
+			select {
+			case <-child.Done():
+				frames = nil
+			case _, ok := <-frames:
+				if !ok {
+					frames = nil
+					break
+				}
+				if !began {
+					began = true
+					p.playing.Store(true)
+					close(started)
+				}
+			}
+		}
+		<-child.Done()
+		p.playing.Store(false)
+		done <- audio.PlaybackResult{Interrupted: true, Err: child.Err()}
+	}()
+	return audio.NewPlayback(started, done), nil
+}
+
+func TestKeystrokeDuringVoiceSpeechIsNamedInTurnMetrics(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	defer cancel()
+	bus := events.NewBus()
+	provider := &speechStopBrain{started: make(chan struct{}), release: make(chan struct{})}
+	close(provider.release)
+	voice := &speechStopTTS{}
+	player := &speakingPlayer{}
+	defer player.Close()
+	runner := &pipeline.Pipeline{STT: &oneUtteranceSTT{text: "What do you think of the song?"}, Brain: provider, TTS: voice, Player: player, Events: bus}
+	metrics := make(chan events.TurnMetrics, 8)
+	events.Subscribe(bus, func(e events.TurnMetrics) {
+		if e.Outcome != "" && e.Outcome != "timed_out" {
+			metrics <- e
+		}
+	})
+	wg := new(sync.WaitGroup)
+	h := &speechStopHarness{
+		t:     t,
+		model: sizedConversation(t, 110, 30),
+		deps:  conversationDeps{runner: runner, bus: bus, voice: true, output: true, ctx: ctx, wg: wg},
+		ready: make(chan struct{}), typed: make(chan string, 1), responses: make(chan speechStopSnapshot, 1),
+		heard: make(chan struct{}, 1), speaking: make(chan struct{}, 1), settled: make(chan string, 1),
+	}
+	var terminal strings.Builder
+	program := tea.NewProgram(h, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(&terminal), tea.WithoutSignalHandler())
+	finished := make(chan error, 1)
+	go func() { _, err := program.Run(); finished <- err }()
+	defer func() {
+		program.Quit()
+		if err := <-finished; err != nil {
+			t.Errorf("terminal shutdown: %v", err)
+		}
+		cancel()
+		wg.Wait()
+	}()
+	select {
+	case <-h.speaking:
+	case <-ctx.Done():
+		t.Fatal("reply never started speaking")
+	}
+	program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	select {
+	case snapshot := <-h.responses:
+		if !snapshot.response.Interrupted {
+			t.Fatalf("typing during speech did not silence the reply: %+v", snapshot.response)
+		}
+	case <-ctx.Done():
+		t.Fatal("voice turn did not finish")
+	}
+	var got events.TurnMetrics
+	select {
+	case got = <-metrics:
+	case <-ctx.Done():
+		t.Fatal("no turn metrics")
+	}
+	want := events.SpeechStop{Source: "keystroke", Count: 1, KeyRunes: 1}
 	if got.SpeechStop == nil || *got.SpeechStop != want {
 		t.Fatalf("speech stop = %+v, want %+v", got.SpeechStop, want)
 	}
-	if voice.calls.Load() != 0 {
-		t.Fatalf("silenced reply was synthesized %d times", voice.calls.Load())
+	select {
+	case view := <-h.settled:
+		if !strings.Contains(view, "speech stopped by typing") {
+			t.Fatalf("stopped reply does not say what stopped it:\n%s", view)
+		}
+	case <-ctx.Done():
+		t.Fatal("metrics line never rendered")
 	}
 }
 

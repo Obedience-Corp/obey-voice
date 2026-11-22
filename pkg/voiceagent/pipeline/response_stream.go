@@ -317,6 +317,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		queuedAt := time.Now()
 		index := nextIndex
 		p.traceSpan(metrics.trace, traceID(metrics.trace, "queue")+":"+fmt.Sprint(index), "segment_queue", "start", "running", queuedAt, time.Time{}, &index, nil)
+		metrics.beginSpeech()
 		synthQueue <- synthWork{sentence: text, index: nextIndex, textReady: batchTextReady, queuedAt: queuedAt, joinBeats: joinBeats}
 		groupThrough = append(groupThrough, batchThrough)
 		nextIndex++

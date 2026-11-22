@@ -157,14 +157,14 @@ func TestStoppedTurnMetricsNameTheFirstStopAndCountTheRest(t *testing.T) {
 		metrics := newTurnMetrics()
 		clear := p.trackMetrics(metrics)
 		ctx := audio.BindPlaybackContext(t.Context(), engine)
-		p.StopPlaybackFrom(StopSource{Name: "keystroke", KeyRunes: 1})
+		p.StopPlaybackFrom(StopSource{Name: "text_submit"})
 		p.StopPlayback()
 		_, interrupted, err := p.streamResponse(ctx, nil, scriptedStream(ctx, []string{"A reply nobody hears."}, nil), false, metrics, p.newTurnConductor(metrics), nil)
 		clear()
 		if err != nil || !interrupted {
 			t.Fatalf("interrupted=%v err=%v", interrupted, err)
 		}
-		want := events.SpeechStop{Source: "keystroke", Count: 2, BeforeAudio: true, KeyRunes: 1}
+		want := events.SpeechStop{Source: "text_submit", Count: 2, BeforeAudio: true}
 		if got := metrics.snapshot().SpeechStop; got == nil || *got != want {
 			t.Fatalf("speech stop = %+v, want %+v", got, want)
 		}

@@ -288,6 +288,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		speakable = speakableFromResponse(p.gateForSpeech(response, metrics), responseMentionControl(ctx))
 	}
 	if speakable != "" {
+		metrics.beginSpeech()
 		turn.to(TurnSpeaking)
 		now := time.Now()
 		if metrics.firstSegment.IsZero() {

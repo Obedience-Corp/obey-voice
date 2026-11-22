@@ -73,6 +73,7 @@ type turnMetrics struct {
 	// the TUI's out-of-band keystroke stop.
 	bargeInMu    sync.Mutex
 	bargeIn      time.Time
+	speechBegun  bool
 	speechStop   bool
 	speechCancel context.CancelFunc
 	stopSource   StopSource
@@ -143,8 +144,25 @@ func (m *turnMetrics) speechContext(ctx context.Context) (context.Context, conte
 	return ctx, cancel
 }
 
-func (m *turnMetrics) stopSpeech(source StopSource) {
+// beginSpeech marks the reply's first text handed to synthesis. From then on a
+// keystroke silences the rest of the reply.
+func (m *turnMetrics) beginSpeech() {
+	if m == nil {
+		return
+	}
 	m.bargeInMu.Lock()
+	m.speechBegun = true
+	m.bargeInMu.Unlock()
+}
+
+// stopSpeech reports whether the stop applied. A keystroke before the reply
+// has begun speaking leaves the turn untouched.
+func (m *turnMetrics) stopSpeech(source StopSource) bool {
+	m.bargeInMu.Lock()
+	if source.Name == StopSourceKeystroke && !m.speechBegun {
+		m.bargeInMu.Unlock()
+		return false
+	}
 	if m.stopCount == 0 {
 		m.stopSource, m.stopAt = source, time.Now()
 	}
@@ -155,6 +173,7 @@ func (m *turnMetrics) stopSpeech(source StopSource) {
 	if cancel != nil {
 		cancel()
 	}
+	return true
 }
 
 // speechStopRecord runs on the turn goroutine, which owns playbackStart.

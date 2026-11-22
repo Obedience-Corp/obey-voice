@@ -925,3 +925,18 @@ func TestStreamedTextFromSeparateToolRoundsIsShownApart(t *testing.T) {
 		t.Fatalf("the two lines are not shown apart:\n%s", view)
 	}
 }
+
+func TestComposerLabelPromisesBargeInOnlyWhileSpeaking(t *testing.T) {
+	for _, state := range []turnState{turnVoiceResponding, turnTextRunning} {
+		m := sizedConversation(t, 110, 30)
+		m.turnState = state
+		view := stripANSI(m.View())
+		if !strings.Contains(view, "Responding — send a message to interrupt") || strings.Contains(view, "type to barge in") {
+			t.Fatalf("state %v: responding label wrong:\n%s", state, view)
+		}
+		m.voiceMode = anim.ModeSpeaking
+		if view := stripANSI(m.View()); !strings.Contains(view, "Speaking — type to barge in") {
+			t.Fatalf("state %v: speaking label missing:\n%s", state, view)
+		}
+	}
+}

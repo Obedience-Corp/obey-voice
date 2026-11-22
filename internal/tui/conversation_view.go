@@ -13,6 +13,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 func (m conversationModel) animStyles() anim.Styles {
@@ -177,7 +178,7 @@ func formatTurnMetrics(e events.TurnMetrics) string {
 	if len(parts) > 0 || e.Interrupted {
 		switch {
 		case e.Interrupted || e.Outcome == "interrupted":
-			parts = append(parts, "interrupted")
+			parts = append(parts, interruptionLabel(e.SpeechStop))
 		case e.Outcome == "failed":
 			parts = append(parts, "failed")
 		case e.Outcome == "timed_out":
@@ -188,6 +189,29 @@ func formatTurnMetrics(e events.TurnMetrics) string {
 		parts = append(parts, "degraded")
 	}
 	return strings.Join(parts, " · ")
+}
+
+// interruptionLabel names what stopped a reply's speech. It never shows what
+// was typed.
+func interruptionLabel(stop *events.SpeechStop) string {
+	if stop == nil {
+		return "interrupted"
+	}
+	switch stop.Source {
+	case pipeline.StopSourceKeystroke:
+		return "speech stopped by typing"
+	case "text_submit":
+		return "interrupted by your message"
+	case "talk_key":
+		return "interrupted by the talk key"
+	case "desktop":
+		return "interrupted from the desktop app"
+	case "narration":
+		return "speech stopped by narration controls"
+	case "replay":
+		return "speech stopped for a replay"
+	}
+	return "speech stopped"
 }
 
 func formatSeconds(d time.Duration) string {
@@ -396,7 +420,7 @@ func (m conversationModel) View() string {
 	case m.turnState == turnVoiceListening:
 		inputLabel = headerStyle.Render("🎙 Listening — type to interrupt")
 	case m.turnState == turnVoiceResponding || m.turnState == turnTextRunning:
-		inputLabel = thinkStyle.Render("✦ Responding — type to barge in")
+		inputLabel = thinkStyle.Render("✦ Responding — send a message to interrupt")
 	case m.turnState == turnVoiceCanceling:
 		inputLabel = thinkStyle.Render("✦ Interrupting…")
 	default:
