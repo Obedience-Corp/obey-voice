@@ -54,6 +54,18 @@ func TestWorkerFactsPromptKeepsEveryJobWithinItsBounds(t *testing.T) {
 	}
 }
 
+func TestWorkerFactsPromptCountsUnfinishedJobsItCannotList(t *testing.T) {
+	facts := make([]WorkerFact, 0, workerFactLimit+3)
+	for i := range workerFactLimit + 1 {
+		facts = append(facts, WorkerFact{ID: "job-" + string(rune('a'+i)), Tier: "legacy", State: "queued", Task: "audit the config"})
+	}
+	facts = append(facts, WorkerFact{ID: "job-y", Tier: "legacy", State: "running", Task: "tidy the diary"}, WorkerFact{ID: "job-z", Tier: "legacy", State: "terminal"})
+	got := WorkerFactsPrompt(nil, facts)
+	if strings.Count(got, "job=") != workerFactLimit || !strings.HasSuffix(got, "\nunfinished jobs not listed: 2\n</active_work>") {
+		t.Fatalf("facts prompt = %q", got)
+	}
+}
+
 func TestWorkerFactDurationReadsAsSpoken(t *testing.T) {
 	for d, want := range map[time.Duration]string{
 		400 * time.Millisecond:          "1 second",

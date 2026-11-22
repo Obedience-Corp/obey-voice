@@ -23,8 +23,9 @@ func (p *Pipeline) workerTierAvailability() *brain.WorkerTierAvailability {
 }
 
 // workerFacts is what a live request is told about existing jobs. A turn
-// answering a person describes the running and queued ones; the tiered work
-// record adds its own jobs by identifier on every turn.
+// answering a person describes every running and queued one, for the renderer
+// to list or count; the tiered work record fills what room is left with its
+// own jobs by identifier on every turn.
 func (p *Pipeline) workerFacts(answersPerson bool) []brain.WorkerFact {
 	if p.Agency == nil {
 		return nil
@@ -39,18 +40,18 @@ func (p *Pipeline) workerFacts(answersPerson bool) []brain.WorkerFact {
 			described[fact.ID] = true
 		}
 		for _, v := range p.Agency.WorkSnapshot().Jobs {
+			if len(facts) >= workerFactLimit {
+				break
+			}
 			if !described[v.Key.JobID] {
 				facts = append(facts, brain.WorkerFact{ID: v.Key.JobID, Tier: config.WorkerTierName(v.Config["worker_tier"]), State: string(v.State)})
 			}
 		}
 	}
-	if len(facts) > workerFactLimit {
-		facts = facts[:workerFactLimit]
-	}
 	return facts
 }
 
-// workerFactLimit is how many jobs one request describes.
+// workerFactLimit is how many jobs the tiered work record contributes to.
 const workerFactLimit = 8
 
 func tieredWorkers(cfg *config.Config) bool {

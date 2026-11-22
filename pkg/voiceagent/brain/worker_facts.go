@@ -25,10 +25,17 @@ const (
 // turn. A job the model is not told about is one it will deny, so a described
 // job carries its task, how long it has run, what it has done and who started
 // it, behind a lead-in that says what the list is. A list of identifiers
-// alone has nothing for the lead-in to explain and goes without it. Provider
-// and model names and pricing are deliberately excluded.
+// alone has nothing for the lead-in to explain and goes without it. Unfinished
+// jobs past the limit are counted, so none is silently left out. Provider and
+// model names and pricing are deliberately excluded.
 func WorkerFactsPrompt(cfg *config.Config, facts []WorkerFact) string {
+	unlisted := 0
 	if len(facts) > workerFactLimit {
+		for _, fact := range facts[workerFactLimit:] {
+			if state := strings.TrimSpace(fact.State); state == "running" || state == "queued" {
+				unlisted++
+			}
+		}
 		facts = facts[:workerFactLimit]
 	}
 	var lines strings.Builder
@@ -47,11 +54,13 @@ func WorkerFactsPrompt(cfg *config.Config, facts []WorkerFact) string {
 	if lines.Len() == 0 {
 		return ""
 	}
-	block := workerFactsOpen + lines.String() + workerFactsClose
 	if !described {
-		return block
+		return workerFactsOpen + lines.String() + workerFactsClose
 	}
-	return "\n" + systemPrompt(cfg, "active-work", nil) + block
+	if unlisted > 0 {
+		fmt.Fprintf(&lines, "\nunfinished jobs not listed: %d", unlisted)
+	}
+	return "\n" + systemPrompt(cfg, "active-work", nil) + workerFactsOpen + lines.String() + workerFactsClose
 }
 
 func workerFactLine(fact WorkerFact) string {

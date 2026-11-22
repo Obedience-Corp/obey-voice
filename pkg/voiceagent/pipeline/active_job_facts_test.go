@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
@@ -99,11 +100,33 @@ func TestOnlyATurnAnsweringAPersonCarriesTheJobList(t *testing.T) {
 	if got := live.opts.WorkerFacts; len(got) != 1 || got[0].Task != "audit the config" || got[0].State != "running" {
 		t.Fatalf("the reply to a person was not told about the running job: %+v", got)
 	}
+	live.opts = brain.StreamOptions{}
+	p.STT, p.VAD, p.Capture = &fakeSTT{text: "And what is it doing now?"}, &fakeVAD{}, newFakeCapture()
+	if _, err := p.RunTurn(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := live.opts.WorkerFacts; !live.opts.VoiceMode || len(got) != 1 || got[0].Task != "audit the config" {
+		t.Fatalf("the reply to a spoken question was not told about the running job: %+v", live.opts)
+	}
 	if err := p.RunBackgroundTurn(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if !live.opts.Background || len(live.opts.WorkerFacts) != 0 {
 		t.Fatalf("a result notification carried the job list: %+v", live.opts)
+	}
+}
+
+// Every unfinished job reaches the renderer, which lists some and counts the
+// rest; a job dropped here would be one the persona denies.
+func TestLiveRequestIsGivenEveryUnfinishedJob(t *testing.T) {
+	h := newBudgetHarness(t)
+	defer close(h.release)
+	for range 11 {
+		h.spawn("audit the config")
+	}
+	h.awaitTool(t)
+	if got := len(h.agency.pipeline.workerFacts(true)); got != 11 {
+		t.Fatalf("facts = %d, want all 11 unfinished jobs", got)
 	}
 }
 

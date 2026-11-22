@@ -177,6 +177,7 @@ func TestJSONRouteSharesThePromptPrefixWithTheReply(t *testing.T) {
 		{"think off", "false", "", nil},
 		{"think on", "true", "", nil},
 		{"persona turn with active work", "false", "samantha", []WorkerFact{{ID: "job-1", Tier: config.WorkerTierSimple, State: "running"}}},
+		{"persona turn with a described job", "false", "samantha", []WorkerFact{{ID: "job-1", Tier: "legacy", State: "running", Task: "audit the config", Running: 3 * time.Minute, Own: true}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			think := tc.think
