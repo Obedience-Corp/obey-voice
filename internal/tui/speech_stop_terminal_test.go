@@ -56,6 +56,7 @@ type speechStopHarness struct {
 	responses chan speechStopSnapshot
 	heard     chan struct{} // optional: the TUI has taken the voice turn's input
 	speaking  chan struct{} // optional: the TUI has seen the reply start speaking
+	spoken    chan struct{} // optional: the TUI has seen a line finish playing
 	settled   chan string   // optional: the view once the turn's metrics land
 }
 
@@ -86,6 +87,12 @@ func (h *speechStopHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if _, ok := msg.event.(events.SpeakingStarted); ok && h.speaking != nil {
 			select {
 			case h.speaking <- struct{}{}:
+			default:
+			}
+		}
+		if _, ok := msg.event.(events.SpeakingComplete); ok && h.spoken != nil {
+			select {
+			case h.spoken <- struct{}{}:
 			default:
 			}
 		}
@@ -426,5 +433,107 @@ func TestTerminalStopsNameTheirSource(t *testing.T) {
 				t.Fatalf("sources=%+v plain stops=%d, want one %+v", runner.sources, runner.stopped, tc.want)
 			}
 		})
+	}
+}
+
+// toolRoundBrain says one line, works silently until released, then answers.
+type toolRoundBrain struct {
+	pauseTerminalBrain
+	release chan struct{}
+}
+
+func (b *toolRoundBrain) ThinkStream(ctx context.Context, _ string, _ brain.StreamOptions) (*brain.Stream, error) {
+	out := make(chan string)
+	done := make(chan brain.StreamResult, 1)
+	go func() {
+		defer close(done)
+		defer close(out)
+		for i, chunk := range []string{"Let me look that up for you.\n\n", "Here is the answer you asked for.\n\n"} {
+			if i == 1 {
+				select {
+				case <-b.release:
+				case <-ctx.Done():
+					done <- brain.StreamResult{Err: ctx.Err()}
+					return
+				}
+			}
+			select {
+			case out <- chunk:
+			case <-ctx.Done():
+				done <- brain.StreamResult{Err: ctx.Err()}
+				return
+			}
+		}
+		done <- brain.StreamResult{}
+	}()
+	return &brain.Stream{Chunks: out, Done: done}, nil
+}
+
+func TestKeystrokeDuringSilentWorkAfterALineLeavesAnswerSpoken(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	defer cancel()
+	bus := events.NewBus()
+	provider := &toolRoundBrain{release: make(chan struct{})}
+	voice := &speechStopTTS{}
+	player := &matrixPlayer{}
+	defer player.Close()
+	runner := &pipeline.Pipeline{STT: &oneUtteranceSTT{text: "Can you look something up?"}, Brain: provider, TTS: voice, Player: player, Events: bus}
+	metrics := make(chan events.TurnMetrics, 8)
+	events.Subscribe(bus, func(e events.TurnMetrics) {
+		if e.Outcome != "" && e.Outcome != "timed_out" {
+			metrics <- e
+		}
+	})
+	wg := new(sync.WaitGroup)
+	h := &speechStopHarness{
+		t:     t,
+		model: sizedConversation(t, 110, 30),
+		deps:  conversationDeps{runner: runner, bus: bus, voice: true, output: true, ctx: ctx, wg: wg},
+		ready: make(chan struct{}), typed: make(chan string, 1), responses: make(chan speechStopSnapshot, 1),
+		heard: make(chan struct{}, 1), spoken: make(chan struct{}, 1),
+	}
+	var terminal strings.Builder
+	program := tea.NewProgram(h, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(&terminal), tea.WithoutSignalHandler())
+	finished := make(chan error, 1)
+	go func() { _, err := program.Run(); finished <- err }()
+	defer func() {
+		program.Quit()
+		if err := <-finished; err != nil {
+			t.Errorf("terminal shutdown: %v", err)
+		}
+		cancel()
+		wg.Wait()
+	}()
+	select {
+	case <-h.spoken:
+	case <-ctx.Done():
+		t.Fatal("opening line was never spoken")
+	}
+	program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	select {
+	case <-h.typed:
+	case <-ctx.Done():
+		t.Fatal("terminal did not process the keystroke")
+	}
+	close(provider.release)
+	select {
+	case snapshot := <-h.responses:
+		if snapshot.response.Interrupted {
+			t.Fatalf("a keystroke during silent work silenced the answer: %+v", snapshot.response)
+		}
+	case <-ctx.Done():
+		t.Fatal("voice turn did not finish")
+	}
+	var got events.TurnMetrics
+	select {
+	case got = <-metrics:
+	case <-ctx.Done():
+		t.Fatal("no turn metrics")
+	}
+	if got.Outcome != "completed" || got.Interrupted || got.SpeechStop != nil {
+		t.Fatalf("outcome=%q interrupted=%v speech stop=%+v", got.Outcome, got.Interrupted, got.SpeechStop)
+	}
+	if voice.calls.Load() != 2 {
+		t.Fatalf("synthesized %d utterances, want the line and the answer", voice.calls.Load())
 	}
 }
