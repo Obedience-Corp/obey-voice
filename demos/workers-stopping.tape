@@ -70,4 +70,3 @@ Sleep 300ms
 Hide
 Type "q"
 Sleep 300ms
-Type "rm -rf -- $OBEY_VOICE_DEMO_ROOT" Enter
