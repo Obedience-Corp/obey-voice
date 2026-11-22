@@ -469,6 +469,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		p.HostedNotice = selector.HostedNotice
 		p.LiveHostedNotice = selector.LiveHostedNotice
 		p.RouteHandoff = selector.RouteHandoff
+		p.InviteHandoff = selector.InviteHandoff
 		p.EndDiscussion = selector.EndDiscussion
 		p.CompleteDiscussion = selector.RecordDiscussionResponse
 		// Preload the model while the user reads the empty screen so their

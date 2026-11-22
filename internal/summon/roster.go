@@ -26,6 +26,9 @@ type Address struct {
 	Remainder string
 	Reason    string
 	Bare      bool
+	// Invited are the further personas an agent response @mentioned after
+	// PersonaID, in mention order and without repeats.
+	Invited []string
 }
 
 const (
@@ -74,13 +77,14 @@ type Roster struct {
 	byName    map[string]rosterName
 	ambiguous map[string][]string
 	byID      map[string]string
+	display   map[string]string
 }
 
 // NewRoster validates and builds a deterministic address table. Shared names,
 // including generated first words, are recorded as ambiguous. Resolve refuses
 // only an address using that name, keeping unrelated conversation available.
 func NewRoster(identities []Identity) (*Roster, error) {
-	roster := &Roster{byName: make(map[string]rosterName), ambiguous: make(map[string][]string), byID: make(map[string]string)}
+	roster := &Roster{byName: make(map[string]rosterName), ambiguous: make(map[string][]string), byID: make(map[string]string), display: make(map[string]string)}
 	ids := make(map[string]struct{}, len(identities))
 	for i, identity := range identities {
 		id := strings.TrimSpace(identity.ID)
@@ -97,6 +101,7 @@ func NewRoster(identities []Identity) (*Roster, error) {
 		if display == "" {
 			return nil, fmt.Errorf("identity %q has empty display name", id)
 		}
+		roster.display[id] = strings.TrimSpace(identity.DisplayName)
 		candidates := []string{display}
 		if words := strings.Fields(display); len(words) > 1 {
 			candidates = append(candidates, words[0])
@@ -131,6 +136,15 @@ func NewRoster(identities []Identity) (*Roster, error) {
 		return cmp.Or(cmp.Compare(b.orderLength, a.orderLength), cmp.Compare(a.value, b.value))
 	})
 	return roster, nil
+}
+
+// DisplayName is the configured display name of a persona ID, or the ID itself
+// when the roster does not know it.
+func (r *Roster) DisplayName(id string) string {
+	if name, ok := r.display[id]; ok {
+		return name
+	}
+	return id
 }
 
 // Resolve classifies one finalized transcript. Names at the opening of the

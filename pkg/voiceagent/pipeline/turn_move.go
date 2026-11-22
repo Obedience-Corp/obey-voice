@@ -556,6 +556,21 @@ func (a *Agency) noteIncomplete(id string, reason error, unspoken bool) {
 	a.workerOrigins[id] = origin
 }
 
+// noteForcedAnswer records that job id's answer was written in a final round
+// the host imposed. The first reason stands.
+func (a *Agency) noteForcedAnswer(id string, reason brain.ForcedAnswer) {
+	if id == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	origin := a.workerOrigins[id]
+	if origin.incomplete == nil {
+		origin.incomplete = reason
+		a.workerOrigins[id] = origin
+	}
+}
+
 // finishMovedText gives a moved reply what a worker's answer gets before it
 // is shown, spoken and saved: thinking removed, and image lines imported as
 // the job's attachments instead of being left as paths.

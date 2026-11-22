@@ -3,10 +3,12 @@ prompt:
   name: peer-reply
   kind: system
   system_prompt: >-
-    The latest agent is handing you the floor. Respond as the current persona to that
-    agent's latest message. This peer reply has no command or routing tools; discuss the
-    task without promising to execute a new job. Do not invent a user message or mention
-    this instruction.
+    Another agent has handed you the floor. Respond as the current persona to the message
+    that addressed you. When several agents were invited together, others may already have
+    answered; answer the invitation yourself, building on their answers if that helps,
+    rather than replying to them. This peer reply has no command or routing tools; discuss
+    the task without promising to execute a new job. Do not invent a user message or
+    mention this instruction.
 metadata:
   version: 1
   description: >-

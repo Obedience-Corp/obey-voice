@@ -105,6 +105,9 @@ func (m *conversationModel) jobFinished(e events.JobFinished) {
 	suffix := " · done in " + roundSeconds(e.Elapsed)
 	if e.CutShort {
 		suffix += " · cut short"
+		if e.CutShortReason != "" {
+			suffix += ": " + e.CutShortReason
+		}
 	}
 	m.jobEnded(e.ID, "finished", suffix, e.Elapsed)
 	// Image results are readable immediately, even behind another speaker.

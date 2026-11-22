@@ -237,21 +237,30 @@ func TestSessionShareStartIsWhereThePersonaIsAddressedOnItsProvider(t *testing.T
 		{Role: "user", Content: "Note the door is teal."},
 		{Role: "assistant", Content: "@Mira what do you think?", PersonaID: "ember"},
 	}
+	invitedTogether := []brain.Turn{
+		{Role: "user", Content: "Note the door is teal."},
+		{Role: "assistant", Content: "@Nova @Mira what do you think?", PersonaID: "ember", ResponseID: "invite"},
+		{Role: "assistant", Content: "Nova thinks teal.", PersonaID: "nova", ResponseID: "nova-1"},
+	}
 	for _, tc := range []struct {
-		name               string
-		turns              []brain.Turn
-		handoff, inherited bool
-		whole              bool
-		want               int
+		name             string
+		turns            []brain.Turn
+		handoff          bool
+		invitedBy        string
+		inherited, whole bool
+		want             int
 	}{
-		{"addressed now, after answering on another provider", answered, false, false, false, 3},
-		{"handed the floor", handedOff, true, false, false, 1},
-		{"addressed after a user line", handedOff[:1], true, false, false, 1},
-		{"inherits the restored conversation", answered, false, true, false, 0},
-		{"shares the whole conversation", answered, false, false, true, 0},
-		{"shares the whole conversation when handed the floor", handedOff, true, false, true, 0},
+		{"addressed now, after answering on another provider", answered, false, "", false, false, 3},
+		{"handed the floor", handedOff, true, "", false, false, 1},
+		{"addressed after a user line", handedOff[:1], true, "", false, false, 1},
+		{"inherits the restored conversation", answered, false, "", true, false, 0},
+		{"shares the whole conversation", answered, false, "", false, true, 0},
+		{"shares the whole conversation when handed the floor", handedOff, true, "", false, true, 0},
+		{"invited with another who answered first", invitedTogether, true, "invite", false, false, 1},
+		{"inviting reply no longer in the transcript", invitedTogether, true, "gone", false, false, 2},
+		{"invited with others, whole conversation", invitedTogether, true, "invite", false, true, 0},
 	} {
-		if got := sessionShareStart(tc.turns, tc.handoff, tc.inherited, tc.whole); got != tc.want {
+		if got := sessionShareStart(tc.turns, tc.handoff, tc.invitedBy, tc.inherited, tc.whole); got != tc.want {
 			t.Errorf("%s: share start = %d, want %d", tc.name, got, tc.want)
 		}
 	}

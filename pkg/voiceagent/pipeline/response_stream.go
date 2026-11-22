@@ -78,7 +78,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// spoken-line memory, so the rules a segment is judged by live in one place
 	// and a measurement harness can ask for them instead of re-deriving them.
 	proj := NewSpeechProjection()
-	proj.agentMentionControl = responseMentionControl(ctx)
+	proj.agentMentionName = responseMentionName(ctx)
 
 	var fullResponse strings.Builder
 	// heard drops a sentence this turn already put on the transcript; the

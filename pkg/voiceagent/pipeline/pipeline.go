@@ -143,7 +143,11 @@ type Pipeline struct {
 	// RouteHandoff classifies an intentional handoff without changing selection.
 	// The pipeline commits the proposal after joining the speech interrupt watch.
 	// It never invokes this callback for background or degraded work.
-	RouteHandoff              func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error)
+	RouteHandoff func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error)
+	// InviteHandoff proposes the floor for a persona an earlier reply in the
+	// same turn invited after another (HandoffProposal.Invited), once that
+	// persona is due. Nil drops the remaining invitations.
+	InviteHandoff             func(context.Context, brain.Turn, HandoffInvite, []string) (HandoffProposal, bool, error)
 	EndDiscussion             func(string)
 	GroupParticipationEnabled bool
 	CompleteDiscussion        func(context.Context, brain.Turn) error

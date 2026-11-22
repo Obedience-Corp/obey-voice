@@ -91,7 +91,7 @@ func TestNewSpeechCancelsHandoffClassifierAndRetainsCapture(t *testing.T) {
 	state := &completionState{voice: true, ok: true, turn: brain.Turn{Role: "assistant", Content: "Santa?", PersonaID: "jarvis"}}
 	done := make(chan error, 1)
 	go func() {
-		_, accepted, err := p.nextHandoff(t.Context(), state, []string{"jarvis"})
+		_, _, accepted, err := p.nextHandoff(t.Context(), state, []string{"jarvis"}, nil)
 		if accepted {
 			done <- context.DeadlineExceeded
 			return
@@ -123,7 +123,7 @@ func TestSilentHandoffClassificationDoesNotInventUserSpeech(t *testing.T) {
 		capture.Publish([]float32{0, 0, 0})
 		return handoff("santa"), true, nil
 	}
-	_, accepted, err := p.nextHandoff(t.Context(), &completionState{voice: true, ok: true}, nil)
+	_, _, accepted, err := p.nextHandoff(t.Context(), &completionState{voice: true, ok: true}, nil, nil)
 	if err != nil || !accepted || p.HasCapturedInput() || capture.subCount() != 0 {
 		t.Fatalf("accepted=%v err=%v captured=%v", accepted, err, p.HasCapturedInput())
 	}
@@ -147,7 +147,7 @@ func TestInterruptedSuccessfulProposalNeverCommitsSelection(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, accepted, err := p.nextHandoff(t.Context(), &completionState{voice: true, ok: true}, []string{"jarvis"})
+		_, _, accepted, err := p.nextHandoff(t.Context(), &completionState{voice: true, ok: true}, []string{"jarvis"}, nil)
 		if accepted {
 			err = context.DeadlineExceeded
 		}
@@ -192,7 +192,7 @@ func TestHandoffCommitsOnlyAfterSpeechWatcherJoins(t *testing.T) {
 			return admission("santa"), nil
 		}}, true, nil
 	}
-	_, accepted, err := p.nextHandoff(t.Context(), &completionState{voice: true, ok: true}, []string{"jarvis"})
+	_, _, accepted, err := p.nextHandoff(t.Context(), &completionState{voice: true, ok: true}, []string{"jarvis"}, nil)
 	if err != nil || !accepted || !committed {
 		t.Fatalf("accepted=%v committed=%v err=%v", accepted, committed, err)
 	}

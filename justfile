@@ -186,6 +186,19 @@ demo-work-cue: build
     just _optimize-demo-gif demos/work-cue.gif
     ls -lh demos/work-cue.gif demos/frames/work-cue-*.png
 
+# Conversation: a background job made to answer early, its row marked cut short.
+# Scripted bus events; no mic or model required.
+demo-work-cut-short: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/work-cut-short.tape
+    just _optimize-demo-gif demos/work-cut-short.gif
+    ls -lh demos/work-cut-short.gif demos/frames/work-cut-short.png
+
 # Settings → Persona: list seeded agents and switch active persona.
 demo-persona-switch: build
     #!/usr/bin/env bash

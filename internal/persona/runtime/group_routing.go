@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
@@ -46,11 +47,16 @@ func (s *Selector) conversationRoster() (*summon.Roster, []brain.GroupParticipan
 	return roster, participants, err
 }
 
-// Keep the same immutable ID/name/alias resolution used by handoffs. Speech
-// cleanup must not treat an unrecognized handle as an agent control.
-func agentMentionControl(roster *summon.Roster) func(string) bool {
-	return func(target string) bool {
-		return roster.ResolveAgentMention("@"+target).Kind == summon.ExactControlValid
+// agentMentionName gives speech the display name of the persona an @handle
+// addresses, by the same immutable ID/name/alias resolution handoffs use. An
+// unrecognized handle is not an agent control and is spoken as written.
+func agentMentionName(roster *summon.Roster) func(string) (string, bool) {
+	return func(target string) (string, bool) {
+		exact := roster.ResolveAgentMention("@" + target)
+		if exact.Kind != summon.ExactControlValid {
+			return "", false
+		}
+		return roster.DisplayName(exact.Address.PersonaID), true
 	}
 }
 
@@ -221,7 +227,7 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 			return fmt.Errorf("exact identity control no longer matches current roster")
 		}
 		participants = refreshedParticipants
-		admitted.AgentMentionControl = agentMentionControl(roster)
+		admitted.AgentMentionName = agentMentionName(roster)
 		return nil
 	})
 	if err != nil {
@@ -259,16 +265,77 @@ func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, v
 		}
 		return proposal, false, classifyAdmissionFailure(ctx, "route_handoff", err)
 	}
-	if address.PersonaID == "" || address.PersonaID == response.PersonaID || slices.Contains(visited, address.PersonaID) {
+	named := append([]string{address.PersonaID}, address.Invited...)
+	var targets []string
+	for _, id := range named {
+		if id != "" && id != response.PersonaID && !slices.Contains(visited, id) {
+			targets = append(targets, id)
+		}
+	}
+	if len(targets) == 0 {
 		return proposal, false, nil
 	}
-	expected := s.Snapshot()
-	proposal.PersonaID = address.PersonaID
-	proposal.Commit = func(ctx context.Context) (pipeline.ResponseAdmission, error) {
+	proposal.PersonaID = targets[0]
+	proposal.DisplayName = roster.DisplayName(targets[0])
+	for _, id := range targets[1:] {
+		proposal.Invited = append(proposal.Invited, pipeline.HandoffInvite{PersonaID: id, DisplayName: roster.DisplayName(id), InvitedBy: response.ResponseID})
+	}
+	proposal.Commit = s.commitHandoff(s.Snapshot(), targets[0], "", func(ctx context.Context, current *summon.Roster) error {
+		if address.Reason != "explicit-mention" {
+			return nil
+		}
+		exact := current.ResolveAgentMention(response.Content)
+		if exact.Kind != summon.ExactControlValid || !slices.Equal(append([]string{exact.Address.PersonaID}, exact.Address.Invited...), named) {
+			// The reply no longer names the personas it was read as inviting,
+			// so none of them is asked.
+			return &pipeline.InviteRefusal{Reason: "the personas the reply mentions changed while it was being prepared"}
+		}
+		return nil
+	})
+	return proposal, true, nil
+}
+
+// InviteHandoff proposes the floor for a persona an earlier reply in this turn
+// invited after another. The selection has moved on since that reply, so the
+// proposal belongs to the persona who has just answered. A provider that cannot
+// pass the conversation on refuses every waiting invitee at once.
+func (s *Selector) InviteHandoff(ctx context.Context, response brain.Turn, invite pipeline.HandoffInvite, visited []string) (pipeline.HandoffProposal, bool, error) {
+	var proposal pipeline.HandoffProposal
+	if invite.PersonaID == "" || slices.Contains(visited, invite.PersonaID) {
+		return proposal, false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return proposal, false, classifyAdmissionFailure(ctx, "route_handoff", err)
+	}
+	current := s.Snapshot()
+	if response.PersonaID == "" {
+		return proposal, false, nil
+	}
+	if response.PersonaID != current.PersonaID {
+		return proposal, false, &pipeline.InviteRefusal{Reason: selectionMoved}
+	}
+	if !s.repliesHandOff() {
+		return proposal, false, &pipeline.InviteRefusal{Reason: current.DisplayName + " cannot pass the conversation to another persona"}
+	}
+	proposal.PersonaID = invite.PersonaID
+	proposal.Commit = s.commitHandoff(current, invite.PersonaID, invite.InvitedBy, nil)
+	return proposal, true, nil
+}
+
+// selectionMoved is why no invited persona is asked once the conversation is no
+// longer with the persona whose reply invited them.
+const selectionMoved = "the persona selection changed before their turn"
+
+// commitHandoff selects personaID at the response boundary, provided the
+// selection is still expected. check runs against the current roster first.
+// invitedBy is the reply that invited a waiting invitee, where its share of
+// the conversation starts.
+func (s *Selector) commitHandoff(expected events.PersonaSelection, personaID, invitedBy string, check func(context.Context, *summon.Roster) error) func(context.Context) (pipeline.ResponseAdmission, error) {
+	return func(ctx context.Context) (pipeline.ResponseAdmission, error) {
 		s.transitionMu.Lock()
 		defer s.transitionMu.Unlock()
 		if s.Snapshot() != expected {
-			return pipeline.ResponseAdmission{}, fmt.Errorf("agent handoff belongs to a changed persona selection")
+			return pipeline.ResponseAdmission{}, &pipeline.InviteRefusal{Reason: selectionMoved}
 		}
 		// Resolve the roster before durable publication. No fallible Admit or
 		// profile reload may follow a successful selection and strand its target.
@@ -276,20 +343,26 @@ func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, v
 		if err != nil {
 			return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
 		}
-		if address.Reason == "explicit-mention" {
-			exact := currentRoster.ResolveAgentMention(response.Content)
-			if exact.Kind != summon.ExactControlValid || exact.Address.PersonaID != address.PersonaID {
-				return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", fmt.Errorf("explicit agent mention changed target while preparing"))
+		if check != nil {
+			if err := check(ctx, currentRoster); err != nil {
+				return pipeline.ResponseAdmission{}, err
 			}
 		}
-		selected, err := s.selectAtBoundary(ctx, address.PersonaID, "agent-handoff")
+		selected, err := s.selectAtBoundary(withInvitingReply(ctx, invitedBy), personaID, "agent-handoff")
 		if err != nil {
 			return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
 		}
 		s.setGroupParticipants(participants)
-		return pipeline.ResponseAdmission{Envelope: responseEnvelope(selected), AgentMentionControl: agentMentionControl(currentRoster)}, nil
+		return pipeline.ResponseAdmission{Envelope: responseEnvelope(selected), AgentMentionName: agentMentionName(currentRoster)}, nil
 	}
-	return proposal, true, nil
+}
+
+// repliesHandOff reports whether a reply may hand the conversation to another
+// persona. An agent never moves the conversation off a provider that could
+// not take it back, nor out of a conversation that stays with its persona.
+func (s *Selector) repliesHandOff() bool {
+	live := s.opts.Pipeline.Brain
+	return brain.KeepsSharedHistory(live) || (brain.KeepsPersonaSession(live) && !s.fixedResponder())
 }
 
 // groupParticipation reports whether group routing applies. Group turns are
@@ -300,9 +373,7 @@ func (s *Selector) groupParticipation() bool {
 
 // RouteHandoff gives explicit handoffs priority over optional open participation.
 func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visited []string) (pipeline.HandoffProposal, bool, error) {
-	if live := s.opts.Pipeline.Brain; !brain.KeepsSharedHistory(live) && (!brain.KeepsPersonaSession(live) || s.fixedResponder()) {
-		// An agent never moves the conversation off a provider that could not
-		// take it back, nor out of a conversation that stays with its persona.
+	if !s.repliesHandOff() {
 		return pipeline.HandoffProposal{}, false, nil
 	}
 	s.groupMu.Lock()

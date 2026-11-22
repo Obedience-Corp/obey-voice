@@ -726,9 +726,10 @@ type JobFinished struct {
 	// results immediately and text-only results at JobResultDelivered.
 	SpeechPending bool
 	// CutShort means the job finished but its Summary is knowingly
-	// incomplete. A reason, when there is one, is reported separately as an
-	// Error event.
-	CutShort bool `json:"cut_short,omitempty"`
+	// incomplete. CutShortReason is the host's phrase for a worker made to
+	// answer early; any other reason is reported separately as an Error event.
+	CutShort       bool   `json:"cut_short,omitempty"`
+	CutShortReason string `json:"cut_short_reason,omitempty"`
 }
 
 func (e JobFinished) eventType() string { return "job_finished" }

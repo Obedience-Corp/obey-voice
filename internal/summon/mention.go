@@ -1,7 +1,7 @@
 package summon
 
 import (
-	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -11,8 +11,10 @@ import (
 // ResolveAgentMention resolves explicit controls anywhere in a delivered agent
 // response, including after a preamble. Unlike semantic addresses, @controls
 // can use canonical IDs as well as unambiguous public names and aliases.
+// Several personas mentioned in one response are an ordered invitation: the
+// first is the address and the rest are Invited, in mention order.
 func (r *Roster) ResolveAgentMention(text string) ExactControl {
-	result := ExactControl{Kind: ExactControlNone}
+	var ids []string
 	for _, mention := range textclean.AgentMentions(text) {
 		id, ok := r.byID[strings.ToLower(mention.Target)]
 		if !ok {
@@ -22,12 +24,18 @@ func (r *Roster) ResolveAgentMention(text string) ExactControl {
 			}
 			id = address.PersonaID
 		}
-		if result.Kind == ExactControlValid && result.Address.PersonaID != id {
-			return ExactControl{Kind: ExactControlInvalid, Err: fmt.Errorf("agent handoff addresses multiple personas; use one @mention")}
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id)
 		}
-		result = ExactControl{Kind: ExactControlValid, Address: Address{PersonaID: id, Remainder: text, Reason: "explicit-mention"}}
 	}
-	return result
+	if len(ids) == 0 {
+		return ExactControl{Kind: ExactControlNone}
+	}
+	address := Address{PersonaID: ids[0], Remainder: text, Reason: "explicit-mention"}
+	if len(ids) > 1 {
+		address.Invited = ids[1:]
+	}
+	return ExactControl{Kind: ExactControlValid, Address: address}
 }
 
 // Completion inserts a canonical @id. Resolve it without a model call or
