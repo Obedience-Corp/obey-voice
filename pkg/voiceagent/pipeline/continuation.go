@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -27,10 +28,18 @@ type HandoffProposal struct {
 }
 
 // HandoffInvite is a persona a reply invited to answer after another.
+// InvitedBy is the ResponseID of that reply.
 type HandoffInvite struct {
 	PersonaID   string
 	DisplayName string
+	InvitedBy   string
 }
+
+// InviteRefusal is an InviteHandoff error that no waiting invitee can take
+// the floor, so the invitation ends with one notice naming them all.
+type InviteRefusal struct{ Reason string }
+
+func (e *InviteRefusal) Error() string { return e.Reason }
 
 type handoffOutcome uint8
 
@@ -87,7 +96,11 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 	if (state != nil && state.discussion != nil) || p.InviteHandoff == nil {
 		invited = nil
 	}
-	if state == nil || !state.ok || (p.RouteHandoff == nil && len(invited) == 0) || p.HasCapturedInput() {
+	if state == nil || !state.ok {
+		p.reportUninvited(ctx, invited, visited, "the reply before theirs did not finish")
+		return ResponseAdmission{}, nil, false, nil
+	}
+	if (p.RouteHandoff == nil && len(invited) == 0) || p.HasCapturedInput() {
 		return ResponseAdmission{}, nil, false, nil
 	}
 	if ctx.Err() != nil {
@@ -99,8 +112,13 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 		if personaAlreadyVisited(invite.PersonaID, visited) {
 			continue
 		}
+		var refusal *InviteRefusal
 		admission, _, outcome, err := p.awaitHandoff(ctx, state, visited, func(ctx context.Context) (HandoffProposal, bool, error) {
-			return p.InviteHandoff(ctx, state.turn, invite, append([]string(nil), visited...))
+			proposal, accepted, err := p.InviteHandoff(ctx, state.turn, invite, append([]string(nil), visited...))
+			if errors.As(err, &refusal) {
+				return HandoffProposal{}, false, nil
+			}
+			return proposal, accepted, err
 		})
 		switch {
 		case err != nil:
@@ -108,6 +126,9 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 		case outcome == handoffAccepted:
 			return admission, invited, true, nil
 		case outcome == handoffInterrupted:
+			return ResponseAdmission{}, nil, false, nil
+		case refusal != nil:
+			p.reportUninvited(ctx, append([]HandoffInvite{invite}, invited...), visited, refusal.Reason)
 			return ResponseAdmission{}, nil, false, nil
 		}
 	}
@@ -225,9 +246,9 @@ func (p *Pipeline) awaitHandoff(ctx context.Context, state *completionState, vis
 	return admission, proposal, handoffAccepted, nil
 }
 
-// reportUninvited names the invitees the continuation limit left without a
-// turn. User speech or a cancelled turn ends the invitation without notice.
-func (p *Pipeline) reportUninvited(ctx context.Context, invited []HandoffInvite, visited []string) {
+// reportUninvited names the invitees left without a turn and why. User speech
+// or a cancelled turn ends the invitation without notice.
+func (p *Pipeline) reportUninvited(ctx context.Context, invited []HandoffInvite, visited []string, reason string) {
 	if ctx.Err() != nil || p.HasCapturedInput() {
 		return
 	}
@@ -253,7 +274,7 @@ func (p *Pipeline) reportUninvited(ctx context.Context, invited []HandoffInvite,
 	if len(names) > 1 {
 		verb = "were"
 	}
-	p.emit(events.Info{Message: fmt.Sprintf("%s %s invited but did not get a turn: a message allows %d handoffs.", list, verb, maxAgentContinuations)})
+	p.emit(events.Info{Message: fmt.Sprintf("%s %s invited but did not get a turn: %s.", list, verb, reason)})
 }
 
 func personaAlreadyVisited(persona string, visited []string) bool {
@@ -312,7 +333,7 @@ func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error
 			visited = append(visited, state.turn.PersonaID)
 		}
 		if responseCount >= continuationLimit(state) {
-			p.reportUninvited(ctx, invited, visited)
+			p.reportUninvited(ctx, invited, visited, fmt.Sprintf("a message allows %d handoffs", maxAgentContinuations))
 			if state.discussion != nil && p.EndDiscussion != nil {
 				snap := state.discussion.State.Snapshot()
 				reason := "budget_exhausted"
@@ -371,7 +392,7 @@ func (p *Pipeline) runTextWithContinuations(ctx context.Context, input string) e
 			visited = append(visited, state.turn.PersonaID)
 		}
 		if responseCount >= continuationLimit(state) {
-			p.reportUninvited(ctx, invited, visited)
+			p.reportUninvited(ctx, invited, visited, fmt.Sprintf("a message allows %d handoffs", maxAgentContinuations))
 			if state.discussion != nil && p.EndDiscussion != nil {
 				snap := state.discussion.State.Snapshot()
 				reason := "budget_exhausted"

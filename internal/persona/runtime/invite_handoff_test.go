@@ -152,3 +152,31 @@ func TestInvitedPersonasAnswerAReplyInTurn(t *testing.T) {
 		t.Fatalf("unexpected notices %q", infos)
 	}
 }
+
+func TestHostedPersonaInvitedSecondReceivesTheInvitingReply(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SESSIONS", "distinct")
+	c := newMixedConversation(t, 20, "ember")
+	c.addClaudePersona("nova", "Nova")
+	c.p.RouteHandoff, c.p.InviteHandoff = c.selector.RouteHandoff, c.selector.InviteHandoff
+	invitation := "@Nova @Mira, what colour should the door be?"
+	c.setEmberReply(invitation)
+	c.say("Keep this between us: the door is teal.")
+
+	requests := readClaudeRequests(t, c.log)
+	if len(requests) != 2 || requests[0].Persona != "Nova" || requests[1].Persona != "Mira" {
+		t.Fatalf("hosted requests = %+v, want Nova then Mira", requests)
+	}
+	for _, req := range requests {
+		requireContains(t, req.Prompt, invitation)
+		requireOmits(t, req.Prompt, "door is teal")
+	}
+	requireContains(t, requests[1].Prompt, "Nova reply")
+	if cursor := c.saved().PersonaContexts["mira"]; cursor.Session == nil || cursor.Session.From != 1 {
+		t.Fatalf("Mira's share starts at %+v, want the inviting reply at 1", cursor.Session)
+	}
+	// One notice per provider; its wording must hold for Mira too.
+	notices := c.hostedNotices()
+	if len(notices) != 1 || notices[0].claudeRequests != 0 || !strings.Contains(notices[0].message, "Only what is said from when it was invited is sent to Claude") {
+		t.Fatalf("hosted notices = %+v", notices)
+	}
+}

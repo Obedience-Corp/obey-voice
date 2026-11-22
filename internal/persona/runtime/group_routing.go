@@ -272,9 +272,9 @@ func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, v
 	}
 	proposal.PersonaID = targets[0]
 	for _, id := range targets[1:] {
-		proposal.Invited = append(proposal.Invited, pipeline.HandoffInvite{PersonaID: id, DisplayName: roster.DisplayName(id)})
+		proposal.Invited = append(proposal.Invited, pipeline.HandoffInvite{PersonaID: id, DisplayName: roster.DisplayName(id), InvitedBy: response.ResponseID})
 	}
-	proposal.Commit = s.commitHandoff(s.Snapshot(), targets[0], func(ctx context.Context, current *summon.Roster) error {
+	proposal.Commit = s.commitHandoff(s.Snapshot(), targets[0], "", func(ctx context.Context, current *summon.Roster) error {
 		if address.Reason != "explicit-mention" {
 			return nil
 		}
@@ -289,7 +289,8 @@ func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, v
 
 // InviteHandoff proposes the floor for a persona an earlier reply in this turn
 // invited after another. The selection has moved on since that reply, so the
-// proposal belongs to the persona who has just answered.
+// proposal belongs to the persona who has just answered. A provider that cannot
+// pass the conversation on refuses every waiting invitee at once.
 func (s *Selector) InviteHandoff(ctx context.Context, response brain.Turn, invite pipeline.HandoffInvite, visited []string) (pipeline.HandoffProposal, bool, error) {
 	var proposal pipeline.HandoffProposal
 	if invite.PersonaID == "" || slices.Contains(visited, invite.PersonaID) {
@@ -303,16 +304,18 @@ func (s *Selector) InviteHandoff(ctx context.Context, response brain.Turn, invit
 		return proposal, false, nil
 	}
 	if !s.repliesHandOff() {
-		return proposal, false, fmt.Errorf("%s cannot pass the conversation to another persona", current.DisplayName)
+		return proposal, false, &pipeline.InviteRefusal{Reason: current.DisplayName + " cannot pass the conversation to another persona"}
 	}
 	proposal.PersonaID = invite.PersonaID
-	proposal.Commit = s.commitHandoff(current, invite.PersonaID, nil)
+	proposal.Commit = s.commitHandoff(current, invite.PersonaID, invite.InvitedBy, nil)
 	return proposal, true, nil
 }
 
 // commitHandoff selects personaID at the response boundary, provided the
 // selection is still expected. check runs against the current roster first.
-func (s *Selector) commitHandoff(expected events.PersonaSelection, personaID string, check func(context.Context, *summon.Roster) error) func(context.Context) (pipeline.ResponseAdmission, error) {
+// invitedBy is the reply that invited a waiting invitee, where its share of
+// the conversation starts.
+func (s *Selector) commitHandoff(expected events.PersonaSelection, personaID, invitedBy string, check func(context.Context, *summon.Roster) error) func(context.Context) (pipeline.ResponseAdmission, error) {
 	return func(ctx context.Context) (pipeline.ResponseAdmission, error) {
 		s.transitionMu.Lock()
 		defer s.transitionMu.Unlock()
@@ -330,7 +333,7 @@ func (s *Selector) commitHandoff(expected events.PersonaSelection, personaID str
 				return pipeline.ResponseAdmission{}, err
 			}
 		}
-		selected, err := s.selectAtBoundary(ctx, personaID, "agent-handoff")
+		selected, err := s.selectAtBoundary(withInvitingReply(ctx, invitedBy), personaID, "agent-handoff")
 		if err != nil {
 			return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
 		}

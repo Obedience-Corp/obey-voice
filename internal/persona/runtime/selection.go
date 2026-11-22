@@ -205,7 +205,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	}
 	if live := opts.Pipeline.Brain; brain.KeepsPersonaSession(live) {
 		turns := s.transcript.Turns()
-		cursor, lost := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, false)
+		cursor, lost := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, "", false)
 		if lost {
 			s.lostPlace(opts.Initial.PersonaID)
 		}
@@ -218,7 +218,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		// The host loaded the whole conversation, which the provider keeps;
 		// it sends only its persona's share.
 		turns := live.History()
-		cursor, lost := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, true)
+		cursor, lost := s.sessionCursor(opts.Initial.PersonaID, opts.Initial.BrainProvider, turns, false, "", true)
 		if lost {
 			s.lostPlace(opts.Initial.PersonaID)
 		}
