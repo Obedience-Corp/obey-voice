@@ -352,7 +352,13 @@ func splitMovedReply(read string, spoken *int) (kept, carried string) {
 
 func (p *Pipeline) markMoved(rec *transcriptRecording, jobID, kept, workDir string, start func(brain.ToolCall), end func(brain.ToolResult)) {
 	m := rec.movable
-	added := requestTurns(m.input, m.opts, kept, nil, m.started)
+	// With nothing kept, the request reads as handed off, as a spawned one
+	// does, instead of as a line nobody answered.
+	shown := kept
+	if strings.TrimSpace(brain.CleanForVoice(kept)) == "" {
+		shown = spawnAcknowledgement
+	}
+	added := requestTurns(m.input, m.opts, shown, nil, m.started)
 	history := m.before
 	working := history.Working
 	if working == nil {

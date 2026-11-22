@@ -78,7 +78,8 @@ func bareContinuationPair(s string) bool {
 }
 
 // The lines the assistant speaks when it hands a request to a worker;
-// handleSpawn speaks the same words.
+// handleSpawn speaks the same words. A moved request with no reply kept is
+// recorded with the first.
 const (
 	spawnAcknowledgement       = "I'll work on that and report back."
 	spawnQueuedAcknowledgement = "I've queued that task and will report back."

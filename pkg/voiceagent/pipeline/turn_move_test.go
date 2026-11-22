@@ -823,17 +823,22 @@ func TestMovedReplyIsDividedAtASentenceEnd(t *testing.T) {
 			if !ok {
 				t.Fatal("no history kept for the moved reply")
 			}
+			// With nothing kept, the history records the request as handed off.
+			want := tc.kept
+			if want == "" {
+				want = spawnAcknowledgement
+			}
 			kept := 0
 			for _, turn := range history.Canonical {
 				if turn.Role == "assistant" {
 					kept++
-					if turn.Content != tc.kept {
-						t.Fatalf("history keeps %q, want %q", turn.Content, tc.kept)
+					if turn.Content != want {
+						t.Fatalf("history keeps %q, want %q", turn.Content, want)
 					}
 				}
 			}
-			if want := map[bool]int{true: 0, false: 1}[tc.kept == ""]; kept != want {
-				t.Fatalf("history holds %d partial replies: %+v", kept, history.Canonical)
+			if kept != 1 {
+				t.Fatalf("history holds %d replies to the moved request: %+v", kept, history.Canonical)
 			}
 			close(c.anika.release)
 			finished := c.next(func(e events.Event) bool { _, ok := e.(events.JobFinished); return ok }).(events.JobFinished)
