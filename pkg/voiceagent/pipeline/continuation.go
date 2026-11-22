@@ -19,8 +19,29 @@ type HandoffProposal struct {
 	DiscussionID string
 	OpenAddition bool
 	PersonaID    string
-	Commit       func(context.Context) (ResponseAdmission, error)
+	// Invited are the personas the reply asked to answer after PersonaID, in
+	// that order. Each takes the floor in turn before a reply is classified
+	// for a new handoff.
+	Invited []HandoffInvite
+	Commit  func(context.Context) (ResponseAdmission, error)
 }
+
+// HandoffInvite is a persona a reply invited to answer after another.
+type HandoffInvite struct {
+	PersonaID   string
+	DisplayName string
+}
+
+type handoffOutcome uint8
+
+const (
+	// handoffDeclined leaves the reply with its speaker: no proposal, a
+	// refused one, or a failed classifier or commit.
+	handoffDeclined handoffOutcome = iota
+	handoffAccepted
+	// handoffInterrupted means the user spoke; the turn ends with no handoff.
+	handoffInterrupted
+)
 
 const maxAgentContinuations = 3
 
@@ -58,13 +79,56 @@ func continuationFromContext(ctx context.Context) (continuationRequest, bool) {
 	return request, ok
 }
 
-func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visited []string) (ResponseAdmission, bool, error) {
-	if state == nil || !state.ok || p.RouteHandoff == nil || p.HasCapturedInput() {
-		return ResponseAdmission{}, false, nil
+// nextHandoff chooses who answers the reply that just finished. A persona
+// still waiting in invited goes first, without classifying the reply; once
+// none is left, the reply is classified. It returns the invitees still waiting
+// after the one admitted.
+func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visited []string, invited []HandoffInvite) (ResponseAdmission, []HandoffInvite, bool, error) {
+	if (state != nil && state.discussion != nil) || p.InviteHandoff == nil {
+		invited = nil
+	}
+	if state == nil || !state.ok || (p.RouteHandoff == nil && len(invited) == 0) || p.HasCapturedInput() {
+		return ResponseAdmission{}, nil, false, nil
 	}
 	if ctx.Err() != nil {
-		return ResponseAdmission{}, false, ctx.Err()
+		return ResponseAdmission{}, nil, false, ctx.Err()
 	}
+	for len(invited) > 0 {
+		invite := invited[0]
+		invited = invited[1:]
+		if personaAlreadyVisited(invite.PersonaID, visited) {
+			continue
+		}
+		admission, _, outcome, err := p.awaitHandoff(ctx, state, visited, func(ctx context.Context) (HandoffProposal, bool, error) {
+			return p.InviteHandoff(ctx, state.turn, invite, append([]string(nil), visited...))
+		})
+		switch {
+		case err != nil:
+			return ResponseAdmission{}, nil, false, err
+		case outcome == handoffAccepted:
+			return admission, invited, true, nil
+		case outcome == handoffInterrupted:
+			return ResponseAdmission{}, nil, false, nil
+		}
+	}
+	if p.RouteHandoff == nil {
+		return ResponseAdmission{}, nil, false, nil
+	}
+	admission, proposal, outcome, err := p.awaitHandoff(ctx, state, visited, func(ctx context.Context) (HandoffProposal, bool, error) {
+		return p.RouteHandoff(ctx, state.turn, append([]string(nil), visited...))
+	})
+	if err != nil || outcome != handoffAccepted {
+		return ResponseAdmission{}, nil, false, err
+	}
+	if proposal.DiscussionID != "" {
+		return admission, nil, true, nil
+	}
+	return admission, proposal.Invited, true, nil
+}
+
+// awaitHandoff runs propose and commits its proposal at the response boundary.
+// User speech during either one ends the turn instead.
+func (p *Pipeline) awaitHandoff(ctx context.Context, state *completionState, visited []string, propose func(context.Context) (HandoffProposal, bool, error)) (ResponseAdmission, HandoffProposal, handoffOutcome, error) {
 	// Handoff classification runs after playback, when a user may already be
 	// speaking. Reuse the capture/VAD path, but arm it immediately and remove
 	// the playback-only echo tail guard. Join it before the next STT session.
@@ -91,7 +155,7 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 	classifyCtx, cancelClassify := context.WithCancel(events.WithTrace(ctx, state.trace))
 	defer cancelClassify()
 	go func() {
-		proposal, accepted, err := p.RouteHandoff(withCompletionState(classifyCtx, state), state.turn, append([]string(nil), visited...))
+		proposal, accepted, err := propose(withCompletionState(classifyCtx, state))
 		resultCh <- handoffResult{proposal: proposal, accepted: accepted, err: err}
 	}()
 
@@ -111,7 +175,7 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 			result = <-resultCh
 			cancelWatch()
 			<-watch.done
-			return ResponseAdmission{}, false, ctx.Err()
+			return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, ctx.Err()
 		}
 	} else {
 		result = <-resultCh
@@ -133,29 +197,63 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 		}
 	}
 	if interrupted {
-		return ResponseAdmission{}, false, nil
+		return ResponseAdmission{}, HandoffProposal{}, handoffInterrupted, nil
 	}
 	if err := ctx.Err(); err != nil {
-		return ResponseAdmission{}, false, err
+		return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, err
 	}
 	if result.err != nil {
 		p.emit(events.Info{Message: fmt.Sprintf("Agent handoff skipped: %v", result.err)})
-		return ResponseAdmission{}, false, nil
+		return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, nil
+	}
+	if p.HasCapturedInput() {
+		return ResponseAdmission{}, HandoffProposal{}, handoffInterrupted, nil
 	}
 	proposal := result.proposal
 	groupProposal := proposal.DiscussionID != "" && ((state.discussion != nil && state.discussion.ID == proposal.DiscussionID) || proposal.OpenAddition)
-	if !result.accepted || proposal.Commit == nil || proposal.PersonaID == "" || (!groupProposal && personaAlreadyVisited(proposal.PersonaID, visited)) || (proposal.DiscussionID != "" && !groupProposal) || p.HasCapturedInput() {
-		return ResponseAdmission{}, false, nil
+	if !result.accepted || proposal.Commit == nil || proposal.PersonaID == "" || (!groupProposal && personaAlreadyVisited(proposal.PersonaID, visited)) || (proposal.DiscussionID != "" && !groupProposal) {
+		return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, nil
 	}
 	admission, err := proposal.Commit(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
-			return ResponseAdmission{}, false, ctx.Err()
+			return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, ctx.Err()
 		}
 		p.emit(events.Info{Message: fmt.Sprintf("Agent handoff skipped: %v", err)})
-		return ResponseAdmission{}, false, nil
+		return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, nil
 	}
-	return admission, true, nil
+	return admission, proposal, handoffAccepted, nil
+}
+
+// reportUninvited names the invitees the continuation limit left without a
+// turn. User speech or a cancelled turn ends the invitation without notice.
+func (p *Pipeline) reportUninvited(ctx context.Context, invited []HandoffInvite, visited []string) {
+	if ctx.Err() != nil || p.HasCapturedInput() {
+		return
+	}
+	var names []string
+	for _, invite := range invited {
+		if personaAlreadyVisited(invite.PersonaID, visited) {
+			continue
+		}
+		name := strings.TrimSpace(invite.DisplayName)
+		if name == "" {
+			name = invite.PersonaID
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return
+	}
+	list := names[0]
+	if len(names) > 1 {
+		list = strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+	}
+	verb := "was"
+	if len(names) > 1 {
+		verb = "were"
+	}
+	p.emit(events.Info{Message: fmt.Sprintf("%s %s invited but did not get a turn: a message allows %d handoffs.", list, verb, maxAgentContinuations)})
 }
 
 func personaAlreadyVisited(persona string, visited []string) bool {
@@ -190,6 +288,7 @@ func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error
 		}
 	}()
 	visited := make([]string, 0, maxAgentContinuations+1)
+	var invited []HandoffInvite
 	var firstInput string
 	for responseCount := 0; ; responseCount++ {
 		state := &completionState{voice: true, owner: ctx}
@@ -213,6 +312,7 @@ func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error
 			visited = append(visited, state.turn.PersonaID)
 		}
 		if responseCount >= continuationLimit(state) {
+			p.reportUninvited(ctx, invited, visited)
 			if state.discussion != nil && p.EndDiscussion != nil {
 				snap := state.discussion.State.Snapshot()
 				reason := "budget_exhausted"
@@ -225,13 +325,14 @@ func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error
 			}
 			return firstInput, nil
 		}
-		admission, accepted, err := p.nextHandoff(ctx, state, visited)
+		admission, waiting, accepted, err := p.nextHandoff(ctx, state, visited, invited)
 		if err != nil {
 			return firstInput, err
 		}
 		if !accepted {
 			return firstInput, nil
 		}
+		invited = waiting
 		if admission.Envelope.PersonaID != "" {
 			visited = append(visited, admission.Envelope.PersonaID)
 		}
@@ -253,6 +354,7 @@ func (p *Pipeline) runTextWithContinuations(ctx context.Context, input string) e
 		}
 	}()
 	visited := make([]string, 0, maxAgentContinuations+1)
+	var invited []HandoffInvite
 	for responseCount := 0; ; responseCount++ {
 		state := &completionState{owner: ctx}
 		last = state
@@ -269,6 +371,7 @@ func (p *Pipeline) runTextWithContinuations(ctx context.Context, input string) e
 			visited = append(visited, state.turn.PersonaID)
 		}
 		if responseCount >= continuationLimit(state) {
+			p.reportUninvited(ctx, invited, visited)
 			if state.discussion != nil && p.EndDiscussion != nil {
 				snap := state.discussion.State.Snapshot()
 				reason := "budget_exhausted"
@@ -281,13 +384,14 @@ func (p *Pipeline) runTextWithContinuations(ctx context.Context, input string) e
 			}
 			return nil
 		}
-		admission, accepted, err := p.nextHandoff(ctx, state, visited)
+		admission, waiting, accepted, err := p.nextHandoff(ctx, state, visited, invited)
 		if err != nil {
 			return err
 		}
 		if !accepted {
 			return nil
 		}
+		invited = waiting
 		if admission.Envelope.PersonaID != "" {
 			visited = append(visited, admission.Envelope.PersonaID)
 		}
