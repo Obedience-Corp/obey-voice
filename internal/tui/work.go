@@ -162,7 +162,27 @@ func (m *conversationModel) jobAborted(e events.JobAborted) {
 			m.refreshContent()
 		}
 	}
-	m.jobEnded(e.ID, stopped, " · "+stopped, 0)
+	suffix := " · " + stopped
+	if e.Stopping {
+		suffix += stoppingMark
+	}
+	m.jobEnded(e.ID, stopped, suffix, 0)
+}
+
+// stoppingMark follows an aborted job's outcome on its row until its worker
+// is seen to return.
+const stoppingMark = " · stopping…"
+
+// jobExited drops the stopping mark from the job's sealed row: the worker the
+// cancel told to stop has returned.
+func (m *conversationModel) jobExited(e events.JobExited) {
+	m.appendActivity("job", e.ID+" worker returned", 0)
+	idx, ok := m.completedJobItems[e.ID]
+	if !ok || idx >= len(m.items) || !strings.Contains(m.items[idx].sys, stoppingMark) {
+		return
+	}
+	m.items[idx].sys = strings.Replace(m.items[idx].sys, stoppingMark, "", 1)
+	m.refreshContent()
 }
 
 // jobEnded logs the transition, seals the job's item with its outcome, and

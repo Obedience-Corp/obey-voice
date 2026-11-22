@@ -105,6 +105,7 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onJobFinished)
 	events.Subscribe(bus, u.onJobFailed)
 	events.Subscribe(bus, u.onJobAborted)
+	events.Subscribe(bus, u.onJobExited)
 	events.Subscribe(bus, u.onVoiceGateStripped)
 	events.Subscribe(bus, u.onWorkStateChanged)
 	events.Subscribe(bus, u.onRouteDecided)
@@ -545,7 +546,18 @@ func (u *UI) onJobAborted(e events.JobAborted) {
 	if e.Reason == events.AbortBudget {
 		how = "over budget"
 	}
-	u.dimLine(fmt.Sprintf("■ %s %s after %s", e.ID, how, e.Elapsed.Round(time.Second)))
+	line := fmt.Sprintf("■ %s %s after %s", e.ID, how, e.Elapsed.Round(time.Second))
+	if e.Stopping {
+		line += " · stopping"
+	}
+	u.dimLine(line)
+}
+
+func (u *UI) onJobExited(e events.JobExited) {
+	if _, ok := u.canonicalJobs[e.ID]; ok {
+		return
+	}
+	u.dimLine(fmt.Sprintf("■ %s worker returned", e.ID))
 }
 
 func (u *UI) onVoiceGateStripped(e events.VoiceGateStripped) {
