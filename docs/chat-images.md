@@ -116,8 +116,21 @@ pass through the normal file validation above.
 Returned images also appear in worker threads and desktop background-result cards.
 A queued worker keeps the images from its originating request; cancelling foreground
 speech or switching personas does not retarget its images to a different conversation.
-Outbound assets remain presentation attachments; Ollama sends user images as vision
-input, while returned files keep their caption in subsequent model history.
+Outbound assets remain presentation attachments; the reply keeps its caption in
+subsequent model history. With a vision-capable Ollama model, the pictures of a
+reply are also sent as vision input on the next user message, with a line naming
+each one and who posted it ("you" for the persona's own reply, the persona's name
+for another's). They follow the user's pictures' rules: they stay for the same
+three user turns and are then named as no longer attached, and they count toward
+the 32 MiB a request carries. A posted picture that no longer loads or does not
+fit is named as no longer attached instead of failing the turn. A model that
+cannot view images is sent none, and the user is not told about pictures they did
+not attach. Pictures posted since the last user message wait for the next one: a
+request with no new user message, such as a background report or another persona
+continuing, does not carry them, though earlier messages keep theirs. A
+native-audio persona is sent none; as before, it refuses a conversation whose
+retained turns hold a picture. Only the model request changes: the transcript and
+the saved conversation keep the picture on the reply.
 
 Imports are copied into the session attachment store. Saved history contains references,
 so deleting the source screenshot does not remove it from a resumed conversation.

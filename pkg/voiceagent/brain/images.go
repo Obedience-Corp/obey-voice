@@ -198,7 +198,9 @@ func modelImageType(ref chatmedia.Ref) string {
 func (o *OllamaBrain) prepareImageHistory(ctx context.Context, opts StreamOptions) error {
 	keep := turnWindowStart(o.history, imageTurns-1)
 	o.imagesWithheld = false
-	// current is what a model that views images would be sent with this request.
+	// current is what a model that views images would be sent with this
+	// request of the pictures the user attached. Pictures from replies are
+	// not the user's, so a model that cannot view them is not reported.
 	var current []chatmedia.Ref
 	for i, turn := range o.working {
 		if i >= keep && turn.Role == "user" {
@@ -206,20 +208,27 @@ func (o *OllamaBrain) prepareImageHistory(ctx context.Context, opts StreamOption
 		}
 	}
 	current = append(current, opts.Attachments...)
-	if len(current) > 0 {
+	reserved := 0
+	if len(current) > 0 || o.carriesImagesFrom(keep) {
 		views, err := o.viewsImages(ctx)
-		if err != nil {
+		if err != nil && len(current) > 0 {
 			return err
 		}
-		if !views {
+		if err != nil || !views {
 			o.withholdImages()
-			if opts.OnImagesWithheld != nil {
+			o.carryImages(keep, 0)
+			o.retireAgedImages()
+			if len(current) > 0 && opts.OnImagesWithheld != nil {
 				opts.OnImagesWithheld(o.model, current)
 			}
 			return nil
 		}
-		if _, err := loadImageData(opts.Attachments); err != nil {
+		images, err := loadImageData(opts.Attachments)
+		if err != nil {
 			return err
+		}
+		for _, image := range images {
+			reserved += len(image)
 		}
 	}
 	for i, t := range o.working {
@@ -233,6 +242,10 @@ func (o *OllamaBrain) prepareImageHistory(ctx context.Context, opts StreamOption
 		if i < len(o.history) {
 			o.history[i].Images = images
 		}
+	}
+	// A new user message carries the window again once it is appended.
+	if opts.RetryInput || opts.Background || opts.AgentContinuation || opts.Discussion != nil {
+		o.carryImages(keep, reserved)
 	}
 	// A turn written by the host or ended by a spawn had no reply to trim after.
 	o.retireAgedImages()
@@ -274,7 +287,7 @@ func (o *OllamaBrain) withholdImages() {
 			continue
 		}
 		note := unseenImageNote(t.Attachments)
-		if !strings.HasSuffix(m.Content, note) && !strings.HasSuffix(m.Content, agedImageNote(t.Attachments)) {
+		if rest := withoutCarriedLines(m.Content); !strings.HasSuffix(rest, note) && !strings.HasSuffix(rest, agedImageNote(t.Attachments)) {
 			m.Content += note
 		}
 	}
@@ -293,6 +306,7 @@ func unseenImageNote(refs []chatmedia.Ref) string {
 // withoutImageNotes is what the user said in a turn. A note about its pictures
 // carries a file name and is not theirs.
 func withoutImageNotes(content string, refs []chatmedia.Ref) string {
+	content = withoutCarriedLines(content)
 	if len(refs) == 0 {
 		return content
 	}
@@ -325,15 +339,25 @@ func (o *OllamaBrain) retireAgedImages() {
 	}
 	keep := turnWindowStart(o.history, imageTurns-1)
 	for i := range keep {
-		t := o.working[i]
-		if t.Role != "user" || len(t.Attachments) == 0 {
+		t, m := o.working[i], &o.history[i]
+		if t.Role != "user" || m.Role != "user" {
+			continue
+		}
+		carried := o.carriedImages(o.working, i)
+		for _, c := range carried {
+			m.Content = setCarriedLine(m.Content, c, carriedAged)
+		}
+		if len(carried) > 0 || carriedLine.MatchString(m.Content) {
+			m.Content, m.Images = ageCarriedLines(m.Content, nil), nil
+		}
+		if len(t.Attachments) == 0 {
 			continue
 		}
 		note := agedImageNote(t.Attachments)
-		if !strings.HasSuffix(o.history[i].Content, note) && !strings.HasSuffix(o.history[i].Content, unseenImageNote(t.Attachments)) {
-			o.history[i].Content += note
+		if rest := withoutCarriedLines(m.Content); !strings.HasSuffix(rest, note) && !strings.HasSuffix(rest, unseenImageNote(t.Attachments)) {
+			m.Content += note
 		}
-		o.history[i].Images = nil
+		m.Images = nil
 	}
 }
 
