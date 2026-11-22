@@ -21,6 +21,7 @@ type inviteRecorder struct {
 	invites    []string
 	inviters   []string
 	failInvite string
+	refuse     string
 }
 
 func (r *inviteRecorder) commit(persona string) func(context.Context) (ResponseAdmission, error) {
@@ -57,7 +58,11 @@ func (r *inviteRecorder) wire(p *Pipeline, first string, invited ...string) {
 		r.mu.Lock()
 		r.invites = append(r.invites, invite.PersonaID)
 		r.inviters = append(r.inviters, completed.PersonaID)
+		refuse := r.refuse
 		r.mu.Unlock()
+		if refuse != "" {
+			return HandoffProposal{}, false, &InviteRefusal{Reason: refuse}
+		}
 		return HandoffProposal{PersonaID: invite.PersonaID, Commit: r.commit(invite.PersonaID)}, true, nil
 	}
 }
@@ -276,5 +281,68 @@ func TestDiscussionProposalIgnoresInvitees(t *testing.T) {
 	}
 	if inputs, _ := b.calls(); routed != 2 || len(inputs) != 2 {
 		t.Fatalf("routed=%d brain calls=%d", routed, len(inputs))
+	}
+}
+
+func TestRefusedInvitationEndsWithOneNotice(t *testing.T) {
+	b := &continuationBrain{chunks: []string{"Answer."}}
+	p := &Pipeline{Brain: b, Events: events.NewBus()}
+	infos := infoMessages(p.Events)
+	r := &inviteRecorder{refuse: "Milo cannot pass the conversation to another persona"}
+	r.wire(p, "milo", "vera", "nick")
+	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	spoke, classify, invites, _ := r.snapshot()
+	if !slices.Equal(spoke, []string{"milo"}) || !slices.Equal(invites, []string{"vera"}) || len(classify) != 1 {
+		t.Fatalf("spoke=%v invites=%v classified=%v", spoke, invites, classify)
+	}
+	want := "Vera and Nick were invited but did not get a turn: Milo cannot pass the conversation to another persona."
+	if got := infos(); len(got) != 1 || got[0] != want {
+		t.Fatalf("info = %q, want %q", got, want)
+	}
+}
+
+// failingReplyBrain answers normally except on the call numbered fail.
+type failingReplyBrain struct {
+	continuationBrain
+	fail int
+}
+
+func (b *failingReplyBrain) ThinkStream(_ context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	b.mu.Lock()
+	b.inputs = append(b.inputs, input)
+	b.options = append(b.options, opts)
+	n := len(b.inputs)
+	b.mu.Unlock()
+	var result brain.StreamResult
+	if n == b.fail {
+		result = brain.StreamResult{Err: errors.New("provider failed"), Recovered: true}
+	}
+	chunks := make(chan string, 1)
+	chunks <- "Answer."
+	close(chunks)
+	done := make(chan brain.StreamResult, 1)
+	done <- result
+	close(done)
+	return &brain.Stream{Chunks: chunks, Done: done}, nil
+}
+
+func TestFailedReplyEndsTheInvitationWithANotice(t *testing.T) {
+	b := &failingReplyBrain{fail: 2}
+	p := &Pipeline{Brain: b, Events: events.NewBus()}
+	infos := infoMessages(p.Events)
+	r := &inviteRecorder{}
+	r.wire(p, "milo", "vera", "nick")
+	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	spoke, _, invites, _ := r.snapshot()
+	if !slices.Equal(spoke, []string{"milo"}) || len(invites) != 0 {
+		t.Fatalf("spoke=%v invites=%v", spoke, invites)
+	}
+	want := "Vera and Nick were invited but did not get a turn: the reply before theirs did not finish."
+	if got := infos(); len(got) != 1 || got[0] != want {
+		t.Fatalf("info = %q, want %q", got, want)
 	}
 }
