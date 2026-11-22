@@ -134,7 +134,7 @@ func TestOllamaAgentContinuationDoesNotInventUserTurn(t *testing.T) {
 			t.Fatalf("fabricated input reached Ollama: %+v", message)
 		}
 	}
-	if !strings.Contains(request.Messages[0].Content, "latest agent is handing you the floor") {
+	if !strings.Contains(request.Messages[0].Content, "agent has handed you the floor") {
 		t.Fatalf("continuation system instruction missing: %q", request.Messages[0].Content)
 	}
 	history := o.CanonicalHistory()
