@@ -906,3 +906,22 @@ func TestConversationJobStatusLine(t *testing.T) {
 		t.Fatalf("jobStatus = %q after finish, want empty", m.jobStatus)
 	}
 }
+
+// A provider separates what the model said before a tool call from what it
+// said after. The live bubble has to show that break, or two thoughts read as
+// one run-on line while the reply is still streaming.
+func TestStreamedTextFromSeparateToolRoundsIsShownApart(t *testing.T) {
+	m := sizedConversation(t, 80, 24)
+	m.ready = true
+
+	m.handleEvent(events.ThinkingStarted{})
+	m.handleEvent(events.ResponseDelta{Text: "Let me look."})
+	m.handleEvent(events.ResponseDelta{Text: "\n\n"})
+	m.handleEvent(events.ResponseDelta{Text: "Here is what I found."})
+
+	view := m.View()
+	first, second := strings.Index(view, "Let me look."), strings.Index(view, "Here is what I found.")
+	if first < 0 || second < first || strings.Contains(view, "look.Here") || !strings.Contains(view[first:second], "\n") {
+		t.Fatalf("the two lines are not shown apart:\n%s", view)
+	}
+}
