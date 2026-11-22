@@ -99,6 +99,17 @@ Full Bubble Tea conversation UI:
 just demo-conversation-record
 ```
 
+## tool-failure.gif — a failed tool call while the turn carries on
+
+`just demo-tool-failure` records the real Bubble Tea app against a loopback
+Ollama protocol fixture (`fixtures/tool-failure.py`). The persona runs
+`ls /no/such/dir` itself, the command fails, and the model retries with another
+command and replies. The `✗ tool run_command failed` line stays in the chat
+while the presence box keeps showing thinking, with no error state. Disposable
+home, text mode, no microphone, playback, downloaded models, or credentials.
+
+![Failed tool call mid-turn](tool-failure.gif)
+
 ## think-blocks.gif — show thinking in the thread
 
 Full Bubble Tea conversation UI with a scripted thinking turn (no live model):

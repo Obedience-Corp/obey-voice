@@ -409,20 +409,25 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		if elapsed := e.ResultElapsed(); elapsed > 0 {
 			msg += " in " + elapsed.String()
 		}
-		if status := e.OutcomeStatus(); status == events.ToolOutcomeFailed || status == events.ToolOutcomeTimedOut || status == events.ToolOutcomeCanceled {
-			m.setVoiceMode(anim.ModeError)
-			m.setStatus("✗ "+msg, true)
+		// The model receives a failed or timed-out result and carries on. A
+		// canceled tool means the turn itself was canceled, and nothing later
+		// would clear a thinking state.
+		status := e.OutcomeStatus()
+		if status == events.ToolOutcomeCanceled {
+			m.setVoiceMode(anim.ModeIdle)
+			m.setStatus("", false)
 		} else {
 			m.setVoiceMode(anim.ModeThinking)
 			m.setStatus(m.agentName+" thinking", false)
 		}
-		prefix := "✓ "
-		if e.OutcomeStatus() == events.ToolOutcomeFailed || e.OutcomeStatus() == events.ToolOutcomeTimedOut || e.OutcomeStatus() == events.ToolOutcomeCanceled {
-			prefix = "✗ "
-		} else if e.OutcomeStatus() == events.ToolOutcomeUnknown {
-			prefix = "? "
+		switch status {
+		case events.ToolOutcomeFailed, events.ToolOutcomeTimedOut, events.ToolOutcomeCanceled:
+			m.appendTranscript(dimStyle.Render("  ") + errorStyle.Render("✗") + dimStyle.Render(" "+msg))
+		case events.ToolOutcomeUnknown:
+			m.appendTranscript(dimStyle.Render("  ? " + msg))
+		default:
+			m.appendTranscript(dimStyle.Render("  ✓ " + msg))
 		}
-		m.appendTranscript(dimStyle.Render("  " + prefix + msg))
 		m.appendActivity("tool", msg, 0)
 
 	case events.JobQueued:
