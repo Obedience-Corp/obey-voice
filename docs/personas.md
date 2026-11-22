@@ -412,8 +412,13 @@ whole invitation with an "Agent handoff skipped" notice, and an invited
 persona that cannot be loaded is skipped with the same notice and the next
 one is asked. One message allows three handoffs after the first reply: invited
 personas who are still waiting when that limit is reached do not answer, and
-one notice names them. Speaking while invited personas are waiting, or
-stopping the turn, ends the invitation without a notice. A reply that
+one notice names them. The same single notice, with its reason, names the
+personas still waiting when an invited persona's reply does not finish, or when
+the persona who just answered runs on a backend that cannot pass the
+conversation on. Speaking while invited personas are waiting, or stopping the
+turn, ends the invitation without a notice. An invited persona is asked to
+answer the message that invited it; it may build on the answers given before
+its turn but does not reply to them. A reply that
 names a persona without `@` hands over only when a classifier decides it is
 addressed to that persona (see
 [decision routing](decision-routing.md#who-is-being-addressed)).
@@ -522,7 +527,9 @@ addressed while on that backend in the conversation, unless
 before that point are not sent,
 including the persona's own replies from when it ran on another backend. When
 another agent hands it the floor, that agent's message is the first line it
-receives. The one exception is a conversation saved before replies named their
+receives; a persona invited together with others starts at the message that
+invited them, so it also receives the answers of those invited before it. The
+one exception is a conversation saved before replies named their
 persona: when it is resumed with the persona it was saved with, on the backend
 its session was created on, and no reply in it names a persona, that persona
 receives it from the start. The point is saved with the conversation and still
@@ -587,7 +594,8 @@ that answers next is handed all of it. What it sends its backend is only its
 share, by the same rules as a persona on Claude: nothing said before it was
 first addressed while on that backend unless `hosted_persona_sharing` is
 `whole_conversation`; when another agent hands it the floor, that agent's
-message is its first line; and the same exception applies to a conversation
+message is its first line (for a persona invited together with others, the
+message that invited them); and the same exception applies to a conversation
 saved before replies named their persona. Lines said while it was away are added
 to its share when it is addressed again. Muse Spark and Obey hold no session:
 each request replays the share as quoted conversation records. Codex keeps its
