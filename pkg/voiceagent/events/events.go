@@ -724,8 +724,9 @@ type JobFinished struct {
 	// SpeechPending means Summary is queued to be spoken. Display image
 	// results immediately and text-only results at JobResultDelivered.
 	SpeechPending bool
-	// CutShort means Summary is only the part of the reply that arrived
-	// before it failed; the reason is reported as an Error.
+	// CutShort means the job finished but its Summary is knowingly
+	// incomplete. A reason, when there is one, is reported separately as an
+	// Error event.
 	CutShort bool `json:"cut_short,omitempty"`
 }
 
@@ -781,6 +782,9 @@ type JobAborted struct {
 const (
 	AbortCancelled = "cancelled"
 	AbortBudget    = "budget"
+	// AbortNotTakenOver stops a reply moved to the background because the
+	// persona it was moved for could not take the conversation.
+	AbortNotTakenOver = "not_taken_over"
 )
 
 func (e JobAborted) eventType() string { return "job_aborted" }

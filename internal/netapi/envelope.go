@@ -171,6 +171,10 @@ func encodeEvent(e events.Event) map[string]any {
 	case events.ReplyImagesReady:
 		// Like response_ready: remote clients cannot fetch stored images.
 		env["response"] = e.Response
+	case events.JobFinished:
+		if e.CutShort {
+			env["cut_short"] = true
+		}
 	case events.ResponseReady:
 		env["response"] = e.Response
 		env["interrupted"] = e.Interrupted
