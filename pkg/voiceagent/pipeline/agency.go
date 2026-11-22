@@ -28,7 +28,10 @@ type Agency struct {
 	// ownJobDefault caps a hosted persona's own job while
 	// voice_worker_job_budget is unset.
 	ownJobDefault time.Duration
-	narrator      *Narrator
+	// cancelExitWait bounds how long a spoken cancel waits for workers to
+	// return before it chooses its line.
+	cancelExitWait time.Duration
+	narrator       *Narrator
 	// work folds a job's tool calls into rows: what "what's happening" answers
 	// with, and what milestone narration speaks one line of.
 	work *workfold.Tracker
@@ -68,6 +71,7 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		planFactory:    brain.NewPlannedWorker,
 		ownFactory:     newOwnWorker,
 		ownJobDefault:  time.Duration(config.DefaultHostedOwnJobBudget) * time.Second,
+		cancelExitWait: cancelExitWait,
 		notices:        config.NewNotices(""),
 		work:           workfold.New(),
 		workerThreads:  make(map[string][]brain.Turn),
@@ -97,7 +101,9 @@ func (a *Agency) Wire() {
 	a.pipeline.Agency = a
 	a.bindConversationWorkers(a.pipeline.Brain)
 	a.pipeline.JobActive = a.jobs.Active
+	a.pipeline.ManagedWorkActive = a.managedActive
 	a.jobs.OnDone(a.onJobDone)
+	a.jobs.OnExit(a.onJobExited)
 	a.jobs.OnQueued(a.onJobQueued)
 	a.jobs.OnStart(a.onJobStarted)
 	if a.narrator != nil {

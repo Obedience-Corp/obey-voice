@@ -251,6 +251,7 @@ func (a *Agency) attachManaged(provider brain.Provider, c *work.Coordinator, sco
 	}
 	observer := a.managedObserver(c, scope, runtime, cfg)
 	runtime.SetAdmissionCheck(a.jobs.CheckAdmission)
+	a.guardToolCancels(runtime)
 	if err := runtime.AttachConversation(observer); err != nil {
 		_ = binding.DetachDelegation()
 		return errors.Join(err, runtime.Close())
@@ -289,6 +290,7 @@ func (a *Agency) prepareManaged(provider brain.Provider, c *work.Coordinator, sc
 	}
 	prepared.binding = binding
 	runtime.SetAdmissionCheck(a.jobs.CheckAdmission)
+	a.guardToolCancels(runtime)
 	if err := runtime.AttachConversation(a.managedObserver(c, scope, runtime, cfg)); err != nil {
 		_ = binding.DetachDelegation()
 		return errors.Join(err, runtime.Close())
@@ -399,28 +401,9 @@ func (a *Agency) retireManagedIfUnused(runtime *delegation.Runtime, terminal boo
 	}()
 }
 
-// CancelWork addresses the original owner even after its brain was replaced.
-// It records cancellation intent; only the worker's terminal observation can
-// claim confirmed execution termination.
+// CancelWork is a command's cancel of one job, addressed to its original
+// owner even after its brain was replaced. It never waits for the worker to
+// exit; the exit is reported later as a job event.
 func (a *Agency) CancelWork(id string) error {
-	a.workMu.RLock()
-	runtime := a.managedJobs[id]
-	a.workMu.RUnlock()
-	if runtime != nil {
-		return runtime.Cancel(id)
-	}
-	if runtime := a.currentManagedRuntime(); runtime != nil {
-		for _, task := range runtime.Tasks() {
-			if task.Ticket == id && task.Ended.IsZero() {
-				return runtime.Cancel(id)
-			}
-		}
-	}
-	for _, item := range a.jobs.Status() {
-		if item.ID == id {
-			a.jobs.Abort(id)
-			return nil
-		}
-	}
-	return work.ErrUnknown
+	return a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkCancel, JobID: id}).Err()
 }

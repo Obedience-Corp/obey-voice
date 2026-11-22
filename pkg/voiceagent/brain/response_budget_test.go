@@ -129,6 +129,21 @@ func TestIncompleteProjectionPreservesCanonicalEvidence(t *testing.T) {
 	}
 }
 
+func TestHostNoteReachesTheModelButNotTheReply(t *testing.T) {
+	turn := Turn{Role: "assistant", Content: "Stopped after 40 seconds.", HostNote: "[job-1 was cancelled before it finished.]"}
+	if got, want := modelTurnContent(turn), "Stopped after 40 seconds. [job-1 was cancelled before it finished.]"; got != want {
+		t.Fatalf("model content = %q, want %q", got, want)
+	}
+	turn.Disposition = "interrupted"
+	got := modelTurnContent(turn)
+	if !strings.HasPrefix(got, "[Incomplete assistant response") || !strings.HasSuffix(got, turn.HostNote) {
+		t.Fatalf("model content of an unfinished reply = %q, want the marker first and the note last", got)
+	}
+	if user := (Turn{Role: "user", Content: "cancel", HostNote: "ignored"}); modelTurnContent(user) != "cancel" {
+		t.Fatal("a host note changed a user turn")
+	}
+}
+
 func TestFullResponseLimitRollsBackAndWorkerBudgetRemainsSeparate(t *testing.T) {
 	for _, worker := range []bool{false, true} {
 		t.Run(map[bool]string{false: "foreground", true: "worker"}[worker], func(t *testing.T) {

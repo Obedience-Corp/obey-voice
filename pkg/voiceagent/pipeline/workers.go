@@ -7,6 +7,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
@@ -23,6 +24,19 @@ type WorkerInfo struct {
 	PersonaID, PersonaName             string
 }
 
+// abortedState is how an aborted table job shows: stopping until its worker
+// is seen to return.
+func abortedState(item job.Info) (state, termination string) {
+	switch {
+	case item.Stopping:
+		return "stopping", "unknown"
+	case item.Started.IsZero():
+		return string(item.State), "confirmed (never started)"
+	default:
+		return string(item.State), "confirmed (worker returned)"
+	}
+}
+
 func (i WorkerInfo) Active() bool {
 	return i.State == "queued" || i.State == "running" || i.State == "stopping"
 }
@@ -37,6 +51,7 @@ func managedRuntime(provider brain.Provider) *delegation.Runtime {
 func (a *Agency) bindWorkerAdmission(provider brain.Provider) {
 	if runtime := managedRuntime(provider); runtime != nil {
 		runtime.SetAdmissionCheck(a.jobs.CheckAdmission)
+		a.guardToolCancels(runtime)
 	}
 }
 
@@ -81,7 +96,9 @@ func (p *Pipeline) Workers() []WorkerInfo {
 	a := p.Agency
 	byID := make(map[string]WorkerInfo)
 	canonical := a.WorkSnapshot()
+	table := make(map[string]job.Info)
 	for _, item := range a.jobs.Status() {
+		table[item.ID] = item
 		// A clear/restore retires old table IDs; don't leak them into this chat.
 		if canonical.Scope.Valid() {
 			a.workMu.RLock()
@@ -104,11 +121,8 @@ func (p *Pipeline) Workers() []WorkerInfo {
 				}
 			}
 		}
-		if item.State == "aborted" {
-			info.Termination = "unknown"
-			if item.Started.IsZero() {
-				info.Termination = "confirmed (never started)"
-			}
+		if item.State == job.StateAborted {
+			info.State, info.Termination = abortedState(item)
 		}
 		a.mu.Lock()
 		info.Thread = copyWorkerThread(a.workerThreads[item.ID])
@@ -160,6 +174,17 @@ func (p *Pipeline) Workers() []WorkerInfo {
 			info.State, info.Result, info.Err, info.Termination = string(out.Status), out.Text, out.Limitations, out.Termination
 			info.Started, info.Ended, info.Elapsed = out.StartedAt, out.EndedAt, out.Elapsed
 		}
+		// The outcome is published when the job ends; whether its worker has
+		// returned since is only known to the table.
+		if local, ok := table[info.ID]; ok && local.State == job.StateAborted {
+			state, termination := abortedState(local)
+			if state == "stopping" {
+				info.State = state
+			}
+			if info.Termination == "" || info.Termination == "unknown" {
+				info.Termination = termination
+			}
+		}
 		byID[info.ID] = info
 	}
 	result := make([]WorkerInfo, 0, len(byID))
@@ -184,15 +209,9 @@ func (p *Pipeline) StopWorkers() error {
 	if p == nil || p.Agency == nil {
 		return nil
 	}
-	items := p.Workers()
-	p.Agency.jobs.AbortAll()
-	var errs []error
-	for _, item := range items {
-		if item.Active() {
-			if err := p.CancelWork(item.ID); err != nil && !errors.Is(err, work.ErrUnknown) {
-				errs = append(errs, err)
-			}
-		}
+	receipt := p.Agency.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkCancel, All: true})
+	if err := receipt.Err(); err != nil && !errors.Is(err, work.ErrUnknown) {
+		return err
 	}
-	return errors.Join(errs...)
+	return nil
 }

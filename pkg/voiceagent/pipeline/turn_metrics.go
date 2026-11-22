@@ -69,6 +69,9 @@ type turnMetrics struct {
 	ttfa               time.Time
 	audibleSink        string
 	sinkAtArm          string
+	// routedNote is saved with the routed reply as its host note, for the
+	// model only; it is never spoken or shown.
+	routedNote string
 	// bargeInMu guards bargeIn and speech cancellation shared by the turn and
 	// the TUI's out-of-band keystroke stop.
 	bargeInMu sync.Mutex

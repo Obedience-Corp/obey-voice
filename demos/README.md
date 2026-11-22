@@ -158,6 +158,23 @@ just demo-workers
 
 Still frame: `demos/frames/workers-detail.png`
 
+## workers-stopping.gif — a stopped task waits for its worker
+
+1. **Launcher → Workers**, one running task
+2. **s** stops it: the row reads `stopping` while its worker has not returned
+3. The worker returns about three seconds later; the row reads `aborted` and
+   the detail shows `Termination: confirmed (worker returned)`
+
+`OBEY_VOICE_DEMO_WORKERS=stopping` runs one fixture job in a real job table.
+There is no model: the job's run function waits for its cancel, then three
+seconds, then returns. The states on screen come from the job table.
+
+```bash
+just demo-workers-stopping
+```
+
+Still frames: `demos/frames/workers-stopping.png`, `demos/frames/workers-stopped.png`, `demos/frames/workers-stopped-detail.png`
+
 ## work-cue.gif — background work during conversation
 
 The real conversation TUI shows an animated **Working** cue beside the

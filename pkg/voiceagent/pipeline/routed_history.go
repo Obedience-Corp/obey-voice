@@ -45,7 +45,7 @@ func (p *Pipeline) appendRoutedHistory(metrics *turnMetrics, request, reply stri
 		additions = append(additions, input)
 	}
 	if reply != "" {
-		response := brain.Turn{Role: "assistant", Content: reply, At: now}
+		response := brain.Turn{Role: "assistant", Content: reply, HostNote: metrics.routedNote, At: now}
 		if identity := metrics.responseIdentity(); identity != nil {
 			response.PersonaID, response.PersonaDisplayName, response.PromptHash, response.ResponseID = identity.PersonaID, identity.PersonaDisplayName, identity.PromptHash, identity.ResponseID
 		}

@@ -32,7 +32,7 @@ func TestWorkersTerminal(t *testing.T) {
 	agency := pipeline.NewAgency(p, table, nil, cfg, nil)
 	agency.Wire()
 	started := make(chan struct{})
-	_, err := table.Start(t.Context(), job.Spec{Task: "Review campaign changes", Provider: "ollama", Model: "test-local",
+	running, err := table.Start(t.Context(), job.Spec{Task: "Review campaign changes", Provider: "ollama", Model: "test-local",
 		Run: func(ctx context.Context) (string, error) { close(started); <-ctx.Done(); return "", ctx.Err() }})
 	if err != nil {
 		t.Fatal(err)
@@ -66,13 +66,23 @@ func TestWorkersTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !interactive {
-		for _, want := range []string{"Review campaign changes", "ollama / test-local", "Allow background workers:", "Stop requested", "Termination", "unknown"} {
+		for _, want := range []string{"Review campaign changes", "ollama / test-local", "Allow background workers:", "Stop requested", "Termination"} {
 			if !strings.Contains(stripANSI(output.String()), want) {
 				t.Fatalf("renderer missing %q:\n%s", want, stripANSI(output.String()))
 			}
 		}
 		if p.WorkersEnabled() || table.Active() {
 			t.Fatal("terminal controls did not disable and cancel work")
+		}
+		// The stopped worker returns at once; the rendered frame may be from
+		// either side of that, so the confirmed return is read from the table.
+		if err := table.AwaitExit(ctx, running); err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range p.Workers() {
+			if item.ID == running && item.Termination != "confirmed (worker returned)" {
+				t.Fatalf("stopped task termination = %q, want the confirmed return", item.Termination)
+			}
 		}
 		loaded, err := config.LoadRaw()
 		if err != nil || !loaded.VoiceWorkersDisabled {
