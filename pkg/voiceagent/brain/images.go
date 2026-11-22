@@ -196,7 +196,10 @@ func modelImageType(ref chatmedia.Ref) string {
 // images is sent none. That does not fail the turn: the pictures stay on the
 // conversation record for a model that can view them.
 func (o *OllamaBrain) prepareImageHistory(ctx context.Context, opts StreamOptions) error {
-	keep := turnWindowStart(o.history, imageTurns-1)
+	// The window counts the message being answered, which a new user
+	// message appended after this joins.
+	o.imageWindow = imageTurns - 1
+	keep := o.requestImageStart()
 	o.imagesWithheld, o.imagesUnchecked = false, false
 	// current is what a model that views images would be sent with this
 	// request of the pictures the user attached. Pictures from replies are

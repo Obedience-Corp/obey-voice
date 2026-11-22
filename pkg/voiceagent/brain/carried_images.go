@@ -59,8 +59,8 @@ func singleLine(name string) string {
 }
 
 // carriedLine matches a whole carried line by its prefix, the picture's id
-// and its state.
-var carriedLine = regexp.MustCompile(`\nPicture ([0-9a-f]+) (attached|no longer attached|not shown, because this model cannot view images|not attached to this request): [^\n]*`)
+// (the sha256 of its stored bytes, as chatmedia writes it) and its state.
+var carriedLine = regexp.MustCompile(`\nPicture ([0-9a-f]{64}) (attached|no longer attached|not shown, because this model cannot view images|not attached to this request): [^\n]*`)
 
 // withoutCarriedLines is content without the lines about carried pictures.
 func withoutCarriedLines(content string) string {
@@ -184,7 +184,6 @@ func (o *OllamaBrain) carriesImagesFrom(keep int) bool {
 var (
 	errImagesWithheld    = errors.New("pictures are left out of this request because this model cannot view images")
 	errImagesUnchecked   = errors.New("pictures are left out of this request because whether this model can view images could not be checked")
-	errNoImageRoom       = fmt.Errorf("this request already carries as much picture data as it can (%d MiB)", maxRequestImageBytes>>20)
 	errOwnImagesUnloaded = errors.New("the message's own pictures did not load")
 )
 
@@ -194,6 +193,40 @@ func (o *OllamaBrain) imageByteLimit() int {
 		return o.maxImageBytes
 	}
 	return maxRequestImageBytes
+}
+
+func noImageRoom(limit int) error {
+	size := fmt.Sprintf("%d bytes", limit)
+	if limit%(1<<20) == 0 {
+		size = fmt.Sprintf("%d MiB", limit>>20)
+	}
+	return fmt.Errorf("this request already carries as much picture data as it can (%s)", size)
+}
+
+// requestImageStart is where the image window of the request in progress
+// begins: the user message that opens its last imageWindow user messages.
+func (o *OllamaBrain) requestImageStart() int {
+	return turnWindowStart(o.history, o.imageWindow)
+}
+
+// carriedShown lists the carried pictures attached on user messages from
+// keep on, in order.
+func (o *OllamaBrain) carriedShown(keep int) []chatmedia.Ref {
+	if len(o.working) != len(o.history) {
+		return nil
+	}
+	var out []chatmedia.Ref
+	for j := keep; j < len(o.history); j++ {
+		if o.history[j].Role != "user" || o.working[j].Role != "user" {
+			continue
+		}
+		for _, c := range o.carriedImages(o.working, j) {
+			if state, ok := carriedLineState(o.history[j].Content, c.ref.ID); ok && state == carriedShown {
+				out = append(out, c.ref)
+			}
+		}
+	}
+	return out
 }
 
 // carryImages gives each user message from keep on the pictures it carries,
@@ -221,6 +254,7 @@ func (o *OllamaBrain) carryImages(keep, reserved int) map[string]error {
 	}
 	outcome := map[string]error{}
 	full := false
+	noRoom := noImageRoom(o.imageByteLimit())
 	for j := len(o.history) - 1; j >= keep; j-- {
 		m := &o.history[j]
 		if m.Role != "user" || o.working[j].Role != "user" {
@@ -246,7 +280,7 @@ func (o *OllamaBrain) carryImages(keep, reserved int) map[string]error {
 				outcome[id] = errOwnImagesUnloaded
 				continue
 			case full:
-				outcome[id] = errNoImageRoom
+				outcome[id] = noRoom
 				continue
 			}
 			image, err := storeImageLimit.load(carried[k].ref)
@@ -255,7 +289,7 @@ func (o *OllamaBrain) carryImages(keep, reserved int) map[string]error {
 				continue
 			}
 			if len(image) > budget {
-				full, outcome[id] = true, errNoImageRoom
+				full, outcome[id] = true, noRoom
 				continue
 			}
 			data[k], budget, states[k], outcome[id] = image, budget-len(image), carriedShown, nil

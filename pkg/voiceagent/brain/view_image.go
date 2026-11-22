@@ -2,7 +2,6 @@ package brain
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -43,58 +42,75 @@ func (o *OllamaBrain) offersViewImage(opts StreamOptions) bool {
 // viewImage imports an image file inside the work directory and records it on
 // the user turn being answered as a picture the persona opened, when this
 // request can carry it. The turn's next request carries it on that message.
-func (o *OllamaBrain) viewImage(ctx context.Context, path string) string {
+// It reports whether the picture was recorded.
+func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool) {
 	if strings.TrimSpace(path) == "" {
-		return "error: path is required"
+		return "error: path is required", false
 	}
 	if o.audioResolver != nil {
-		return cannotViewImages
+		return cannotViewImages, false
 	}
 	views, err := o.viewsImages(ctx)
 	if err != nil {
-		return "error: " + err.Error()
+		return "error: " + err.Error(), false
 	}
 	if !views {
-		return cannotViewImages
+		return cannotViewImages, false
 	}
+	// This check answered, so pictures need not wait for the next request.
+	o.imagesUnchecked = false
 	c, w := lastUserTurn(o.canonical), lastUserTurn(o.working)
 	if c < 0 || w < 0 || o.canonical[c].Content != o.working[w].Content {
-		return "error: there is no user message to attach the picture to"
+		return "error: there is no user message to attach the picture to", false
 	}
 	if len(o.canonical[c].OpenedImages) >= chatmedia.MaxAttachments {
-		return "error: at most four pictures can be opened while answering one message"
+		return "error: at most four pictures can be opened while answering one message", false
 	}
 	ref, err := chatmedia.DefaultStore().ImportWorkFile(path, o.workDir)
 	if err != nil {
-		return "error: " + err.Error()
+		return "error: " + err.Error(), false
 	}
 	if _, err := storeImageLimit.load(ref); err != nil {
-		return "error: " + err.Error()
+		return "error: " + err.Error(), false
 	}
-	label := "Picture " + ref.ID + " (" + singleLine(ref.Name) + ")"
-	for _, held := range append(o.working[w].Attachments, o.working[w].OpenedImages...) {
+	label := pictureLabel(ref)
+	if len(o.working) != len(o.history) {
+		return "error: " + label + " could not be attached: this conversation's prompt history no longer lines up with it", false
+	}
+	for _, held := range o.working[w].Attachments {
 		if held.ID == ref.ID {
-			return label + " is already attached to the user's latest message."
+			return label + " is already attached to the user's latest message, as a picture the user attached.", false
 		}
 	}
+	for _, held := range o.carriedImages(o.working, w) {
+		if held.ref.ID == ref.ID {
+			return pictureLabel(held.ref) + " is already attached to the user's latest message, where it is named as " + held.what + ".", false
+		}
+	}
+	keep := o.requestImageStart()
+	before := o.carriedShown(keep)
 	o.canonical[c].OpenedImages = append(o.canonical[c].OpenedImages, ref)
 	o.working[w].OpenedImages = append(o.working[w].OpenedImages, ref)
-	keep := turnWindowStart(o.history, imageTurns)
-	why, carried := o.carryImages(keep, 0)[ref.ID]
-	if !carried {
-		why = errors.New("there is no user message to attach it to")
-	}
-	if why != nil {
+	outcome := o.carryImages(keep, 0)
+	if why := outcome[ref.ID]; why != nil {
 		// Only a picture this request carries counts as opened.
 		o.canonical[c].OpenedImages = o.canonical[c].OpenedImages[:len(o.canonical[c].OpenedImages)-1]
 		o.working[w].OpenedImages = o.working[w].OpenedImages[:len(o.working[w].OpenedImages)-1]
-		if w < len(o.history) && o.history[w].Role == "user" {
-			o.history[w].Content = withoutCarriedLine(o.history[w].Content, ref.ID)
-		}
+		o.history[w].Content = withoutCarriedLine(o.history[w].Content, ref.ID)
 		o.carryImages(keep, 0)
-		return fmt.Sprintf("error: %s could not be attached: %v", label, why)
+		return fmt.Sprintf("error: %s could not be attached: %v", label, why), false
 	}
-	return label + " is now attached to the user's latest message, where it is named as a picture you opened."
+	result := label + " is now attached to the user's latest message, where it is named as a picture you opened."
+	for _, earlier := range before {
+		if outcome[earlier.ID] != nil {
+			result += " To make room, " + pictureLabel(earlier) + " is no longer attached."
+		}
+	}
+	return result, true
+}
+
+func pictureLabel(ref chatmedia.Ref) string {
+	return "Picture " + ref.ID + " (" + singleLine(ref.Name) + ")"
 }
 
 func lastUserTurn(turns []Turn) int {

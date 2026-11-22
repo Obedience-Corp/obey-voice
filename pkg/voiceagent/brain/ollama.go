@@ -107,6 +107,9 @@ type OllamaBrain struct {
 	// imagesUnchecked is set for a request that carries only pictures from
 	// replies and could not learn whether its model views images.
 	imagesUnchecked bool
+	// imageWindow is how many of the latest user messages the request in
+	// progress carries pictures for.
+	imageWindow int
 	// maxImageBytes lowers the image data a request carries below
 	// maxRequestImageBytes when set.
 	maxImageBytes int

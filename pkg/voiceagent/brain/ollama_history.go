@@ -467,7 +467,8 @@ func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) error {
 		}
 	}
 	o.attachInputImages(opts.Attachments, images)
-	o.carryImages(turnWindowStart(o.history, imageTurns), 0)
+	o.imageWindow = imageTurns
+	o.carryImages(o.requestImageStart(), 0)
 	if opts.Utterance != nil {
 		last := len(o.canonical) - 1
 		o.canonical[last].TypedInput = input

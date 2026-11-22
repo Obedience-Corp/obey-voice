@@ -143,11 +143,15 @@ being answered as a picture the persona opened, kept apart from what the user
 attached: the chat never shows it as sent by the user, and the saved conversation
 keeps it. The turn's next request carries it on that message, and later turns
 follow the window, aging and 32 MiB rules above. A picture that request cannot
-carry is not recorded, and the answer gives the reason. A persona can open four
-pictures while answering one message. A model that cannot view images, or a
-native-audio persona, gets an answer saying so and the turn goes on. Opening a
-picture keeps a round of local tools from turning into a background job by
-itself, though the persona can still start background work explicitly. The
+carry is not recorded, and the answer gives the reason; if a new picture leaves
+no room for one opened earlier, the answer names the one no longer attached. A
+picture already on the message is reported as already there. A persona can open
+four pictures while answering one message. A model that cannot view images, or a
+native-audio persona, gets an answer saying so and the turn goes on. In the round
+that opens a picture, and in every round after one has been opened, the turn goes
+to a background worker only when the persona asks for background work itself;
+web searches and further local steps run in its own turn. A look that fails
+leaves hand-off as it was. The
 speaking persona's tool list names `view_image`; workers, routed
 (`route_only`) turns, background reports and group discussion turns are not
 offered the tool. `read_file` on an image file no longer returns its bytes; it
