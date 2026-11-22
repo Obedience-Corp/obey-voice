@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -92,7 +93,11 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool)
 	o.canonical[c].OpenedImages = append(o.canonical[c].OpenedImages, ref)
 	o.working[w].OpenedImages = append(o.working[w].OpenedImages, ref)
 	outcome := o.carryImages(keep, 0)
-	if why := outcome[ref.ID]; why != nil {
+	why, handled := outcome[ref.ID]
+	if !handled {
+		why = errors.New("the user's latest message is not part of this request")
+	}
+	if why != nil {
 		// Only a picture this request carries counts as opened.
 		o.canonical[c].OpenedImages = o.canonical[c].OpenedImages[:len(o.canonical[c].OpenedImages)-1]
 		o.working[w].OpenedImages = o.working[w].OpenedImages[:len(o.working[w].OpenedImages)-1]
