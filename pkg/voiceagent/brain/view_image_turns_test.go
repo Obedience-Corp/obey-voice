@@ -346,3 +346,88 @@ func TestViewImageSaysWhichPictureItPushedOut(t *testing.T) {
 		t.Fatalf("second result %q", result)
 	}
 }
+
+// A picture a later one pushed out is brought back by opening it again.
+func TestViewImageBringsBackAPicturePushedOut(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	o, sent := toolModel(t, true, func(w http.ResponseWriter, n int, req api.ChatRequest) {
+		switch n {
+		case 1, 3:
+			callTool(w, req, "view_image", map[string]any{"path": "first.png"})
+		case 2:
+			callTool(w, req, "view_image", map[string]any{"path": "second.png"})
+		default:
+			answer(w, req, api.Message{Role: "assistant", Content: "Done."}, "stop")
+		}
+	})
+	noisyPNG(t, filepath.Join(o.workDir, "first.png"), 24)
+	noisyPNG(t, filepath.Join(o.workDir, "second.png"), 25)
+	sizes := 0
+	for _, name := range []string{"first.png", "second.png"} {
+		info, err := os.Stat(filepath.Join(o.workDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sizes = max(sizes, int(info.Size()))
+	}
+	o.maxImageBytes = sizes + 1
+	if _, err := o.ThinkFull(t.Context(), "Compare first.png and second.png.", directTools); err != nil {
+		t.Fatal(err)
+	}
+	requests := sent()
+	if len(requests) != 4 {
+		t.Fatalf("%d requests", len(requests))
+	}
+	last := requests[3]
+	var result string
+	for _, m := range last.Messages {
+		if m.Role == "tool" && m.ToolName == "view_image" {
+			result = m.Content
+		}
+	}
+	if !strings.Contains(result, "(first.png) is now attached") || !strings.Contains(result, "(second.png) is no longer attached") {
+		t.Fatalf("third result %q", result)
+	}
+	opened := o.History()[0].OpenedImages
+	if len(opened) != 2 {
+		t.Fatalf("%d pictures recorded as opened", len(opened))
+	}
+	byName := map[string]chatmedia.Ref{}
+	for _, ref := range opened {
+		byName[ref.Name] = ref
+	}
+	m := messageWith(t, last, "Compare first.png")
+	if len(m.Images) != 1 || strings.Count(m.Content, openedLine(byName["first.png"])) != 1 || strings.Count(m.Content, pictureLine(byName["second.png"], agedOut, openedByYou)) != 1 {
+		t.Fatalf("the message carries %d images: %q", len(m.Images), m.Content)
+	}
+}
+
+// On a model that cannot view images, a look leaves the earlier messages as
+// the turn's first round sent them.
+func TestViewImageOnATextOnlyModelKeepsEarlierMessages(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	o, sent := toolModel(t, false, opensThenAnswers("shot.png"))
+	writePNG(t, filepath.Join(o.workDir, "shot.png"))
+	chart := photos(t, 1, 32, 32)[0]
+	o.LoadHistory([]Turn{
+		{Role: "user", Content: "Draw me a chart."},
+		{Role: "assistant", Content: "Here it is.", Attachments: []chatmedia.Ref{chart}},
+		{Role: "user", Content: "turn-a"},
+		{Role: "assistant", Content: "Fine."},
+		{Role: "user", Content: "turn-b"},
+		{Role: "assistant", Content: "Fine."},
+		{Role: "user", Content: "turn-c"},
+		{Role: "assistant", Content: "Fine."},
+	})
+	if _, err := o.ThinkFull(t.Context(), "Look at shot.png.", directTools); err != nil {
+		t.Fatal(err)
+	}
+	requests := sent()
+	if len(requests) != 2 || !strings.Contains(messageWith(t, requests[0], "turn-a").Content, pictureNamed(chart)) {
+		t.Fatalf("%d requests", len(requests))
+	}
+	p := lastUserIndex(requests[0].Messages)
+	if first, second := jsonOf(t, requests[0].Messages[:p]), jsonOf(t, requests[1].Messages[:p]); first != second {
+		t.Fatalf("the second round changed an earlier message:\n%s\n%s", first, second)
+	}
+}

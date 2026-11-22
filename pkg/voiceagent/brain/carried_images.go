@@ -13,8 +13,9 @@ import (
 // A picture a persona posted rides on the user message after its reply, the
 // only role a picture is known to reach the model on. The message also gets a
 // line naming the picture and who posted it. Both are added to the request as
-// it is built and never stored: the prompt history, the transcript, the
-// working view and the saved conversation keep the picture on the reply.
+// it is built and never stored in the prompt history. The working view notes
+// on the user turn which pictures it carries; the transcript and the saved
+// conversation keep the picture on the reply only.
 type carriedImage struct {
 	ref chatmedia.Ref
 	// what is whose picture it is, as in "a picture you posted".
@@ -56,29 +57,49 @@ func singleLine(name string) string {
 	}, name)
 }
 
-// carriedImages is what the user message at working index j carries that the
-// user did not attach: the pictures on the replies since the user message
-// before it, then those a persona opened while answering it, each once.
-func (o *OllamaBrain) carriedImages(working []Turn, j int) []carriedImage {
-	start := j
-	for start > 0 && working[start-1].Role != "user" {
+// replyPicture is a picture on a reply, with who wrote the reply.
+type replyPicture struct {
+	ref                    chatmedia.Ref
+	personaID, personaName string
+}
+
+// postedBefore lists the pictures on the replies between the user turn before
+// index end and end, each once, in order. A user turn recorded at end carries
+// them from then on, even once those replies leave the working view.
+func postedBefore(turns []Turn, end int) []replyPicture {
+	start := end
+	for start > 0 && turns[start-1].Role != "user" {
 		start--
 	}
+	seen := map[string]bool{}
+	var out []replyPicture
+	for _, t := range turns[start:end] {
+		if t.Role != "assistant" && t.Role != "samantha" {
+			continue
+		}
+		for _, ref := range t.Attachments {
+			if !seen[ref.ID] {
+				seen[ref.ID] = true
+				out = append(out, replyPicture{ref: ref, personaID: t.PersonaID, personaName: t.PersonaDisplayName})
+			}
+		}
+	}
+	return out
+}
+
+// carriedImages is what the user message at working index j carries that the
+// user did not attach: the pictures posted on the replies before it, then
+// those a persona opened while answering it, each once.
+func (o *OllamaBrain) carriedImages(working []Turn, j int) []carriedImage {
 	seen := map[string]bool{}
 	for _, ref := range working[j].Attachments {
 		seen[ref.ID] = true
 	}
 	var out []carriedImage
-	for _, t := range working[start:j] {
-		if t.Role != "assistant" && t.Role != "samantha" {
-			continue
-		}
-		what := "a picture " + o.pictureOwner(t) + " posted"
-		for _, ref := range t.Attachments {
-			if !seen[ref.ID] {
-				seen[ref.ID] = true
-				out = append(out, carriedImage{ref: ref, what: what})
-			}
+	for _, p := range working[j].posted {
+		if !seen[p.ref.ID] {
+			seen[p.ref.ID] = true
+			out = append(out, carriedImage{ref: p.ref, what: "a picture " + o.pictureOwner(p.personaID, p.personaName) + " posted"})
 		}
 	}
 	if len(working[j].OpenedImages) > 0 {
@@ -88,7 +109,7 @@ func (o *OllamaBrain) carriedImages(working []Turn, j int) []carriedImage {
 				break
 			}
 			if t.Role == "assistant" || t.Role == "samantha" {
-				opener = o.pictureOwner(t)
+				opener = o.pictureOwner(t.PersonaID, t.PersonaDisplayName)
 				break
 			}
 		}
@@ -102,14 +123,14 @@ func (o *OllamaBrain) carriedImages(working []Turn, j int) []carriedImage {
 	return out
 }
 
-// pictureOwner names who wrote t as the persona answering sees it, by the
-// rule projectTurn quotes another speaker's reply by.
-func (o *OllamaBrain) pictureOwner(t Turn) string {
+// pictureOwner names who wrote a reply as the persona answering sees it, by
+// the rule projectTurn quotes another speaker's reply by.
+func (o *OllamaBrain) pictureOwner(personaID, personaName string) string {
 	current := o.activePersona()
-	if strings.TrimSpace(t.PersonaID) == current && !(current == "" && o.groupModeEnabled()) {
+	if strings.TrimSpace(personaID) == current && !(current == "" && o.groupModeEnabled()) {
 		return "you"
 	}
-	if name := strings.TrimSpace(t.PersonaDisplayName); name != "" {
+	if name := strings.TrimSpace(personaName); name != "" {
 		return name
 	}
 	return "another agent"
@@ -121,15 +142,31 @@ func (o *OllamaBrain) carriesImagesFrom(keep int) bool {
 	if o.audioResolver != nil || len(o.working) != len(o.history) || keep > len(o.working) {
 		return false
 	}
-	for keep > 0 && o.working[keep-1].Role != "user" {
-		keep--
-	}
 	for _, t := range o.working[keep:] {
-		if (t.Role == "assistant" || t.Role == "samantha") && len(t.Attachments) > 0 || len(t.OpenedImages) > 0 {
+		if t.Role == "user" && (len(t.posted) > 0 || len(t.OpenedImages) > 0) {
 			return true
 		}
 	}
-	return false
+	return len(postedBefore(o.working, len(o.working))) > 0
+}
+
+// carriedLineBytes is at least the size of the lines the user messages of the
+// prompt history are sent with, each counted in its longest wording. It reads
+// only the conversation, never the pictures.
+func (o *OllamaBrain) carriedLineBytes() int {
+	if o.audioResolver != nil || len(o.working) != len(o.history) {
+		return 0
+	}
+	n := 0
+	for j, m := range o.history {
+		if m.Role != "user" || o.working[j].Role != "user" {
+			continue
+		}
+		for _, c := range o.carriedImages(o.working, j) {
+			n += len(c.line(carriedUnseen))
+		}
+	}
+	return n
 }
 
 var (

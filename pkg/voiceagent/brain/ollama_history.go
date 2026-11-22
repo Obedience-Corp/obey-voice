@@ -174,6 +174,7 @@ func (o *OllamaBrain) ClearHistory() {
 	o.inputTranscripts.Clear()
 	o.canonical = nil
 	o.working = nil
+	o.carriedData = nil
 }
 
 // SessionInfo reports the in-process conversation for /session display:
@@ -368,12 +369,16 @@ func (o *OllamaBrain) loadHistoryProjectionForPersona(turns []Turn, archiveProje
 		}
 		m := o.projectTurn(t, turns, i, sharedUnowned)
 		history = append(history, m)
+		if t.Role == "user" && t.posted == nil {
+			t.posted = postedBefore(turns, i)
+		}
 		working = append(working, t)
 	}
 	o.history = sanitizeOllamaHistory(history)
 	// Sanitization removes a prefix; keep the same source indices so later
 	// pruning never transfers a discarded tool or drops the wrong user turn.
 	o.working = deepCopyTurns(working[len(history)-len(o.history):])
+	o.carriedData = nil
 	o.retireAgedImages()
 }
 
@@ -394,6 +399,7 @@ func deepCopyTurns(in []Turn) []Turn {
 		out[i].Utterance = cloneUtterance(in[i].Utterance)
 		out[i].Attachments = append([]chatmedia.Ref(nil), in[i].Attachments...)
 		out[i].OpenedImages = append([]chatmedia.Ref(nil), in[i].OpenedImages...)
+		out[i].posted = append([]replyPicture(nil), in[i].posted...)
 		out[i].ToolCalls = append([]TurnToolCall(nil), in[i].ToolCalls...)
 	}
 	return out
@@ -426,7 +432,11 @@ func (o *OllamaBrain) appendMessage(m api.Message, identity *TurnIdentity, dispo
 		o.groupHistory = true
 		o.stateMu.Unlock()
 	}
-	o.working = append(o.working, t)
+	w := t
+	if w.Role == "user" {
+		w.posted = postedBefore(o.working, len(o.working))
+	}
+	o.working = append(o.working, w)
 	m = o.projectTurn(t, o.canonical, len(o.canonical)-1, false)
 	o.history = append(o.history, m)
 }

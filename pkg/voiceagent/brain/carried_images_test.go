@@ -322,20 +322,18 @@ func TestPostedPictureWaitsForTheNextUserMessage(t *testing.T) {
 	}
 }
 
-// Once the reply has left the history, the message carries neither its
-// picture nor a line for it, and the archive keeps only what the user said.
+// Once the reply has left the history, the message still carries its
+// picture and the line naming it, and the archive keeps only what the user
+// said.
 func TestPostedPictureLineIsNotTheUsersWords(t *testing.T) {
 	fake := &visionFake{}
 	o, ref := postedPicture(t, fake)
 	if _, err := o.ThinkFull(t.Context(), "What colour is it?", StreamOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if m := messageWith(t, fake.sent()[1], "What colour is it?"); len(m.Images) != 1 {
-		t.Fatalf("with its reply the message carries %d images: %q", len(m.Images), m.Content)
-	}
 	carrier := lastUserIndex(o.history)
 	o.history, o.working = o.history[carrier:], o.working[carrier:]
-	if m := messageWith(t, built(o), "What colour is it?"); len(m.Images) != 0 || strings.Contains(m.Content, pictureNamed(ref)) {
+	if m := messageWith(t, built(o), "What colour is it?"); len(m.Images) != 1 || m.Content != "What colour is it?\n"+pictureLine(ref, attached, postedByYou) {
 		t.Fatalf("with its reply gone the message carries %d images: %q", len(m.Images), m.Content)
 	}
 	if notes := o.recallNotes(); notes != "" {

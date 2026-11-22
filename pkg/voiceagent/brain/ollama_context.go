@@ -195,6 +195,7 @@ func (o *OllamaBrain) promptBytes(skillCtx string) int {
 	if recall := o.recallNotes(); recall != "" {
 		n += len(recall) + 256
 	}
+	n += o.carriedLineBytes()
 	for _, m := range o.history {
 		n += len(m.Content) + 16
 		if len(m.ToolCalls) > 0 {

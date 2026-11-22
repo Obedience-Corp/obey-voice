@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
@@ -43,7 +44,8 @@ func (o *OllamaBrain) offersViewImage(opts StreamOptions) bool {
 // viewImage imports an image file inside the work directory and records it on
 // the user turn being answered as a picture the persona opened, when this
 // request can carry it. The turn's next request carries it on that message.
-// It reports whether the picture was recorded.
+// Opening again a recorded picture that was pushed out brings it back. It
+// reports whether this call attached the picture.
 func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool) {
 	if strings.TrimSpace(path) == "" {
 		return "error: path is required", false
@@ -55,7 +57,6 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool)
 	if err != nil {
 		return "error: " + err.Error(), false
 	}
-	o.imagesUnviewable = !views
 	if !views {
 		return cannotViewImages, false
 	}
@@ -64,9 +65,6 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool)
 	c, w := lastUserTurn(o.canonical), lastUserTurn(o.working)
 	if c < 0 || w < 0 || o.canonical[c].Content != o.working[w].Content {
 		return "error: there is no user message to attach the picture to", false
-	}
-	if len(o.canonical[c].OpenedImages) >= chatmedia.MaxAttachments {
-		return "error: at most four pictures can be opened while answering one message", false
 	}
 	ref, err := chatmedia.DefaultStore().ImportWorkFile(path, o.workDir)
 	if err != nil {
@@ -79,28 +77,49 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool)
 	if len(o.working) != len(o.history) {
 		return "error: " + label + " could not be attached: this conversation's prompt history no longer lines up with it", false
 	}
+	notCarried := errors.New("the user's latest message is not part of this request")
 	for _, held := range o.working[w].Attachments {
-		if held.ID == ref.ID {
-			return label + " is already attached to the user's latest message, as a picture the user attached.", false
+		if held.ID != ref.ID {
+			continue
 		}
+		if len(o.history[w].Images) != len(o.working[w].Attachments) {
+			return fmt.Sprintf("error: %s could not be attached: %v", label, errOwnImagesUnloaded), false
+		}
+		return label + " is already attached to the user's latest message, as a picture the user attached.", false
 	}
+	_, outcome := o.carried(o.history, o.working)
+	reopen := false
 	for _, held := range o.carriedImages(o.working, w) {
-		if held.ref.ID == ref.ID {
+		if held.ref.ID != ref.ID {
+			continue
+		}
+		why, handled := outcome[carriedKey{turn: w, id: ref.ID}]
+		if handled && why == nil {
 			return pictureLabel(held.ref) + " is already attached to the user's latest message, where it is named as " + held.what + ".", false
 		}
+		if !slices.ContainsFunc(o.working[w].OpenedImages, func(r chatmedia.Ref) bool { return r.ID == ref.ID }) {
+			if !handled {
+				why = notCarried
+			}
+			return fmt.Sprintf("error: %s could not be attached: %v", pictureLabel(held.ref), why), false
+		}
+		reopen = true
+	}
+	if !reopen && len(o.canonical[c].OpenedImages) >= chatmedia.MaxAttachments {
+		return "error: at most four pictures can be opened while answering one message", false
 	}
 	before := o.attachedCarried()
-	o.canonical[c].OpenedImages = append(o.canonical[c].OpenedImages, ref)
-	o.working[w].OpenedImages = append(o.working[w].OpenedImages, ref)
-	_, outcome := o.carried(o.history, o.working)
+	canonicalOpened, workingOpened := o.canonical[c].OpenedImages, o.working[w].OpenedImages
+	o.canonical[c].OpenedImages = openedLast(canonicalOpened, ref)
+	o.working[w].OpenedImages = openedLast(workingOpened, ref)
+	_, outcome = o.carried(o.history, o.working)
 	why, handled := outcome[carriedKey{turn: w, id: ref.ID}]
 	if !handled {
-		why = errors.New("the user's latest message is not part of this request")
+		why = notCarried
 	}
 	if why != nil {
 		// Only a picture this request carries counts as opened.
-		o.canonical[c].OpenedImages = o.canonical[c].OpenedImages[:len(o.canonical[c].OpenedImages)-1]
-		o.working[w].OpenedImages = o.working[w].OpenedImages[:len(o.working[w].OpenedImages)-1]
+		o.canonical[c].OpenedImages, o.working[w].OpenedImages = canonicalOpened, workingOpened
 		return fmt.Sprintf("error: %s could not be attached: %v", label, why), false
 	}
 	after := map[string]bool{}
@@ -122,6 +141,20 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool)
 		}
 	}
 	return result, true
+}
+
+// openedLast is refs with ref, or the entry already there for its picture,
+// moved to the end, where it is carried first. refs is left as it was.
+func openedLast(refs []chatmedia.Ref, ref chatmedia.Ref) []chatmedia.Ref {
+	out := make([]chatmedia.Ref, 0, len(refs)+1)
+	for _, held := range refs {
+		if held.ID == ref.ID {
+			ref = held
+			continue
+		}
+		out = append(out, held)
+	}
+	return append(out, ref)
 }
 
 func pictureLabel(ref chatmedia.Ref) string {
