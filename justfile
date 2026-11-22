@@ -146,6 +146,19 @@ demo-workers: build
     just _optimize-demo-gif demos/workers.gif
     ls -lh demos/workers.gif demos/frames/workers-detail.png
 
+# Workers manager: stop a task whose fixture worker is slow to return (real job table, no model).
+demo-workers-stopping: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    go test -c -o bin/demo-terminal.test ./cmd/obey-voice/cmd
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/workers-stopping.tape
+    just _optimize-demo-gif demos/workers-stopping.gif
+    ls -lh demos/workers-stopping.gif demos/frames/workers-stopping.png demos/frames/workers-stopped.png demos/frames/workers-stopped-detail.png
+
 # Browse sessions: view a saved conversation read-only, then delete one.
 # Fixture sessions in a disposable install; nothing is opened or spoken.
 demo-sessions-browse: build

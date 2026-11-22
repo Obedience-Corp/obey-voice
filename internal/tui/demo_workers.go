@@ -1,11 +1,16 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
@@ -32,6 +37,32 @@ func demoLauncherNotices() []string {
 		return nil
 	}
 }
+
+// demoStoppingEnabled selects a fixture job in a real job table, so a stop
+// in /workers goes through stopping to aborted.
+func demoStoppingEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(demoWorkersEnv)), "stopping")
+}
+
+// demoStopDelay is how long the fixture job's run function takes to return
+// after it is told to stop.
+const demoStopDelay = 3 * time.Second
+
+// demoStoppingWorkers is a real pipeline and job table running one fixture
+// job with no model behind it. Its run function waits for its cancel and then
+// for demoStopDelay, standing in for a worker slow to stop.
+var demoStoppingWorkers = sync.OnceValue(func() workerController {
+	jobs := job.NewTable(context.Background())
+	p := &pipeline.Pipeline{Events: events.NewBus()}
+	pipeline.NewAgency(p, jobs, nil, &config.Config{}, nil).Wire()
+	_, _ = jobs.Start(context.Background(), job.Spec{Task: "Summarize the release notes", Provider: "ollama", Model: "local-model",
+		Run: func(ctx context.Context) (string, error) {
+			<-ctx.Done()
+			time.Sleep(demoStopDelay)
+			return "", ctx.Err()
+		}})
+	return p
+})
 
 func demoWorkersEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(demoWorkersEnv))) {
