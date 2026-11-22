@@ -23,7 +23,7 @@ Type "export TERM=xterm-256color COLORFGBG=15\;0" Enter
 Type "export OBEY_VOICE_COLOR_PROFILE=ansi OBEY_VOICE_DEMO_WORK_CUE=cut_short" Enter
 Type "export PATH=$PWD/bin:$PATH" Enter
 Type "export HOME=/tmp/obey-voice-work-cut-short-demo-$$" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/obey-voice/sessions" Enter
+Type "mkdir -p $HOME/.obey/agents/voice/obey-voice/sessions" Enter
 # A stand-in Ollama that only lists one model; the demo sends it no requests.
 Type "cat > $HOME/ollama-stub.py <<'EOF'" Enter
 Type "import http.server, json" Enter
