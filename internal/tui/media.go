@@ -202,6 +202,12 @@ func (m *conversationModel) mediaCommand() tea.Cmd {
 	keep := make(map[string]bool)
 	frames := 0
 	var recent []chatmedia.Ref
+	if m.pictures.open {
+		r := m.pictures.spot.ref
+		keep[r.ID] = true
+		frames += max(1, r.Frames)
+		recent = append(recent, r)
+	}
 	for i := len(refs) - 1; i >= 0; i-- {
 		r := refs[i]
 		if keep[r.ID] {

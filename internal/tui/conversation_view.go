@@ -403,6 +403,9 @@ func (m conversationModel) View() string {
 		footerText += dimStyle.Render("  ^G  ^O  ^T  ^K")
 	}
 	footer := ansi.Truncate(footerText, w, "…")
+	if m.pictures.open {
+		return header + "\n" + rule + "\n" + voiceStrip + m.picturePanelView() + "\n" + footer
+	}
 
 	content := m.viewport.View()
 	if m.activityFocused {

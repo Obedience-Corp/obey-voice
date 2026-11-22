@@ -80,7 +80,7 @@ var slashCommands = []slashCommand{
 	{id: commandMenu, name: "/menu", usage: "/menu", description: "Save this chat and return to the main menu", aliases: []string{"/back"}},
 	{id: commandQuit, name: "/quit", usage: "/quit", description: "Exit Obey Voice", aliases: []string{"/q", "/exit"}},
 	{id: commandAttach, name: "/attach", usage: "/attach /path/to/image", description: "Add a PNG, JPEG or GIF; F2 pauses, F3 opens, F4 removes"},
-	{id: commandImage, name: "/image", usage: "/image N", description: "Open thread image N (counting from one) in its full-size viewer"},
+	{id: commandImage, name: "/image", usage: "/image [N]", description: "Open, copy or save the latest picture; /image N opens picture N in its viewer"},
 }
 
 func commandToken(value string) string {
@@ -185,7 +185,7 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		m.commandError("persona selection in progress")
 		return nil
 	}
-	if command.id != commandInput && command.id != commandParticipation && command.id != commandWork && command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && command.id != commandRecord && len(args) > 0 {
+	if command.id != commandInput && command.id != commandParticipation && command.id != commandWork && command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && command.id != commandRecord && command.id != commandImage && len(args) > 0 {
 		m.commandError(fmt.Sprintf("%s does not take arguments", command.name))
 		return m.resumeListening()
 	}
@@ -269,6 +269,8 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		return quitCmd()
 	case commandMenu:
 		return func() tea.Msg { return returnToMenuMsg{} }
+	case commandImage:
+		return tea.Batch(m.imageCommand(strings.Join(args, " ")), m.resumeListening())
 	default:
 		return m.resumeListening()
 	}

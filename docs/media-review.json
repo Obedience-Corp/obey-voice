@@ -254,6 +254,20 @@
       }
     },
     {
+      "path": "demos/picture-actions.gif",
+      "source": "Project-produced UI recording. Fake clipboard and viewer, temporary home and configuration, generated image fixtures.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "9b146ec78853ff0ea0ae22b6251ed1dd58e58a9c2bb06d2ccc13b8bf291c1d0a",
+      "review": {
+        "reviewer": "Claude",
+        "reviewed_at": "2026-11-22",
+        "content_evidence": "Recorded with the real Bubble Tea terminal harness (TestPictureActionsTerminal) under a temporary HOME and TMPDIR=/tmp. Inspected the four screenshots taken during the recording (panel open, Copied the picture, save path, Saved to ~/Downloads/harbor.png): only fixture names (harbor.png, pier.png, Milo, Vera), generated pictures, the default Obey header and temporary attachment paths are visible, with no user name or home directory. Selected-frame review, not every-frame inspection. No live model, microphone, real clipboard or viewer used; see docs/chat-images.md#picture-panel-recording.",
+        "rights_evidence": "Project-authored interface and deterministic generated image fixtures (internal/testmedia/fixtures.go and the gradient in internal/tui/picture_panel_test.go), recorded for repository documentation; no external artwork or recordings used."
+      }
+    },
+    {
       "path": "demos/context-meter.gif",
       "source": "Project-produced UI recording. Loopback scripted provider and fictional story; no live model or audio.",
       "disposition": "retain_public",
@@ -1343,6 +1357,62 @@
         "reviewed_at": "2026-11-08",
         "content_evidence": "Individually inspected this regenerated draft, thread, paused, or resumed terminal screenshot. Only synthetic geometric fixtures and fixture conversation text are visible; no personal source screenshot or live session used. See docs/chat-images.md#what-the-recordings-establish.",
         "rights_evidence": "Project-authored interface and deterministic geometric fixtures from internal/testmedia/fixtures.go, recorded for repository documentation; no external artwork or recordings used."
+      }
+    },
+    {
+      "path": "demos/frames/picture-actions-open.png",
+      "source": "Project-produced UI screenshot; source recipe demos/picture-actions.tape.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "558c9cce879b462b70fccf87b96ed8f5843bde51aea5c500ca562ead09568495",
+      "review": {
+        "reviewer": "Claude",
+        "reviewed_at": "2026-11-22",
+        "content_evidence": "Individually inspected this screenshot of the panel open on picture 2 of 2. Only generated pictures, fixture names and temporary attachment paths are visible; no personal screenshot, user name, home directory or live session. See docs/chat-images.md#picture-panel-recording.",
+        "rights_evidence": "Project-authored interface and deterministic generated image fixtures (internal/testmedia/fixtures.go and the gradient in internal/tui/picture_panel_test.go), recorded for repository documentation; no external artwork or recordings used."
+      }
+    },
+    {
+      "path": "demos/frames/picture-actions-copied.png",
+      "source": "Project-produced UI screenshot; source recipe demos/picture-actions.tape.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "bdf0d8f9212b2c934f6b973c0e7bce4bd069bb42202a372b02b550567313b32e",
+      "review": {
+        "reviewer": "Claude",
+        "reviewed_at": "2026-11-22",
+        "content_evidence": "Individually inspected this screenshot of Copied the picture. Only generated pictures, fixture names and temporary attachment paths are visible; no personal screenshot, user name, home directory or live session. See docs/chat-images.md#picture-panel-recording.",
+        "rights_evidence": "Project-authored interface and deterministic generated image fixtures (internal/testmedia/fixtures.go and the gradient in internal/tui/picture_panel_test.go), recorded for repository documentation; no external artwork or recordings used."
+      }
+    },
+    {
+      "path": "demos/frames/picture-actions-save.png",
+      "source": "Project-produced UI screenshot; source recipe demos/picture-actions.tape.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "23295b2a59108071ce6b16f3523fa0752b1bc7f11099bb881e12355cf0982615",
+      "review": {
+        "reviewer": "Claude",
+        "reviewed_at": "2026-11-22",
+        "content_evidence": "Individually inspected this screenshot of the save path ~/Downloads/harbor.png. Only generated pictures, fixture names and temporary attachment paths are visible; no personal screenshot, user name, home directory or live session. See docs/chat-images.md#picture-panel-recording.",
+        "rights_evidence": "Project-authored interface and deterministic generated image fixtures (internal/testmedia/fixtures.go and the gradient in internal/tui/picture_panel_test.go), recorded for repository documentation; no external artwork or recordings used."
+      }
+    },
+    {
+      "path": "demos/frames/picture-actions-saved.png",
+      "source": "Project-produced UI screenshot; source recipe demos/picture-actions.tape.",
+      "disposition": "retain_public",
+      "public_release": "cleared",
+      "content_review": "complete",
+      "sha256": "2743dc3662b037b07e03074b263ba3ecbd7ff23e8789c8e887ef57281f09738f",
+      "review": {
+        "reviewer": "Claude",
+        "reviewed_at": "2026-11-22",
+        "content_evidence": "Individually inspected this screenshot of Saved to ~/Downloads/harbor.png. Only generated pictures, fixture names and temporary attachment paths are visible; no personal screenshot, user name, home directory or live session. See docs/chat-images.md#picture-panel-recording.",
+        "rights_evidence": "Project-authored interface and deterministic generated image fixtures (internal/testmedia/fixtures.go and the gradient in internal/tui/picture_panel_test.go), recorded for repository documentation; no external artwork or recordings used."
       }
     }
   ]

@@ -30,6 +30,7 @@ func (m *conversationModel) clearTranscript() {
 	m.providerResponseID = ""
 	m.pendingInputRetry = false
 	m.media = mediaState{returned: m.media.returned}
+	m.pictures = picturePanel{generation: m.pictures.generation + 1}
 	m.adoptGraphics(m.graphics)
 	m.transcript = nil
 	m.items = nil
