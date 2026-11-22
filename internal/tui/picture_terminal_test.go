@@ -76,6 +76,8 @@ type pictureStep int
 type pictureScript struct {
 	model conversationModel
 	delay time.Duration
+	// resume is the step to run once the action in flight has reported.
+	resume int
 }
 
 func (h *pictureScript) Init() tea.Cmd { return h.next(0) }
@@ -84,12 +86,15 @@ func (h *pictureScript) next(n int) tea.Cmd {
 }
 func (h *pictureScript) View() string { return h.model.View() }
 
-var pictureSteps = []string{"/image", "enter", "down", "enter", "left", "down", "down", "down", "enter", "enter", "esc", "quit"}
+// A step ending in * runs an action and waits for its result, however long the
+// machine takes, before the next key.
+var pictureSteps = []string{"/image", "enter", "down", "enter*", "left", "down", "down", "down", "enter", "enter*", "esc", "quit"}
 
 func (h *pictureScript) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var next tea.Cmd
 	if step, ok := msg.(pictureStep); ok {
-		switch s := pictureSteps[step]; s {
+		s, wait := strings.CutSuffix(pictureSteps[step], "*")
+		switch s {
 		case "quit":
 			return h, tea.Quit
 		case "/image":
@@ -99,7 +104,14 @@ func (h *pictureScript) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			msg = panelKey(s)
 		}
-		next = h.next(int(step) + 1)
+		if wait {
+			h.resume = int(step) + 1
+		} else {
+			next = h.next(int(step) + 1)
+		}
+	}
+	if _, done := msg.(pictureActionDone); done && h.resume > 0 {
+		next, h.resume = h.next(h.resume), 0
 	}
 	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyCtrlC {
 		return h, tea.Quit
