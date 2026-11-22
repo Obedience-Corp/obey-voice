@@ -1,0 +1,13 @@
+name: invite-two
+description: a persona reply that @mentions two personas hands the floor to both, in mention order (needs -fixture-config and -persona-dir with personas ada, milo and vera)
+duration: 10m
+input: text
+persona: {initial: ada}
+
+turns:
+  - id: invite
+    user: "@ada Ask Milo and Vera to each suggest one name for a new comet. Invite both of them in one reply, and do not suggest a name yourself."
+    wait: idle
+    expect:
+      - {persona_id: vera}
+      - {response_persona_id: ada}

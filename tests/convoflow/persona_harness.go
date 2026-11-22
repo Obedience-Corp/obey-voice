@@ -318,6 +318,8 @@ func configurePersonaWithFactory(r *liveRunner, base *config.Config, catalog per
 	r.agent.Pipeline.OnTurn = func() {
 		rt.recordSaveError(store.Save(sess, r.agent.Pipeline.Brain.History()))
 	}
+	r.agent.Pipeline.RouteHandoff = selector.RouteHandoff
+	r.agent.Pipeline.InviteHandoff = selector.InviteHandoff
 	r.agent.AdmitInput = func(ctx context.Context, input string, background bool) (pipeline.ResponseAdmission, error) {
 		before := selector.Snapshot()
 		workBefore := r.workSnapshot()
