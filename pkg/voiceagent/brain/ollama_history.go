@@ -202,7 +202,6 @@ func (o *OllamaBrain) ContextHistory() []Turn {
 		content, speaker := m.Content, ""
 		if m.Role == "user" {
 			speaker, content = decodeOllamaUser(m.Content)
-			content = withoutCarriedLines(content)
 		}
 		turns[i] = Turn{
 			Role:       m.Role,
@@ -468,7 +467,6 @@ func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) error {
 	}
 	o.attachInputImages(opts.Attachments, images)
 	o.imageWindow = imageTurns
-	o.carryImages(o.requestImageStart(), 0)
 	if opts.Utterance != nil {
 		last := len(o.canonical) - 1
 		o.canonical[last].TypedInput = input

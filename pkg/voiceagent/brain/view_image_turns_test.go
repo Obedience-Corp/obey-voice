@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -74,6 +75,20 @@ func historyState(o *OllamaBrain) []messageState {
 	return out
 }
 
+// built is the request the brain would send now.
+func built(o *OllamaBrain) api.ChatRequest {
+	return api.ChatRequest{Messages: o.buildMessages("")}
+}
+
+// requestState is each message of the request the brain would send now.
+func requestState(o *OllamaBrain) []messageState {
+	var out []messageState
+	for _, m := range o.buildMessages("") {
+		out = append(out, messageState{m.Content, len(m.Images)})
+	}
+	return out
+}
+
 // A retried input keeps the image window its request was prepared with;
 // view_image does not bring back a picture that window left out.
 func TestViewImageOnARetriedInputKeepsTheRequestWindow(t *testing.T) {
@@ -105,17 +120,23 @@ func TestViewImageOnARetriedInputKeepsTheRequestWindow(t *testing.T) {
 			if tc.limit {
 				o.maxImageBytes = modelImageSize(t, chart)
 			}
-			before := historyState(o)
+			before, stored := requestState(o), historyState(o)
 			o.viewImage(t.Context(), tc.file)
-			after := historyState(o)
+			after := requestState(o)
 			last := len(after) - 1
+			if len(after) != len(before) || !strings.HasPrefix(after[last].content, "t4") {
+				t.Fatalf("the request changed shape: %+v -> %+v", before, after)
+			}
 			for i := range last {
 				if after[i] != before[i] {
-					t.Fatalf("history[%d] changed: %+v -> %+v", i, before[i], after[i])
+					t.Fatalf("request message %d changed: %+v -> %+v", i, before[i], after[i])
 				}
 			}
-			if got := len(o.working[last].OpenedImages); got != tc.opened || after[last].images != tc.opened {
+			if got := len(o.working[lastUserTurn(o.working)].OpenedImages); got != tc.opened || after[last].images != tc.opened {
 				t.Fatalf("the retried message holds %d opened pictures and %d images", got, after[last].images)
+			}
+			if !slices.Equal(historyState(o), stored) {
+				t.Fatalf("the prompt history changed: %+v -> %+v", stored, historyState(o))
 			}
 		})
 	}
@@ -136,14 +157,14 @@ func TestViewImageOfAPictureAlreadyPosted(t *testing.T) {
 	if err := o.appendUserInput("What is it?", StreamOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	before := historyState(o)
+	before := requestState(o)
 	result, _ := o.viewImage(t.Context(), "again.png")
 	w := lastUserTurn(o.working)
 	if !strings.Contains(result, "already attached") || !strings.Contains(result, postedByYou) || len(o.working[w].OpenedImages) != 0 {
 		t.Fatalf("result %q, opened %d", result, len(o.working[w].OpenedImages))
 	}
-	if after := historyState(o); after[w] != before[w] {
-		t.Fatalf("the message changed: %+v -> %+v", before[w], after[w])
+	if after := requestState(o); !slices.Equal(after, before) {
+		t.Fatalf("the request changed: %+v -> %+v", before, after)
 	}
 }
 
@@ -181,9 +202,109 @@ func TestViewImageAfterAFailedCapabilityCheck(t *testing.T) {
 	}
 	fake.showFails.Store(false)
 	result, _ := o.viewImage(t.Context(), "shot.png")
-	m := o.history[lastUserIndex(o.history)]
+	m := messageWith(t, built(o), "Look at shot.png.")
 	if !strings.Contains(result, "is now attached") || len(m.Images) != 2 || !strings.Contains(m.Content, pictureLine(chart, attached, postedByYou)) {
 		t.Fatalf("result %q; the message carries %d images: %q", result, len(m.Images), m.Content)
+	}
+}
+
+// Consecutive requests, the rounds of one turn and the first round of the
+// next, send the same bytes for every message before the latest user message
+// except where a picture ages out.
+func TestCarriedPicturesKeepEarlierMessagesStable(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	o, sent := toolModel(t, true, func(w http.ResponseWriter, _ int, req api.ChatRequest) {
+		latest := req.Messages[len(req.Messages)-1]
+		switch {
+		case latest.Role == "user" && strings.Contains(latest.Content, "Look at shot.png."):
+			callTool(w, req, "view_image", map[string]any{"path": "shot.png"})
+		case latest.Role == "user":
+			callTool(w, req, "list_files", map[string]any{"path": "."})
+		default:
+			answer(w, req, api.Message{Role: "assistant", Content: "Done."}, "stop")
+		}
+	})
+	writePNG(t, filepath.Join(o.workDir, "shot.png"))
+	if _, err := o.ThinkFull(t.Context(), "Look at shot.png.", directTools); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.SetReplyMedia("Done.\nchart", photos(t, 1, 32, 32)); err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []string{"turn-2", "turn-3", "turn-4", "turn-5"} {
+		if _, err := o.ThinkFull(t.Context(), input, directTools); err != nil {
+			t.Fatal(err)
+		}
+	}
+	requests := sent()
+	if len(requests) != 10 {
+		t.Fatalf("%d requests", len(requests))
+	}
+	var breaks []int
+	for k := 1; k < len(requests); k++ {
+		prev, next := requests[k-1].Messages, requests[k].Messages
+		p := min(len(prev), lastUserIndex(next))
+		if jsonOf(t, prev[:p]) != jsonOf(t, next[:p]) {
+			breaks = append(breaks, k)
+		}
+	}
+	// The opened picture ages out with turn-4's first request, the posted one
+	// with turn-5's.
+	if !slices.Equal(breaks, []int{6, 8}) {
+		t.Fatalf("requests changed an earlier message at %v, want only [6 8]", breaks)
+	}
+	for _, m := range o.history {
+		if m.Role == "user" && (strings.Contains(m.Content, "\nPicture ") || len(m.Images) > 0) {
+			t.Fatalf("the prompt history holds a carried picture: %q with %d images", m.Content, len(m.Images))
+		}
+	}
+}
+
+// Opening again a picture opened for an earlier message attaches it to the
+// latest one when only one copy fits, and does not say it was pushed out.
+func TestViewImageReopensAPictureOpenedForAnEarlierMessage(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	o, sent := toolModel(t, true, func(w http.ResponseWriter, _ int, req api.ChatRequest) {
+		if req.Messages[len(req.Messages)-1].Role == "user" {
+			callTool(w, req, "view_image", map[string]any{"path": "shot.png"})
+			return
+		}
+		answer(w, req, api.Message{Role: "assistant", Content: "A grey rectangle."}, "stop")
+	})
+	writePNG(t, filepath.Join(o.workDir, "shot.png"))
+	if _, err := o.ThinkFull(t.Context(), "Look at shot.png.", directTools); err != nil {
+		t.Fatal(err)
+	}
+	ref := o.History()[0].OpenedImages[0]
+	o.maxImageBytes = modelImageSize(t, ref)
+	if _, err := o.ThinkFull(t.Context(), "Look at it again.", directTools); err != nil {
+		t.Fatal(err)
+	}
+	requests := sent()
+	last := requests[len(requests)-1]
+	var result string
+	for _, m := range last.Messages {
+		if m.Role == "tool" && m.ToolName == "view_image" {
+			result = m.Content
+		}
+	}
+	if !strings.Contains(result, "is now attached") || strings.Contains(result, "no longer attached") {
+		t.Fatalf("tool result = %q", result)
+	}
+	var again Turn
+	for _, turn := range o.History() {
+		if turn.Role == "user" && turn.Content == "Look at it again." {
+			again = turn
+		}
+	}
+	if len(again.OpenedImages) != 1 || again.OpenedImages[0].ID != ref.ID {
+		t.Fatalf("the latest user turn reads %+v", again)
+	}
+	if m := messageWith(t, last, "Look at it again."); len(m.Images) != 1 || strings.Count(m.Content, openedLine(ref)) != 1 {
+		t.Fatalf("the latest message carries %d images: %q", len(m.Images), m.Content)
+	}
+	if m := messageWith(t, last, "Look at shot.png."); len(m.Images) != 0 || !strings.Contains(m.Content, pictureLine(ref, agedOut, openedByYou)) {
+		t.Fatalf("the earlier message carries %d images: %q", len(m.Images), m.Content)
 	}
 }
 

@@ -55,6 +55,7 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool)
 	if err != nil {
 		return "error: " + err.Error(), false
 	}
+	o.imagesUnviewable = !views
 	if !views {
 		return cannotViewImages, false
 	}
@@ -88,12 +89,11 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool)
 			return pictureLabel(held.ref) + " is already attached to the user's latest message, where it is named as " + held.what + ".", false
 		}
 	}
-	keep := o.requestImageStart()
-	before := o.carriedShown(keep)
+	before := o.attachedCarried()
 	o.canonical[c].OpenedImages = append(o.canonical[c].OpenedImages, ref)
 	o.working[w].OpenedImages = append(o.working[w].OpenedImages, ref)
-	outcome := o.carryImages(keep, 0)
-	why, handled := outcome[ref.ID]
+	_, outcome := o.carried(o.history, o.working)
+	why, handled := outcome[carriedKey{turn: w, id: ref.ID}]
 	if !handled {
 		why = errors.New("the user's latest message is not part of this request")
 	}
@@ -101,13 +101,23 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool)
 		// Only a picture this request carries counts as opened.
 		o.canonical[c].OpenedImages = o.canonical[c].OpenedImages[:len(o.canonical[c].OpenedImages)-1]
 		o.working[w].OpenedImages = o.working[w].OpenedImages[:len(o.working[w].OpenedImages)-1]
-		o.history[w].Content = withoutCarriedLine(o.history[w].Content, ref.ID)
-		o.carryImages(keep, 0)
 		return fmt.Sprintf("error: %s could not be attached: %v", label, why), false
+	}
+	after := map[string]bool{}
+	for _, held := range o.attachedCarried() {
+		after[held.ID] = true
+	}
+	// A picture the user attached to a message in the window stays attached.
+	for j := o.requestImageStart(); j < len(o.working); j++ {
+		if o.working[j].Role == "user" && len(o.history[j].Images) == len(o.working[j].Attachments) {
+			for _, held := range o.working[j].Attachments {
+				after[held.ID] = true
+			}
+		}
 	}
 	result := label + " is now attached to the user's latest message, where it is named as a picture you opened."
 	for _, earlier := range before {
-		if outcome[earlier.ID] != nil {
+		if !after[earlier.ID] {
 			result += " To make room, " + pictureLabel(earlier) + " is no longer attached."
 		}
 	}

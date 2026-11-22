@@ -3,7 +3,6 @@ package brain
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"unicode"
 
@@ -13,9 +12,9 @@ import (
 
 // A picture a persona posted rides on the user message after its reply, the
 // only role a picture is known to reach the model on. The message also gets a
-// line naming the picture and who posted it. Only the prompt history carries
-// either: the transcript, the working view and the saved conversation keep
-// the picture on the reply.
+// line naming the picture and who posted it. Both are added to the request as
+// it is built and never stored: the prompt history, the transcript, the
+// working view and the saved conversation keep the picture on the reply.
 type carriedImage struct {
 	ref chatmedia.Ref
 	// what is whose picture it is, as in "a picture you posted".
@@ -31,8 +30,7 @@ const (
 	carriedUnchecked
 )
 
-// carriedStates are the words that follow a carried picture's id. They come
-// before its name, so a line's state is read without reading the name.
+// carriedStates are the words that follow a carried picture's id.
 var carriedStates = map[carriedState]string{
 	carriedShown:     "attached",
 	carriedAged:      "no longer attached",
@@ -56,53 +54,6 @@ func singleLine(name string) string {
 		}
 		return r
 	}, name)
-}
-
-// carriedLine matches a whole carried line by its prefix, the picture's id
-// (the sha256 of its stored bytes, as chatmedia writes it) and its state.
-var carriedLine = regexp.MustCompile(`\nPicture ([0-9a-f]{64}) (attached|no longer attached|not shown, because this model cannot view images|not attached to this request): [^\n]*`)
-
-// withoutCarriedLines is content without the lines about carried pictures.
-func withoutCarriedLines(content string) string {
-	return carriedLine.ReplaceAllString(content, "")
-}
-
-// ageCarriedLines says of each carried picture in content that is not in keep
-// that it is no longer attached. One that was never shown because the model
-// cannot view images keeps saying so.
-func ageCarriedLines(content string, keep map[string]bool) string {
-	return carriedLine.ReplaceAllStringFunc(content, func(line string) string {
-		m := carriedLine.FindStringSubmatch(line)
-		if keep[m[1]] || m[2] == carriedStates[carriedUnseen] {
-			return line
-		}
-		return strings.Replace(line, " "+m[2]+": ", " "+carriedStates[carriedAged]+": ", 1)
-	})
-}
-
-// carriedLineState is the state of id's line in content, if it has one.
-func carriedLineState(content, id string) (carriedState, bool) {
-	for _, m := range carriedLine.FindAllStringSubmatch(content, -1) {
-		if m[1] != id {
-			continue
-		}
-		for state, words := range carriedStates {
-			if words == m[2] {
-				return state, true
-			}
-		}
-	}
-	return 0, false
-}
-
-// withoutCarriedLine is content without id's line.
-func withoutCarriedLine(content, id string) string {
-	for _, at := range carriedLine.FindAllStringSubmatchIndex(content, -1) {
-		if content[at[2]:at[3]] == id {
-			return content[:at[0]] + content[at[1]:]
-		}
-	}
-	return content
 }
 
 // carriedImages is what the user message at working index j carries that the
@@ -209,118 +160,166 @@ func (o *OllamaBrain) requestImageStart() int {
 	return turnWindowStart(o.history, o.imageWindow)
 }
 
-// carriedShown lists the carried pictures attached on user messages from
-// keep on, in order.
-func (o *OllamaBrain) carriedShown(keep int) []chatmedia.Ref {
-	if len(o.working) != len(o.history) {
-		return nil
+type carriedKey struct {
+	turn int
+	id   string
+}
+
+// carriedExtra is what a user message carries besides its own: the lines
+// naming its carried pictures and the bytes of those the request attaches.
+type carriedExtra struct {
+	lines  string
+	images []api.ImageData
+}
+
+// carried is what each user message of history carries besides its own. Every
+// one that carries pictures gets a line naming each of them. Within the image
+// window the pictures follow the user's own: a model that cannot view images
+// is sent none, and a picture that no longer loads, or does not fit within the
+// request's limit once the user's own pictures are counted, is left out with
+// a line saying so, the oldest first. outcome holds, for each picture on a
+// window message, nil when it is attached or why not.
+func (o *OllamaBrain) carried(history []api.Message, working []Turn) (map[int]carriedExtra, map[carriedKey]error) {
+	if len(working) != len(history) || o.audioResolver != nil {
+		return nil, nil
 	}
+	keep := turnWindowStart(history, o.imageWindow)
+	extras := map[int]carriedExtra{}
+	gone := carriedAged
+	if o.imagesUnviewable {
+		gone = carriedUnseen
+	}
+	for j := range keep {
+		if history[j].Role != "user" || working[j].Role != "user" {
+			continue
+		}
+		var lines strings.Builder
+		for _, c := range o.carriedImages(working, j) {
+			lines.WriteString(c.line(gone))
+		}
+		if lines.Len() > 0 {
+			extras[j] = carriedExtra{lines: lines.String()}
+		}
+	}
+	budget := o.imageByteLimit()
+	for j := keep; j < len(history); j++ {
+		if history[j].Role == "user" && working[j].Role == "user" {
+			for _, image := range history[j].Images {
+				budget -= len(image)
+			}
+		}
+	}
+	outcome := map[carriedKey]error{}
+	window := map[string]bool{}
+	full := false
+	noRoom := noImageRoom(o.imageByteLimit())
+	for j := len(history) - 1; j >= keep; j-- {
+		if history[j].Role != "user" || working[j].Role != "user" {
+			continue
+		}
+		carried := o.carriedImages(working, j)
+		if len(carried) == 0 {
+			continue
+		}
+		// Pictures go after the user's own; a message whose own pictures
+		// did not all load takes none.
+		loaded := len(history[j].Images) == len(working[j].Attachments)
+		states := make([]carriedState, len(carried))
+		data := make([][]byte, len(carried))
+		for k := len(carried) - 1; k >= 0; k-- {
+			ref := carried[k].ref
+			key := carriedKey{turn: j, id: ref.ID}
+			window[ref.ID] = true
+			states[k] = carriedAged
+			switch {
+			case o.imagesWithheld:
+				states[k], outcome[key] = carriedUnseen, errImagesWithheld
+				continue
+			case o.imagesUnchecked:
+				states[k], outcome[key] = carriedUnchecked, errImagesUnchecked
+				continue
+			case !loaded:
+				outcome[key] = errOwnImagesUnloaded
+				continue
+			case full:
+				outcome[key] = noRoom
+				continue
+			}
+			image, err := o.carriedBytes(ref)
+			if err != nil {
+				outcome[key] = err
+				continue
+			}
+			if len(image) > budget {
+				full, outcome[key] = true, noRoom
+				continue
+			}
+			data[k], budget, states[k], outcome[key] = image, budget-len(image), carriedShown, nil
+		}
+		var extra carriedExtra
+		var lines strings.Builder
+		for k, c := range carried {
+			lines.WriteString(c.line(states[k]))
+			if states[k] == carriedShown {
+				extra.images = append(extra.images, api.ImageData(data[k]))
+			}
+		}
+		extra.lines = lines.String()
+		extras[j] = extra
+	}
+	o.keepCarriedBytes(window)
+	return extras, outcome
+}
+
+// carriedBytes loads a carried picture as the model receives it, once while
+// it stays in the image window.
+func (o *OllamaBrain) carriedBytes(ref chatmedia.Ref) ([]byte, error) {
+	if data, ok := o.carriedData[ref.ID]; ok {
+		return data, nil
+	}
+	data, err := storeImageLimit.load(ref)
+	if err != nil {
+		return nil, err
+	}
+	if o.carriedData == nil {
+		o.carriedData = map[string][]byte{}
+	}
+	o.carriedData[ref.ID] = data
+	return data, nil
+}
+
+// keepCarriedBytes drops the loaded pictures the image window no longer
+// carries.
+func (o *OllamaBrain) keepCarriedBytes(window map[string]bool) {
+	if len(window) == 0 {
+		if o.carriedData != nil {
+			o.carriedData = nil
+		}
+		return
+	}
+	for id := range o.carriedData {
+		if !window[id] {
+			delete(o.carriedData, id)
+		}
+	}
+}
+
+// attachedCarried lists the pictures the request attaches to window messages
+// besides the user's own, each once, oldest first.
+func (o *OllamaBrain) attachedCarried() []chatmedia.Ref {
+	_, outcome := o.carried(o.history, o.working)
+	seen := map[string]bool{}
 	var out []chatmedia.Ref
-	for j := keep; j < len(o.history); j++ {
-		if o.history[j].Role != "user" || o.working[j].Role != "user" {
+	for j := o.requestImageStart(); j < len(o.working); j++ {
+		if o.working[j].Role != "user" {
 			continue
 		}
 		for _, c := range o.carriedImages(o.working, j) {
-			if state, ok := carriedLineState(o.history[j].Content, c.ref.ID); ok && state == carriedShown {
+			if err, ok := outcome[carriedKey{turn: j, id: c.ref.ID}]; ok && err == nil && !seen[c.ref.ID] {
+				seen[c.ref.ID] = true
 				out = append(out, c.ref)
 			}
 		}
 	}
 	return out
-}
-
-// carryImages gives each user message from keep on the pictures it carries,
-// after its own, and a line naming each one. A model that cannot view images
-// is sent none. A picture that no longer loads, or does not fit within the
-// request's limit once the user's own pictures and reserved bytes are
-// counted, is left out with a line saying so, the oldest first. It runs on
-// every request and changes nothing that is already as it should be. It
-// returns, for each picture it carries, nil when it is attached or why not.
-func (o *OllamaBrain) carryImages(keep, reserved int) map[string]error {
-	if o.audioResolver != nil || len(o.working) != len(o.history) {
-		return nil
-	}
-	own := make([][]api.ImageData, len(o.history))
-	budget := o.imageByteLimit() - reserved
-	for j := keep; j < len(o.history); j++ {
-		if o.history[j].Role != "user" || o.working[j].Role != "user" {
-			continue
-		}
-		images := o.history[j].Images
-		own[j] = images[:min(len(o.working[j].Attachments), len(images)):min(len(o.working[j].Attachments), len(images))]
-		for _, image := range own[j] {
-			budget -= len(image)
-		}
-	}
-	outcome := map[string]error{}
-	full := false
-	noRoom := noImageRoom(o.imageByteLimit())
-	for j := len(o.history) - 1; j >= keep; j-- {
-		m := &o.history[j]
-		if m.Role != "user" || o.working[j].Role != "user" {
-			continue
-		}
-		carried := o.carriedImages(o.working, j)
-		// Pictures go after the user's own; a message whose own pictures
-		// did not all load takes none.
-		loaded := len(own[j]) == len(o.working[j].Attachments)
-		states := make([]carriedState, len(carried))
-		data := make([][]byte, len(carried))
-		for k := len(carried) - 1; k >= 0; k-- {
-			id := carried[k].ref.ID
-			states[k] = carriedAged
-			switch {
-			case o.imagesWithheld:
-				states[k], outcome[id] = carriedUnseen, errImagesWithheld
-				continue
-			case o.imagesUnchecked:
-				states[k], outcome[id] = carriedUnchecked, errImagesUnchecked
-				continue
-			case !loaded:
-				outcome[id] = errOwnImagesUnloaded
-				continue
-			case full:
-				outcome[id] = noRoom
-				continue
-			}
-			image, err := storeImageLimit.load(carried[k].ref)
-			if err != nil {
-				outcome[id] = err
-				continue
-			}
-			if len(image) > budget {
-				full, outcome[id] = true, noRoom
-				continue
-			}
-			data[k], budget, states[k], outcome[id] = image, budget-len(image), carriedShown, nil
-		}
-		known := map[string]bool{}
-		images := own[j]
-		for k, c := range carried {
-			known[c.ref.ID] = true
-			m.Content = setCarriedLine(m.Content, c, states[k])
-			if states[k] == carriedShown {
-				images = append(images, api.ImageData(data[k]))
-			}
-		}
-		// A line whose reply has left the history can no longer be shown.
-		m.Content = ageCarriedLines(m.Content, known)
-		if len(images) == 0 {
-			images = nil
-		}
-		m.Images = images
-	}
-	return outcome
-}
-
-// setCarriedLine writes c's line in state in place of the line that names
-// the same picture, or after content when there is none.
-func setCarriedLine(content string, c carriedImage, state carriedState) string {
-	want := c.line(state)
-	for _, at := range carriedLine.FindAllStringSubmatchIndex(content, -1) {
-		if content[at[2]:at[3]] == c.ref.ID {
-			return content[:at[0]] + want + content[at[1]:]
-		}
-	}
-	return content + want
 }

@@ -130,8 +130,11 @@ Ollama server cannot say whether the model views images and only posted pictures
 are involved, that request names them as not attached to it, the turn goes on,
 and the next request that can ask shows them. Pictures posted since the last user message wait for the next one: a
 request with no new user message, such as a background report or another persona
-continuing, does not carry them, though earlier messages keep theirs. A
-native-audio persona is sent none; as before, it refuses a conversation whose
+continuing, does not carry them, though earlier messages keep theirs. The line
+and the picture are added to each request as it is built and never stored with
+the message, so text a user types in the same form is sent and kept as written.
+Once the reply that posted a picture leaves the retained history, its message no
+longer names it. A native-audio persona is sent none; as before, it refuses a conversation whose
 retained turns hold a picture. Only the model request changes: the transcript and
 the saved conversation keep the picture on the reply.
 

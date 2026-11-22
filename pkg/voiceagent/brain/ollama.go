@@ -110,6 +110,11 @@ type OllamaBrain struct {
 	// imageWindow is how many of the latest user messages the request in
 	// progress carries pictures for.
 	imageWindow int
+	// imagesUnviewable is the last answer a turn got to whether this model
+	// views images: true when it cannot.
+	imagesUnviewable bool
+	// carriedData holds the bytes of the carried pictures in the image window.
+	carriedData map[string][]byte
 	// maxImageBytes lowers the image data a request carries below
 	// maxRequestImageBytes when set.
 	maxImageBytes int
