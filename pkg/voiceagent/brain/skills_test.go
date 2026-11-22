@@ -280,6 +280,7 @@ func TestLoadSkillsCatalogOmitsDisabled(t *testing.T) {
 
 	catalog, err := loadSkillsCatalog(context.Background(), &config.Config{
 		SkillsEnabled:  true,
+		SkillsDir:      filepath.Join(root, "missing-skills"),
 		SkillsDisabled: []string{"  Calibre  "}, // case/whitespace-insensitive
 	}, root)
 	if err != nil {
