@@ -225,9 +225,8 @@ func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, 
 	}
 	metrics.routedSpeech = nil
 	response := strings.Join(replyParts, " ")
-	recorded := strings.TrimSpace(response + " " + metrics.routedNote)
+	err := p.appendRoutedHistory(metrics, transcript, response)
 	metrics.routedNote = ""
-	err := p.appendRoutedHistory(metrics, transcript, recorded)
 	if err != nil {
 		metrics.degraded = true
 		p.emit(events.Error{Stage: "history", Message: err.Error()})

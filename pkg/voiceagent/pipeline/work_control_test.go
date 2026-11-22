@@ -245,9 +245,12 @@ func TestCancelRecordsWhatTheJobHadDoneInHistoryOnly(t *testing.T) {
 	}
 	turns := transcript.Turns()
 	last := turns[len(turns)-1]
-	want := spoken + " [job-1 (list the files here) was cancelled before it finished. Done so far: listed 1 folder"
-	if last.Role != "assistant" || !strings.HasPrefix(last.Content, want) || !strings.HasSuffix(last.Content, ".]") {
-		t.Fatalf("history reply = %q, want it to start %q", last.Content, want)
+	if last.Role != "assistant" || last.Content != spoken {
+		t.Fatalf("history reply = %q, want only the spoken line %q", last.Content, spoken)
+	}
+	want := "[job-1 (list the files here) was cancelled before it finished. Done so far: listed 1 folder"
+	if !strings.HasPrefix(last.HostNote, want) || !strings.HasSuffix(last.HostNote, ".]") {
+		t.Fatalf("host note = %q, want it to start %q", last.HostNote, want)
 	}
 }
 
@@ -441,6 +444,37 @@ func TestCancelAllReachesJobsLeftRunningByAClear(t *testing.T) {
 	h.cancel("cancel")
 	if got := h.lastSpoken(); !strings.HasPrefix(got, "Stopped") {
 		t.Fatalf("spoken = %q, want the job left by the clear stopped", got)
+	}
+	if h.agency.jobs.Active() {
+		t.Fatal("the job left by the clear still holds its slot")
+	}
+}
+
+// The same leftover job can still be stopped on its own by id.
+func TestCommandCancelReachesAJobLeftRunningByAClear(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	h := newControlHarness(t, gatedHookWorker{release: release}, false)
+	p := h.agency.pipeline
+	if err := p.BeginConversationIdentity("cleared"); err != nil {
+		t.Fatal(err)
+	}
+	h.spawn("list the files here")
+	h.awaitTool(t)
+	if err := p.ClearConversation(); err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	for _, info := range h.agency.jobs.Status() {
+		if info.State == job.StateRunning {
+			id = info.ID
+		}
+	}
+	if id == "" {
+		t.Fatal("the clear ended the job; this test needs it left running")
+	}
+	if err := p.CancelWork(id); err != nil {
+		t.Fatalf("CancelWork(%s) = %v, want the leftover job cancelled", id, err)
 	}
 	if h.agency.jobs.Active() {
 		t.Fatal("the job left by the clear still holds its slot")

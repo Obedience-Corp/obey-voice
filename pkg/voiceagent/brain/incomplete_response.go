@@ -29,7 +29,15 @@ func IncompleteDisposition(err error) string {
 // evidence of a partial attempt, not a completed answer or a fresh instruction.
 // Its bounded prefix prevents a canceled generation dominating future turns.
 func modelTurnContent(t Turn) string {
-	if t.Disposition == "" || (t.Role != "assistant" && t.Role != "samantha") {
+	if t.Role != "assistant" && t.Role != "samantha" {
+		return t.Content
+	}
+	if t.HostNote != "" {
+		note := t.HostNote
+		t.HostNote = ""
+		return strings.TrimSpace(modelTurnContent(t) + " " + note)
+	}
+	if t.Disposition == "" {
 		return t.Content
 	}
 	text := []rune(strings.TrimSpace(t.Content))

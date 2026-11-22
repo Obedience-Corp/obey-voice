@@ -134,6 +134,10 @@ type Turn struct {
 	// Disposition marks an incomplete assistant response without rewriting the
 	// authentic transcript. Model projections can bound its unfinished tail.
 	Disposition string `json:"disposition,omitempty"`
+	// HostNote is something the host recorded with an assistant turn for the
+	// model to read later. It is not part of what was said: it is never shown
+	// or spoken, and Content stays the authentic reply.
+	HostNote string `json:"host_note,omitempty"`
 	// Speaker is the stable live label for user turns (speaker-1). Empty for
 	// assistant turns and unlabeled single-user chat. Optional on disk so
 	// older sessions load unchanged.

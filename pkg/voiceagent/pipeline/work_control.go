@@ -220,16 +220,12 @@ func (a *Agency) cancelOne(id string) JobControl {
 }
 
 // cancelAll ends every table job in this conversation as one act, then asks
-// every live managed task to cancel. Without the work inbox a cleared
-// conversation leaves its jobs running and holding their slots, with no other
-// way to reach them, so there it ends every job in the table.
+// every live managed task to cancel.
 func (a *Agency) cancelAll(receipt *WorkReceipt) {
 	outside := map[string]bool{}
-	if a.workEnabled() {
-		for _, info := range a.jobs.Status() {
-			if !a.jobInConversation(info.ID) {
-				outside[info.ID] = true
-			}
+	for _, info := range a.jobs.Status() {
+		if !a.jobInConversation(info.ID) {
+			outside[info.ID] = true
 		}
 	}
 	for _, before := range a.jobs.CancelAll(func(id string) bool { return outside[id] }) {
@@ -286,29 +282,28 @@ func (a *Agency) awaitExits(ctx context.Context, receipt WorkReceipt) WorkReceip
 	return receipt
 }
 
-// jobInConversation reports whether a table job belongs to the current
-// conversation, which a command or a phrase may control.
+// jobInConversation reports whether a table job is one a command or a phrase
+// may control: with the work inbox on, a job of the current conversation.
+// Without it every table job is, because a cleared conversation there leaves
+// its jobs running and holding their slots with no other way to reach them.
 func (a *Agency) jobInConversation(id string) bool {
 	c, scope := a.workAuthority()
-	if c != nil {
-		a.workMu.RLock()
-		jobScope, ok := a.jobScopes[id]
-		a.workMu.RUnlock()
-		if ok {
-			return jobScope == scope
-		}
-		// A finished job's scope entry is dropped; the snapshot still has it.
-		for _, item := range c.Snapshot(scope).Jobs {
-			if item.Key.JobID == id {
-				return true
-			}
-		}
-		return false
+	if c == nil {
+		return true
 	}
-	a.mu.Lock()
-	origin := a.workerOrigins[id]
-	a.mu.Unlock()
-	return !origin.Scope.Valid() || (origin.Scope == a.pipeline.ConversationScope() && !a.pipeline.ConversationRetired())
+	a.workMu.RLock()
+	jobScope, ok := a.jobScopes[id]
+	a.workMu.RUnlock()
+	if ok {
+		return jobScope == scope
+	}
+	// A finished job's scope entry is dropped; the snapshot still has it.
+	for _, item := range c.Snapshot(scope).Jobs {
+		if item.Key.JobID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // managedRuntimes are every runtime that may own a live managed task in this

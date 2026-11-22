@@ -303,11 +303,14 @@ task alone is enough for them to work. Obey is asked to cancel it and she says
 "Asked Obey to cancel the delegated task."; Obey reports when it has ended.
 The status phrases still answer for jobs only.
 
-What a cancelled job had done is kept with her cancel line in the conversation
-history, unspoken: `[job-1 (audit the config) was cancelled before it
-finished. Done so far: read 3 files, ran 41 commands.]`, from the same activity
-rows the job's line shows. A persona asked later what that job got through can
-answer from it. It is never saved as the job's answer.
+What a cancelled job had done is saved with her cancel line in the conversation
+history as a host note (`host_note` on the saved turn): `[job-1 (audit the
+config) was cancelled before it finished. Done so far: read 3 files, ran 41
+commands.]`, from the same activity rows the job's line shows. The note is not
+part of what she said: it is never spoken or shown, in the live chat or in a
+reopened session. A persona on Ollama or Codex reads it after her cancel line
+and can answer from it when asked later what that job got through; other
+providers do not read it yet. It is never saved as the job's answer.
 
 Those events are folded for display: consecutive calls of one kind become a
 row, a kind change opens the next. The TUI keeps one transcript entry per job
