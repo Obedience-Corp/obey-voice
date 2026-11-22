@@ -365,6 +365,7 @@ func wireLiveAgent(ctx context.Context, eng *engine, k knobs) int {
 		}
 	}
 	if initial != nil {
+		runner.handoffs = eng.scn.Persona.Handoffs
 		if err := configurePersona(runner, resolvedBase, catalog, initial, eng.runDir); err != nil {
 			runner.close()
 			return reportSetupError(err)

@@ -188,7 +188,7 @@ func (s *Selector) proposeDiscussion(ctx context.Context, g *groupRun, initial b
 				}
 				return nil
 			}
-			return pipeline.ResponseAdmission{Envelope: envelope, Discussion: directive, Request: contextData.Original, AgentMentionControl: agentMentionControl(roster)}, nil
+			return pipeline.ResponseAdmission{Envelope: envelope, Discussion: directive, Request: contextData.Original, AgentMentionName: agentMentionName(roster)}, nil
 		}
 		return proposal, true, nil
 	}

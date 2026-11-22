@@ -161,6 +161,7 @@ type liveRunner struct {
 	player         *recordingPlayer
 	stimulusDevice string
 	persona        *personaRuntime
+	handoffs       bool
 	observations   []*observing
 	workerFactory  func(*config.Config) (brain.Provider, error)
 	wavVADFactory  wavVADFactory

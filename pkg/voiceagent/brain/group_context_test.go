@@ -104,7 +104,7 @@ func TestOllamaAgentContinuationDoesNotInventUserTurn(t *testing.T) {
 	o := &OllamaBrain{
 		client: api.NewClient(base, http.DefaultClient),
 		model:  "m",
-		cfg:    &config.Config{ActivePersona: "samantha", AgentName: "Samantha", MaxHistory: 10},
+		cfg:    &config.Config{ActivePersona: "samantha", AgentName: "Samantha", MaxHistory: 10, PromptsDir: t.TempDir()},
 	}
 	o.SetGroupParticipants([]GroupParticipant{{Name: "Samantha"}, {Name: "Alex"}})
 	o.LoadHistory([]Turn{
@@ -134,7 +134,7 @@ func TestOllamaAgentContinuationDoesNotInventUserTurn(t *testing.T) {
 			t.Fatalf("fabricated input reached Ollama: %+v", message)
 		}
 	}
-	if !strings.Contains(request.Messages[0].Content, "latest agent is handing you the floor") {
+	if !strings.Contains(request.Messages[0].Content, "agent has handed you the floor") {
 		t.Fatalf("continuation system instruction missing: %q", request.Messages[0].Content)
 	}
 	history := o.CanonicalHistory()

@@ -115,7 +115,7 @@ func TestDiscussionReplyKeepsOneHumanAndCapsOutput(t *testing.T) {
 	if len(wire.Tools) != 0 || wire.Options["num_predict"] != float64(discussion.MaxReplyTokens) || wire.Think.Value != false {
 		t.Fatalf("unbounded reply=%+v", wire)
 	}
-	if strings.Contains(wire.Messages[0].Content, "latest agent is handing you the floor") {
+	if strings.Contains(wire.Messages[0].Content, "agent has handed you the floor") {
 		t.Fatal("invented an initial handoff")
 	}
 }

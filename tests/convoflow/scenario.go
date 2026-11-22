@@ -49,6 +49,10 @@ type Scenario struct {
 
 type scenarioPersona struct {
 	Initial string `yaml:"initial"`
+	// Handoffs lets a persona's reply hand the floor to the personas it
+	// invites, as the app does. Off, a reply never moves the selection, so
+	// scenarios written before handoffs were wired keep their outcome.
+	Handoffs bool `yaml:"handoffs"`
 }
 
 type scenarioBrain struct {

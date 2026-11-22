@@ -4,7 +4,18 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
+
+// spokenMention is the name speech gives an @handle in this response, or ""
+// when the handle is not an agent control and is spoken as written.
+func spokenMention(admitted pipeline.ResponseAdmission, target string) string {
+	if admitted.AgentMentionName == nil {
+		return ""
+	}
+	name, _ := admitted.AgentMentionName(target)
+	return name
+}
 
 func TestResponseSpeechControlsUseFrozenRoster(t *testing.T) {
 	for _, tc := range []struct {
@@ -27,29 +38,31 @@ func TestResponseSpeechControlsUseFrozenRoster(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if admitted.AgentMentionControl == nil {
+			if admitted.AgentMentionName == nil {
 				t.Fatal("response has no roster lookup")
 			}
-			for _, target := range []string{"venessa-agent", "Venessa", "vEe", "alex-one"} {
-				if !admitted.AgentMentionControl(target) {
-					t.Errorf("registered control %q not recognized", target)
+			// An ID, a name in any case and an alias are all said as the
+			// persona's display name.
+			for target, want := range map[string]string{"venessa-agent": "Venessa", "Venessa": "Venessa", "vEe": "Venessa", "alex-one": "Alex One"} {
+				if got := spokenMention(admitted, target); got != want {
+					t.Errorf("registered control %q spoken as %q, want %q", target, got, want)
 				}
 			}
 			for _, target := range []string{"support", "typescript", "Alex", "away"} {
-				if admitted.AgentMentionControl(target) {
-					t.Errorf("unknown, ambiguous or inactive target %q would be removed from speech", target)
+				if got := spokenMention(admitted, target); got != "" {
+					t.Errorf("unknown, ambiguous or inactive target %q would be spoken as %q", target, got)
 				}
 			}
 			peer.DisplayName, peer.Aliases = "Renamed", nil
 			writeTestProfile(t, f.catalog.Dir, peer)
-			if !admitted.AgentMentionControl("Venessa") || admitted.AgentMentionControl("Renamed") {
+			if spokenMention(admitted, "Venessa") != "Venessa" || spokenMention(admitted, "Renamed") != "" {
 				t.Fatal("an in-flight response changed its roster lookup")
 			}
 			fresh, err := f.selector.Route(t.Context(), tc.input, tc.background)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if fresh.AgentMentionControl == nil || fresh.AgentMentionControl("Venessa") || !fresh.AgentMentionControl("Renamed") {
+			if spokenMention(fresh, "Venessa") != "" || spokenMention(fresh, "Renamed") != "Renamed" {
 				t.Fatal("next response did not refresh its roster lookup")
 			}
 		})
@@ -67,7 +80,7 @@ func TestHandoffAdmissionCarriesSpeechControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if admitted.AgentMentionControl == nil || !admitted.AgentMentionControl("Obey") || admitted.AgentMentionControl("support") {
+	if spokenMention(admitted, "Obey") != "Obey" || spokenMention(admitted, "support") != "" {
 		t.Fatal("handoff did not carry the resolved speech controls")
 	}
 }

@@ -389,7 +389,7 @@ func TestGroupFirstOutputRechecksRosterAfterCommit(t *testing.T) {
 	if admitted.Discussion == nil || admitted.Discussion.BeforeOutput == nil {
 		t.Fatal("no first-output guard")
 	}
-	if admitted.AgentMentionControl == nil || !admitted.AgentMentionControl("samantha") || admitted.AgentMentionControl("support") {
+	if spokenMention(admitted, "samantha") == "" || spokenMention(admitted, "support") != "" {
 		t.Fatal("group admission did not carry the resolved speech controls")
 	}
 	if err := admitted.Discussion.BeforeOutput(t.Context()); err != nil {

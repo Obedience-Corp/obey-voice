@@ -47,36 +47,80 @@ func AgentMentions(text string) []AgentMention {
 	return mentions
 }
 
-// StripAgentMentions removes only candidates confirmed by the response's frozen
-// roster lookup. With no lookup, all text remains spoken. Ordinary handles and
-// plain names in the message ("Hey Venessa!") remain spoken.
-func StripAgentMentions(text string, isControl func(string) bool) string {
-	if isControl == nil {
+// SpeakAgentMentions says who a response addresses. Each candidate that
+// spokenName confirms, from the response's frozen roster lookup, is replaced by
+// that name, so "@Milo, what do you think?" is heard as "Milo, what do you
+// think?". Mentions with only space between them are heard as a list. A name
+// the text already says in plain words is not said twice: that mention is
+// dropped with its separator ("@Milo Hey Milo!" is heard as "Hey Milo!").
+// With no lookup, and for ordinary handles the lookup does not know, the text
+// is spoken as written.
+func SpeakAgentMentions(text string, spokenName func(target string) (string, bool)) string {
+	if spokenName == nil {
 		return text
 	}
-	var mentions []AgentMention
+	type control struct {
+		AgentMention
+		name string
+	}
+	var controls []control
 	for _, mention := range AgentMentions(text) {
-		if isControl(mention.Target) {
-			mentions = append(mentions, mention)
+		if name, ok := spokenName(mention.Target); ok {
+			controls = append(controls, control{mention, strings.TrimSpace(name)})
 		}
 	}
-	if len(mentions) == 0 {
+	if len(controls) == 0 {
 		return text
 	}
-	var b strings.Builder
+	var plain strings.Builder
 	last := 0
-	for _, mention := range mentions {
-		prefix := text[last:mention.Start]
-		if mention.End < len(text) && strings.ContainsRune(".!?", rune(text[mention.End])) {
+	for _, c := range controls {
+		plain.WriteString(text[last:c.Start])
+		plain.WriteByte(' ')
+		last = c.End
+	}
+	plain.WriteString(text[last:])
+	said := spokenWords(plain.String())
+
+	var b strings.Builder
+	last = 0
+	afterName := false
+	for _, c := range controls {
+		prefix := text[last:c.Start]
+		if words := spokenWords(c.name); words != " " && !strings.Contains(said, words) {
+			if afterName && strings.TrimSpace(prefix) == "" {
+				prefix = ", "
+			}
+			b.WriteString(prefix)
+			b.WriteString(c.name)
+			said += words
+			last = c.End
+			afterName = true
+			continue
+		}
+		// A repeat dropped from the middle of a run leaves the run a list.
+		afterName = afterName && strings.TrimSpace(prefix) == ""
+		if c.End < len(text) && strings.ContainsRune(".!?", rune(text[c.End])) {
 			prefix = strings.TrimSuffix(strings.TrimRightFunc(prefix, unicode.IsSpace), ",")
 		}
 		b.WriteString(prefix)
-		last = mention.End
-		// A separator attached to the address belongs to the silent control.
-		if last < len(text) && strings.ContainsRune(",:;", rune(text[last])) {
+		last = c.End
+		// A separator attached to a dropped address goes with it, unless it
+		// closes a list of names already being said.
+		if !afterName && last < len(text) && strings.ContainsRune(",:;", rune(text[last])) {
 			last++
 		}
 	}
 	b.WriteString(text[last:])
 	return repairSpacing(strings.Join(strings.Fields(b.String()), " "))
+}
+
+// spokenWords is text as space-delimited lower-case words, with a space at
+// each end so one phrase can be searched for in another on word boundaries.
+func spokenWords(text string) string {
+	fields := strings.FieldsFunc(strings.ToLower(text), func(c rune) bool { return !unicode.IsLetter(c) && !unicode.IsDigit(c) })
+	if len(fields) == 0 {
+		return " "
+	}
+	return " " + strings.Join(fields, " ") + " "
 }
