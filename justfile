@@ -225,6 +225,17 @@ demo-talk-while-working: build
     just _optimize-demo-gif demos/talk-while-working.gif
     ls -lh demos/talk-while-working.gif
 
+# A failed foreground tool call while the turn carries on (loopback model, disposable HOME).
+demo-tool-failure: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/tool-failure.tape
+    just _optimize-demo-gif demos/tool-failure.gif
+    ls -lh demos/tool-failure.gif
+
 # Opt-in live managed-Qwen gate. Requires the managed model to have already
 # been installed with `obey-voice models ensure --tts`; outputs remain available
 # for listening instead of disappearing with the Go test temp directory.
