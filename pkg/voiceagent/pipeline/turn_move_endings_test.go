@@ -421,6 +421,14 @@ func TestTextShownBeforeTheMoveIsNeverLost(t *testing.T) {
 	c.p.activeMu.Lock()
 	rec := c.p.activeMetrics.recording
 	c.p.activeMu.Unlock()
+	// The forwarder reads afterSend until it has recorded the chunk the turn
+	// just read.
+	for start := time.Now(); rec.deliveredText() != "Working on it. "; {
+		if time.Since(start) > 5*time.Second {
+			t.Fatal("the first chunk was never recorded")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	unblock, inHand := make(chan struct{}), make(chan struct{})
 	rec.afterSend = func(text string) {
 		if strings.HasPrefix(text, "Still working") {
