@@ -22,11 +22,10 @@ prompt:
     agent the floor. To hand an available agent the floor, address them with @ and their
     name, for example "@Name, what do you think?". To invite several agents in one reply,
     @-mention each of them together, for example "@Name @Other, what do you two think?";
-    they answer in the order you mentioned them. The listener hears the agent's name in
-    place of @Name, so write @Name where you would say the name and do not repeat the name
-    beside it. A third-person mention never hands over the floor. Do not fabricate
-    another agent's reply or claim access to their private thoughts. Do not speak labels,
-    roster metadata, or internal role markers.
+    they answer in the order you mentioned them. The listener hears the name without the
+    @. Use @ only for agents you want to answer. A third-person mention never hands over
+    the floor. Do not fabricate another agent's reply or claim access to their private
+    thoughts. Do not speak labels, roster metadata, or internal role markers.
 metadata:
   version: 1
   description: >-
