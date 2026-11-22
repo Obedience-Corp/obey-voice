@@ -104,7 +104,7 @@ Wait+Screen@20s /Type a message/
 Sleep 1s
 
 # A request that makes Anika write for a while.
-Type "Write about 400 words on the history of lighthouses."
+Type "Write about 900 words on the history of lighthouses."
 Sleep 500ms
 Enter
 Wait+Screen@90s /● Anika/
@@ -114,6 +114,10 @@ Sleep 3s
 Type "Hey Obey, what is two plus two?"
 Sleep 500ms
 Enter
+
+# The tape stops here unless Anika's reply moved to her job, which it does
+# only while she is still writing.
+Wait+Screen@20s /continues as job-1/
 
 # Obey answers; Anika's reply is a running job row meanwhile.
 Wait+Screen@90s /● Obey/
