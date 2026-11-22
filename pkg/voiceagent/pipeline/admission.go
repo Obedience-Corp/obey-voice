@@ -21,9 +21,10 @@ type ResponseAdmission struct {
 	Request    string
 	LocalReply string
 	Envelope   events.ResponseEnvelope
-	// AgentMentionControl is a frozen roster lookup for this response's speech.
-	// Nil keeps all @mentions audible; only confirmed agent controls are silent.
-	AgentMentionControl func(target string) bool
+	// AgentMentionName is a frozen roster lookup for this response's speech:
+	// the name to say for an @handle that addresses a persona. Nil, and any
+	// handle it does not confirm, leaves the @mention spoken as written.
+	AgentMentionName func(target string) (name string, ok bool)
 }
 
 // ErrInputBindingChanged requires a fresh capture after a response-boundary
@@ -116,14 +117,14 @@ func (p *Pipeline) bindAdmission(ctx context.Context, input string, admitted Res
 	voices := responseVoices{primary: p.TTS, fallback: p.TTSFallback, revision: p.inputBindingRevision.Load()}
 	p.ttsMu.RUnlock()
 	ctx = context.WithValue(events.WithResponse(ctx, admitted.Envelope), responseVoicesKey{}, voices)
-	ctx = context.WithValue(ctx, responseMentionsKey{}, admitted.AgentMentionControl)
+	ctx = context.WithValue(ctx, responseMentionsKey{}, admitted.AgentMentionName)
 	ctx = p.withTurnWork(ctx)
 	p.bindBrainInfo()
 	return ctx
 }
 
-func responseMentionControl(ctx context.Context) func(string) bool {
-	lookup, _ := ctx.Value(responseMentionsKey{}).(func(string) bool)
+func responseMentionName(ctx context.Context) func(string) (string, bool) {
+	lookup, _ := ctx.Value(responseMentionsKey{}).(func(string) (string, bool))
 	return lookup
 }
 

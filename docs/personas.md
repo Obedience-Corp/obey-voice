@@ -400,7 +400,13 @@ takes the first turn and can then invite Venessa to answer. Instructions to
 A persona's reply hands the floor to another persona with an `@` mention of
 that persona's ID, alias or display name (`@Milo, what do you think?`). The
 mention is one word, so a multi-word display name is written with its first
-word or with the ID. It is a silent control: shown in the chat, not spoken. One
+word or with the ID. The chat shows the mention as written. In speech the `@`
+is not said and the persona's display name is heard in its place, whichever of
+its ID, alias or name was written, so a listener hears who is asked: `@Milo
+@Vera, what do you two think?` is spoken as "Milo, Vera, what do you two
+think?". A name the same sentence already says in plain words is said once
+(`@Milo Hey Milo!` is spoken as "Hey Milo!"). An `@` handle that is not a
+persona in the conversation is spoken as written. One
 reply can invite several personas, `@Milo @Vera, what do you two think?`, and
 they answer in the order they were mentioned, each after the one before has
 finished. The replies of invited personas still waiting their turn are not
@@ -409,14 +415,15 @@ reply is checked as usual. A persona mentioned twice is invited once; the
 persona replying and any persona who has already answered your message are
 left out. An unknown or ambiguous `@` name anywhere in the reply cancels the
 whole invitation with an "Agent handoff skipped" notice, and an invited
-persona that cannot be loaded is skipped with the same notice and the next
-one is asked. One message allows three handoffs after the first reply: invited
+persona that cannot be loaded, the first one included, is skipped with the
+same notice and the next one is asked. One message allows three handoffs after the first reply: invited
 personas who are still waiting when that limit is reached do not answer, and
 one notice names them. The same single notice, with its reason, names the
 personas still waiting when an invited persona's reply is interrupted or fails
-(a key that silences its speech counts), or when
+(a key that silences its speech counts), when
 the persona who just answered runs on a backend that cannot pass the
-conversation on. Speaking while invited personas are waiting, or stopping the
+conversation on, or when the personas the reply mentions or the persona
+selection change before their turn. Speaking while invited personas are waiting, or stopping the
 turn, ends the invitation without a notice. An invited persona is asked to
 answer the message that invited it; it may build on the answers given before
 its turn but does not reply to them. A reply that

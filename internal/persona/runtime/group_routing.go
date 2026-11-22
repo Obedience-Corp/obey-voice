@@ -47,11 +47,16 @@ func (s *Selector) conversationRoster() (*summon.Roster, []brain.GroupParticipan
 	return roster, participants, err
 }
 
-// Keep the same immutable ID/name/alias resolution used by handoffs. Speech
-// cleanup must not treat an unrecognized handle as an agent control.
-func agentMentionControl(roster *summon.Roster) func(string) bool {
-	return func(target string) bool {
-		return roster.ResolveAgentMention("@"+target).Kind == summon.ExactControlValid
+// agentMentionName gives speech the display name of the persona an @handle
+// addresses, by the same immutable ID/name/alias resolution handoffs use. An
+// unrecognized handle is not an agent control and is spoken as written.
+func agentMentionName(roster *summon.Roster) func(string) (string, bool) {
+	return func(target string) (string, bool) {
+		exact := roster.ResolveAgentMention("@" + target)
+		if exact.Kind != summon.ExactControlValid {
+			return "", false
+		}
+		return roster.DisplayName(exact.Address.PersonaID), true
 	}
 }
 
@@ -222,7 +227,7 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 			return fmt.Errorf("exact identity control no longer matches current roster")
 		}
 		participants = refreshedParticipants
-		admitted.AgentMentionControl = agentMentionControl(roster)
+		admitted.AgentMentionName = agentMentionName(roster)
 		return nil
 	})
 	if err != nil {
@@ -348,7 +353,7 @@ func (s *Selector) commitHandoff(expected events.PersonaSelection, personaID, in
 			return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
 		}
 		s.setGroupParticipants(participants)
-		return pipeline.ResponseAdmission{Envelope: responseEnvelope(selected), AgentMentionControl: agentMentionControl(currentRoster)}, nil
+		return pipeline.ResponseAdmission{Envelope: responseEnvelope(selected), AgentMentionName: agentMentionName(currentRoster)}, nil
 	}
 }
 

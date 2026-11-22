@@ -285,7 +285,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	speechCtx, cancelSpeech := metrics.speechContext(ctx)
 	defer cancelSpeech()
 	if !metrics.speechStopped() && !p.OutputMuted() && p.Player != nil && p.ttsReady() {
-		speakable = speakableFromResponse(p.gateForSpeech(response, metrics), responseMentionControl(ctx))
+		speakable = speakableFromResponse(p.gateForSpeech(response, metrics), responseMentionName(ctx))
 	}
 	if speakable != "" {
 		speechDone := metrics.beginSpeech()
