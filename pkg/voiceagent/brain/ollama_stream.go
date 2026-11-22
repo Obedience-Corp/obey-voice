@@ -450,7 +450,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				recoveryAttempts++
 				o.emitContinuity(events.ContinuityRecovery{Attempt: recoveryAttempts, Strategy: "compact_then_continue"})
-				if err := sendChunk(ctx, out, "\n\n"); err != nil {
+				if err := stream.Separate(); err != nil {
 					done <- StreamResult{Err: err}
 					return
 				}

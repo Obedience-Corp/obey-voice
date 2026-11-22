@@ -228,6 +228,10 @@ func (r *Round) ReleaseHeld(approved bool, err error) error {
 	return err
 }
 
+// Separate sends a paragraph break at once, ahead of the continuation of an
+// answer that was cut off.
+func (s *Stream) Separate() error { return s.send("\n\n") }
+
 // EndThought marks the speech this round delivered as finished, because tool
 // calls follow it. Whatever a later round says is a new thought and starts
 // behind a paragraph break. Rounds are joined with nothing between them

@@ -18,6 +18,22 @@ type scriptedRound struct {
 	tools  bool
 }
 
+func (scripted scriptedRound) play(t *testing.T, stream *Stream) {
+	t.Helper()
+	round := stream.NewRound(context.Background(), RoundOptions{Labels: passThrough{}, Markers: passThrough{}})
+	for _, chunk := range scripted.chunks {
+		if err := round.receive(api.Message{Content: chunk}); err != nil {
+			t.Fatalf("receive(%q): %v", chunk, err)
+		}
+	}
+	if err := round.FinishSpeech(round.FlushFilters(nil)); err != nil {
+		t.Fatalf("finish: %v", err)
+	}
+	if scripted.tools {
+		round.EndThought()
+	}
+}
+
 func says(chunks ...string) scriptedRound      { return scriptedRound{chunks: chunks} }
 func thenCalls(chunks ...string) scriptedRound { return scriptedRound{chunks: chunks, tools: true} }
 
@@ -52,19 +68,8 @@ func TestThoughtsAroundAToolCallAreOneBlankLineApart(t *testing.T) {
 				Think: func(string) error { return nil },
 			}
 			for _, scripted := range tc.rounds {
-				round := stream.NewRound(context.Background(), RoundOptions{Labels: passThrough{}, Markers: passThrough{}})
-				for _, chunk := range scripted.chunks {
-					model.WriteString(chunk)
-					if err := round.receive(api.Message{Content: chunk}); err != nil {
-						t.Fatalf("receive(%q): %v", chunk, err)
-					}
-				}
-				if err := round.FinishSpeech(round.FlushFilters(nil)); err != nil {
-					t.Fatalf("finish: %v", err)
-				}
-				if scripted.tools {
-					round.EndThought()
-				}
+				model.WriteString(strings.Join(scripted.chunks, ""))
+				scripted.play(t, stream)
 			}
 			if heard.String() != tc.want {
 				t.Errorf("listener got %q, want %q", heard.String(), tc.want)
@@ -75,5 +80,24 @@ func TestThoughtsAroundAToolCallAreOneBlankLineApart(t *testing.T) {
 				t.Errorf("recorded %q, want the model's text %q", stream.spoken.String(), model.String())
 			}
 		})
+	}
+}
+
+// An answer that was cut off is continued behind a break the caller sends at
+// once. When a break is also owed after a tool call, the two do not add up.
+func TestAContinuationBreakCountsTowardTheBlankLine(t *testing.T) {
+	var heard strings.Builder
+	stream := &Stream{
+		Speak: func(text string) error { heard.WriteString(text); return nil },
+		Think: func(string) error { return nil },
+	}
+	thenCalls("Let me look.").play(t, stream)
+	says().play(t, stream)
+	if err := stream.Separate(); err != nil {
+		t.Fatal(err)
+	}
+	says("Here it is.").play(t, stream)
+	if want := "Let me look.\n\nHere it is."; heard.String() != want {
+		t.Fatalf("listener got %q, want %q", heard.String(), want)
 	}
 }
