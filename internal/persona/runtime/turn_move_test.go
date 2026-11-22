@@ -191,12 +191,22 @@ func TestMovedTurnRunsOnWhileAnotherPersonaAnswers(t *testing.T) {
 func TestNamesOtherPersonaUsesOnlyTheExactRules(t *testing.T) {
 	c := newMovingLocalConversation(t)
 	c.say("switch to Anika")
+	broken := filepath.Join(c.catalog.Dir, "zed")
+	if err := os.MkdirAll(broken, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(broken, "persona.yaml"), []byte("schema: [broken\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	for input, want := range map[string]bool{
 		"Hey Obey, what is the vault code?": true,
 		"@obey what is the vault code?":     true,
 		"Obey, help me with this.":          true,
 		"Anika, stop that.":                 false,
 		"Hey Zed, are you there?":           false,
+		"@zed what is the code?":            false,
+		"Obey":                              true,
+		"@obey":                             true,
 		"What is the vault code?":           false,
 		"stop":                              false,
 	} {
@@ -239,5 +249,45 @@ func TestTurnOnAProviderKeepingItsOwnSessionIsNotMoved(t *testing.T) {
 	cancel()
 	if err := <-turn; err == nil {
 		t.Fatal("stopped turn reported success")
+	}
+}
+
+// A moved reply whose job is stopped is saved as a stopped live reply is:
+// its kept part and the text after it, marked unfinished, which later models
+// are told.
+func TestStoppedMovedReplyIsSavedUnfinished(t *testing.T) {
+	c := newMovingLocalConversation(t)
+	c.say("Note that the vault code is cobalt.", "switch to Anika")
+	aborted := make(chan events.JobAborted, 1)
+	events.Subscribe(c.p.Events, func(e events.JobAborted) { aborted <- e })
+	c.holdAndMove("Hey Obey, what is the vault code?")
+	c.say("Hey Obey, what is the vault code?")
+	if err := c.p.CancelWork("job-1"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-aborted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the job was not stopped")
+	}
+	for deadline := time.Now().Add(10 * time.Second); !c.p.BackgroundPending(); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the stopped reply was never recorded")
+		}
+	}
+	c.say("Obey, go on.")
+	var anika []brain.Turn
+	for _, turn := range c.saved().Turns {
+		if turn.Role == "assistant" && turn.PersonaID == "anika" && strings.Contains(turn.Content, "notes") || strings.Contains(turn.Content, "Let me think") {
+			anika = append(anika, turn)
+		}
+	}
+	if len(anika) != 2 || anika[0].Content != "I read the notes." || anika[1].Content != "Let me think" ||
+		anika[0].Disposition != "interrupted" || anika[1].Disposition != "interrupted" {
+		t.Fatalf("saved moved reply = %+v", anika)
+	}
+	sent := c.requests()
+	if last := string(sent[len(sent)-1]); !strings.Contains(last, "Incomplete assistant response") {
+		t.Fatalf("Obey was not told the reply was unfinished:\n%s", last)
 	}
 }

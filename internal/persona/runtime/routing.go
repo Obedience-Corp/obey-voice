@@ -101,7 +101,18 @@ func (s *Selector) NamesOtherPersona(input string) bool {
 		return false
 	}
 	exact := roster.ResolveForegroundControl(input)
-	return exact.Kind == summon.ExactControlValid && exact.Address.PersonaID != "" && exact.Address.PersonaID != s.Snapshot().PersonaID
+	id := exact.Address.PersonaID
+	if exact.Kind != summon.ExactControlValid || id == "" || id == s.Snapshot().PersonaID {
+		return false
+	}
+	// A persona whose profile cannot be loaded, or that could not take the
+	// conversation, would leave the moved reply with nobody to answer.
+	profile, err := s.opts.Catalog.Load(id)
+	if err != nil || profile.Inactive {
+		return false
+	}
+	_, ok := s.canTakeOver(profile)
+	return ok
 }
 
 func (s *Selector) warnCatalogIssues(issues []persona.CatalogIssue) {
