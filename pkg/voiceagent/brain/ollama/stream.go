@@ -15,6 +15,10 @@ import (
 type Stream struct {
 	Speak, Think func(string) error
 	spoken       strings.Builder
+	// breakNext puts a paragraph break ahead of the next speech. The break is
+	// sent with that speech, not before it, so a turn never ends on one; and
+	// it is not part of what any round said, so it stays out of spoken.
+	breakNext bool
 }
 
 // Filter consumes incremental text and releases its remaining text at end of stream.
@@ -76,6 +80,12 @@ func (r *Round) deliver(text string) error {
 			return err
 		}
 		r.outputChecked = true
+	}
+	if r.stream.breakNext {
+		if err := r.stream.Speak("\n\n"); err != nil {
+			return err
+		}
+		r.stream.breakNext = false
 	}
 	if err := r.stream.Speak(text); err != nil {
 		return err
@@ -192,6 +202,16 @@ func (r *Round) ReleaseHeld(approved bool, err error) error {
 		}
 	}
 	return err
+}
+
+// EndThought marks the speech this round delivered as finished, because tool
+// calls follow it. Whatever a later round says is a new thought and starts
+// behind a paragraph break. Rounds are joined with nothing between them
+// otherwise, and the reader sees "Let me look.Here it is."
+func (r *Round) EndThought() {
+	if strings.TrimSpace(r.emitted.String()) != "" {
+		r.stream.breakNext = true
+	}
 }
 
 // FinishSpeech releases speech held for repetition detection after validation.

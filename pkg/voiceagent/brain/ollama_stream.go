@@ -363,6 +363,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					Content:   stripReplyConventions(o.cfg.AgentName, output.RawText()),
 					ToolCalls: toolCalls,
 				}, opts.Identity)
+				output.EndThought()
 
 				// Execute each tool and add results (skills + full CLI tools).
 				results := make([]string, 0, len(toolCalls))
