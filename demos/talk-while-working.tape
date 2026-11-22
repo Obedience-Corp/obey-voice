@@ -104,7 +104,7 @@ Wait+Screen@20s /Type a message/
 Sleep 1s
 
 # A request that makes Anika write for a while.
-Type "Write about 900 words on the history of lighthouses."
+Type "Write about 500 words on the history of lighthouses."
 Sleep 500ms
 Enter
 Wait+Screen@90s /● Anika/
@@ -127,9 +127,13 @@ Sleep 5s
 Wait+Screen@180s /Workers: idle/
 Sleep 5s
 
-# Scroll back: the job row now shows done.
+# Scroll back to where her two parts meet; the job row now shows done.
 PageUp
-Sleep 4s
+Sleep 1s
+PageUp
+Sleep 6s
+PageDown
+Sleep 1s
 PageDown
 Sleep 2s
 
