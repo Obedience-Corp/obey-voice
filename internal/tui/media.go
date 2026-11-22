@@ -194,6 +194,10 @@ func (m *conversationModel) mediaCommand() tea.Cmd {
 	for _, item := range m.items {
 		refs = append(refs, item.attachments...)
 	}
+	// A panel whose picture has left the conversation has nothing to show.
+	if m.pictures.open && m.pictures.pictureIndex(m.pictureSpots()) < 0 {
+		m.pictures = picturePanel{generation: m.pictures.generation + 1}
+	}
 	refs = append(refs, m.media.draft...)
 	if len(refs) == 0 {
 		return m.syncGraphics(nil)

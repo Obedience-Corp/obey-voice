@@ -87,18 +87,21 @@ func openRecordingDirectory(ctx context.Context, dir string) error {
 	return openOnDesktop(ctx, dir)
 }
 
-// openOnDesktop hands a file or folder to the desktop's default application.
-func openOnDesktop(ctx context.Context, target string) error {
-	var cmd *exec.Cmd
+// desktopOpener is the command that hands a file or folder to the desktop's
+// default application.
+func desktopOpener(target string) (string, []string) {
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.CommandContext(ctx, "open", target)
+		return "open", []string{target}
 	case "windows":
-		cmd = exec.CommandContext(ctx, "explorer.exe", target)
-	default:
-		cmd = exec.CommandContext(ctx, "xdg-open", target)
+		return "explorer.exe", []string{target}
 	}
-	if err := cmd.Run(); err != nil {
+	return "xdg-open", []string{target}
+}
+
+func openOnDesktop(ctx context.Context, target string) error {
+	name, args := desktopOpener(target)
+	if err := exec.CommandContext(ctx, name, args...).Run(); err != nil {
 		return fmt.Errorf("could not open %s: %w", target, err)
 	}
 	return nil

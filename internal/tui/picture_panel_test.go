@@ -10,6 +10,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -707,7 +708,7 @@ func TestPicturePanelOwnsKeysAndMouse(t *testing.T) {
 	if cmd != nil || rig.clip.text == "" || m.pictures.cursor != pictureCopyPath {
 		t.Fatalf("clicking an action did not run it: %q", rig.clip.text)
 	}
-	g := m.picturePanelGeometry()
+	g, _ := m.picturePanelLayout()
 	m, _ = click(t, m, 10, g.top+g.boxRows+1)
 	if m.pictures.open {
 		t.Fatal("click outside the panel did not close it")
@@ -836,45 +837,222 @@ func TestLatePictureResultGoesToTheConversation(t *testing.T) {
 	}
 }
 
-// Stand-in tools on a PATH that holds nothing else record what the real ones
-// would have been asked to do.
-func TestWriteImageClipboardCommands(t *testing.T) {
+// clipboardTools puts stand-in tools on a PATH that holds nothing else. Each
+// records its arguments and input, so every OS's commands are checked on any
+// host and nothing reaches the real clipboard.
+func clipboardTools(t *testing.T, scripts map[string]string) string {
+	t.Helper()
 	if runtime.GOOS == "windows" {
-		if err := writeImageClipboard(t.Context(), "pier.jpg", "jpeg"); err == nil || !strings.Contains(err.Error(), "copy its path") {
-			t.Fatalf("windows copy = %v", err)
-		}
-		return
+		t.Skip("stand-in tools are shell scripts")
 	}
 	bin, log := t.TempDir(), filepath.Join(t.TempDir(), "calls")
-	tool := func(name string, exit int) {
-		script := fmt.Sprintf("#!/bin/sh\n{ printf '%%s|' %s \"$@\"; cat; echo; } >> %q\nexit %d\n", name, log, exit)
+	for name, body := range scripts {
+		script := fmt.Sprintf("#!/bin/sh\nLOG=%q\n%s\n", log, body)
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	tool("osascript", 0)
-	tool("wl-copy", 1)
-	tool("xclip", 0)
 	t.Setenv("PATH", bin)
+	return log
+}
+
+func TestWriteImageClipboardCommands(t *testing.T) {
+	record := func(name string, exit int) string {
+		return fmt.Sprintf("{ printf '%%s|' %s \"$@\"; /bin/cat; echo; } >> \"$LOG\"\nexit %d", name, exit)
+	}
+	log := clipboardTools(t, map[string]string{"osascript": record("osascript", 0), "wl-copy": record("wl-copy", 1), "xclip": record("xclip", 0)})
 	picture := filepath.Join(t.TempDir(), "pier with spaces.jpg")
 	if err := os.WriteFile(picture, []byte("jpeg bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeImageClipboard(t.Context(), picture, "jpeg"); err != nil {
-		t.Fatal(err)
-	}
-	calls, err := os.ReadFile(log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := string(calls)
-	if runtime.GOOS == "darwin" {
-		if !strings.Contains(got, "osascript|-e|") || !strings.Contains(got, "as «class JPEG»") || !strings.Contains(got, "|"+picture+"|") {
-			t.Fatalf("osascript call = %q", got)
+	calls := func(goos string) string {
+		t.Helper()
+		_ = os.Remove(log)
+		if err := writeImageClipboardOn(t.Context(), goos, picture, "jpeg"); err != nil {
+			t.Fatalf("%s: %v", goos, err)
 		}
-		return
+		got, err := os.ReadFile(log)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(got)
 	}
-	if !strings.Contains(got, "wl-copy|--type|image/jpeg|jpeg bytes") || !strings.Contains(got, "xclip|-selection|clipboard|-t|image/jpeg|-i|jpeg bytes") {
+	if got := calls("darwin"); !strings.Contains(got, "osascript|-e|") || !strings.Contains(got, "as «class JPEG»") || !strings.Contains(got, "|"+picture+"|") {
+		t.Fatalf("osascript call = %q", got)
+	}
+	// wl-copy fails here, so xclip is tried with the same picture.
+	if got := calls("linux"); !strings.Contains(got, "wl-copy|--type|image/jpeg|jpeg bytes") || !strings.Contains(got, "xclip|-selection|clipboard|-t|image/jpeg|-i|jpeg bytes") {
 		t.Fatalf("clipboard tool calls = %q", got)
+	}
+	if err := writeImageClipboardOn(t.Context(), "windows", picture, "jpeg"); err == nil || !strings.Contains(err.Error(), "copy its path") {
+		t.Fatalf("windows copy = %v", err)
+	}
+}
+
+// A picture copied from the panel must paste back into the composer, so the
+// paste asks the clipboard for every format the copy can put there.
+func TestClipboardPasteAsksForEveryFormatACopyWrites(t *testing.T) {
+	if len(pictureFormats) != len(pictureMIME) || len(pictureFormats) != len(appleScriptPictureClass) {
+		t.Fatalf("formats %v, MIME types %v and pasteboard classes %v differ", pictureFormats, pictureMIME, appleScriptPictureClass)
+	}
+	for _, format := range pictureFormats {
+		t.Run(format, func(t *testing.T) {
+			only := fmt.Sprintf("for a in \"$@\"; do if [ \"$a\" = %q ]; then printf '%s picture'; exit 0; fi; done\nexit 1", pictureMIME[format], format)
+			for _, tool := range []string{"wl-paste", "xclip"} {
+				clipboardTools(t, map[string]string{tool: only})
+				got, err := readImageClipboard(t.Context(), "linux")
+				if err != nil || string(got) != format+" picture" {
+					t.Fatalf("%s with a %s on the clipboard pasted %q, %v", tool, format, got, err)
+				}
+			}
+			if !strings.Contains(clipboardReadScript(), "the clipboard as "+appleScriptPictureClass[format]) {
+				t.Fatalf("macOS paste does not ask for %s:\n%s", format, clipboardReadScript())
+			}
+		})
+	}
+	log := clipboardTools(t, map[string]string{"osascript": "printf '%s' \"$2\" > \"$LOG\"\nprintf 'pasted picture' > \"$3\""})
+	got, err := readImageClipboard(t.Context(), "darwin")
+	if err != nil || string(got) != "pasted picture" {
+		t.Fatalf("macOS paste = %q, %v", got, err)
+	}
+	if script, _ := os.ReadFile(log); string(script) != clipboardReadScript() {
+		t.Fatalf("osascript ran %q", script)
+	}
+}
+
+// On a screen too short for the whole panel, what the user is acting on stays:
+// the save field with its error, and otherwise the selected action.
+func TestPicturePanelKeepsTheSaveFieldOnAShortScreen(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, size := range [][2]int{{30, 10}, {40, 12}, {60, 9}} {
+		m, _, _ := pictureConversation(t, size[0], size[1], nil, func(harbor chatmedia.Ref) []chatItem {
+			return []chatItem{sys("one", harbor)}
+		})
+		m, _ = submit(t, m, "/image")
+		m = pressPanel(m, panelKey("j"), panelKey("j"), panelKey("j"))
+		if screen := ansi.Strip(m.View()); !strings.Contains(screen, "› Save a copy") {
+			t.Fatalf("%v: selected action hidden:\n%s", size, screen)
+		}
+		x, y := screenCell(t, m, "Save a copy", 0)
+		clicked, _ := click(t, m, x, y)
+		if !clicked.pictures.saving {
+			t.Fatalf("%v: a click on the action where it is drawn did not run it", size)
+		}
+		m = pressPanel(m, panelKey("enter"))
+		if screen := ansi.Strip(m.View()); !m.pictures.saving || !strings.Contains(screen, "Save as ") {
+			t.Fatalf("%v: save field hidden:\n%s", size, screen)
+		}
+		m.pictures.input.SetValue("~/Missing/harbor.png")
+		m, cmd := m.Update(panelKey("enter"))
+		m, _ = m.Update(cmd())
+		screen := ansi.Strip(m.View())
+		if !strings.Contains(screen, "Save as ") || !strings.Contains(screen, "does not exist") {
+			t.Fatalf("%v: save field or its error hidden:\n%s", size, screen)
+		}
+		if got := lipgloss.Height(m.View()); got != m.height {
+			t.Fatalf("%v: panel is %d rows", size, got)
+		}
+	}
+}
+
+// AppleScript refuses some ordinary words as variable names when it compiles a
+// script, and a script that does not compile pastes or copies nothing without
+// saying why. Compiling runs nothing and leaves the clipboard alone.
+func TestClipboardScriptsCompile(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("AppleScript is compiled on macOS only")
+	}
+	scripts := map[string]string{"paste": clipboardReadScript()}
+	for format, class := range appleScriptPictureClass {
+		scripts["copy "+format] = clipboardWriteScript(class)
+	}
+	for name, script := range scripts {
+		out, err := exec.CommandContext(t.Context(), "/usr/bin/osacompile", "-o", filepath.Join(t.TempDir(), "script.scpt"), "-e", script).CombinedOutput()
+		if err != nil {
+			t.Errorf("%s script does not compile: %v: %s", name, err, out)
+		}
+	}
+}
+
+func TestPicturePanelShowsALongFailureOnOneRow(t *testing.T) {
+	m, rig, _ := pictureConversation(t, 100, 40, nil, func(harbor chatmedia.Ref) []chatItem {
+		return []chatItem{sys("one", harbor)}
+	})
+	m, _ = submit(t, m, "/image")
+	rig.clip.err = fmt.Errorf("copy the picture (install wl-clipboard or xclip): %w", errors.Join(errors.New("wl-copy: exit status 1"), errors.New("xclip: not found")))
+	m = pressPanel(m, panelKey("j"))
+	m, cmd := m.Update(panelKey("enter"))
+	m, _ = m.Update(cmd())
+	if got := lipgloss.Height(m.View()); got != m.height {
+		t.Fatalf("panel is %d rows on a %d-row screen", got, m.height)
+	}
+	if screen := ansi.Strip(m.View()); !strings.Contains(screen, "wl-copy: exit status 1 xclip: not found") {
+		t.Fatalf("failure not shown whole:\n%s", screen)
+	}
+}
+
+func TestPictureSaveTreatsATrailingSlashAsAFolder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	config.SetConfigDirForTest(t, t.TempDir())
+	harbor := storePicture(t, "harbor.png", harborFixture(t))
+	if _, err := savePictureCopy(chatmedia.DefaultStore(), harbor, "~/Pictures/"); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("missing folder typed with a slash: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "Pictures")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a file was written under the folder's name")
+	}
+}
+
+func TestPictureSaveInputScrollsAndIgnoresASecondEnter(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.Mkdir(filepath.Join(home, "Downloads"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m, _, _ := pictureConversation(t, 60, 30, nil, func(harbor chatmedia.Ref) []chatItem {
+		return []chatItem{sys("one", harbor)}
+	})
+	m, _ = submit(t, m, "/image")
+	m = pressPanel(m, panelKey("j"), panelKey("j"), panelKey("j"), panelKey("enter"))
+	if m.pictures.input.Width <= 0 {
+		t.Fatal("save input has no width, so a long path cannot scroll to its cursor")
+	}
+	for _, r := range "-with-a-name-long-enough-to-run-past-the-right-edge-of-the-box.png" {
+		m = pressPanel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if screen := ansi.Strip(m.View()); !strings.Contains(screen, "edge-of-the-box.png") {
+		t.Fatalf("the end of the path being typed is off screen:\n%s", screen)
+	}
+	m.pictures.input.SetValue("~/Downloads/harbor.png")
+	m, first := m.Update(panelKey("enter"))
+	m, second := m.Update(panelKey("enter"))
+	if first == nil || second != nil {
+		t.Fatalf("first save started=%v, second started=%v", first != nil, second != nil)
+	}
+	m, _ = m.Update(first())
+	if m.pictures.failed || m.pictures.busy || !strings.HasPrefix(m.pictures.result, savedPrefix) {
+		t.Fatalf("result = %q failed=%v busy=%v", m.pictures.result, m.pictures.failed, m.pictures.busy)
+	}
+}
+
+func TestCtrlCClosesThePicturePanelAndKeepsTheClipboard(t *testing.T) {
+	m, rig, harbor := pictureConversation(t, 100, 40, nil, func(harbor chatmedia.Ref) []chatItem {
+		return []chatItem{sys("one", harbor)}
+	})
+	m.lastAssistantText = "Vera's last reply"
+	m, _ = submit(t, m, "/image")
+	m = pressPanel(m, panelKey("j"), panelKey("j"), panelKey("enter"))
+	path := chatmedia.DefaultStore().Path(harbor)
+	if rig.clip.text != path {
+		t.Fatalf("clipboard = %q", rig.clip.text)
+	}
+	a := App{screen: screenConversation, conversation: m}
+	a, _, handled := a.onKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !handled || a.conversation.pictures.open {
+		t.Fatalf("ctrl+c handled=%v, panel open=%v", handled, a.conversation.pictures.open)
+	}
+	if rig.clip.text != path {
+		t.Fatalf("ctrl+c replaced the copied path with %q", rig.clip.text)
 	}
 }

@@ -14,6 +14,11 @@ import (
 
 func (a App) onKey(msg tea.KeyMsg) (App, tea.Cmd, bool) {
 	if msg.String() == "ctrl+c" && a.screen == screenConversation {
+		// With the picture panel open Ctrl+C closes it. Copying the last
+		// reply here would replace the picture or path just copied.
+		if a.conversation.pictures.open {
+			return a, a.conversation.closePicturePanel(), true
+		}
 		// Selection in the composer still copies the draft first.
 		if a.conversation.editor.selectionActive() {
 			a.conversation.copySelection()

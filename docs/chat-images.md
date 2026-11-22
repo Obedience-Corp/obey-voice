@@ -26,7 +26,8 @@ never enlarged past its pixels. The actions are:
 - **Open the original** (the default) opens the stored file in your desktop image viewer,
   as F3 does.
 - **Copy the picture** puts the picture itself on the clipboard in its own format (PNG,
-  JPEG or GIF), so it can be pasted into another app. macOS uses `osascript`; Linux uses
+  JPEG or GIF), so it can be pasted into another app or back into a conversation here: a
+  paste asks the clipboard for each of those formats. macOS uses `osascript`; Linux uses
   `wl-copy`, then `xclip`. It is not available on Windows; copy the path there.
 - **Copy its path** puts the stored file's path on the clipboard as text.
 - **Save a copy…** asks where to save, starting from `~/Downloads/<name>`. `~` stands for
@@ -36,7 +37,9 @@ never enlarged past its pixels. The actions are:
 
 Up and Down (or `j` and `k`) choose an action and Enter runs it; the result shows on one
 line in the panel. Left and Right move between the conversation's pictures. Esc closes
-the panel, or leaves the save path for the action list. While the panel is open it takes
+the panel, or leaves the save path for the action list; Ctrl+C closes it too, without
+copying the last reply over what you just copied. On a short terminal the panel drops its
+path, hints and unselected rows before the save field or a result. While the panel is open it takes
 every key and mouse event: typing does not reach your draft or stop speech, the wheel does
 not scroll the conversation, and a click outside the panel closes it.
 

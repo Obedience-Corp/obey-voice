@@ -31,6 +31,9 @@ func (systemClipboard) WriteImage(ctx context.Context, path, format string) erro
 	return systemClipboardWriteImage(ctx, path, format)
 }
 
+// openPictureFile starts the desktop viewer and reports whether it started.
+// Some xdg-open fallbacks stay running until the viewer closes; that viewer
+// is the user's and must outlive the conversation, so it is never killed.
 func openPictureFile(ctx context.Context, path string) error {
 	if runtime.GOOS == "windows" {
 		return errors.New("open the attachment through your desktop file viewer")
@@ -38,7 +41,21 @@ func openPictureFile(ctx context.Context, path string) error {
 	if path == "" {
 		return errors.New("this picture has no file in the attachments folder")
 	}
-	return openOnDesktop(ctx, path)
+	name, args := desktopOpener(path)
+	cmd := exec.Command(name, args...)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("could not open %s: %w", path, err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("could not open %s: %w", path, err)
+		}
+	case <-ctx.Done():
+	}
+	return nil
 }
 
 func (m conversationModel) lifetime() context.Context {
@@ -48,8 +65,7 @@ func (m conversationModel) lifetime() context.Context {
 	return context.Background()
 }
 
-// openPictureRun opens the original in the desktop viewer. It is bound by the
-// conversation only: some xdg-open fallbacks wait until the viewer closes.
+// openPictureRun opens the original in the desktop viewer.
 func (m conversationModel) openPictureRun(path string) func() error {
 	open := m.openPicture
 	if open == nil {
@@ -63,6 +79,10 @@ func (m conversationModel) openPictureCmd(path string) tea.Cmd {
 	run := m.openPictureRun(path)
 	return func() tea.Msg { return mediaOpenError{run()} }
 }
+
+// pictureFormats is every format a picture is copied in, in the order a paste
+// asks the clipboard for them: an animation before a still.
+var pictureFormats = []string{"gif", "png", "jpeg"}
 
 // AppleScript reads the file as the pasteboard type of its own format, so a
 // JPEG goes on the clipboard as a JPEG rather than re-encoded.
@@ -78,15 +98,22 @@ var pictureMIME = map[string]string{
 	"gif":  "image/gif",
 }
 
+func clipboardWriteScript(class string) string {
+	return "on run argv\nset the clipboard to (read (POSIX file (item 1 of argv)) as " + class + ")\nend run"
+}
+
 func writeImageClipboard(ctx context.Context, path, format string) error {
+	return writeImageClipboardOn(ctx, runtime.GOOS, path, format)
+}
+
+func writeImageClipboardOn(ctx context.Context, goos, path, format string) error {
 	class, ok := appleScriptPictureClass[format]
 	if !ok || path == "" {
 		return fmt.Errorf("cannot copy a %q picture", format)
 	}
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
-		script := "on run argv\nset the clipboard to (read (POSIX file (item 1 of argv)) as " + class + ")\nend run"
-		if out, err := exec.CommandContext(ctx, "osascript", "-e", script, path).CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(ctx, "osascript", "-e", clipboardWriteScript(class), path).CombinedOutput(); err != nil {
 			return fmt.Errorf("copy the picture with osascript: %w: %s", err, strings.TrimSpace(string(out)))
 		}
 		return nil
@@ -160,6 +187,8 @@ func savePictureCopy(store chatmedia.Store, r chatmedia.Ref, target string) (str
 		}
 		path = expandHome(path, home)
 	}
+	// Abs drops a trailing separator, which is how a folder is typed.
+	folder := strings.HasSuffix(path, "/") || strings.HasSuffix(path, string(filepath.Separator))
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("resolve %s: %w", target, err)
@@ -167,6 +196,8 @@ func savePictureCopy(store chatmedia.Store, r chatmedia.Ref, target string) (str
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		path = filepath.Join(path, pictureFileName(r))
 		target = filepath.Join(target, pictureFileName(r))
+	} else if folder {
+		return "", fmt.Errorf("folder %s does not exist", target)
 	}
 	data, err := store.Read(r)
 	if err != nil {

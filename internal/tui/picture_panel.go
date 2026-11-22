@@ -26,6 +26,9 @@ type picturePanel struct {
 	spot   pictureSpot
 	cursor int
 	saving bool
+	// busy is a save still being written; a second Enter must not start
+	// another that then reports the first one's file as already there.
+	busy   bool
 	input  textinput.Model
 	result string
 	failed bool
@@ -109,10 +112,14 @@ func (m *conversationModel) updatePicturePanelKey(msg tea.KeyMsg) tea.Cmd {
 			p.saving, p.result, p.failed = false, "", false
 			return nil
 		case "enter":
+			if p.busy {
+				return nil
+			}
 			return m.runPictureSave()
 		}
 		// The input's own paste and blink commands answer to a model that no
 		// longer exists by the time they return; a terminal paste still types.
+		p.input.Width = m.pictureSaveInputWidth()
 		p.input, _ = p.input.Update(msg)
 		return nil
 	}
@@ -139,7 +146,7 @@ func (m *conversationModel) updatePicturePanelMouse(msg tea.MouseMsg) tea.Cmd {
 	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
 		return nil
 	}
-	g := m.picturePanelGeometry()
+	g, _ := m.picturePanelLayout()
 	row := msg.Y - g.top
 	if row < 0 || row >= g.boxRows || msg.X < 2 || msg.X >= 2+g.boxWidth {
 		return m.closePicturePanel()
@@ -187,6 +194,7 @@ func (m *conversationModel) runPictureAction(action int) tea.Cmd {
 		input.Prompt = ""
 		input.CharLimit = 4096
 		input.KeyMap.Paste.SetEnabled(false)
+		input.Width = m.pictureSaveInputWidth()
 		input.SetValue(defaultSaveTarget(r))
 		input.CursorEnd()
 		input.Focus()
@@ -198,7 +206,7 @@ func (m *conversationModel) runPictureAction(action int) tea.Cmd {
 func (m *conversationModel) runPictureSave() tea.Cmd {
 	p := &m.pictures
 	r, generation, target := p.spot.ref, p.generation, p.input.Value()
-	p.result, p.failed = "Saving…", false
+	p.result, p.failed, p.busy = "Saving…", false, true
 	store := chatmedia.DefaultStore()
 	return func() tea.Msg {
 		path, err := savePictureCopy(store, r, target)
@@ -217,8 +225,12 @@ func (m *conversationModel) finishPictureAction(msg pictureActionDone) {
 		return
 	}
 	p.result, p.failed = msg.text, msg.err != nil
+	if msg.saved {
+		p.busy = false
+	}
 	if msg.err != nil {
-		p.result = msg.err.Error()
+		// The result is one row of the box.
+		p.result = strings.Join(strings.Fields(msg.err.Error()), " ")
 		return
 	}
 	if msg.saved {
@@ -264,31 +276,44 @@ func (m conversationModel) picturePanelGeometry() picturePanelGeometry {
 	g.boxWidth = max(16, m.width-4)
 	g.inner = g.boxWidth - 4
 	r := m.pictures.spot.ref
-	sideW, sideH := g.inner-pictureInfoWidth-2, max(pictureInfoRows, g.rows-2-pictureFooterRows)
+	sideW, sideH := g.inner-pictureInfoWidth-2, g.rows-2-pictureFooterRows
 	underW, underH := g.inner, max(0, g.rows-2-pictureFooterRows-len(pictureActionLabels))
-	g.side = sideW >= 20 && m.previewCells(r, sideW, sideH) > m.previewCells(r, underW, underH)
+	g.side = sideW >= 20 && sideH >= pictureInfoRows && m.previewCells(r, sideW, sideH) > m.previewCells(r, underW, underH)
 	// Screen column of the box's first inner cell: indent, border, space.
 	const innerX = 4
 	if g.side {
 		g.previewW, g.previewH = sideW, sideH
 		g.actionX, g.actionW = innerX+sideW+2, pictureInfoWidth
-		for i := range pictureActionLabels {
-			g.actionRows = append(g.actionRows, 1+3+i)
-		}
 	} else {
 		g.previewW, g.previewH = underW, underH
 		g.actionW = min(pictureActionW, g.inner)
 		g.actionX = innerX + g.inner - g.actionW
-		for i := range pictureActionLabels {
-			g.actionRows = append(g.actionRows, 1+underH+i)
-		}
-	}
-	g.boxRows = g.previewH + pictureFooterRows + 2
-	if !g.side {
-		g.boxRows += len(pictureActionLabels)
 	}
 	return g
 }
+
+func (m conversationModel) pictureSaveInputWidth() int {
+	return max(1, m.picturePanelGeometry().inner-len("Save as ")-1)
+}
+
+// panelLine is one row inside the box. On a screen too short for all of them
+// the rows with the lowest keep go first, so the save field, a result and the
+// selected action outlast the path, the hints and blank rows.
+type panelLine struct {
+	text   string
+	keep   int
+	action int
+}
+
+const (
+	keepBlank = iota
+	keepIdleAction
+	keepPath
+	keepHint
+	keepAction
+	keepSelected
+	keepAlways
+)
 
 // previewCells is how many cells the picture covers when fitted into
 // cols×rows, by the renderer that will draw it.
@@ -318,6 +343,26 @@ func fitInside(w, h, maxW, maxH int) (int, int) {
 }
 
 func (m conversationModel) picturePanelView() string {
+	g, lines := m.picturePanelLayout()
+	body := make([]string, len(lines))
+	for i, line := range lines {
+		body[i] = line.text
+	}
+	spots := m.pictureSpots()
+	title := "Picture"
+	if i := m.pictures.pictureIndex(spots); i >= 0 {
+		title = fmt.Sprintf("Picture %d of %d", i+1, len(spots))
+	}
+	box := formBoxStyled(headerStyle.Render(title), body, g.boxWidth, lipgloss.NewStyle().Foreground(colorAccent))
+	for len(box) < g.rows {
+		box = append(box, "")
+	}
+	return strings.Join(box[:g.rows], "\n")
+}
+
+// picturePanelLayout is the rows the box shows and where its actions landed on
+// the screen, so the view and the mouse agree.
+func (m conversationModel) picturePanelLayout() (picturePanelGeometry, []panelLine) {
 	g := m.picturePanelGeometry()
 	p := m.pictures
 	r := p.spot.ref
@@ -339,6 +384,15 @@ func (m conversationModel) picturePanelView() string {
 		size += fmt.Sprintf(" · %d frames", r.Frames)
 	}
 	about := []string{headerStyle.Render(safeWorkerText(r.Name)), dimStyle.Render(size)}
+	actionKeep := func(i int) int {
+		switch {
+		case p.saving:
+			return keepIdleAction
+		case i == p.cursor:
+			return keepSelected
+		}
+		return keepAction
+	}
 	var actions []string
 	for i, label := range pictureActionLabels {
 		if i == p.cursor && !p.saving {
@@ -352,62 +406,78 @@ func (m conversationModel) picturePanelView() string {
 		line = ansi.Truncate(line, width, "…")
 		return line + strings.Repeat(" ", max(0, width-ansi.StringWidth(line)))
 	}
-	var body []string
+	var lines []panelLine
 	if g.side {
 		info := append(append(about, ""), actions...)
 		for i, line := range preview {
-			text := ""
+			row := panelLine{text: line + "  ", keep: keepAlways}
 			if i < len(info) {
-				text = ansi.Truncate(info[i], g.actionW, "…")
+				row.text += ansi.Truncate(info[i], g.actionW, "…")
 			}
-			body = append(body, line+"  "+text)
+			if a := i - len(about) - 1; a >= 0 && a < len(actions) {
+				row.action = a + 1
+			}
+			lines = append(lines, row)
 		}
 	} else {
-		body = append(body, preview...)
+		for _, line := range preview {
+			lines = append(lines, panelLine{text: line, keep: keepAlways})
+		}
 		aboutW := max(0, g.inner-g.actionW-2)
 		for i, action := range actions {
 			left := ""
 			if i < len(about) {
 				left = about[i]
 			}
-			body = append(body, fit(left, aboutW)+strings.Repeat(" ", g.inner-g.actionW-aboutW)+fit(action, g.actionW))
+			text := fit(left, aboutW) + strings.Repeat(" ", max(0, g.inner-g.actionW-aboutW)) + fit(action, g.actionW)
+			lines = append(lines, panelLine{text: text, keep: actionKeep(i), action: i + 1})
 		}
 	}
 
 	home, _ := os.UserHomeDir()
-	body = append(body, dimStyle.Render(keepEnd(collapseHome(chatmedia.DefaultStore().Path(r), home), g.inner)))
+	lines = append(lines, panelLine{text: dimStyle.Render(keepEnd(collapseHome(chatmedia.DefaultStore().Path(r), home), g.inner)), keep: keepPath})
 	switch {
 	case p.result == "":
-		body = append(body, "")
+		lines = append(lines, panelLine{})
 	case p.failed:
-		body = append(body, errorStyle.Render(p.result))
+		lines = append(lines, panelLine{text: errorStyle.Render(keepEnd(p.result, g.inner)), keep: keepAlways})
 	default:
 		result := p.result
 		if path, ok := strings.CutPrefix(result, savedPrefix); ok {
 			result = savedPrefix + keepEnd(collapseHome(path, home), g.inner-len(savedPrefix))
 		}
-		body = append(body, statusStyle.Render(result))
+		lines = append(lines, panelLine{text: statusStyle.Render(result), keep: keepAlways})
 	}
 	hint := "↑↓ choose · enter run · ←→ pictures · esc close"
 	if p.saving {
-		p.input.Width = max(1, g.inner-len("Save as ")-1)
-		body = append(body, "Save as "+p.input.View())
+		p.input.Width = m.pictureSaveInputWidth()
+		lines = append(lines, panelLine{text: "Save as " + p.input.View(), keep: keepAlways})
 		hint = "enter save · esc back to actions"
 	} else {
-		body = append(body, "")
+		lines = append(lines, panelLine{})
 	}
-	body = append(body, dimStyle.Render(hint))
+	lines = append(lines, panelLine{text: dimStyle.Render(hint), keep: keepHint})
 
-	spots := m.pictureSpots()
-	title := "Picture"
-	if i := p.pictureIndex(spots); i >= 0 {
-		title = fmt.Sprintf("Picture %d of %d", i+1, len(spots))
+	for room := max(1, g.rows-2); len(lines) > room; {
+		drop := 0
+		for i, line := range lines {
+			if line.keep <= lines[drop].keep {
+				drop = i
+			}
+		}
+		lines = append(lines[:drop], lines[drop+1:]...)
 	}
-	lines := formBoxStyled(headerStyle.Render(title), body, g.boxWidth, lipgloss.NewStyle().Foreground(colorAccent))
-	for len(lines) < g.rows {
-		lines = append(lines, "")
+	g.boxRows = len(lines) + 2
+	g.actionRows = make([]int, len(pictureActionLabels))
+	for i := range g.actionRows {
+		g.actionRows[i] = -1
 	}
-	return strings.Join(lines[:g.rows], "\n")
+	for i, line := range lines {
+		if line.action > 0 {
+			g.actionRows[line.action-1] = 1 + i
+		}
+	}
+	return g, lines
 }
 
 // pictureHit maps a screen cell to the transcript picture drawn there: its
