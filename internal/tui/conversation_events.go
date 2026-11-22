@@ -447,6 +447,9 @@ func (m *conversationModel) handleEvent(e events.Event) {
 
 	case events.JobAborted:
 		m.jobAborted(e)
+
+	case events.JobExited:
+		m.jobExited(e)
 	}
 }
 

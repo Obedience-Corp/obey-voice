@@ -51,7 +51,10 @@ the background and tell me which one is ready.” The model can use:
   and explicitly says that Obey admission is pending.
 - `agent_delegations`: read cached status immediately, without waiting.
 - `agent_cancel`: request cancellation for the exact ticket or durable ID, only
-  on explicit user intent.
+  on explicit user intent. The host checks the request first: the tool can
+  cancel only the task its own session started. Any other ticket, another
+  persona's managed task or a background job's id is refused as an unknown
+  background task.
 
 The model is not given `agent_await`, remote target selection, profile selection,
 or campaign/parent identity arguments. The task plus the appended spoken-answer
@@ -279,15 +282,42 @@ is muted, fails or is dropped, `job_result_delivered` still arrives, unspoken.
 With speech off the answer appears with `job_finished`.
 
 "Cancel", "cancel that", "kill it" or "kill that" ends the work: every running
-and queued job is aborted, and she says so once for the lot — "Stopped after
-40 seconds.", or just "Stopped." inside the first second — adding "Dropped 1
-queued job." when something never got to start. "Stop" on its own only
-silences speech; the job keeps running.
+and queued job is aborted as one act, so no queued job
+starts on a slot another one freed, and she says so once for the lot. Before
+she speaks she waits up to a second and a half for the cancelled workers to
+return. When they have, the line is "Stopped after 40 seconds.", or just
+"Stopped." inside the first second, adding "Dropped 1 queued job." when
+something never got to start. When a worker has not returned yet, the line
+says so: "Cancelled after 40 seconds; the worker is still stopping." With
+several jobs it says how many are still stopping. The wait is skipped when
+nothing was running, and it only chooses the words: the job is already over
+and its slot already free. The worker's later return is shown on the job's row
+and in `/workers`, not spoken. With the experimental `voice_work_enabled`
+inbox the line is "Cancellation requested. Completed results remain in the work
+inbox.", with "; the worker is still stopping" after the first sentence when a
+worker has not returned. "Stop" on its own only silences speech; the job keeps
+running.
+
+The same phrases reach a task an Obey-managed delegation is running, and that
+task alone is enough for them to work. Obey is asked to cancel it and she says
+"Asked Obey to cancel the delegated task."; Obey reports when it has ended.
+The status phrases still answer for jobs only.
+
+What a cancelled job had done is saved with her cancel line in the conversation
+history as a host note (`host_note` on the saved turn): `[job-1 (audit the
+config) was cancelled before it finished. Done so far: read 3 files, ran 41
+commands.]`, from the same activity rows the job's line shows. The note is not
+part of what she said: it is never spoken or shown, in the live chat or in a
+reopened session. A persona on Ollama or Codex reads it after her cancel line
+and can answer from it when asked later what that job got through; other
+providers do not read it yet. It is never saved as the job's answer.
 
 Those events are folded for display: consecutive calls of one kind become a
 row, a kind change opens the next. The TUI keeps one transcript entry per job
 and rewrites its summary in place — `⚙ job-1 · read 3 files · ran 1 command`,
-sealed with `· done in 35s`, `· failed: …` or `· killed after 6m5s`. Below that
+sealed with `· done in 35s`, `· failed: …` or `· killed after 6m5s`. A cancelled
+job whose worker has not returned yet shows `· killed after 6m5s · stopping…`
+until it does. Below that
 summary, individual tools show their commands or targets, observed status,
 output previews and errors. These details remain after completion. The `/workers`
 manager shows each task's provider/model, elapsed time, activity and output.
@@ -319,10 +349,14 @@ In the TUI, `/workers` provides **Stop task** (`s`), **Stop all** (`x`, then
 persona-specific, and is saved as `voice_workers_disabled` (default `false`).
 Turning workers off rejects new spawned and managed jobs but lets already
 admitted running and queued work finish. Stop all cancels those existing jobs
-without changing admission permission. A managed cancellation is a request;
-the detail view reports the runtime's termination evidence, including
-`unknown` when a stop cannot prove execution ended. No worker control requires
-a spoken request or a model turn. These controls are independent of the
+without changing admission permission. Neither stop waits for a worker: a
+cancelled job whose worker has not returned shows as `stopping`, with
+termination `unknown`, and turns to `aborted` with termination
+`confirmed (worker returned)` once it does. A job cancelled before it started
+reads `confirmed (never started)`. A managed cancellation is a request; the
+detail view reports the runtime's termination evidence, including `unknown`
+when a stop cannot prove execution ended. No worker control requires a spoken
+request or a model turn. These controls are independent of the
 experimental `voice_work_enabled` result inbox.
 
 `voice_work_narration` decides whether a job talks while it works: `status_only`
@@ -349,7 +383,12 @@ budget, or on a cancel, the job is marked aborted, its slot goes to the next
 queued job, and the terminal event fires at once. The worker is told to stop
 through its context — Ollama requests, shell tools and CLI-backed providers all
 receive the cancel — and a worker that ignores it lingers on its own goroutine
-without counting against the limit; whatever it returns later is dropped.
+without counting against the limit; whatever it returns later is dropped. The
+table watches for that return: until it comes the job is stopping, and
+`job_aborted` carries `Stopping: true`; when it comes, `job_exited` follows.
+"Returned" means the job's run function came back, which for a CLI worker
+means its process was reaped; it does not prove that processes the CLI started
+have ended.
 
 An Ollama worker is also made to stop using tools and answer with what it has
 in three cases: it repeated the same tool call with the same result three

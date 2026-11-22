@@ -120,8 +120,10 @@ func TestClassifyPhraseCancelVerbsNeedAJob(t *testing.T) {
 		}
 	}
 	// "stop" on its own is speech's verb, never the job's.
-	if kind, ok := classifyPhrase("stop", withJob); ok {
-		t.Errorf("stop with job = %q, true; want no phrase match", kind)
+	for _, ctx := range []RouteContext{withJob, {ManagedWorkActive: true}} {
+		if kind, ok := classifyPhrase("stop", ctx); ok {
+			t.Errorf("stop with %+v = %q, true; want no phrase match", ctx, kind)
+		}
 	}
 }
 

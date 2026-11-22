@@ -74,6 +74,7 @@ type Runtime struct {
 	observer       TerminalObserver
 	conversation   *ConversationObserver
 	admissionCheck func() error
+	cancelGuard    func(*Runtime, string) error
 	history        []TerminalOutcome
 }
 
@@ -251,6 +252,27 @@ func (r *Runtime) Status() string {
 		return "Background task " + j.ticket + " is queued for Obey."
 	}
 	return "Background task " + j.ticket + " (Obey " + j.snapshot.ID + "): " + j.snapshot.State
+}
+
+// SetCancelGuard routes the model's cancel requests through the host, which
+// decides whether this runtime may cancel the ticket. The guard is called
+// with the runtime the request came from and outside the runtime lock.
+func (r *Runtime) SetCancelGuard(guard func(*Runtime, string) error) {
+	r.mu.Lock()
+	r.cancelGuard = guard
+	r.mu.Unlock()
+}
+
+// RequestCancel is the model's cancel: through the host's guard when one is
+// installed, otherwise straight to Cancel.
+func (r *Runtime) RequestCancel(ticket string) error {
+	r.mu.Lock()
+	guard := r.cancelGuard
+	r.mu.Unlock()
+	if guard != nil {
+		return guard(r, ticket)
+	}
+	return r.Cancel(ticket)
 }
 
 // Cancel records explicit user intent without blocking a spoken turn. The
@@ -527,10 +549,10 @@ func (r *Runtime) signalReady() {
 func (r *Runtime) NewSession() *Runtime {
 	r.Stop()
 	r.mu.Lock()
-	check := r.admissionCheck
+	check, guard := r.admissionCheck, r.cancelGuard
 	r.mu.Unlock()
 	lifetime, stop := context.WithCancel(context.Background())
-	return &Runtime{client: r.client, summarize: r.summarize, timeout: r.timeout, ctx: lifetime, stop: stop, ready: r.ready, admissionCheck: check}
+	return &Runtime{client: r.client, summarize: r.summarize, timeout: r.timeout, ctx: lifetime, stop: stop, ready: r.ready, admissionCheck: check, cancelGuard: guard}
 }
 func (r *Runtime) Stop() {
 	r.mu.Lock()

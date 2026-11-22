@@ -148,8 +148,11 @@ fulfil speech delivery. Narrow layouts abbreviate running, queued, updates and
 new as `r`, `q`, `u`, `n`. A held update stays visible after it has been seen.
 Below 20 columns or 6 rows the terminal asks to resize.
 
-- `/work cancel JOB_ID` requests execution cancellation; termination may remain
-  unknown. `/work cancel all` applies it to current workers.
+- `/work cancel JOB_ID` requests execution cancellation without waiting for the
+  worker; termination may remain unknown. A background job shows as `stopping`
+  in `/workers` until its worker returns, then as `aborted` with termination
+  `confirmed (worker returned)`. `/work cancel all` cancels every job in the
+  conversation as one act, so no queued job starts in between.
 - `/work dismiss JOB_ID` removes the pending delivery obligation. It does not
   cancel execution. A completed, already communicated result has no pending
   obligation to dismiss.

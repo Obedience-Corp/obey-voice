@@ -103,10 +103,17 @@ func TestUserCancelSpeaksStoppedOnceAndSaysCancelled(t *testing.T) {
 	if e := h.awaitAborted(t); e.Reason != events.AbortCancelled {
 		t.Fatalf("reason = %q, want %q", e.Reason, events.AbortCancelled)
 	}
+	// The line is chosen only after the worker was seen to return.
+	if items := h.agency.pipeline.Workers(); len(items) != 1 || items[0].State != "aborted" || items[0].Termination != "confirmed (worker returned)" {
+		t.Fatalf("workers after the cancel line = %+v, want the worker's return confirmed", items)
+	}
 	time.Sleep(50 * time.Millisecond)
 	got := h.spoken()
 	if strings.Count(got, "Stopped") != 1 {
 		t.Fatalf("spoken = %q, want one stop line", got)
+	}
+	if strings.Contains(got, "still stopping") {
+		t.Fatalf("spoken = %q, want no slow-exit wording for a worker that returned", got)
 	}
 	if strings.Contains(got, "budget") || strings.Contains(got, "Dropped") {
 		t.Fatalf("spoken = %q, want no budget or queue talk for one running job", got)

@@ -100,6 +100,10 @@ type Info struct {
 	// TerminalElapsed is frozen when the job ends. Running jobs calculate their
 	// current elapsed time from Started instead.
 	TerminalElapsed time.Duration
+	// Stopping is set on a job that was ended while its run function was
+	// running and that function has not returned yet. The job is over and holds
+	// no slot; only the run function's exit is still to be seen.
+	Stopping bool
 }
 
 // Elapsed reports how long the job has been running, or zero if it never started.
@@ -120,6 +124,10 @@ type DoneCallback func(id string, state State, result string, err error)
 // before the job can run, so anything it publishes precedes every event the
 // job itself produces.
 type QueuedCallback func(id, task string)
+
+// ExitCallback fires once for a job that was ended while its run function was
+// running, when that function returns. It follows the job's done callback.
+type ExitCallback func(id string)
 
 // StartCallback fires once per job, on the job's own goroutine after it has
 // left the queue and immediately before its run function. It therefore
@@ -149,6 +157,7 @@ type Table struct {
 	onDone   DoneCallback
 	onQueued QueuedCallback
 	onStart  StartCallback
+	onExit   ExitCallback
 }
 
 type entry struct {
@@ -175,6 +184,15 @@ type entry struct {
 	// terminal one, and the run function is never invoked.
 	startAnnounced bool
 	stopErr        error
+	// launched is set once the job has a goroutine; invoked once its run
+	// function is called; returned once nothing of the job runs any more.
+	// exited is closed at that point.
+	launched, invoked, returned bool
+	exited                      chan struct{}
+	// doneReturned is set once the done callback has returned, and
+	// exitNotified once the exit callback has fired; the exit callback waits
+	// for both the done callback and the return.
+	doneReturned, exitNotified bool
 }
 
 // Option configures a Table.
@@ -245,6 +263,14 @@ func (t *Table) OnQueued(cb QueuedCallback) {
 	t.onQueued = cb
 }
 
+// OnExit registers a callback for the late exit of a job that was ended
+// while its run function was running.
+func (t *Table) OnExit(cb ExitCallback) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.onExit = cb
+}
+
 // OnStart registers a callback that runs on the job's goroutine right before
 // its run function.
 func (t *Table) OnStart(cb StartCallback) {
@@ -293,6 +319,7 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		ctx:       jobCtx,
 		cancel:    cancel,
 		budgetEnd: budgetEnd,
+		exited:    make(chan struct{}),
 	}
 	t.jobs[id] = e
 	if spec.Immediate {
@@ -332,6 +359,13 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 // ids are a no-op.
 func (t *Table) Abort(id string) {
 	t.stop(id, errAborted)
+}
+
+// Cancel aborts the job as Abort does and returns it as it was when the
+// cancel landed: queued or running means this cancel ended it, any other
+// state means it had already ended. ok is false for an unknown id.
+func (t *Table) Cancel(id string) (before Info, ok bool) {
+	return t.stop(id, errAborted)
 }
 
 // Stop ends a queued or running job as Abort does, with reason as its error.
@@ -386,33 +420,82 @@ func (t *Table) CheckAdmission() error {
 	return nil
 }
 
-// AbortAll removes the entire waiting queue under one lock before freeing any
-// running slots. No queued run function can slip through between cancellations.
+// AbortAll ends every queued and running job as one act; see CancelAll.
 func (t *Table) AbortAll() {
+	t.CancelAll(nil)
+}
+
+// CancelAll ends every queued and running job that skip does not exclude,
+// all under one lock, so no queued job can start between two of the
+// cancellations. skip runs under the table lock and must not call the table.
+// It returns the jobs it ended, as they were when the cancel landed.
+func (t *Table) CancelAll(skip func(id string) bool) []Info {
 	t.mu.Lock()
-	ids := t.orderedIDsLocked()
-	for _, id := range ids {
+	var ended []Info
+	var endings []ending
+	for _, id := range t.orderedIDsLocked() {
 		e := t.jobs[id]
-		if !e.finished && e.stopErr == nil {
-			e.stopErr = errAborted
+		if e.finished || (skip != nil && skip(id)) {
+			continue
+		}
+		ended = append(ended, e.info)
+		if e.info.State == StateRunning && !e.startAnnounced {
+			if e.stopErr == nil {
+				e.stopErr = errAborted
+			}
+			continue
+		}
+		if x, ok := t.endLocked(id, StateAborted, "", errAborted, true); ok {
+			endings = append(endings, x)
 		}
 	}
-	t.queue = nil
 	t.mu.Unlock()
-	for _, id := range ids {
-		t.Abort(id)
+	for _, x := range endings {
+		t.finishEnding(x)
 	}
+	return ended
+}
+
+// AwaitExit waits until the run function of every listed job has returned,
+// or the job ended without running. Unknown ids count as exited.
+func (t *Table) AwaitExit(ctx context.Context, ids ...string) error {
+	t.mu.Lock()
+	waits := make([]chan struct{}, 0, len(ids))
+	for _, id := range ids {
+		if e, ok := t.jobs[id]; ok {
+			waits = append(waits, e.exited)
+		}
+	}
+	t.mu.Unlock()
+	for _, exited := range waits {
+		select {
+		case <-exited:
+			continue
+		default:
+		}
+		select {
+		case <-exited:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 // stop is the one way a job ends before its run function returns; user
 // cancels and budget breaches share it, so neither waits on a run function
 // that may ignore its cancel.
-func (t *Table) stop(id string, err error) {
+func (t *Table) stop(id string, err error) (Info, bool) {
 	t.mu.Lock()
 	e, ok := t.jobs[id]
-	if !ok || e.finished {
+	if !ok {
 		t.mu.Unlock()
-		return
+		return Info{}, false
+	}
+	before := e.info
+	if e.finished {
+		t.mu.Unlock()
+		return before, true
 	}
 	if e.info.State == StateRunning && !e.startAnnounced {
 		// Announcing. The caller may be the start callback itself, so never
@@ -422,10 +505,24 @@ func (t *Table) stop(id string, err error) {
 			e.stopErr = err
 		}
 		t.mu.Unlock()
-		return
+		return before, true
 	}
+	x, _ := t.endLocked(id, StateAborted, "", err, true)
 	t.mu.Unlock()
-	t.complete(id, StateAborted, "", err)
+	t.finishEnding(x)
+	return before, true
+}
+
+// ending is a job marked terminal under the lock whose cancel and done
+// callback still have to run outside it.
+type ending struct {
+	id       string
+	state    State
+	result   string
+	err      error
+	cancel   context.CancelFunc
+	done     DoneCallback
+	heldSlot bool
 }
 
 // complete ends a job: terminal state under the lock, the context cancel,
@@ -433,10 +530,19 @@ func (t *Table) stop(id string, err error) {
 // that ends a job goes through it, and a job already ended is left alone.
 func (t *Table) complete(id string, state State, result string, err error) {
 	t.mu.Lock()
+	x, ok := t.endLocked(id, state, result, err, false)
+	t.mu.Unlock()
+	if ok {
+		t.finishEnding(x)
+	}
+}
+
+// endLocked marks a job terminal. early is set when the job is ended before
+// its run function returned; such a job is stopping until it does.
+func (t *Table) endLocked(id string, state State, result string, err error, early bool) (ending, bool) {
 	e, ok := t.jobs[id]
 	if !ok || e.finished {
-		t.mu.Unlock()
-		return
+		return ending{}, false
 	}
 	if e.info.State == StateQueued {
 		t.removeFromQueueLocked(id)
@@ -445,23 +551,70 @@ func (t *Table) complete(id string, state State, result string, err error) {
 	if heldSlot {
 		t.completing++
 	}
-	cb := t.finishLocked(id, state, result, err)
-	cancel := e.cancel
-	t.mu.Unlock()
+	if !e.launched {
+		t.markReturnedLocked(e)
+	} else if early && e.invoked && !e.returned {
+		e.info.Stopping = true
+	}
+	done := t.finishLocked(id, state, result, err)
+	return ending{id: id, state: state, result: result, err: err, cancel: e.cancel, done: done, heldSlot: heldSlot}, true
+}
+
+func (t *Table) finishEnding(x ending) {
 	defer func() {
 		t.mu.Lock()
-		if heldSlot {
+		if x.heldSlot {
 			t.completing--
 		}
+		e := t.jobs[x.id]
+		e.doneReturned = true
+		exit := t.exitDueLocked(e)
 		t.pumpLocked()
 		t.mu.Unlock()
+		if exit != nil {
+			exit(x.id)
+		}
 	}()
-	if cancel != nil {
-		cancel()
+	if x.cancel != nil {
+		x.cancel()
 	}
-	if cb != nil {
-		cb(id, state, result, err)
+	if x.done != nil {
+		x.done(x.id, x.state, x.result, x.err)
 	}
+}
+
+// noteReturn records that the job's goroutine has nothing left running.
+func (t *Table) noteReturn(id string) {
+	t.mu.Lock()
+	e := t.jobs[id]
+	t.markReturnedLocked(e)
+	exit := t.exitDueLocked(e)
+	t.mu.Unlock()
+	if exit != nil {
+		exit(id)
+	}
+}
+
+func (t *Table) markReturnedLocked(e *entry) {
+	if e.returned {
+		return
+	}
+	e.returned = true
+	close(e.exited)
+}
+
+// exitDueLocked returns the exit callback once a stopping job has both
+// returned and had its done callback return, and nil otherwise.
+func (t *Table) exitDueLocked(e *entry) ExitCallback {
+	if !e.info.Stopping || !e.returned || !e.doneReturned || e.exitNotified {
+		return nil
+	}
+	e.info.Stopping = false
+	e.exitNotified = true
+	if t.onExit == nil {
+		return func(string) {}
+	}
+	return t.onExit
 }
 
 // Status returns all known jobs: running first in start order, then queued in
@@ -509,12 +662,15 @@ func (t *Table) pumpLocked() {
 
 func (t *Table) launchLocked(id string, e *entry) {
 	e.info.State = StateRunning
+	e.launched = true
 	t.running[id] = struct{}{}
 	t.runOrder = append(t.runOrder, id)
 	go t.run(e.ctx, id)
 }
 
 func (t *Table) run(jobCtx context.Context, id string) {
+	// Registered first so it runs last, after a panic has ended the job.
+	defer t.noteReturn(id)
 	defer func() {
 		if r := recover(); r != nil {
 			t.complete(id, StateFailed, "", fmt.Errorf("worker panic: %v", r))
@@ -566,12 +722,14 @@ func (t *Table) run(jobCtx context.Context, id string) {
 	// check hands the run function an already-cancelled context instead.
 	t.mu.Lock()
 	finished := e.finished
+	e.invoked = !finished
 	t.mu.Unlock()
 	if finished {
 		return
 	}
 
 	result, err := runFn(jobCtx)
+	t.noteReturn(id)
 	state := StateDone
 	if err != nil {
 		if jobCtx.Err() != nil {

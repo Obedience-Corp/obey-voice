@@ -240,7 +240,7 @@ func (s *toolSession) executeDelegation(call api.ToolCall) string {
 		return "Task queued for Obey. Ticket: " + ticket + ". Admission is pending; do not claim completion. Results will be available on a later conversational turn."
 	case "agent_cancel":
 		id, _ := args["delegation_id"].(string)
-		if err := s.delegation.Cancel(id); err != nil {
+		if err := s.delegation.RequestCancel(id); err != nil {
 			return "error: " + err.Error()
 		}
 		return "Cancellation requested. This is not yet confirmation that the worker has stopped."
