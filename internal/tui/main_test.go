@@ -13,7 +13,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-const realClipboardMsg = "test reached the real system clipboard; inject a clipboardBackend fake"
+const realClipboardMsg = "test reached the real system clipboard or desktop viewer; inject a clipboardBackend fake or set openPicture"
 
 var (
 	realClipboardHit  atomic.Bool
@@ -34,6 +34,8 @@ func recordRealClipboard(call string) {
 func TestMain(m *testing.M) {
 	systemClipboardRead = func() (string, error) { recordRealClipboard("ReadAll"); return "", nil }
 	systemClipboardWrite = func(string) error { recordRealClipboard("WriteAll"); return nil }
+	systemClipboardWriteImage = func(context.Context, string, string) error { recordRealClipboard("WriteImage"); return nil }
+	systemOpenPicture = func(context.Context, string) error { recordRealClipboard("OpenPicture"); return nil }
 	// The real scan starts whatever provider CLIs are installed, the claude CLI
 	// among them. A test that needs it opts in with useRealDiscovery.
 	discoverProviders = func(*config.Config) []discovery.ProviderInfo { return nil }

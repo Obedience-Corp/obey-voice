@@ -156,6 +156,9 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			m.commandError(msg.err.Error())
 		}
 		return m, nil
+	case pictureActionDone:
+		m.finishPictureAction(msg)
+		return m, nil
 	case clipboardPasteMsg:
 		if msg.err != nil {
 			m.commandError("paste failed: " + msg.err.Error())
@@ -175,9 +178,15 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		return m, nil
 
 	case tea.MouseMsg:
+		if m.pictures.open {
+			return m, m.updatePicturePanelMouse(msg)
+		}
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
 			if dir := m.recordingHit(msg.X, msg.Y); dir != "" {
 				return m, m.openRecordingCmd(dir)
+			}
+			if spot, ok := m.pictureHit(msg.X, msg.Y); ok {
+				return m, m.openPicturePanel(spot)
 			}
 		}
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.workCueHit(msg.X, msg.Y) {
@@ -205,6 +214,11 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 
 	case tea.KeyMsg:
 		if absorbed, scroll, ok := m.absorbMouseFragment(msg); ok {
+			if m.pictures.open {
+				// The wheel must not scroll the transcript under the panel.
+				m.mouseFragment = absorbed.mouseFragment
+				return m, nil
+			}
 			return absorbed, scroll
 		} else {
 			m = absorbed
@@ -213,6 +227,9 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			// Nothing is wired yet: a turn typed here would be dispatched at a
 			// nil runner. ctrl+c still quits (the app handles it above).
 			return m, nil
+		}
+		if m.pictures.open {
+			return m, m.updatePicturePanelKey(msg)
 		}
 		if msg.Paste {
 			if paths, ok := chatmedia.Paths(string(msg.Runes)); ok {

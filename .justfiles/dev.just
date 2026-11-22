@@ -65,6 +65,13 @@ demo-chat-images:
     go test -c -o bin/chat-media.test ./internal/tui
     vhs demos/chat-images.tape
 
+# Review the picture panel (/image, copy, save) with a fake clipboard and viewer.
+[no-cd]
+demo-picture-actions:
+    mkdir -p bin demos/frames
+    go test -c -o bin/chat-media.test ./internal/tui
+    vhs demos/picture-actions.tape
+
 # Review worker image/GIF replies using the real TUI with silent fixtures.
 [no-cd]
 demo-agent-images:

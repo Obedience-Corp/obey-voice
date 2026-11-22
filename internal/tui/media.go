@@ -194,6 +194,10 @@ func (m *conversationModel) mediaCommand() tea.Cmd {
 	for _, item := range m.items {
 		refs = append(refs, item.attachments...)
 	}
+	// A panel whose picture has left the conversation has nothing to show.
+	if m.pictures.open && m.pictures.pictureIndex(m.pictureSpots()) < 0 {
+		m.pictures = picturePanel{generation: m.pictures.generation + 1}
+	}
 	refs = append(refs, m.media.draft...)
 	if len(refs) == 0 {
 		return m.syncGraphics(nil)
@@ -202,6 +206,12 @@ func (m *conversationModel) mediaCommand() tea.Cmd {
 	keep := make(map[string]bool)
 	frames := 0
 	var recent []chatmedia.Ref
+	if m.pictures.open {
+		r := m.pictures.spot.ref
+		keep[r.ID] = true
+		frames += max(1, r.Frames)
+		recent = append(recent, r)
+	}
 	for i := len(refs) - 1; i >= 0; i-- {
 		r := refs[i]
 		if keep[r.ID] {

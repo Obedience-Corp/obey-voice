@@ -11,6 +11,40 @@ thread after sending. You can send images with a question or on their own.
 - F2 pauses or resumes GIF previews. Reduced-motion mode shows a still frame.
 - F3 opens the most recent draft image (or most recent thread image) at original size.
 - F4 removes the last draft image. `/image N` opens thread image N, counting from one.
+- `/image` on its own opens the picture panel on the latest picture in the conversation.
+  With mouse capture on, a left click on a picture or on its `name · W×H` line opens the
+  panel on that picture.
+
+### Picture panel
+
+The panel shows one picture with its name, size and the file it is stored in, and four
+actions. It takes the screen between the header and the footer and puts the actions
+beside or under the picture, whichever leaves the picture more room, so it is drawn
+larger than in the conversation unless it is already shown at its own size: a picture is
+never enlarged past its pixels. The actions are:
+
+- **Open the original** (the default) opens the stored file in your desktop image viewer,
+  as F3 does.
+- **Copy the picture** puts the picture itself on the clipboard in its own format (PNG,
+  JPEG or GIF), so it can be pasted into another app or back into a conversation here: a
+  paste asks the clipboard for each of those formats. macOS uses `osascript`; Linux uses
+  `wl-copy`, then `xclip`. It is not available on Windows; copy the path there.
+- **Copy its path** puts the stored file's path on the clipboard as text.
+- **Save a copy…** asks where to save, starting from `~/Downloads/<name>`. `~` stands for
+  your home folder, and a folder alone saves the picture there under its own name. Saving
+  never replaces a file: an existing file, or a folder that does not exist, is refused
+  with a message and the path stays open to edit.
+
+Up and Down (or `j` and `k`) choose an action and Enter runs it; the result shows on one
+line in the panel. Left and Right move between the conversation's pictures. Esc closes
+the panel, or leaves the save path for the action list; Ctrl+C closes it too, without
+copying the last reply over what you just copied. On a short terminal the panel drops its
+path, hints and unselected rows before the save field or a result. While the panel is open it takes
+every key and mouse event: typing does not reach your draft or stop speech, the wheel does
+not scroll the conversation, and a click outside the panel closes it.
+
+Clicks reach Obey Voice only with mouse capture on: **Settings → Tools → Mouse scroll
+(claims mouse)**, or `tui_mouse_enabled: true`. With it off, use `/image`.
 
 In Ghostty and kitty, still images are drawn at the terminal's own resolution through
 the Kitty graphics protocol. Each image is sent to the terminal once and placed with
@@ -187,6 +221,15 @@ printed **Obey Voice Images Test.app**. The fixture provides a screenshot, anima
 temporary session storage, and a local vision stub. It records model requests under the
 printed temporary directory so attachment transport can be checked as well as appearance.
 
+### Picture panel recording
+
+![Picture panel opened with /image: copy a picture, move to the other one, save a copy](../demos/picture-actions.gif)
+
+Run `just demo-picture-actions` for the real Bubble Tea UI. The recording types `/image`,
+copies the latest picture, moves to the earlier one and saves a copy. The clipboard and
+desktop viewer are test fakes and the copy is saved under a temporary home folder, so the
+recording proves the panel and its keys, not the operating system's clipboard or viewer.
+
 ### Agent reply recording
 
 ![Image input and worker image/GIF reply](../demos/agent-images.gif)
@@ -233,6 +276,7 @@ has no Kitty graphics protocol, so it shows the fallback.
 | Returned GIF stops and resumes | The returned bar stops near the end of the recording, then moves again |
 | Video attachments/playback | Not implemented; the attachment importer accepts PNG, JPEG, and GIF only |
 | Native desktop rendering | Not exercised by these terminal recordings; use the desktop fixture above |
+| `/image` opens the picture panel; Copy the picture and Save a copy report their result | `picture-actions.gif` shows the panel on picture 2 of 2, **Copied the picture**, then picture 1 of 2 with **Saved to ~/Downloads/harbor.png**; the clipboard and save folder are test doubles |
 
 The harness injects paste/key events and a deterministic worker result; it does not
 exercise the operating system clipboard reader or prove a live model will create an

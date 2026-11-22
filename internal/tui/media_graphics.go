@@ -296,6 +296,11 @@ func (m *conversationModel) syncGraphics(keep map[string]bool) tea.Cmd {
 			add(r, w, h)
 		}
 	}
+	if m.pictures.open {
+		if p := m.picturePanelGeometry(); p.previewH > 0 {
+			add(m.pictures.spot.ref, p.previewW, p.previewH)
+		}
+	}
 	keys := make([]string, 0, len(want))
 	for _, w := range want {
 		keys = append(keys, fmt.Sprintf("%s/%d/%d", w.box.id, w.box.cols, w.box.rows))

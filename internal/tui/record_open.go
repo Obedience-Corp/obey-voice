@@ -84,17 +84,25 @@ func (m *conversationModel) openRecordingCmd(dir string) tea.Cmd {
 }
 
 func openRecordingDirectory(ctx context.Context, dir string) error {
-	var cmd *exec.Cmd
+	return openOnDesktop(ctx, dir)
+}
+
+// desktopOpener is the command that hands a file or folder to the desktop's
+// default application.
+func desktopOpener(target string) (string, []string) {
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.CommandContext(ctx, "open", dir)
+		return "open", []string{target}
 	case "windows":
-		cmd = exec.CommandContext(ctx, "explorer.exe", dir)
-	default:
-		cmd = exec.CommandContext(ctx, "xdg-open", dir)
+		return "explorer.exe", []string{target}
 	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("could not open %s: %w", dir, err)
+	return "xdg-open", []string{target}
+}
+
+func openOnDesktop(ctx context.Context, target string) error {
+	name, args := desktopOpener(target)
+	if err := exec.CommandContext(ctx, name, args...).Run(); err != nil {
+		return fmt.Errorf("could not open %s: %w", target, err)
 	}
 	return nil
 }

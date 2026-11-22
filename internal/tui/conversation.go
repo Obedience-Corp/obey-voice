@@ -186,6 +186,8 @@ type conversationModel struct {
 	lastRecordingDir     string
 	recordingTargets     map[string]string
 	openRecording        func(context.Context, string) error
+	openPicture          func(context.Context, string) error
+	pictures             picturePanel
 	inputDevice          string
 	outputDevice         string
 	voiceFailures        int

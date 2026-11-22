@@ -14,6 +14,11 @@ import (
 
 func (a App) onKey(msg tea.KeyMsg) (App, tea.Cmd, bool) {
 	if msg.String() == "ctrl+c" && a.screen == screenConversation {
+		// With the picture panel open Ctrl+C closes it. Copying the last
+		// reply here would replace the picture or path just copied.
+		if a.conversation.pictures.open {
+			return a, a.conversation.closePicturePanel(), true
+		}
 		// Selection in the composer still copies the draft first.
 		if a.conversation.editor.selectionActive() {
 			a.conversation.copySelection()
@@ -385,7 +390,7 @@ func (a App) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Conversation ticks belong to the conversation even while hidden.
 		// Dropping one leaves voiceTicking set but no timer scheduled.
 		// Meeting animation uses the separate meetingTickMsg lifecycle.
-		case mediaImported, mediaLoaded, mediaTick, mediaValidated, mediaOpenError, capturePollMsg, voiceTickMsg, voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
+		case mediaImported, mediaLoaded, mediaTick, mediaValidated, mediaOpenError, pictureActionDone, capturePollMsg, voiceTickMsg, voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
 			compactDoneMsg, backgroundReadyMsg, backgroundRecoveryMsg, backgroundPauseDoneMsg:
 			var convCmd tea.Cmd
 			a.conversation, convCmd = a.conversation.Update(msg)

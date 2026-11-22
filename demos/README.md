@@ -12,6 +12,18 @@ no microphone, audio, personal config, or external model is used.
 See [chat images](../docs/chat-images.md) for controls, limits, and the isolated
 native desktop fixture. The reproducible source is `chat-images.tape`.
 
+## picture-actions.gif — the picture panel
+
+`just demo-picture-actions` records `/image` opening the picture panel on the latest
+picture, **Copy the picture**, Left to the earlier picture, and **Save a copy…** into
+`~/Downloads`. The clipboard and desktop viewer are test fakes and the home folder is
+temporary, so nothing reaches the real clipboard, a viewer or your Downloads folder.
+
+![Picture panel](picture-actions.gif)
+
+See [chat images](../docs/chat-images.md#picture-panel) for the keys and actions. The
+reproducible source is `picture-actions.tape`.
+
 ## chat-path-completion.gif — @path completion in chat
 
 `just demo-chat-path-completion` records, in a disposable campaign created under

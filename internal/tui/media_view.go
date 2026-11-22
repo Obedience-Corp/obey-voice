@@ -3,8 +3,6 @@ package tui
 import (
 	"fmt"
 	"image"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -41,20 +39,23 @@ func mediaPixels(img image.Image, width, height int) string {
 func (m conversationModel) renderMedia(refs []chatmedia.Ref, width, height int) string {
 	var blocks []string
 	for _, r := range refs {
-		preview, exists := m.media.cache[r.ID]
-		body := ""
-		if !exists {
-			body = "Preview outside cache · use /image N to open original"
-		} else if preview.err != nil {
-			body = errorStyle.Render("Image unavailable: " + preview.err.Error())
-		} else if native, ok := m.nativeImage(r, max(1, width), height); ok {
-			body = native
-		} else {
-			body = mediaPixels(preview.preview.Frame(time.Since(m.media.started), m.media.paused || m.reducedMotion), max(1, width), height)
-		}
-		blocks = append(blocks, dimStyle.Render(ansi.Truncate(mediaSummary(r), width, "…"))+"\n"+body)
+		blocks = append(blocks, dimStyle.Render(ansi.Truncate(mediaSummary(r), width, "…"))+"\n"+m.mediaBody(r, width, height))
 	}
 	return strings.Join(blocks, "\n")
+}
+
+func (m conversationModel) mediaBody(r chatmedia.Ref, width, height int) string {
+	preview, exists := m.media.cache[r.ID]
+	switch {
+	case !exists:
+		return "Preview outside cache · use /image N to open original"
+	case preview.err != nil:
+		return errorStyle.Render("Image unavailable: " + preview.err.Error())
+	}
+	if native, ok := m.nativeImage(r, max(1, width), height); ok {
+		return native
+	}
+	return mediaPixels(preview.preview.Frame(time.Since(m.media.started), m.media.paused || m.reducedMotion), max(1, width), height)
 }
 func (m conversationModel) draftMediaView() string {
 	if len(m.media.draft) == 0 {
@@ -124,19 +125,7 @@ func (m *conversationModel) openMedia() tea.Cmd {
 		m.commandError("No image to open")
 		return nil
 	}
-	return openMediaFile(chatmedia.DefaultStore().Path(refs[len(refs)-1]))
-}
-func openMediaFile(path string) tea.Cmd {
-	return func() tea.Msg {
-		command := "xdg-open"
-		if runtime.GOOS == "darwin" {
-			command = "open"
-		}
-		if runtime.GOOS == "windows" {
-			return mediaOpenError{fmt.Errorf("open the attachment through your desktop file viewer")}
-		}
-		return mediaOpenError{exec.Command(command, path).Run()}
-	}
+	return m.openPictureCmd(chatmedia.DefaultStore().Path(refs[len(refs)-1]))
 }
 
 type mediaOpenError struct{ err error }
