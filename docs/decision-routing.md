@@ -84,6 +84,14 @@ that invites another persona by name goes through the same steps; on a failure
 without Ollama the reply stays with its speaker, with no notice (the diagnostic
 below records it).
 
+Measured on 2026-11-21: the 26 labelled addressee cases were replayed once
+through two local decision models. The top answer matched the label on 11 of 26
+with Decider 2B v12 and on 18 of 26 with Liquid d1-3B, and the acceptance gate
+passed 1 of 26 for each. So when the live brain is not Ollama, a reply that names
+another persona by plain name normally stays with its speaker. An `@mention` in
+the reply is the reliable handoff: it is an exact control and calls no model (see
+[personas](personas.md#shared-conversations)).
+
 ### What the addressee question sends
 
 For every user message that names a persona (or carries a spoken-name hint) and

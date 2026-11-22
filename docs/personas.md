@@ -397,6 +397,27 @@ also selects the named listener directly and preserves the full request. Joker
 takes the first turn and can then invite Venessa to answer. Instructions to
 “you and Venessa” to keep talking go to the current responder first.
 
+A persona's reply hands the floor to another persona with an `@` mention of
+that persona's ID, alias or display name (`@Milo, what do you think?`). The
+mention is one word, so a multi-word display name is written with its first
+word or with the ID. It is a silent control: shown in the chat, not spoken. One
+reply can invite several personas, `@Milo @Vera, what do you two think?`, and
+they answer in the order they were mentioned, each after the one before has
+finished. The replies of invited personas still waiting their turn are not
+checked for a new handoff; once every invited persona has answered, the last
+reply is checked as usual. A persona mentioned twice is invited once; the
+persona replying and any persona who has already answered your message are
+left out. An unknown or ambiguous `@` name anywhere in the reply cancels the
+whole invitation with an "Agent handoff skipped" notice, and an invited
+persona that cannot be loaded is skipped with the same notice and the next
+one is asked. One message allows three handoffs after the first reply: invited
+personas who are still waiting when that limit is reached do not answer, and
+one notice names them. Speaking while invited personas are waiting, or
+stopping the turn, ends the invitation without a notice. A reply that
+names a persona without `@` hands over only when a classifier decides it is
+addressed to that persona (see
+[decision routing](decision-routing.md#who-is-being-addressed)).
+
 Incidental mentions such as `Santa is a persona` do not select Santa. Semantic
 routing can select only a configured agent name or alias; human names and topic
 names such as LFM3 stay with the current responder. Unknown exact `@id` or
