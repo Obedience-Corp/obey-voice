@@ -91,9 +91,11 @@ passed 1 of 26 for each. The case set is not in this repository, and the other
 local models (`2b`, `0.8b`, `decider-4b-v3`) and the hosted providers were not
 part of this run. With either measured model as the decision model and a live
 brain that is not Ollama, a reply that names another persona by plain name
-normally stays with its speaker. An `@mention` in the reply hands over on every
-backend: it is an exact control and calls no model (see
-[personas](personas.md#shared-conversations)).
+normally stays with its speaker. An `@mention` in the reply is an exact control
+and calls no model, so it hands over without a classifier wherever a reply can
+hand the conversation on. A reply cannot in a conversation whose personas all
+keep their own session (Claude, Grok, Cursor): that conversation moves only
+when you switch (see [personas](personas.md#shared-conversations)).
 
 ### What the addressee question sends
 

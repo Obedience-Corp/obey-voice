@@ -2,7 +2,7 @@ name: invite-two
 description: a persona reply that @mentions two personas hands the floor to both, in mention order (needs -fixture-config and -persona-dir with personas ada, milo and vera)
 duration: 10m
 input: text
-persona: {initial: ada}
+persona: {initial: ada, handoffs: true}
 
 turns:
   - id: invite
@@ -11,3 +11,5 @@ turns:
     expect:
       - {persona_id: vera}
       - {response_persona_id: ada}
+      # One reply each from Ada, Milo and Vera: a skipped invitee fails here.
+      - {brain_calls: 3}

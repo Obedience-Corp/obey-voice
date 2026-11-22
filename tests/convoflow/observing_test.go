@@ -130,3 +130,11 @@ func TestObservingFreshOllamaWorkerPreservesCallsAndIsolation(t *testing.T) {
 		t.Fatalf("fresh worker changed parent history: %+v", got)
 	}
 }
+
+func TestObservingFreshClaudeWorkerStaysObserved(t *testing.T) {
+	wrapped, observed := observeProvider(&brain.Brain{})
+	fresh, ok := wrapped.(brain.FreshProvider).Fresh().(*observingClaude)
+	if !ok || fresh.observing != observed {
+		t.Fatal("a fresh worker from the observed provider bypasses the observer")
+	}
+}

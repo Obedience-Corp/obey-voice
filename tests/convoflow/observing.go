@@ -47,6 +47,13 @@ func (o *observingClaude) ThinkFull(ctx context.Context, input string, opts brai
 	o.observeFull(opts)
 	return o.Brain.ThinkFull(ctx, input, opts)
 }
+
+// Fresh keeps a worker copy observed, as observingOllama.Fresh does.
+func (o *observingClaude) Fresh() brain.Provider {
+	fresh := o.Brain.Fresh().(*brain.Brain)
+	return &observingClaude{observing: o.observing, Brain: fresh}
+}
+
 func (o *observingClaude) History() []brain.Turn      { return o.Brain.History() }
 func (o *observingClaude) ClearHistory()              { o.Brain.ClearHistory() }
 func (o *observingClaude) LoadHistory(t []brain.Turn) { o.Brain.LoadHistory(t) }

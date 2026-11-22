@@ -398,7 +398,9 @@ takes the first turn and can then invite Venessa to answer. Instructions to
 “you and Venessa” to keep talking go to the current responder first.
 
 A persona's reply hands the floor to another persona with an `@` mention of
-that persona's ID, alias or display name (`@Milo, what do you think?`). The
+that persona's ID, alias or display name (`@Milo, what do you think?`), except
+in a conversation whose personas all keep their own session (Claude, Grok,
+Cursor), which moves only when you switch. The
 mention is one word, so a multi-word display name is written with its first
 word or with the ID. The chat shows the mention as written. In speech the `@`
 is not said and the persona's display name is heard in its place, whichever of
