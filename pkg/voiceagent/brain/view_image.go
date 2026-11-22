@@ -112,6 +112,7 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool)
 	canonicalOpened, workingOpened := o.canonical[c].OpenedImages, o.working[w].OpenedImages
 	o.canonical[c].OpenedImages = openedLast(canonicalOpened, ref)
 	o.working[w].OpenedImages = openedLast(workingOpened, ref)
+	label = pictureLabel(o.working[w].OpenedImages[len(o.working[w].OpenedImages)-1])
 	_, outcome = o.carried(o.history, o.working)
 	why, handled := outcome[carriedKey{turn: w, id: ref.ID}]
 	if !handled {

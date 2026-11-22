@@ -324,6 +324,7 @@ func TestViewImageSaysWhichPictureItPushedOut(t *testing.T) {
 	})
 	noisyPNG(t, filepath.Join(o.workDir, "first.png"), 24)
 	noisyPNG(t, filepath.Join(o.workDir, "second.png"), 25)
+	noisyPNG(t, filepath.Join(o.workDir, "copy.png"), 24)
 	sizes := 0
 	for _, name := range []string{"first.png", "second.png"} {
 		info, err := os.Stat(filepath.Join(o.workDir, name))
@@ -347,13 +348,16 @@ func TestViewImageSaysWhichPictureItPushedOut(t *testing.T) {
 	}
 }
 
-// A picture a later one pushed out is brought back by opening it again.
+// A picture a later one pushed out is brought back by opening it again, under
+// the name it was first opened with.
 func TestViewImageBringsBackAPicturePushedOut(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	o, sent := toolModel(t, true, func(w http.ResponseWriter, n int, req api.ChatRequest) {
 		switch n {
-		case 1, 3:
+		case 1:
 			callTool(w, req, "view_image", map[string]any{"path": "first.png"})
+		case 3:
+			callTool(w, req, "view_image", map[string]any{"path": "copy.png"})
 		case 2:
 			callTool(w, req, "view_image", map[string]any{"path": "second.png"})
 		default:
@@ -362,6 +366,7 @@ func TestViewImageBringsBackAPicturePushedOut(t *testing.T) {
 	})
 	noisyPNG(t, filepath.Join(o.workDir, "first.png"), 24)
 	noisyPNG(t, filepath.Join(o.workDir, "second.png"), 25)
+	noisyPNG(t, filepath.Join(o.workDir, "copy.png"), 24)
 	sizes := 0
 	for _, name := range []string{"first.png", "second.png"} {
 		info, err := os.Stat(filepath.Join(o.workDir, name))

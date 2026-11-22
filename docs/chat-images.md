@@ -136,10 +136,11 @@ third-latest is already named as no longer attached. The line and the picture
 are added to each request as it is built and never stored with the message, so
 text a user types in the same form is sent and kept as written. A message keeps
 its posted pictures when the reply that posted them is trimmed from the retained
-history; a session loaded from saved turns takes them from the replies still
-saved. A native-audio persona is sent none; as before, it refuses a conversation whose
-retained turns hold a picture. Only the model request changes: the transcript and
-the saved conversation keep the picture on the reply.
+history or the conversation is compacted. They are saved with the message,
+apart from what the user attached; a conversation saved before that takes them
+from the replies still saved. A native-audio persona is sent none; as before, it
+refuses a conversation whose retained turns hold a picture. The chat shows the
+picture only on the reply, never as sent by the user.
 
 A speaking persona on Ollama with direct tools can look at an image file with the
 `view_image` tool. The file must be a PNG, JPEG or GIF inside the work directory

@@ -221,6 +221,7 @@ func copyWorkerThread(turns []brain.Turn) []brain.Turn {
 	for i := range copy {
 		copy[i].Attachments = append([]chatmedia.Ref(nil), turns[i].Attachments...)
 		copy[i].OpenedImages = append([]chatmedia.Ref(nil), turns[i].OpenedImages...)
+		copy[i].PostedImages = append([]brain.PostedImage(nil), turns[i].PostedImages...)
 		copy[i].ToolCalls = append([]brain.TurnToolCall(nil), copy[i].ToolCalls...)
 	}
 	return copy

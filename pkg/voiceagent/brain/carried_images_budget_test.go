@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -132,5 +133,73 @@ func TestCarriedPictureLinesCountTowardTheContextEstimate(t *testing.T) {
 	t.Logf("%d of %d sizes refused the turn with pictures, %d without", withPictures, tried, plain)
 	if withPictures > plain {
 		t.Fatalf("%d of %d sizes refused the turn with pictures, %d without", withPictures, tried, plain)
+	}
+}
+
+// roundTrip is v after saving it as JSON and reading it back.
+func roundTrip[T any](t *testing.T, v T) T {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out T
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// trimmedAfterAPostedPicture is a conversation whose working view has lost
+// the reply that posted a picture the question after it still carries.
+func trimmedAfterAPostedPicture(t *testing.T) (*OllamaBrain, chatmedia.Ref) {
+	t.Helper()
+	fake := &visionFake{}
+	o, ref := postedPicture(t, fake)
+	if _, err := o.ThinkFull(t.Context(), "What colour is it?", StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	carrier := lastUserIndex(o.history)
+	o.history, o.working = o.history[carrier:], o.working[carrier:]
+	if m := messageWith(t, built(o), "What colour is it?"); strings.Count(m.Content, pictureNamed(ref)) != 1 {
+		t.Fatalf("before saving the question reads %q", m.Content)
+	}
+	return o, ref
+}
+
+// A saved persona context keeps what the question carries though the reply
+// that posted it had left its working view.
+func TestSavedPersonaContextKeepsAPostedPicture(t *testing.T) {
+	o, ref := trimmedAfterAPostedPicture(t)
+	state := roundTrip(t, CapturePersonaContext(o.ContinuitySnapshot()))
+	canonical := roundTrip(t, o.History())
+	if !state.Matches(canonical) {
+		t.Fatal("the saved context no longer matches the saved conversation")
+	}
+	r := (&visionFake{}).brain(t, budgetConfig(), "You are Obey.")
+	if err := r.ImportContinuity(state.Reconcile(canonical)); err != nil {
+		t.Fatal(err)
+	}
+	if m := messageWith(t, built(r), "What colour is it?"); strings.Count(m.Content, pictureNamed(ref)) != 1 {
+		t.Fatalf("after a restart the question reads %q", m.Content)
+	}
+}
+
+// A saved conversation keeps the picture on the message that carries it, even
+// when the turns loaded no longer hold the reply that posted it.
+func TestSavedConversationKeepsAPostedPicture(t *testing.T) {
+	fake := &visionFake{}
+	o, ref := postedPicture(t, fake)
+	if _, err := o.ThinkFull(t.Context(), "What colour is it?", StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	saved := roundTrip(t, o.History())
+	if saved[2].Content != "What colour is it?" || len(saved[2].Attachments) != 0 {
+		t.Fatalf("the saved question reads %+v", saved[2])
+	}
+	r := (&visionFake{}).brain(t, budgetConfig(), "You are Obey.")
+	r.LoadHistory(saved[2:])
+	if m := messageWith(t, built(r), "What colour is it?"); strings.Count(m.Content, pictureNamed(ref)) != 1 {
+		t.Fatalf("after loading the question reads %q", m.Content)
 	}
 }

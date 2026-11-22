@@ -126,9 +126,10 @@ type Turn struct {
 	// answering this user turn. They are not the user's attachments, and the
 	// chat never shows them as sent by the user.
 	OpenedImages []chatmedia.Ref `json:"opened_images,omitempty"`
-	// posted are the pictures on the replies before this user turn, set on the
-	// Ollama working view when the turn is recorded. They are not saved.
-	posted []replyPicture
+	// PostedImages are the pictures on the replies before this user turn,
+	// which a local-model request carries on it. They are not the user's
+	// attachments, and the chat never shows them as sent by the user.
+	PostedImages []PostedImage `json:"posted_images,omitempty"`
 	// RoutedInput is the request sent to the model after a direct address was
 	// removed. Content retains the original finalized input for the transcript.
 	RoutedInput string `json:"routed_input,omitempty"`
@@ -160,6 +161,13 @@ type Turn struct {
 	PersonaDisplayName string    `json:"persona_display_name,omitempty"`
 	PromptHash         string    `json:"prompt_hash,omitempty"`
 	ResponseID         string    `json:"response_id,omitempty"`
+}
+
+// PostedImage is a picture on a reply, with who wrote the reply.
+type PostedImage struct {
+	Ref                chatmedia.Ref `json:"ref"`
+	PersonaID          string        `json:"persona_id,omitempty"`
+	PersonaDisplayName string        `json:"persona_display_name,omitempty"`
 }
 
 // TurnIdentity is immutable historical assistant identity.
