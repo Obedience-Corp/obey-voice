@@ -29,7 +29,11 @@ func (a *Agency) onJobQueued(id, task string) {
 		// Register already published the canonical scoped admission.
 		return
 	}
-	a.emitJobTrace(id, events.JobQueued{ID: id, Task: task})
+	queued := events.JobQueued{ID: id, Task: task}
+	if origin.continued {
+		queued.Persona = origin.Envelope.DisplayName
+	}
+	a.emitJobTrace(id, queued)
 }
 
 func (a *Agency) onJobStarted(id, task string) {
@@ -46,6 +50,7 @@ func (a *Agency) onJobStarted(id, task string) {
 }
 
 func (a *Agency) onJobDone(id string, state job.State, result string, err error) {
+	a.pipeline.endMovedJob(id, state, err)
 	a.mu.Lock()
 	releaseVoice := a.workerOrigins[id].releaseVoice
 	a.mu.Unlock()
@@ -126,6 +131,8 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		reason := events.AbortCancelled
 		if errors.Is(err, job.ErrBudget) {
 			reason = events.AbortBudget
+		} else if errors.Is(err, errNotTakenOver) {
+			reason = events.AbortNotTakenOver
 		}
 		a.emitJobTrace(id, events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason})
 	}
@@ -162,6 +169,15 @@ func (a *Agency) jobInfo(id string) (string, time.Duration) {
 		}
 	}
 	return "", 0
+}
+
+func (a *Agency) jobState(id string) job.State {
+	for _, info := range a.jobs.Status() {
+		if info.ID == id {
+			return info.State
+		}
+	}
+	return ""
 }
 
 func (a *Agency) jobTiming(id string) (time.Time, time.Time, time.Duration) {

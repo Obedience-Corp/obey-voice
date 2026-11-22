@@ -559,6 +559,38 @@ func TestThinkStreamDoesNotRestateAfterTools(t *testing.T) {
 	}
 }
 
+// A reply's own whitespace is not a restatement of it. A space or paragraph
+// break sent on its own, after text the reply already showed, used to be
+// dropped, gluing the words on either side.
+func TestThinkStreamKeepsWhitespaceSentOnItsOwn(t *testing.T) {
+	chunks := []string{"I", " ", "read the notes.", "\n\n", "Here", " ", "it is."}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, chunk := range chunks {
+			fmt.Fprintf(w, `{"model":"m","message":{"role":"assistant","content":%q},"done":false}`+"\n", chunk)
+		}
+		fmt.Fprint(w, `{"model":"m","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+	stream, err := o.ThinkStream(context.Background(), "hi", StreamOptions{})
+	if err != nil {
+		t.Fatalf("ThinkStream() error = %v", err)
+	}
+	got, _ := drainStream(t, stream)
+	if res := <-stream.Done; res.Err != nil {
+		t.Fatalf("stream done error = %v", res.Err)
+	}
+	if want := strings.Join(chunks, ""); got != want {
+		t.Fatalf("streamed %q, want %q", got, want)
+	}
+}
+
 func TestThinkStreamDoesNotRestateTaggedContentAfterTools(t *testing.T) {
 	const line = "The test run finished."
 	var reqs int

@@ -597,6 +597,9 @@ type ResponseReady struct {
 	// Degraded marks a recovery reply emitted after a hard brain/tool failure;
 	// the error detail is delivered separately as an Error event.
 	Degraded bool
+	// ContinuedAs names the background job the rest of this reply continues
+	// in; Response is then the part given before it moved there.
+	ContinuedAs string `json:"continued_as,omitempty"`
 }
 
 func (e ResponseReady) eventType() string { return "response_ready" }
@@ -688,6 +691,9 @@ type JobQueued struct {
 
 	ID   string
 	Task string
+	// Persona names the persona whose reply the job continues, for a reply
+	// moved to the background.
+	Persona string `json:"persona,omitempty"`
 }
 
 func (e JobQueued) eventType() string { return "job_queued" }
@@ -718,6 +724,10 @@ type JobFinished struct {
 	// SpeechPending means Summary is queued to be spoken. Display image
 	// results immediately and text-only results at JobResultDelivered.
 	SpeechPending bool
+	// CutShort means the job finished but its Summary is knowingly
+	// incomplete. A reason, when there is one, is reported separately as an
+	// Error event.
+	CutShort bool `json:"cut_short,omitempty"`
 }
 
 func (e JobFinished) eventType() string { return "job_finished" }
@@ -772,6 +782,9 @@ type JobAborted struct {
 const (
 	AbortCancelled = "cancelled"
 	AbortBudget    = "budget"
+	// AbortNotTakenOver stops a reply moved to the background because the
+	// persona it was moved for could not take the conversation.
+	AbortNotTakenOver = "not_taken_over"
 )
 
 func (e JobAborted) eventType() string { return "job_aborted" }

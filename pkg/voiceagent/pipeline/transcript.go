@@ -119,6 +119,11 @@ type transcriptRecording struct {
 	provider brain.Provider
 	ctx      context.Context
 	cancel   context.CancelFunc
+	// parent is the turn's context, whose stop reason the request reports
+	// while it belongs to the turn.
+	parent context.Context
+	// movable is set for a request its turn may hand to a background job.
+	movable *movableRequest
 	// drained closes when the provider request has ended. The next request
 	// to the same provider waits for it, so they never share session state.
 	drained  chan struct{}
@@ -149,6 +154,8 @@ type transcriptRecording struct {
 	// abandoned is set once a later request stops waiting for this one;
 	// waited once a later request has said it is waiting for it.
 	abandoned, waited bool
+	// moved is set while a background job owns the request.
+	moved bool
 	// stopWait is how long settle waited for the stopped request to end.
 	stopWait time.Duration
 	// afterSend, set only by tests, runs between a chunk reaching the turn
@@ -235,7 +242,7 @@ func (r *transcriptRecording) takeRoute() {
 // release settles the request and records a routed one whose routed reply
 // never ran, so the user's line is kept.
 func (r *transcriptRecording) release() {
-	if r == nil {
+	if r == nil || r.isMoved() {
 		return
 	}
 	r.settle()
@@ -247,7 +254,7 @@ func (r *transcriptRecording) release() {
 	r.routeTaken = true
 	err := r.routeErr
 	if err == nil {
-		err = r.ctx.Err()
+		err = r.stopErr()
 	}
 	r.reply = r.write(r.delivered.String(), r.unread(), err, true)
 }
@@ -269,7 +276,7 @@ func (r *transcriptRecording) recordedReply() *brain.Turn {
 // only its end records the request; one slower still is abandoned, so the
 // next turn, a persona switch and a clear do not wait for it again.
 func (r *transcriptRecording) settle() {
-	if r == nil {
+	if r == nil || r.isMoved() {
 		return
 	}
 	r.cancel()
@@ -289,7 +296,7 @@ func (r *transcriptRecording) settle() {
 	case <-r.recorded:
 	case <-grace.C:
 		if _, serial := r.provider.(serialProvider); !r.shared {
-			r.finish("", r.ctx.Err())
+			r.finish("", r.stopErr())
 		} else if !serial {
 			r.abandon()
 		}
@@ -317,7 +324,24 @@ func (r *transcriptRecording) stopWaited() time.Duration {
 // delivered or recorded.
 func (r *transcriptRecording) abandon() {
 	r.cancel()
-	r.end("", r.ctx.Err(), true)
+	r.end("", r.stopErr(), true)
+}
+
+// stopErr is why the request was stopped: the turn's reason while the turn
+// owns it, its own once it was moved.
+func (r *transcriptRecording) stopErr() error {
+	if r.parent != nil && !r.isMoved() {
+		if err := r.parent.Err(); err != nil {
+			return err
+		}
+	}
+	return r.ctx.Err()
+}
+
+func (r *transcriptRecording) isMoved() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.moved
 }
 
 // ended reports whether the request has ended or been abandoned.
@@ -352,15 +376,23 @@ func (p *Pipeline) awaitSharedHistory(ctx context.Context) error {
 	if p.Brain == nil || !brain.KeepsSharedHistory(p.Brain) {
 		return nil
 	}
-	return p.awaitProvider(ctx)
+	return p.awaitStopped(ctx)
 }
 
-// awaitProvider waits until requests earlier turns stopped have ended on the
+// awaitProvider readies the live provider for a request: a request moved off
+// it to a background job is stopped first, then awaitStopped.
+func (p *Pipeline) awaitProvider(ctx context.Context) error {
+	p.reclaimMovedBrain()
+	return p.awaitStopped(ctx)
+}
+
+// awaitStopped waits until requests earlier turns stopped have ended on the
 // live provider, so two never share its session. One still ending after
 // providerStopTimeout is abandoned and the caller goes ahead. A request still
 // in use, or one on a provider that cannot take another until it ends, is
-// waited for, said once as a status line. It fails only when ctx ends.
-func (p *Pipeline) awaitProvider(ctx context.Context) error {
+// waited for, said once as a status line. It fails only when ctx ends. A
+// request moved to a background job is not waited for.
+func (p *Pipeline) awaitStopped(ctx context.Context) error {
 	pending := p.stillEnding(p.Brain)
 	if len(pending) == 0 {
 		return nil
@@ -399,13 +431,13 @@ func awaitEnded(ctx context.Context, requests []*transcriptRecording) error {
 }
 
 // stillEnding returns provider's recorded requests that have neither ended
-// nor been abandoned.
+// nor been abandoned, nor been moved to a background job.
 func (p *Pipeline) stillEnding(provider brain.Provider) []*transcriptRecording {
 	p.requestMu.Lock()
 	defer p.requestMu.Unlock()
 	var pending []*transcriptRecording
 	for _, r := range p.requests {
-		if r.provider == provider && !r.ended() {
+		if r.provider == provider && !r.ended() && !r.isMoved() {
 			pending = append(pending, r)
 		}
 	}
@@ -474,8 +506,19 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 			opts.CatchUp, sessions, covered = &catchUp, s, n
 		}
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	provider := p.Brain
+	parent, provider := ctx, p.Brain
+	var movable *movableRequest
+	var cancel context.CancelFunc
+	if p.movesRequests(opts) {
+		ctx, cancel, movable = p.detachableRequest(parent, input, opts, started)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+	rec := &transcriptRecording{provider: provider, ctx: ctx, cancel: cancel, parent: parent, movable: movable, drained: make(chan struct{}), recorded: make(chan struct{}), gone: make(chan struct{}), shared: shared}
+	rec.handed.L = &rec.mu
+	if movable != nil {
+		opts.OnToolStart, opts.OnToolEnd = rec.movedToolHooks(opts.OnToolStart, opts.OnToolEnd)
+	}
 	stream, err := p.startBrainStream(ctx, input, opts)
 	if err != nil {
 		cancel()
@@ -512,8 +555,7 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 			return nil
 		}
 	}
-	rec := &transcriptRecording{provider: provider, ctx: ctx, cancel: cancel, drained: make(chan struct{}), recorded: make(chan struct{}), gone: make(chan struct{}), write: write, shared: shared}
-	rec.handed.L = &rec.mu
+	rec.write = write
 	p.trackRequest(rec)
 	// Unbuffered, so text counts as delivered only once the turn has read it.
 	out := make(chan string)
@@ -580,7 +622,7 @@ func (p *Pipeline) startRecordedStream(ctx context.Context, input string, opts b
 		case ctx.Err() != nil:
 			// The turn stopped this request, so what it delivered was cut
 			// short whatever the provider reports, in its own terms or not.
-			err, result.Recovered = ctx.Err(), false
+			err, result.Recovered = rec.stopErr(), false
 		case !hasResult:
 			err = errors.New("provider ended without a result")
 		}

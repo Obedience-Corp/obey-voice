@@ -267,3 +267,21 @@ func TestChunkSentencesRawKeepsParagraphBreaks(t *testing.T) {
 		}
 	}
 }
+
+func TestSentenceEndsMatchesStreamSegments(t *testing.T) {
+	text := "First one. Second one?\n\nThird, by Dr. Who! And an unfinished trav"
+	ends := SentenceEnds(text)
+	in := make(chan string, 1)
+	in <- text[:ends[len(ends)-1]] + " "
+	close(in)
+	var segments []string
+	for s := range ChunkSentencesRaw(in) {
+		segments = append(segments, s)
+	}
+	if len(ends) != 3 || len(segments) != 3 {
+		t.Fatalf("ends %v, segments %q", ends, segments)
+	}
+	if got := text[ends[2]:]; got != " And an unfinished trav" {
+		t.Fatalf("unfinished part = %q", got)
+	}
+}

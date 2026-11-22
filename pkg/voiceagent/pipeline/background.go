@@ -124,6 +124,9 @@ func (p *Pipeline) RetireBrain(provider brain.Provider) {
 	p.retiredBrains.Add(1)
 	go func() {
 		defer p.retiredBrains.Done()
+		// A request moved to a background job keeps its provider open until
+		// it ends.
+		p.awaitMoved(provider)
 		settle, cancel := context.WithTimeout(context.Background(), providerSettleTimeout)
 		_ = p.awaitRequests(settle, provider)
 		cancel()
@@ -133,6 +136,7 @@ func (p *Pipeline) RetireBrain(provider brain.Provider) {
 	}()
 }
 func (p *Pipeline) CloseBrains() error {
+	p.stopMoved()
 	err := brain.CloseProvider(p.Brain)
 	p.retiredBrains.Wait()
 	return err

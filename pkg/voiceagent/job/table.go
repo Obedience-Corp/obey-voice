@@ -72,11 +72,15 @@ type Spec struct {
 	Model    string
 	Run      func(ctx context.Context) (result string, err error)
 	// RuntimeBudget overrides the table default for this admitted job.
-	// Zero keeps the legacy default. It limits local scheduling, not remote termination.
+	// Zero keeps the legacy default and a negative value sets no limit. It
+	// limits local scheduling, not remote termination.
 	RuntimeBudget time.Duration
 	// OnAccepted publishes caller metadata after enqueue succeeds, before
 	// queued/start callbacks or execution. It runs outside the table lock.
 	OnAccepted func(id string)
+	// Immediate is for work already under way: it starts at once, past the
+	// concurrency and queue limits, and holds a running slot like any job.
+	Immediate bool
 }
 
 // Info is a point-in-time job snapshot for status UI.
@@ -158,6 +162,8 @@ type entry struct {
 	// budgetTimer fires the budget stop.
 	budgetTimer *time.Timer
 	budgetEnd   *atomic.Int64
+	// limit is a budget set on the running job by Limit.
+	limit time.Duration
 	// finished is set once the job reached a terminal state. A stop (cancel
 	// or budget) finishes the job without waiting for its run function, so
 	// a run function that returns late finds this set and changes nothing.
@@ -261,7 +267,7 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		t.mu.Unlock()
 		return "", ErrDisabled
 	}
-	if t.maxQueued > 0 && len(t.running)+t.completing >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
+	if !spec.Immediate && t.maxQueued > 0 && len(t.running)+t.completing >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
 		t.mu.Unlock()
 		return "", errors.New("worker queue limit reached")
 	}
@@ -289,7 +295,13 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		budgetEnd: budgetEnd,
 	}
 	t.jobs[id] = e
-	t.queue = append(t.queue, id)
+	if spec.Immediate {
+		// Running from here, so a stop landing before it is accepted waits
+		// for it to be announced, as a stop during the start callback does.
+		e.info.State = StateRunning
+	} else {
+		t.queue = append(t.queue, id)
+	}
 	onQueued := t.onQueued
 	t.mu.Unlock()
 
@@ -304,6 +316,9 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 
 	t.mu.Lock()
 	e.announced = true
+	if spec.Immediate && !e.finished {
+		t.launchLocked(id, e)
+	}
 	t.pumpLocked()
 	t.mu.Unlock()
 	return id, nil
@@ -317,6 +332,41 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 // ids are a no-op.
 func (t *Table) Abort(id string) {
 	t.stop(id, errAborted)
+}
+
+// Stop ends a queued or running job as Abort does, with reason as its error.
+func (t *Table) Stop(id string, reason error) {
+	t.stop(id, reason)
+}
+
+// Limit gives a running job a runtime budget of d from now, in place of any
+// it had, enforced as a budget given at Start is.
+func (t *Table) Limit(id string, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e, ok := t.jobs[id]
+	if !ok || e.finished {
+		return
+	}
+	if e.budgetTimer != nil {
+		e.budgetTimer.Stop()
+	}
+	e.limit = d
+	e.budgetEnd.Store(time.Now().Add(d).UnixNano())
+	e.budgetTimer = time.AfterFunc(d, func() { t.exceedBudget(id) })
+}
+
+// Describe replaces the provider and model a job reports, once what runs it
+// is known.
+func (t *Table) Describe(id, provider, model string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if e, ok := t.jobs[id]; ok {
+		e.info.Provider, e.info.Model = provider, model
+	}
 }
 
 // SetEnabled controls admission only. Already queued work can still run.
@@ -453,11 +503,15 @@ func (t *Table) pumpLocked() {
 			return
 		}
 		t.queue = t.queue[1:]
-		e.info.State = StateRunning
-		t.running[id] = struct{}{}
-		t.runOrder = append(t.runOrder, id)
-		go t.run(e.ctx, id)
+		t.launchLocked(id, e)
 	}
+}
+
+func (t *Table) launchLocked(id string, e *entry) {
+	e.info.State = StateRunning
+	t.running[id] = struct{}{}
+	t.runOrder = append(t.runOrder, id)
+	go t.run(e.ctx, id)
 }
 
 func (t *Table) run(jobCtx context.Context, id string) {
@@ -476,6 +530,8 @@ func (t *Table) run(jobCtx context.Context, id string) {
 		budget := t.budget
 		if e.spec.RuntimeBudget > 0 {
 			budget = e.spec.RuntimeBudget
+		} else if e.spec.RuntimeBudget < 0 {
+			budget = 0
 		}
 		if budget > 0 {
 			e.budgetEnd.Store(e.info.Started.Add(budget).UnixNano())
@@ -566,7 +622,9 @@ func (t *Table) finishLocked(id string, state State, result string, err error) D
 func (t *Table) exceedBudget(id string) {
 	t.mu.Lock()
 	budget := t.budget
-	if e := t.jobs[id]; e != nil && e.spec.RuntimeBudget > 0 {
+	if e := t.jobs[id]; e != nil && e.limit > 0 {
+		budget = e.limit
+	} else if e != nil && e.spec.RuntimeBudget > 0 {
 		budget = e.spec.RuntimeBudget
 	}
 	t.mu.Unlock()

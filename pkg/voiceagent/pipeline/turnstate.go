@@ -43,6 +43,8 @@ const (
 	TurnTimedOut
 	// TurnYielded gives passive capture to a completion without fake input.
 	TurnYielded
+	// TurnMoved is terminal: the reply goes on in a background job.
+	TurnMoved
 )
 
 func (s TurnState) String() string {
@@ -65,6 +67,8 @@ func (s TurnState) String() string {
 		return "failed"
 	case TurnYielded:
 		return "yielded_for_completion"
+	case TurnMoved:
+		return "moved"
 	case TurnTimedOut:
 		return "timed_out"
 	default:
@@ -75,7 +79,7 @@ func (s TurnState) String() string {
 // IsTerminal reports whether s is a final outcome with no legal successor.
 func (s TurnState) IsTerminal() bool {
 	switch s {
-	case TurnInterrupted, TurnCompleted, TurnFailed, TurnTimedOut, TurnYielded:
+	case TurnInterrupted, TurnCompleted, TurnFailed, TurnTimedOut, TurnYielded, TurnMoved:
 		return true
 	default:
 		return false
@@ -88,8 +92,8 @@ var turnTransitions = map[TurnState][]TurnState{
 	TurnIdle:         {TurnListening, TurnThinking},
 	TurnListening:    {TurnYielded, TurnTranscribing, TurnThinking, TurnTimedOut, TurnFailed, TurnInterrupted},
 	TurnTranscribing: {TurnThinking, TurnTimedOut, TurnFailed, TurnInterrupted},
-	TurnThinking:     {TurnSpeaking, TurnCompleted, TurnFailed, TurnInterrupted},
-	TurnSpeaking:     {TurnCompleted, TurnFailed, TurnInterrupted},
+	TurnThinking:     {TurnSpeaking, TurnCompleted, TurnFailed, TurnInterrupted, TurnMoved},
+	TurnSpeaking:     {TurnCompleted, TurnFailed, TurnInterrupted, TurnMoved},
 }
 
 // CanTransitionTo reports whether moving from s to next is legal. Re-entering

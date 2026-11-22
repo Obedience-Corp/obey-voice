@@ -29,6 +29,17 @@ import (
 // reply and hold the request until it is stopped.
 const ollamaStall = "HOLD ON"
 
+// ollamaRelease after ollamaStall holds the request after ollamaReleasePartial
+// until release closes instead, then finishes the reply with ollamaReleased.
+const (
+	ollamaRelease        = "UNTIL RELEASED"
+	ollamaReleasePartial = "I read the notes. Let me think "
+	ollamaReleased       = "about it. The build is green."
+	// ollamaUnfinished with ollamaRelease holds the request before any
+	// complete sentence.
+	ollamaUnfinished = "MID-SENTENCE"
+)
+
 // localConversation is a conversation among personas whose backends are a
 // fake Ollama server, answering from a fixed script with live tool routing,
 // and optionally Codex. It keeps every request body Ollama was sent.
@@ -52,6 +63,15 @@ type localConversation struct {
 	errors []events.Error
 	// stalled receives the request held by ollamaStall once its partial reply is sent.
 	stalled chan struct{}
+	// release ends a request held by ollamaRelease; heldStopped closes if the
+	// host stops that request first.
+	release, heldStopped chan struct{}
+	heldStop             sync.Once
+	// ended closes when the test ends, before the server closes, so no held
+	// request can keep the server open.
+	ended chan struct{}
+	// byteAtATime sends the reply text of a held request one byte per chunk.
+	byteAtATime bool
 }
 
 // newLocalConversation starts on the first of personas. Each is "id" or
@@ -63,12 +83,13 @@ func newLocalConversation(t *testing.T, maxHistory int, personas ...string) *loc
 
 func newLocalConversationWithTools(t *testing.T, maxHistory int, routerTools string, personas ...string) *localConversation {
 	t.Helper()
-	c := &localConversation{t: t, stalled: make(chan struct{}, 1)}
+	c := &localConversation{t: t, stalled: make(chan struct{}, 1), release: make(chan struct{}), heldStopped: make(chan struct{}), ended: make(chan struct{})}
 	c.root, _ = filepath.EvalSymlinks(t.TempDir())
 	// Attachments are stored under the install directory.
 	config.SetConfigDirForTest(t, t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(c.serveOllama))
 	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(c.ended) })
 	c.catalog = persona.Catalog{Dir: filepath.Join(c.root, "personas")}
 	promptDir := filepath.Join(c.root, "prompts")
 	for _, spec := range personas {
@@ -159,25 +180,79 @@ func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if strings.Contains(lastUserLine(req.Messages), ollamaStall) {
-		_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": false, "message": map[string]string{"role": "assistant", "content": "Let me think about "}})
+		partial := "Let me think about "
+		if strings.Contains(lastUserLine(req.Messages), ollamaRelease) {
+			partial = c.releasePartial(lastUserLine(req.Messages))
+		}
+		c.sendText(enc, partial)
 		if strings.Contains(lastUserLine(req.Messages), ollamaStall+" LONG") {
 			for i := range 20 {
-				_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": false, "message": map[string]string{"role": "assistant", "content": fmt.Sprintf("w%d ", i)}})
+				c.sendText(enc, fmt.Sprintf("w%d ", i))
 			}
 		}
 		w.(http.Flusher).Flush()
-		c.stalled <- struct{}{}
-		<-r.Context().Done()
+		select {
+		case c.stalled <- struct{}{}:
+		case <-r.Context().Done():
+		case <-c.ended:
+		}
+		if strings.Contains(lastUserLine(req.Messages), ollamaRelease) {
+			select {
+			case <-c.release:
+				_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": true, "done_reason": "stop", "message": map[string]string{"role": "assistant", "content": ollamaReleased}})
+			case <-r.Context().Done():
+				c.heldStop.Do(func() { close(c.heldStopped) })
+			case <-c.ended:
+			}
+			return
+		}
+		select {
+		case <-r.Context().Done():
+		case <-c.ended:
+		}
 		return
 	}
 	_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": true, "done_reason": "stop", "message": map[string]string{"role": "assistant", "content": fmt.Sprintf("Reply %d.", n)}})
 }
 
+// sendText sends text as part of a reply that has not finished: whole, or
+// one byte per chunk.
+func (c *localConversation) sendText(enc *json.Encoder, text string) {
+	chunks := []string{text}
+	if c.byteAtATime {
+		chunks = strings.Split(text, "")
+	}
+	for _, chunk := range chunks {
+		_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": false, "message": map[string]string{"role": "assistant", "content": chunk}})
+	}
+}
+
+// releasePartial is the text a request held by ollamaRelease sends before it
+// is held: ollamaReleasePartial, or only its unfinished sentence when the
+// line asks for ollamaUnfinished.
+func (c *localConversation) releasePartial(line string) string {
+	if strings.Contains(line, ollamaUnfinished) {
+		_, rest, _ := strings.Cut(ollamaReleasePartial, ". ")
+		return rest
+	}
+	return ollamaReleasePartial
+}
+
+// lastUserLine is what the human said in the last user message: its first
+// paragraph, after the speaker's header. The host appends its own context to
+// that message, such as the background jobs it records and their tasks, and
+// a line quoted there must not script the reply to another one.
 func lastUserLine(messages []struct{ Role, Content string }) string {
 	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "user" {
-			return messages[i].Content
+		if messages[i].Role != "user" {
+			continue
 		}
+		line := messages[i].Content
+		if header, rest, ok := strings.Cut(line, ":\n"); ok && !strings.Contains(header, "\n") && (header == "User" || strings.HasSuffix(header, " user")) {
+			line = rest
+		}
+		line, _, _ = strings.Cut(line, "\n\n")
+		return line
 	}
 	return ""
 }

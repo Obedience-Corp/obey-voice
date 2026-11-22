@@ -131,6 +131,7 @@ func (p *Pipeline) ClearConversation() error {
 		p.adoptConversationScope(next)
 	}
 	if p.Brain != nil {
+		p.reclaimMovedBrain()
 		if _, fenced := p.Brain.(brain.RequestAbandoner); fenced {
 			// A request abandoned there changes nothing when it ends.
 			settle, cancel := context.WithTimeout(context.Background(), providerStopTimeout)
@@ -161,6 +162,16 @@ func (p *Pipeline) CloseWork() error {
 		if err := p.QuiesceNative(context.Background()); err != nil {
 			return fmt.Errorf("stop captions before closing conversation: %w", err)
 		}
+	}
+	if p != nil {
+		// A reply moved to the background is stopped and recorded as
+		// unfinished while the conversation can still save it.
+		if p.hasMovedRequests() {
+			p.reclaimMovedBrain()
+			p.stopMoved()
+		}
+		p.moves.recording.Wait()
+		_ = p.commitWorkerReplies()
 	}
 	if p != nil {
 		p.closeCompletionCapture()

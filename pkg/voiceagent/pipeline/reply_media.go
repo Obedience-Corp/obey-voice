@@ -109,7 +109,9 @@ func imageReplyText(raw string) string {
 
 func (p *Pipeline) replyMediaEvent(metrics *turnMetrics, event events.Event) events.Event {
 	e, ok := event.(events.ResponseReady)
-	if !ok || len(e.Attachments) > 0 {
+	// The part of a moved reply is given while its provider is still busy
+	// with the rest, and carries no image line.
+	if !ok || len(e.Attachments) > 0 || e.ContinuedAs != "" {
 		return event
 	}
 	if metrics != nil && metrics.mediaReply != nil {

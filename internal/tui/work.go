@@ -24,6 +24,7 @@ import (
 type jobView struct {
 	task     string
 	origin   string
+	persona  string
 	running  bool
 	terminal bool
 	tool     string // the tool the worker is on, until the fold has a row
@@ -54,7 +55,7 @@ func (m *conversationModel) canonicalJob(v work.JobView) {
 }
 
 func (m *conversationModel) jobQueued(e events.JobQueued) {
-	m.trackJob(e.ID, e.Task)
+	m.trackJob(e.ID, e.Task).persona = e.Persona
 	m.appendActivity("job", "queued "+e.Task, 0)
 	m.refreshJobChip()
 	m.renderJobItem(e.ID, " · queued")
@@ -101,7 +102,11 @@ func (m *conversationModel) jobFinished(e events.JobFinished) {
 		m.workerRepliesSeen = make(map[string]bool)
 	}
 	m.workerRepliesSeen[e.ID] = true
-	m.jobEnded(e.ID, "finished", " · done in "+roundSeconds(e.Elapsed), e.Elapsed)
+	suffix := " · done in " + roundSeconds(e.Elapsed)
+	if e.CutShort {
+		suffix += " · cut short"
+	}
+	m.jobEnded(e.ID, "finished", suffix, e.Elapsed)
 	// Image results are readable immediately, even behind another speaker.
 	// Text-only results join the thread in spoken order.
 	if e.ShownAtFinish() {
@@ -147,8 +152,15 @@ func (m *conversationModel) jobFailed(e events.JobFailed) {
 
 func (m *conversationModel) jobAborted(e events.JobAborted) {
 	stopped := "killed after " + roundSeconds(e.Elapsed)
-	if e.Reason == events.AbortBudget {
+	switch e.Reason {
+	case events.AbortBudget:
 		stopped = "over budget after " + roundSeconds(e.Elapsed)
+	case events.AbortNotTakenOver:
+		stopped = "stopped, since the persona you named could not take over"
+		if idx, ok := m.continuedItems[e.ID]; ok && idx < len(m.items) {
+			m.items[idx] = chatItem{kind: chatItemSys, sys: dimStyle.Render("    stopped: the persona you named could not take over")}
+			m.refreshContent()
+		}
 	}
 	m.jobEnded(e.ID, stopped, " · "+stopped, 0)
 }
@@ -390,6 +402,9 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	origin := ""
 	if job := m.jobs[id]; job != nil && job.origin != "" {
 		origin = " [" + job.origin + "]"
+	}
+	if job := m.jobs[id]; job != nil && job.persona != "" {
+		label = job.persona + " · " + label
 	}
 	line := dimStyle.Render("  ⚙ " + id + origin + " · " + label + suffix)
 	line += m.renderJobToolDetails(id)

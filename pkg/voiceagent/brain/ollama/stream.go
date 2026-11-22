@@ -46,11 +46,14 @@ type Round struct {
 	held          []string
 	ToolCalls     []api.ToolCall
 	Usage         Usage
+	// earlier is what the turn's previous rounds said; a round may restate
+	// it. What this round says itself is never a restatement.
+	earlier string
 }
 
 // NewRound starts the next model request in this turn.
 func (s *Stream) NewRound(ctx context.Context, options RoundOptions) *Round {
-	r := &Round{stream: s, ctx: ctx, options: options, runaway: newRunawayTextGuard(options.Input)}
+	r := &Round{stream: s, ctx: ctx, options: options, runaway: newRunawayTextGuard(options.Input), earlier: s.spoken.String()}
 	if s.spoken.Len() == 0 {
 		r.gate.prior = options.PreviousReply
 	}
@@ -128,7 +131,7 @@ func (r *Round) receive(msg api.Message) error {
 			return err
 		}
 		emit := r.options.Labels.Feed(r.options.Markers.Feed(speakable))
-		if restatementSkip(r.stream.spoken.String(), r.raw.String()) {
+		if restatementSkip(r.earlier, r.raw.String()) {
 			return nil
 		}
 		if emit != "" {
@@ -151,7 +154,7 @@ func (r *Round) FlushFilters(err error) error {
 		}
 	}
 	emit := func(text string) {
-		if text != "" && !restatementSkip(r.stream.spoken.String(), r.raw.String()) {
+		if text != "" && !restatementSkip(r.earlier, r.raw.String()) {
 			record(r.emitText(text))
 		}
 	}

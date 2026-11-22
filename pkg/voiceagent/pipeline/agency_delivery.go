@@ -39,7 +39,15 @@ func (a *Agency) queueResult(id, task, result string, refs []chatmedia.Ref, elap
 		primary = origin.Voices.primary
 	}
 	finishedEnvelope, deliveredEnvelope := origin.Envelope, origin.Envelope
-	finished := events.JobFinished{ID: id, Task: task, Summary: result, Attachments: refs, Elapsed: elapsed, Envelope: &finishedEnvelope, Scope: origin.Scope}
+	finished := events.JobFinished{ID: id, Task: task, Summary: result, Attachments: refs, Elapsed: elapsed, Envelope: &finishedEnvelope, Scope: origin.Scope, CutShort: origin.incomplete != nil}
+	if origin.continued && strings.TrimSpace(result) == "" && len(refs) == 0 {
+		// The part of the reply given before it moved was all of it.
+		return finished
+	}
+	if origin.unspoken {
+		a.queueWorkerReply(id, result, refs, false, true)
+		return finished
+	}
 	finished.SpeechPending = a.pipeline.canSpeak(primary)
 	a.queueWorkerReply(id, result, refs, finished.SpeechPending, finished.ShownAtFinish())
 	var delivered *events.JobResultDelivered

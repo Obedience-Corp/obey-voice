@@ -14,6 +14,17 @@ func captureContext(contexts brain.PersonaContexts, id string, provider brain.Pr
 	}
 }
 
+// captureLiveContext is captureContext for a provider that may still be
+// running a request moved to a background job, whose history is then read
+// from what the pipeline kept of it.
+func (s *Selector) captureLiveContext(contexts brain.PersonaContexts, id string, provider brain.Provider) {
+	if moved, ok := s.opts.Pipeline.MovedContinuity(provider); ok && id != "" {
+		contexts[id] = brain.CapturePersonaContext(moved)
+		return
+	}
+	captureContext(contexts, id, provider)
+}
+
 // ContextSnapshots is called at the host's serialized save boundary, after the
 // active request joins. It includes updates since the most recent selection.
 func (s *Selector) ContextSnapshots() brain.PersonaContexts {
@@ -28,7 +39,7 @@ func (s *Selector) ContextSnapshots() brain.PersonaContexts {
 		if live := s.opts.Pipeline.Brain; brain.HostedSharedHistory(live) {
 			s.refreshShare(id, live)
 		} else {
-			captureContext(contexts, id, live)
+			s.captureLiveContext(contexts, id, live)
 		}
 	}
 	s.transcript.addSessions(contexts, "")

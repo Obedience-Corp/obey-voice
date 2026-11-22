@@ -456,7 +456,7 @@ func (m *conversationModel) displayResponse(e events.ResponseReady) {
 	// until showThink; the spoken bubble comes from e.Response when present.
 	thought, liveSpoken := m.takeStreamingTurn()
 	spoken := strings.TrimSpace(e.Response)
-	if spoken == "" {
+	if spoken == "" && e.ContinuedAs == "" {
 		spoken = liveSpoken
 	} else if t, b := textclean.SplitThink(spoken); t != "" {
 		if thought == "" {
@@ -471,6 +471,22 @@ func (m *conversationModel) displayResponse(e events.ResponseReady) {
 	}
 	if e.Envelope != nil {
 		hosted = e.Envelope.Hosted
+	}
+	if e.ContinuedAs != "" {
+		// The rest of the reply arrives as the job's result, so only the
+		// part given before the move is a bubble here.
+		label := dimStyle.Render("  " + name + " continues as " + e.ContinuedAs)
+		if spoken != "" {
+			m.rememberAssistant(spoken)
+			m.appendAgentTurn(chatItem{name: name, hosted: hosted, think: thought, spoken: spoken})
+			label = dimStyle.Render("    continues as " + e.ContinuedAs)
+		}
+		if m.continuedItems == nil {
+			m.continuedItems = make(map[string]int)
+		}
+		m.continuedItems[e.ContinuedAs] = len(m.items)
+		m.appendTranscript(label)
+		return
 	}
 	if spoken != "" {
 		m.rememberAssistant(spoken)

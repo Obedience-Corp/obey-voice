@@ -272,17 +272,24 @@ func pinPersonaPrompt(provider brain.Provider, cfg *config.Config) (string, erro
 // the host recorded.
 func (s *Selector) Transcript() []brain.Turn {
 	if live := s.opts.Pipeline.Brain; brain.KeepsSharedHistory(live) {
+		if moved, ok := s.opts.Pipeline.MovedContinuity(live); ok {
+			return moved.Canonical
+		}
 		return live.History()
 	}
 	return s.transcript.Turns()
 }
 
 // sharedTurns is the complete attributed conversation projected into the
-// next responder.
+// next responder. A live provider still running a request moved to a
+// background job is not read while that request may write its history.
 func (s *Selector) sharedTurns() []brain.Turn {
 	live := s.opts.Pipeline.Brain
 	if !brain.KeepsSharedHistory(live) {
 		return s.transcript.Turns()
+	}
+	if moved, ok := s.opts.Pipeline.MovedContinuity(live); ok {
+		return moved.Canonical
 	}
 	if canonical, ok := live.(brain.CanonicalHistoryProvider); ok {
 		return canonical.CanonicalHistory()

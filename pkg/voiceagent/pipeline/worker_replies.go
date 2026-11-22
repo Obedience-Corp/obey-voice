@@ -22,6 +22,16 @@ type workerOrigin struct {
 	// admission is the frozen worker config, which names the persona and
 	// backend that started the job.
 	admission map[string]string
+	// continued marks a job that continues a reply moved off the live turn.
+	continued bool
+	// incomplete is why such a reply ended before it was finished; its
+	// result is the part that arrived. keptResponseID names the part given
+	// before the move, which is then recorded as unfinished too.
+	incomplete     error
+	keptResponseID string
+	// unspoken marks a result shown and saved but not spoken, as a live reply
+	// stops speaking at its output limit.
+	unspoken bool
 }
 type workerReply struct {
 	Attachments []chatmedia.Ref
@@ -103,6 +113,12 @@ func (p *Pipeline) commitWorkerReplies() error {
 		writer, supportsMedia := p.Brain.(brain.ReplyMediaWriter)
 		if len(reply.Attachments) > 0 && !supportsMedia {
 			writeErr = fmt.Errorf("provider cannot persist worker image replies")
+		} else if reply.incomplete != nil {
+			disposition := brain.IncompleteDisposition(reply.incomplete)
+			writeErr = markReplyUnfinished(p.Brain, reply.keptResponseID, disposition)
+			if writeErr == nil && strings.TrimSpace(reply.Text) != "" {
+				writeErr = p.appendIncompleteReply(p.Brain, reply.Text, identity, disposition)
+			}
 		} else {
 			writeErr = p.appendReply(p.Brain, reply.Text, identity, reply.Attachments)
 		}
@@ -126,6 +142,60 @@ func (p *Pipeline) commitWorkerReplies() error {
 		}
 	}
 	return nil
+}
+
+// appendIncompleteReply records a reply that ended before it was finished
+// with its disposition, as a stopped live reply is recorded, where the
+// provider's history can carry one.
+func (p *Pipeline) appendIncompleteReply(provider brain.Provider, text string, identity *brain.TurnIdentity, disposition string) error {
+	turn := assistantTurn(text, identity, time.Now().UTC())
+	turn.Disposition = disposition
+	if continuity, ok := provider.(brain.ContinuityTransferProvider); ok {
+		return appendContinuityHistory(continuity, []brain.Turn{turn})
+	}
+	if t := p.transcriptFor(provider); t != nil {
+		if err := appendResponse(provider, text, identity); err != nil {
+			return err
+		}
+		return p.appendTranscript(t, turn)
+	}
+	return p.appendReply(provider, text, identity, nil)
+}
+
+// markReplyUnfinished gives the assistant turns of response id, recorded as
+// finished, the disposition of a reply that did not finish. Only a provider
+// that hands over its whole conversation can be changed this way.
+func markReplyUnfinished(provider brain.Provider, id, disposition string) error {
+	continuity, ok := provider.(brain.ContinuityTransferProvider)
+	if id == "" || !ok {
+		return nil
+	}
+	snapshot := continuity.ContinuitySnapshot()
+	changed := false
+	mark := func(turns []brain.Turn) {
+		for i := range turns {
+			if turns[i].Role == "assistant" && turns[i].ResponseID == id && turns[i].Disposition == "" {
+				turns[i].Disposition, changed = disposition, true
+			}
+		}
+	}
+	mark(snapshot.Canonical)
+	mark(snapshot.Working)
+	if !changed {
+		return nil
+	}
+	return continuity.ImportContinuity(snapshot)
+}
+
+// queueUnfinished records the rest of a reply that will not finish: what
+// arrived after the part kept before the move, which may be nothing.
+func (a *Agency) queueUnfinished(id, text string, reason error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	origin := a.workerOrigins[id]
+	origin.incomplete = reason
+	a.workerOrigins[id] = origin
+	a.workerReplies = append(a.workerReplies, workerReply{workerOrigin: origin, Text: text})
 }
 
 // Capture only on the worker's own call stack. Reading a provider's history

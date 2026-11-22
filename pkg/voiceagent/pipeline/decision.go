@@ -31,7 +31,7 @@ func (d *decisionTurn) close() {
 }
 
 func (p *Pipeline) startWorkDecision(ctx context.Context, input string, point decision.Point, skip bool) *decisionTurn {
-	if skip || !p.Decisions.Enabled(point) || p.Brain == nil || p.Agency == nil || p.ConversationRetired() {
+	if skip || !p.Decisions.Enabled(point) || p.Brain == nil || p.Agency == nil || p.ConversationRetired() || p.liveBrainBusy() {
 		return nil
 	}
 	routeCtx := p.routeContext()

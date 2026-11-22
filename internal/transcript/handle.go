@@ -149,7 +149,7 @@ func encodeEvent(e events.Event) (record, bool) {
 	case events.ResponseDelta:
 		return record{Type: "agent_delta", Text: x.Text}, true
 	case events.ResponseReady:
-		return record{Type: "agent", Text: x.Response, Degraded: x.Degraded, Interrupted: x.Interrupted}, true
+		return record{Type: "agent", Text: x.Response, Degraded: x.Degraded, Interrupted: x.Interrupted, ContinuedAs: x.ContinuedAs}, true
 	case events.ToolCallStarted:
 		var scope *work.WorkScope
 		if x.WorkScope.Valid() {
@@ -202,7 +202,7 @@ func encodeEvent(e events.Event) (record, bool) {
 	case events.JobStarted:
 		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "started"}, true
 	case events.JobFinished:
-		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "finished", ElapsedS: x.Elapsed.Seconds()}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "finished", ElapsedS: x.Elapsed.Seconds(), CutShort: x.CutShort}, true
 	case events.JobResultDelivered:
 		state := "result_shown"
 		if x.Spoken {

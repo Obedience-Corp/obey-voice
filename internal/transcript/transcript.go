@@ -98,6 +98,8 @@ type record struct {
 	Underruns    int      `json:"underruns,omitempty"`
 	Degraded     bool     `json:"degraded,omitempty"`
 	Interrupted  bool     `json:"interrupted,omitempty"`
+	ContinuedAs  string   `json:"continued_as,omitempty"`
+	CutShort     bool     `json:"cut_short,omitempty"`
 	IsError      bool     `json:"is_error,omitempty"`
 
 	STTFinalS      float64 `json:"stt_s,omitempty"`

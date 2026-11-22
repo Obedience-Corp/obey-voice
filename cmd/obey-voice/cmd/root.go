@@ -465,6 +465,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			return pipeline.ResponseAdmission{Envelope: envelope}, err
 		}
 		p.AdmitInput = selector.Route
+		p.NamesOtherPersona = selector.NamesOtherPersona
 		p.HostedNotice = selector.HostedNotice
 		p.LiveHostedNotice = selector.LiveHostedNotice
 		p.RouteHandoff = selector.RouteHandoff
