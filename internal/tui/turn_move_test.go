@@ -294,6 +294,9 @@ func TestTypedMessageToAnotherPersonaLeavesTheWorkingTurnRunning(t *testing.T) {
 	if speakerOf(screen, "Working on it.") != "Anika" || strings.Contains(screen, "interrupted") {
 		t.Fatalf("Anika's moved reply is shown as:\n%s", screen)
 	}
+	if label, row := strings.Index(screen, "continues as job-1"), strings.Index(screen, "⚙ job-1"); label < 0 || row < 0 || label > row {
+		t.Fatalf("the job's row is shown before the reply it continues:\n%s", screen)
+	}
 	close(c.anika.release)
 	select {
 	case finished := <-c.jobsFinished:
@@ -331,5 +334,44 @@ func TestTypedMessageNotNamingAnotherPersonaStopsTheWorkingTurn(t *testing.T) {
 	case finished := <-c.jobsFinished:
 		t.Fatalf("a job finished: %+v", finished)
 	default:
+	}
+}
+
+// When the persona named cannot take over, the moved reply's label says it
+// was stopped and why, and the job is not shown as one the user killed.
+func TestMovedReplyStoppedForAPersonaThatCouldNotTakeOverSaysWhy(t *testing.T) {
+	m := sizedConversation(t, 100, 40)
+	m.handleEvent(events.JobQueued{ID: "job-1", Task: "check the build", Persona: "Anika"})
+	m.handleEvent(events.ResponseReady{Response: "Working on it.", ContinuedAs: "job-1", Envelope: &events.ResponseEnvelope{PersonaID: "anika", DisplayName: "Anika"}})
+	m.handleEvent(events.JobAborted{ID: "job-1", Task: "check the build", Reason: events.AbortNotTakenOver})
+	view := stripANSI(m.View())
+	if strings.Contains(view, "continues as job-1") || strings.Contains(view, "killed") || !strings.Contains(view, "stopped: the persona you named could not take over") {
+		t.Fatalf("screen:\n%s", view)
+	}
+}
+
+// capturingRunner reports captured speech waiting.
+type capturingRunner struct{}
+
+func (capturingRunner) RunTurn(context.Context) (string, error)       { return "", nil }
+func (capturingRunner) RunTurnTextMode(context.Context, string) error { return nil }
+func (capturingRunner) HasCapturedInput() bool                        { return true }
+
+// The typed message that moved a turn is sent next even when speech was
+// captured meanwhile; captured speech still goes first after an ordinary stop.
+func TestTypedMessageThatMovedATurnRunsBeforeCapturedSpeech(t *testing.T) {
+	for _, moved := range []bool{true, false} {
+		m := sizedConversation(t, 100, 40)
+		m.deps = conversationDeps{runner: capturingRunner{}, ctx: t.Context(), voice: true}
+		m.voiceEnabled = true
+		m.turnState, m.pendingText, m.pendingMoved = turnVoiceCanceling, "Hey Obey, what time is it?", moved
+		m.handleTextTurnDone(textTurnDoneMsg{})
+		want := turnVoiceListening
+		if moved {
+			want = turnTextRunning
+		}
+		if m.turnState != want {
+			t.Fatalf("moved=%v: next turn state %v, want %v", moved, m.turnState, want)
+		}
 	}
 }

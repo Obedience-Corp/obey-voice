@@ -75,9 +75,11 @@ type conversationModel struct {
 	jobOrder []string
 	// work folds a job's per-call tool events into rows; jobItems maps a job
 	// to the one transcript item those rows rewrite. See work.go.
-	work                    *workfold.Tracker
-	jobItems                map[string]int
-	completedJobItems       map[string]int
+	work              *workfold.Tracker
+	jobItems          map[string]int
+	completedJobItems map[string]int
+	// continuedItems maps a job to the line saying which reply it continues.
+	continuedItems          map[string]int
 	workScope               work.WorkScope
 	workDisplayHidden       bool
 	workDisplay             workDisplayState
@@ -145,8 +147,11 @@ type conversationModel struct {
 	// pipeline goroutine so Enter cannot race the async bridge drain of
 	// UserInput into turnVoiceResponding. Pointer so Bubble Tea model copies
 	// share one gate with the bus subscription.
-	canCancelVoice            *atomic.Bool
-	pendingText               string
+	canCancelVoice *atomic.Bool
+	pendingText    string
+	// pendingMoved is set when the turn was moved for pendingText, which
+	// then runs before any captured speech.
+	pendingMoved              bool
 	pendingBackground         bool
 	pendingPause              bool
 	backgroundPauseGeneration uint64

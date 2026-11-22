@@ -475,13 +475,17 @@ func (m *conversationModel) displayResponse(e events.ResponseReady) {
 	if e.ContinuedAs != "" {
 		// The rest of the reply arrives as the job's result, so only the
 		// part given before the move is a bubble here.
+		label := dimStyle.Render("  " + name + " continues as " + e.ContinuedAs)
 		if spoken != "" {
 			m.rememberAssistant(spoken)
 			m.appendAgentTurn(chatItem{name: name, hosted: hosted, think: thought, spoken: spoken})
-			m.appendTranscript(dimStyle.Render("    continues as " + e.ContinuedAs))
-		} else {
-			m.appendTranscript(dimStyle.Render("  " + name + " continues as " + e.ContinuedAs))
+			label = dimStyle.Render("    continues as " + e.ContinuedAs)
 		}
+		if m.continuedItems == nil {
+			m.continuedItems = make(map[string]int)
+		}
+		m.continuedItems[e.ContinuedAs] = len(m.items)
+		m.appendTranscript(label)
 		return
 	}
 	if spoken != "" {

@@ -109,6 +109,7 @@ func (m *conversationModel) beginTextBargeIn(text string) tea.Cmd {
 	if m.canCancelVoice != nil {
 		m.canCancelVoice.Store(false)
 	}
+	m.pendingMoved = moved
 	if moved {
 		return nil
 	}
@@ -281,6 +282,10 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	m.keyOwnsTurn(false)
 	wasCanceling := m.turnState == turnVoiceCanceling
 	m.turnState = turnIdle
+	// A message that moved the turn runs before captured speech, which would
+	// otherwise run on the moved reply's provider and stop it.
+	moved := m.pendingMoved
+	m.pendingMoved = false
 
 	if wasCanceling && m.pendingInputRetry {
 		m.pendingInputRetry = false
@@ -311,7 +316,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 				m.talkTurnEnded()
 				return m.startNextPersonaSelection()
 			}
-			if m.voiceOn() && m.hasCapturedInput() {
+			if !moved && m.voiceOn() && m.hasCapturedInput() {
 				m.pendingText = text
 				m.talkTurnEnded()
 				return m.resumeListening()
@@ -397,6 +402,8 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	pending := m.pendingText
 	m.pendingText = ""
 	m.turnState = turnIdle
+	moved := m.pendingMoved
+	m.pendingMoved = false
 
 	if wasCanceling && m.pendingInputRetry {
 		m.pendingInputRetry = false
@@ -425,7 +432,7 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 				m.talkTurnEnded()
 				return m.startNextPersonaSelection()
 			}
-			if m.voiceOn() && m.hasCapturedInput() {
+			if !moved && m.voiceOn() && m.hasCapturedInput() {
 				m.pendingText = pending
 				m.talkTurnEnded()
 				return m.resumeListening()

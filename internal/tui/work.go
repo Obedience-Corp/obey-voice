@@ -152,8 +152,15 @@ func (m *conversationModel) jobFailed(e events.JobFailed) {
 
 func (m *conversationModel) jobAborted(e events.JobAborted) {
 	stopped := "killed after " + roundSeconds(e.Elapsed)
-	if e.Reason == events.AbortBudget {
+	switch e.Reason {
+	case events.AbortBudget:
 		stopped = "over budget after " + roundSeconds(e.Elapsed)
+	case events.AbortNotTakenOver:
+		stopped = "stopped, since the persona you named could not take over"
+		if idx, ok := m.continuedItems[e.ID]; ok && idx < len(m.items) {
+			m.items[idx] = chatItem{kind: chatItemSys, sys: dimStyle.Render("    stopped: the persona you named could not take over")}
+			m.refreshContent()
+		}
 	}
 	m.jobEnded(e.ID, stopped, " · "+stopped, 0)
 }
