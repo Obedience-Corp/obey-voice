@@ -20,6 +20,8 @@ type HandoffProposal struct {
 	DiscussionID string
 	OpenAddition bool
 	PersonaID    string
+	// DisplayName names PersonaID in a notice.
+	DisplayName string
 	// Invited are the personas the reply asked to answer after PersonaID, in
 	// that order. Each takes the floor in turn before a reply is classified
 	// for a new handoff.
@@ -35,8 +37,9 @@ type HandoffInvite struct {
 	InvitedBy   string
 }
 
-// InviteRefusal is an InviteHandoff error that no waiting invitee can take
-// the floor, so the invitation ends with one notice naming them all.
+// InviteRefusal is a handoff error that nobody the reply invited can take the
+// floor, so the invitation ends with one notice naming them all. Any other
+// error concerns one persona, and the personas invited after it are still asked.
 type InviteRefusal struct{ Reason string }
 
 func (e *InviteRefusal) Error() string { return e.Reason }
@@ -50,7 +53,23 @@ const (
 	handoffAccepted
 	// handoffInterrupted means the user spoke; the turn ends with no handoff.
 	handoffInterrupted
+	// handoffUnavailable means the proposed persona could not be given the
+	// floor. Its notice is out, and the proposal is kept for the personas it
+	// invited after that one.
+	handoffUnavailable
+	// handoffRefused means an InviteRefusal: the proposal is kept so the
+	// notice can name everyone it invited.
+	handoffRefused
 )
+
+// handoffAttempt is what became of one proposal.
+type handoffAttempt struct {
+	admission ResponseAdmission
+	proposal  HandoffProposal
+	outcome   handoffOutcome
+	// refusal is the reason given with handoffRefused.
+	refusal string
+}
 
 const maxAgentContinuations = 3
 
@@ -90,8 +109,10 @@ func continuationFromContext(ctx context.Context) (continuationRequest, bool) {
 
 // nextHandoff chooses who answers the reply that just finished. A persona
 // still waiting in invited goes first, without classifying the reply; once
-// none is left, the reply is classified. It returns the invitees still waiting
-// after the one admitted.
+// none is left, the reply is classified, once. When the persona that
+// classification names cannot be given the floor, the personas invited after
+// it are asked in turn. It returns the invitees still waiting after the one
+// admitted.
 func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visited []string, invited []HandoffInvite) (ResponseAdmission, []HandoffInvite, bool, error) {
 	if (state != nil && state.discussion != nil) || p.InviteHandoff == nil {
 		invited = nil
@@ -106,50 +127,62 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 	if ctx.Err() != nil {
 		return ResponseAdmission{}, nil, false, ctx.Err()
 	}
-	for len(invited) > 0 {
-		invite := invited[0]
-		invited = invited[1:]
-		if personaAlreadyVisited(invite.PersonaID, visited) {
-			continue
-		}
-		var refusal *InviteRefusal
-		admission, _, outcome, err := p.awaitHandoff(ctx, state, visited, func(ctx context.Context) (HandoffProposal, bool, error) {
-			proposal, accepted, err := p.InviteHandoff(ctx, state.turn, invite, append([]string(nil), visited...))
-			if errors.As(err, &refusal) {
-				return HandoffProposal{}, false, nil
+	classified := false
+	for {
+		for len(invited) > 0 {
+			invite := invited[0]
+			invited = invited[1:]
+			if personaAlreadyVisited(invite.PersonaID, visited) {
+				continue
 			}
-			return proposal, accepted, err
-		})
-		switch {
-		case err != nil:
-			return ResponseAdmission{}, nil, false, err
-		case outcome == handoffAccepted:
-			return admission, invited, true, nil
-		case outcome == handoffInterrupted:
+			attempt, err := p.awaitHandoff(ctx, state, visited, func(ctx context.Context) (HandoffProposal, bool, error) {
+				return p.InviteHandoff(ctx, state.turn, invite, append([]string(nil), visited...))
+			})
+			switch {
+			case err != nil:
+				return ResponseAdmission{}, nil, false, err
+			case attempt.outcome == handoffAccepted:
+				return attempt.admission, invited, true, nil
+			case attempt.outcome == handoffInterrupted:
+				return ResponseAdmission{}, nil, false, nil
+			case attempt.outcome == handoffRefused:
+				p.reportUninvited(ctx, append([]HandoffInvite{invite}, invited...), visited, attempt.refusal)
+				return ResponseAdmission{}, nil, false, nil
+			}
+		}
+		if classified || p.RouteHandoff == nil {
 			return ResponseAdmission{}, nil, false, nil
-		case refusal != nil:
-			p.reportUninvited(ctx, append([]HandoffInvite{invite}, invited...), visited, refusal.Reason)
+		}
+		classified = true
+		attempt, err := p.awaitHandoff(ctx, state, visited, func(ctx context.Context) (HandoffProposal, bool, error) {
+			return p.RouteHandoff(ctx, state.turn, append([]string(nil), visited...))
+		})
+		if err != nil {
+			return ResponseAdmission{}, nil, false, err
+		}
+		proposal := attempt.proposal
+		waiting := proposal.Invited
+		if proposal.DiscussionID != "" || p.InviteHandoff == nil {
+			waiting = nil
+		}
+		switch attempt.outcome {
+		case handoffAccepted:
+			return attempt.admission, waiting, true, nil
+		case handoffUnavailable:
+			invited = waiting
+		case handoffRefused:
+			first := HandoffInvite{PersonaID: proposal.PersonaID, DisplayName: proposal.DisplayName}
+			p.reportUninvited(ctx, append([]HandoffInvite{first}, waiting...), visited, attempt.refusal)
+			return ResponseAdmission{}, nil, false, nil
+		default:
 			return ResponseAdmission{}, nil, false, nil
 		}
 	}
-	if p.RouteHandoff == nil {
-		return ResponseAdmission{}, nil, false, nil
-	}
-	admission, proposal, outcome, err := p.awaitHandoff(ctx, state, visited, func(ctx context.Context) (HandoffProposal, bool, error) {
-		return p.RouteHandoff(ctx, state.turn, append([]string(nil), visited...))
-	})
-	if err != nil || outcome != handoffAccepted {
-		return ResponseAdmission{}, nil, false, err
-	}
-	if proposal.DiscussionID != "" {
-		return admission, nil, true, nil
-	}
-	return admission, proposal.Invited, true, nil
 }
 
 // awaitHandoff runs propose and commits its proposal at the response boundary.
 // User speech during either one ends the turn instead.
-func (p *Pipeline) awaitHandoff(ctx context.Context, state *completionState, visited []string, propose func(context.Context) (HandoffProposal, bool, error)) (ResponseAdmission, HandoffProposal, handoffOutcome, error) {
+func (p *Pipeline) awaitHandoff(ctx context.Context, state *completionState, visited []string, propose func(context.Context) (HandoffProposal, bool, error)) (handoffAttempt, error) {
 	// Handoff classification runs after playback, when a user may already be
 	// speaking. Reuse the capture/VAD path, but arm it immediately and remove
 	// the playback-only echo tail guard. Join it before the next STT session.
@@ -196,7 +229,7 @@ func (p *Pipeline) awaitHandoff(ctx context.Context, state *completionState, vis
 			result = <-resultCh
 			cancelWatch()
 			<-watch.done
-			return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, ctx.Err()
+			return handoffAttempt{}, ctx.Err()
 		}
 	} else {
 		result = <-resultCh
@@ -218,32 +251,38 @@ func (p *Pipeline) awaitHandoff(ctx context.Context, state *completionState, vis
 		}
 	}
 	if interrupted {
-		return ResponseAdmission{}, HandoffProposal{}, handoffInterrupted, nil
+		return handoffAttempt{outcome: handoffInterrupted}, nil
 	}
 	if err := ctx.Err(); err != nil {
-		return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, err
+		return handoffAttempt{}, err
+	}
+	var refusal *InviteRefusal
+	if errors.As(result.err, &refusal) {
+		return handoffAttempt{proposal: result.proposal, outcome: handoffRefused, refusal: refusal.Reason}, nil
 	}
 	if result.err != nil {
 		p.emit(events.Info{Message: fmt.Sprintf("Agent handoff skipped: %v", result.err)})
-		return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, nil
+		return handoffAttempt{}, nil
 	}
 	if p.HasCapturedInput() {
-		return ResponseAdmission{}, HandoffProposal{}, handoffInterrupted, nil
+		return handoffAttempt{outcome: handoffInterrupted}, nil
 	}
 	proposal := result.proposal
 	groupProposal := proposal.DiscussionID != "" && ((state.discussion != nil && state.discussion.ID == proposal.DiscussionID) || proposal.OpenAddition)
 	if !result.accepted || proposal.Commit == nil || proposal.PersonaID == "" || (!groupProposal && personaAlreadyVisited(proposal.PersonaID, visited)) || (proposal.DiscussionID != "" && !groupProposal) {
-		return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, nil
+		return handoffAttempt{}, nil
 	}
 	admission, err := proposal.Commit(ctx)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, ctx.Err()
-		}
-		p.emit(events.Info{Message: fmt.Sprintf("Agent handoff skipped: %v", err)})
-		return ResponseAdmission{}, HandoffProposal{}, handoffDeclined, nil
+	switch {
+	case err == nil:
+		return handoffAttempt{admission: admission, proposal: proposal, outcome: handoffAccepted}, nil
+	case ctx.Err() != nil:
+		return handoffAttempt{}, ctx.Err()
+	case errors.As(err, &refusal):
+		return handoffAttempt{proposal: proposal, outcome: handoffRefused, refusal: refusal.Reason}, nil
 	}
-	return admission, proposal, handoffAccepted, nil
+	p.emit(events.Info{Message: fmt.Sprintf("Agent handoff skipped: %v", err)})
+	return handoffAttempt{proposal: proposal, outcome: handoffUnavailable}, nil
 }
 
 // reportUninvited names the invitees left without a turn and why. User speech

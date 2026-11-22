@@ -126,7 +126,7 @@ func TestExplicitHandoffRevalidatesAliasBeforeCommit(t *testing.T) {
 		t.Fatalf("accepted=%v err=%v", accepted, err)
 	}
 	writeTestProfile(t, f.catalog.Dir, testProfile("peer", "Renamed", "venessa"))
-	if _, err := proposal.Commit(t.Context()); err == nil || !strings.Contains(err.Error(), "changed target") {
+	if _, err := proposal.Commit(t.Context()); err == nil || !strings.Contains(err.Error(), "changed while it was being prepared") {
 		t.Fatalf("commit err=%v", err)
 	}
 	if f.selector.Snapshot().PersonaID != "obey" {

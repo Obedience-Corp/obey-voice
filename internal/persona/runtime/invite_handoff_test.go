@@ -2,6 +2,7 @@ package personaruntime
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -61,7 +62,10 @@ func TestInvitationRevalidatesEveryNamedPersonaBeforeCommit(t *testing.T) {
 	// Only the second invitee changes; the first still resolves.
 	writeTestProfile(t, f.catalog.Dir, testProfile("p-vera", "Renamed", "vera"))
 	writeTestProfile(t, f.catalog.Dir, testProfile("p-other", "Vera", "other"))
-	if _, err := proposal.Commit(t.Context()); err == nil || !strings.Contains(err.Error(), "changed target") {
+	// The reply no longer names who it was read as inviting, so the whole
+	// invitation is void rather than one persona unavailable.
+	var refusal *pipeline.InviteRefusal
+	if _, err := proposal.Commit(t.Context()); !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "changed while it was being prepared") {
 		t.Fatalf("commit err=%v", err)
 	}
 	if f.selector.Snapshot().PersonaID != "p-ada" {
@@ -73,7 +77,8 @@ func TestInviteHandoffBelongsToThePersonaWhoJustAnswered(t *testing.T) {
 	f := inviteFixture(t)
 	defer f.close(t)
 	invite := pipeline.HandoffInvite{PersonaID: "p-vera", DisplayName: "Vera"}
-	if _, accepted, err := f.selector.InviteHandoff(t.Context(), brain.Turn{Role: "assistant", PersonaID: "p-milo", Content: "Fine."}, invite, nil); accepted || err != nil {
+	var refusal *pipeline.InviteRefusal
+	if _, accepted, err := f.selector.InviteHandoff(t.Context(), brain.Turn{Role: "assistant", PersonaID: "p-milo", Content: "Fine."}, invite, nil); accepted || !errors.As(err, &refusal) {
 		t.Fatalf("reply from an unselected persona: accepted=%v err=%v", accepted, err)
 	}
 	if _, accepted, _ := f.selector.InviteHandoff(t.Context(), brain.Turn{Role: "assistant", PersonaID: "p-ada", Content: "Fine."}, invite, []string{"p-vera"}); accepted {
@@ -86,11 +91,42 @@ func TestInviteHandoffBelongsToThePersonaWhoJustAnswered(t *testing.T) {
 	if _, err := f.selector.selectAtBoundary(t.Context(), "p-nick", "test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := proposal.Commit(t.Context()); err == nil || !strings.Contains(err.Error(), "changed persona selection") {
+	refusal = nil
+	if _, err := proposal.Commit(t.Context()); !errors.As(err, &refusal) || refusal.Reason != selectionMoved {
 		t.Fatalf("commit after the selection moved: err=%v", err)
 	}
 	if f.selector.Snapshot().PersonaID != "p-nick" {
 		t.Fatal("stale invitation changed selection")
+	}
+}
+
+func TestInviteeAfterAnUnloadableFirstInviteeTakesTheFloor(t *testing.T) {
+	f := inviteFixture(t)
+	defer f.close(t)
+	writeMalformedPersona(t, f.catalog.Dir, "p-milo")
+	reply := brain.Turn{Role: "assistant", PersonaID: "p-ada", ResponseID: "r1", Content: "@p-milo @Vera, thoughts?"}
+	proposal, accepted, err := f.selector.RouteHandoff(t.Context(), reply, nil)
+	if err != nil || !accepted || proposal.PersonaID != "p-milo" || len(proposal.Invited) != 1 || proposal.Invited[0].PersonaID != "p-vera" {
+		t.Fatalf("accepted=%v err=%v proposal=%s then %+v", accepted, err, proposal.PersonaID, proposal.Invited)
+	}
+	// An unloadable persona concerns that persona alone: not a refusal of the
+	// invitation, and the selection stays with the inviter.
+	var refusal *pipeline.InviteRefusal
+	if _, err := proposal.Commit(t.Context()); err == nil || errors.As(err, &refusal) {
+		t.Fatalf("commit of an unloadable persona: err=%v", err)
+	}
+	if f.selector.Snapshot().PersonaID != "p-ada" {
+		t.Fatal("failed handoff changed selection")
+	}
+	next, accepted, err := f.selector.InviteHandoff(t.Context(), reply, proposal.Invited[0], []string{"p-ada"})
+	if err != nil || !accepted {
+		t.Fatalf("next invitee: accepted=%v err=%v", accepted, err)
+	}
+	if _, err := next.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if f.selector.Snapshot().PersonaID != "p-vera" {
+		t.Fatalf("selection = %s, want the next invitee", f.selector.Snapshot().PersonaID)
 	}
 }
 

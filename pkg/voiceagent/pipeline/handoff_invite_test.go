@@ -15,20 +15,25 @@ import (
 // inviteRecorder plays a host whose first reply hands the floor to the first
 // of several invited personas.
 type inviteRecorder struct {
-	mu         sync.Mutex
-	spoke      []string
-	classify   []string
-	invites    []string
-	inviters   []string
-	failInvite string
-	refuse     string
+	mu       sync.Mutex
+	spoke    []string
+	classify []string
+	invites  []string
+	inviters []string
+	fail     []string
+	refuse   string
+	// stale is a persona whose commit finds the whole invitation void.
+	stale string
 }
 
 func (r *inviteRecorder) commit(persona string) func(context.Context) (ResponseAdmission, error) {
 	return func(context.Context) (ResponseAdmission, error) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if persona == r.failInvite {
+		if persona == r.stale {
+			return ResponseAdmission{}, &InviteRefusal{Reason: "the persona selection changed before their turn"}
+		}
+		if slices.Contains(r.fail, persona) {
 			return ResponseAdmission{}, errors.New(persona + " could not be loaded")
 		}
 		r.spoke = append(r.spoke, persona)
@@ -48,7 +53,7 @@ func (r *inviteRecorder) wire(p *Pipeline, first string, invited ...string) {
 		if calls > 1 {
 			return HandoffProposal{}, false, nil
 		}
-		proposal := HandoffProposal{PersonaID: first, Commit: r.commit(first)}
+		proposal := HandoffProposal{PersonaID: first, DisplayName: displayName(first), Commit: r.commit(first)}
 		for _, id := range invited {
 			proposal.Invited = append(proposal.Invited, HandoffInvite{PersonaID: id, DisplayName: displayName(id)})
 		}
@@ -139,7 +144,7 @@ func TestInviteQueueSkipsVisitedAndFailedInvitees(t *testing.T) {
 	b := &continuationBrain{chunks: []string{"Answer."}}
 	p := &Pipeline{Brain: b, Events: events.NewBus()}
 	infos := infoMessages(p.Events)
-	r := &inviteRecorder{failInvite: "vera"}
+	r := &inviteRecorder{fail: []string{"vera"}}
 	r.wire(p, "milo", "ada", "vera", "nick")
 	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
 		t.Fatal(err)
@@ -153,6 +158,85 @@ func TestInviteQueueSkipsVisitedAndFailedInvitees(t *testing.T) {
 	}
 	if got := infos(); len(got) != 1 || got[0] != "Agent handoff skipped: vera could not be loaded" {
 		t.Fatalf("info = %q", got)
+	}
+}
+
+func TestFirstInviteeThatCannotBeLoadedPassesTheFloorToTheNext(t *testing.T) {
+	b := &continuationBrain{chunks: []string{"Answer."}}
+	p := &Pipeline{Brain: b, Events: events.NewBus()}
+	infos := infoMessages(p.Events)
+	r := &inviteRecorder{fail: []string{"milo"}}
+	r.wire(p, "milo", "vera", "nick")
+	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	spoke, classify, invites, inviters := r.snapshot()
+	if !slices.Equal(spoke, []string{"vera", "nick"}) {
+		t.Fatalf("spoke = %v, want vera then nick", spoke)
+	}
+	if !slices.Equal(invites, []string{"vera", "nick"}) || !slices.Equal(inviters, []string{"ada", "vera"}) {
+		t.Fatalf("invites=%v inviters=%v", invites, inviters)
+	}
+	// Ada's reply is classified once; the next classification is of Nick's.
+	if !slices.Equal(classify, []string{"ada", "nick"}) {
+		t.Fatalf("classified = %v", classify)
+	}
+	if got := infos(); len(got) != 1 || got[0] != "Agent handoff skipped: milo could not be loaded" {
+		t.Fatalf("info = %q", got)
+	}
+}
+
+func TestInvitationWhereNobodyCanBeLoadedClassifiesTheReplyOnce(t *testing.T) {
+	b := &continuationBrain{chunks: []string{"Answer."}}
+	p := &Pipeline{Brain: b, Events: events.NewBus()}
+	infos := infoMessages(p.Events)
+	r := &inviteRecorder{fail: []string{"milo", "vera", "nick"}}
+	r.wire(p, "milo", "vera", "nick")
+	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	spoke, classify, invites, _ := r.snapshot()
+	if len(spoke) != 0 || !slices.Equal(classify, []string{"ada"}) || !slices.Equal(invites, []string{"vera", "nick"}) {
+		t.Fatalf("spoke=%v classified=%v invites=%v", spoke, classify, invites)
+	}
+	want := []string{
+		"Agent handoff skipped: milo could not be loaded",
+		"Agent handoff skipped: vera could not be loaded",
+		"Agent handoff skipped: nick could not be loaded",
+	}
+	if got := infos(); !slices.Equal(got, want) {
+		t.Fatalf("info = %q", got)
+	}
+}
+
+func TestStaleInvitationNamesEveryoneItInvited(t *testing.T) {
+	for _, tc := range []struct {
+		name, stale string
+		spoke       []string
+		want        string
+	}{
+		{name: "first", stale: "milo",
+			want: "Milo, Vera and Nick were invited but did not get a turn: the persona selection changed before their turn."},
+		{name: "later", stale: "vera", spoke: []string{"milo"},
+			want: "Vera and Nick were invited but did not get a turn: the persona selection changed before their turn."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &continuationBrain{chunks: []string{"Answer."}}
+			p := &Pipeline{Brain: b, Events: events.NewBus()}
+			infos := infoMessages(p.Events)
+			r := &inviteRecorder{stale: tc.stale}
+			r.wire(p, "milo", "vera", "nick")
+			if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+				t.Fatal(err)
+			}
+			spoke, classify, _, _ := r.snapshot()
+			if !slices.Equal(spoke, tc.spoke) || len(classify) != 1 {
+				t.Fatalf("spoke=%v classified=%v", spoke, classify)
+			}
+			if got := infos(); len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("info = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

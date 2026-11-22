@@ -271,6 +271,7 @@ func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, v
 		return proposal, false, nil
 	}
 	proposal.PersonaID = targets[0]
+	proposal.DisplayName = roster.DisplayName(targets[0])
 	for _, id := range targets[1:] {
 		proposal.Invited = append(proposal.Invited, pipeline.HandoffInvite{PersonaID: id, DisplayName: roster.DisplayName(id), InvitedBy: response.ResponseID})
 	}
@@ -280,7 +281,9 @@ func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, v
 		}
 		exact := current.ResolveAgentMention(response.Content)
 		if exact.Kind != summon.ExactControlValid || !slices.Equal(append([]string{exact.Address.PersonaID}, exact.Address.Invited...), named) {
-			return wrapIdentityRefusalFailure(ctx, "route_handoff", fmt.Errorf("explicit agent mention changed target while preparing"))
+			// The reply no longer names the personas it was read as inviting,
+			// so none of them is asked.
+			return &pipeline.InviteRefusal{Reason: "the personas the reply mentions changed while it was being prepared"}
 		}
 		return nil
 	})
@@ -300,8 +303,11 @@ func (s *Selector) InviteHandoff(ctx context.Context, response brain.Turn, invit
 		return proposal, false, classifyAdmissionFailure(ctx, "route_handoff", err)
 	}
 	current := s.Snapshot()
-	if response.PersonaID == "" || response.PersonaID != current.PersonaID {
+	if response.PersonaID == "" {
 		return proposal, false, nil
+	}
+	if response.PersonaID != current.PersonaID {
+		return proposal, false, &pipeline.InviteRefusal{Reason: selectionMoved}
 	}
 	if !s.repliesHandOff() {
 		return proposal, false, &pipeline.InviteRefusal{Reason: current.DisplayName + " cannot pass the conversation to another persona"}
@@ -310,6 +316,10 @@ func (s *Selector) InviteHandoff(ctx context.Context, response brain.Turn, invit
 	proposal.Commit = s.commitHandoff(current, invite.PersonaID, invite.InvitedBy, nil)
 	return proposal, true, nil
 }
+
+// selectionMoved is why no invited persona is asked once the conversation is no
+// longer with the persona whose reply invited them.
+const selectionMoved = "the persona selection changed before their turn"
 
 // commitHandoff selects personaID at the response boundary, provided the
 // selection is still expected. check runs against the current roster first.
@@ -320,7 +330,7 @@ func (s *Selector) commitHandoff(expected events.PersonaSelection, personaID, in
 		s.transitionMu.Lock()
 		defer s.transitionMu.Unlock()
 		if s.Snapshot() != expected {
-			return pipeline.ResponseAdmission{}, fmt.Errorf("agent handoff belongs to a changed persona selection")
+			return pipeline.ResponseAdmission{}, &pipeline.InviteRefusal{Reason: selectionMoved}
 		}
 		// Resolve the roster before durable publication. No fallible Admit or
 		// profile reload may follow a successful selection and strand its target.
