@@ -559,7 +559,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 					if outcome.failure != nil {
 						sendPlaybackEvent(loopDone, playbackEvents, *outcome.failure)
 					} else {
-						sendPlaybackEvent(loopDone, playbackEvents, playbackEvent{kind: playbackNotEnqueued, sentence: work.sentence, index: work.index})
+						sendPlaybackEvent(loopDone, playbackEvents, playbackEvent{kind: playbackNotEnqueued, sentence: work.sentence, index: work.index, silent: outcome.silent})
 					}
 				}
 			}
@@ -576,8 +576,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if pending < lookaheadDepth {
 			sentenceCh = sentences
 		}
-		if modelDone == nil || interrupted {
+		if moveRequests != nil && (modelDone == nil || interrupted) {
 			moveRequests = nil
+			metrics.withdrawMove()
 		}
 
 		select {
@@ -592,6 +593,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			if p.OutputMuted() || p.Player == nil || !p.ttsReady() {
 				metrics.movedSpoken = nil
 			}
+			cancel()
+			<-observeDone
+			metrics.movedRead = original.String()
 			cancelSpeech()
 			voiceBatch = nil
 			stopIdle()
@@ -804,7 +808,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				pending--
 			}
 			played := event.kind == playbackFinished && event.synthError == "" && !event.result.Interrupted && event.result.Err == nil
-			if (played || event.kind == playbackNotEnqueued) && event.index == spokenGroups && event.index < len(groupThrough) {
+			if (played || (event.kind == playbackNotEnqueued && event.silent)) && event.index == spokenGroups && event.index < len(groupThrough) {
 				spokenThrough = groupThrough[event.index]
 				spokenGroups++
 			}
@@ -972,7 +976,8 @@ func (p *Pipeline) collectTextStream(ctx context.Context, cancel context.CancelF
 	}
 	observeCtx, stopObserving := context.WithCancel(ctx)
 	defer stopObserving()
-	out, _, done := p.observeStream(observeCtx, stream, metrics)
+	var received strings.Builder
+	out, _, done := p.observeStreamText(observeCtx, stream, metrics, &received)
 
 	var b strings.Builder
 	for reading := true; reading; {
@@ -989,8 +994,12 @@ func (p *Pipeline) collectTextStream(ctx context.Context, cancel context.CancelF
 			}
 			stopObserving()
 			<-done
+			metrics.movedRead = received.String()
 			return strings.TrimSpace(b.String()), "", errTurnMoved
 		}
+	}
+	if metrics.withdrawMove != nil {
+		metrics.withdrawMove()
 	}
 	<-done
 

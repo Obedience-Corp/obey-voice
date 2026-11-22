@@ -50,7 +50,7 @@ func (a *Agency) onJobStarted(id, task string) {
 }
 
 func (a *Agency) onJobDone(id string, state job.State, result string, err error) {
-	a.pipeline.stopMovedRequest(id)
+	a.pipeline.endMovedJob(id, state, err)
 	a.mu.Lock()
 	releaseVoice := a.workerOrigins[id].releaseVoice
 	a.mu.Unlock()
@@ -131,6 +131,8 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		reason := events.AbortCancelled
 		if errors.Is(err, job.ErrBudget) {
 			reason = events.AbortBudget
+		} else if errors.Is(err, errNotTakenOver) {
+			reason = events.AbortNotTakenOver
 		}
 		a.emitJobTrace(id, events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason})
 	}

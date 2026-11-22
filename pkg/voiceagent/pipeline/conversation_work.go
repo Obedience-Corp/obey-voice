@@ -164,6 +164,16 @@ func (p *Pipeline) CloseWork() error {
 		}
 	}
 	if p != nil {
+		// A reply moved to the background is stopped and recorded as
+		// unfinished while the conversation can still save it.
+		if p.hasMovedRequests() {
+			p.reclaimMovedBrain()
+			p.stopMoved()
+		}
+		p.moves.recording.Wait()
+		_ = p.commitWorkerReplies()
+	}
+	if p != nil {
 		p.closeCompletionCapture()
 		if p.Agency != nil {
 			p.Agency.discardPendingSpeech()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -21,6 +22,10 @@ import (
 // handed to a background job instead of being stopped.
 var errTurnMoved = errors.New("turn moved to the background")
 
+// errNotTakenOver stops a moved reply when the turn after it left its
+// persona's provider in place.
+var errNotTakenOver = errors.New("the persona it was moved for could not take over")
+
 // movableRequest is what a request its turn may hand to a background job
 // keeps: the request itself, and the conversation as its provider held it
 // before the request, which the host reads instead of the provider's own
@@ -31,14 +36,28 @@ type movableRequest struct {
 	opts    brain.StreamOptions
 	started time.Time
 	before  brain.ContinuitySnapshot
+	stopped chan struct{}
+	stop    sync.Once
+	// jobEnded closes once the job's end has been followed up.
+	jobEnded chan struct{}
+	endJob   sync.Once
+	// announce orders the job's start of a tool that began before the move
+	// ahead of that tool's end.
+	announce sync.Mutex
 
-	// Set by the move, under the recording's mu.
+	// Under the recording's mu. open holds tool calls started before the
+	// move that had not ended at it.
+	open      map[string]brain.ToolCall
 	jobID     string
+	kept      string
 	history   brain.ContinuitySnapshot
 	workDir   string
 	toolStart func(brain.ToolCall)
 	toolEnd   func(brain.ToolResult)
 	activity  func()
+	// finished is set once the model's reply ended without failing;
+	// reclaimed once the provider is to record the request itself.
+	finished, reclaimed bool
 }
 
 // moveRequest is typed input offered to a running turn. The turn answers on
@@ -62,11 +81,16 @@ type turnMoves struct {
 	// moved are requests owned by background jobs whose provider has not
 	// been retired yet.
 	moved []*transcriptRecording
+	// jobs maps each job continuing a moved reply to it until the job ends.
+	jobs map[string]*transcriptRecording
+	// recording joins the records of moved replies that did not finish.
+	recording sync.WaitGroup
 }
 
 // moveOfferWait bounds how long MoveTurnToBackground waits for a turn that is
-// busy outside its stream loop.
-const moveOfferWait = 2 * time.Second
+// busy outside its stream loop for a moment. The offer is withdrawn as soon as
+// the turn can no longer be moved, so this is a safety net.
+const moveOfferWait = 200 * time.Millisecond
 
 // MoveTurnToBackground asks the running turn to hand its model request to a
 // background job instead of ending it, because input names another persona.
@@ -94,8 +118,9 @@ func (p *Pipeline) MoveTurnToBackground(input string) bool {
 }
 
 // offerMove lets MoveTurnToBackground reach a turn while it reads rec's
-// stream. The returned func withdraws the offer.
-func (p *Pipeline) offerMove(rec *transcriptRecording) (<-chan moveRequest, func()) {
+// stream. The returned func withdraws the offer; metrics keeps it so the
+// stream loop withdraws it the moment it stops taking requests.
+func (p *Pipeline) offerMove(rec *transcriptRecording, metrics *turnMetrics) (<-chan moveRequest, func()) {
 	if rec == nil || rec.movable == nil {
 		return nil, func() {}
 	}
@@ -103,7 +128,7 @@ func (p *Pipeline) offerMove(rec *transcriptRecording) (<-chan moveRequest, func
 	p.moves.mu.Lock()
 	p.moves.offer = offer
 	p.moves.mu.Unlock()
-	return offer.requests, sync.OnceFunc(func() {
+	withdraw := sync.OnceFunc(func() {
 		p.moves.mu.Lock()
 		if p.moves.offer == offer {
 			p.moves.offer = nil
@@ -111,6 +136,8 @@ func (p *Pipeline) offerMove(rec *transcriptRecording) (<-chan moveRequest, func
 		p.moves.mu.Unlock()
 		close(offer.withdrawn)
 	})
+	metrics.withdrawMove = withdraw
+	return offer.requests, withdraw
 }
 
 // acceptMove answers req from the turn's stream loop.
@@ -145,33 +172,89 @@ func (p *Pipeline) detachableRequest(parent context.Context, input string, opts 
 		cancelCause(context.Canceled)
 	}
 	before := p.Brain.(brain.ContinuityTransferProvider).ContinuitySnapshot()
-	return ctx, cancel, &movableRequest{detach: stop, input: input, opts: opts, started: started, before: before}
+	return ctx, cancel, &movableRequest{detach: stop, input: input, opts: opts, started: started, before: before,
+		stopped: make(chan struct{}), jobEnded: make(chan struct{}), open: make(map[string]brain.ToolCall)}
+}
+
+// stopMove stops a moved request that is not to finish.
+func (r *transcriptRecording) stopMove() {
+	r.movable.stop.Do(func() { close(r.movable.stopped) })
+	r.cancel()
 }
 
 // movedToolHooks sends tool runs to the job's row once the request is moved.
+// A tool that started before the move is started on the row before its end
+// goes there.
 func (r *transcriptRecording) movedToolHooks(start func(brain.ToolCall), end func(brain.ToolResult)) (func(brain.ToolCall), func(brain.ToolResult)) {
-	hooks := func() (func(brain.ToolCall), func(brain.ToolResult)) {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if !r.moved {
-			return start, end
-		}
-		if r.movable.activity != nil {
-			r.movable.activity()
-		}
-		return r.movable.toolStart, r.movable.toolEnd
-	}
+	m := r.movable
 	movedStart := func(call brain.ToolCall) {
-		if hook, _ := hooks(); hook != nil {
+		r.mu.Lock()
+		if !r.moved {
+			m.open[call.ID] = call
+			r.mu.Unlock()
+			if start != nil {
+				start(call)
+			}
+			return
+		}
+		activity, hook := m.activity, m.toolStart
+		r.mu.Unlock()
+		if activity != nil {
+			activity()
+		}
+		if hook != nil {
 			hook(call)
 		}
 	}
 	movedEnd := func(result brain.ToolResult) {
-		if _, hook := hooks(); hook != nil {
-			hook(result)
+		r.mu.Lock()
+		if !r.moved {
+			delete(m.open, result.ID)
+			r.mu.Unlock()
+			if end != nil {
+				end(result)
+			}
+			return
+		}
+		call, open := m.open[result.ID]
+		delete(m.open, result.ID)
+		activity, startHook, endHook := m.activity, m.toolStart, m.toolEnd
+		r.mu.Unlock()
+		if activity != nil {
+			activity()
+		}
+		m.announce.Lock()
+		defer m.announce.Unlock()
+		if open && startHook != nil {
+			startHook(call)
+		}
+		if endHook != nil {
+			endHook(result)
 		}
 	}
 	return movedStart, movedEnd
+}
+
+// announceOpenTools starts on the job's row the tools still running at the
+// move.
+func (r *transcriptRecording) announceOpenTools() {
+	m := r.movable
+	m.announce.Lock()
+	defer m.announce.Unlock()
+	r.mu.Lock()
+	calls := make([]brain.ToolCall, 0, len(m.open))
+	for _, call := range m.open {
+		calls = append(calls, call)
+	}
+	clear(m.open)
+	hook := m.toolStart
+	r.mu.Unlock()
+	slices.SortFunc(calls, func(a, b brain.ToolCall) int { return strings.Compare(a.ID, b.ID) })
+	for _, call := range calls {
+		if hook != nil {
+			hook(call)
+		}
+	}
 }
 
 func (r *transcriptRecording) deliveredText() string {
@@ -181,15 +264,15 @@ func (r *transcriptRecording) deliveredText() string {
 }
 
 // moveToJob hands a request whose turn stopped reading it to a background job
-// of the persona that started it. It returns the part of the reply that stays
-// with the turn and the job's id, or false when the request cannot be moved;
-// the turn then stops it as before.
-func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *transcriptRecording, stream *brain.Stream, task string) (string, string, bool) {
+// of the persona that started it, and gives the part of the reply the turn
+// keeps. It reports false when the request cannot be moved; the turn then
+// stops it as before.
+func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *transcriptRecording, stream *brain.Stream, task string) bool {
 	a := p.Agency
 	if a == nil || rec == nil || rec.movable == nil || !rec.movable.detach() {
-		return "", "", false
+		return false
 	}
-	partial, carried := splitMovedReply(rec.deliveredText(), metrics.movedSpoken)
+	kept, carried := splitMovedReply(metrics.movedRead, metrics.movedSpoken)
 	cfg := a.currentConfig()
 	admission := frozenConfig(cfg)
 	if admission == nil {
@@ -205,11 +288,14 @@ func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *tra
 		workDir = config.WorkDirFrom(cfg)
 	}
 	origin := workerOrigin{Scope: p.ConversationScope(), Trace: metrics.trace, Envelope: metrics.response, admission: admission, continued: true}
+	if kept != "" {
+		origin.keptResponseID = metrics.response.ResponseID
+	}
 	origin.Envelope.ResponseID = newWorkID()
 	origin.Voices.primary, origin.Voices.fallback = p.responseTTS(ctx)
 	origin.releaseVoice = p.RetainTTS(origin.Voices.primary, origin.Voices.fallback)
 	handOff := a.movedHandOff(context.WithoutCancel(ctx), metrics, task, rec)
-	id, err := a.jobs.Start(ctx, job.Spec{
+	_, err := a.jobs.Start(ctx, job.Spec{
 		Task:     truncateJobTask(task),
 		Provider: provider,
 		Model:    model,
@@ -222,38 +308,51 @@ func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *tra
 			a.workerOrigins[id] = origin
 			a.mu.Unlock()
 			start, end := a.foldingToolHooks(id)
-			p.markMoved(rec, id, partial, workDir, start, end)
+			p.markMoved(rec, id, kept, workDir, start, end)
+			// Before the job's row, so the part kept reads ahead of it.
+			p.emitResponse(metrics, events.ResponseReady{Response: textclean.StripThinkBlocks(kept), ContinuedAs: id})
 		},
-		Run: p.drainMoved(rec, stream, partial != "", carried, handOff),
+		Run: p.drainMoved(rec, stream, carried, handOff),
 	})
 	if err != nil {
 		origin.releaseVoice()
 		p.emit(events.Error{Stage: "job", Message: err.Error()})
-		return "", "", false
+		return false
 	}
-	return partial, id, true
+	rec.announceOpenTools()
+	return true
 }
 
 // splitMovedReply divides the text a moved turn had read at a sentence end,
 // so the job's reply starts with a sentence and nothing is said twice or
 // lost: the turn keeps the sentences it had finished saying, or, when it was
 // not speaking, every complete sentence it had read. The rest, from the
-// whitespace after the last kept sentence, leads the job's reply.
+// whitespace after the last kept sentence, leads the job's reply. The cut
+// never falls inside a fenced code block, and an image line goes with the
+// job's reply, which attaches it.
 func splitMovedReply(read string, spoken *int) (kept, carried string) {
 	ends := brain.SentenceEnds(read)
 	n := len(ends)
 	if spoken != nil {
 		n = min(n, *spoken)
 	}
-	if n == 0 {
-		return "", read
+	limit := len(read)
+	if image := strings.Index(read, "!["); image >= 0 {
+		limit = image
 	}
-	return read[:ends[n-1]], read[ends[n-1]:]
+	for n > 0 {
+		cut := ends[n-1]
+		if cut <= limit && strings.Count(read[:cut], "```")%2 == 0 {
+			return read[:cut], read[cut:]
+		}
+		n--
+	}
+	return "", read
 }
 
-func (p *Pipeline) markMoved(rec *transcriptRecording, jobID, partial, workDir string, start func(brain.ToolCall), end func(brain.ToolResult)) {
+func (p *Pipeline) markMoved(rec *transcriptRecording, jobID, kept, workDir string, start func(brain.ToolCall), end func(brain.ToolResult)) {
 	m := rec.movable
-	added := requestTurns(m.input, m.opts, partial, nil, m.started)
+	added := requestTurns(m.input, m.opts, kept, nil, m.started)
 	history := m.before
 	working := history.Working
 	if working == nil {
@@ -264,16 +363,21 @@ func (p *Pipeline) markMoved(rec *transcriptRecording, jobID, partial, workDir s
 	history.Archive = slices.Clone(history.Archive)
 	rec.mu.Lock()
 	rec.moved = true
-	m.jobID, m.history, m.workDir, m.toolStart, m.toolEnd = jobID, history, workDir, start, end
+	m.jobID, m.kept, m.history, m.workDir, m.toolStart, m.toolEnd = jobID, kept, history, workDir, start, end
 	rec.mu.Unlock()
 	p.moves.mu.Lock()
 	p.moves.moved = append(p.moves.moved, rec)
+	if p.moves.jobs == nil {
+		p.moves.jobs = make(map[string]*transcriptRecording)
+	}
+	p.moves.jobs[jobID] = rec
 	p.moves.mu.Unlock()
 }
 
 // movedHandOff runs, in the moved reply's job, the work the reply handed off
 // when it ended: a spawn admitted from the turn and worker configuration of
-// the persona that started it, not the persona answering by then.
+// the persona that started it, not the persona answering by then. It is held
+// to a spawn's runtime budget from when it starts.
 func (a *Agency) movedHandOff(ctx context.Context, metrics *turnMetrics, task string, rec *transcriptRecording) func(context.Context, config.WorkerTierName) (string, error) {
 	source := a.workerSource()
 	started := &turnMetrics{response: metrics.response, trace: metrics.trace}
@@ -295,17 +399,14 @@ func (a *Agency) movedHandOff(ctx context.Context, metrics *turnMetrics, task st
 		origin.admission = w.admission()
 		a.workerOrigins[id] = origin
 		a.mu.Unlock()
+		a.jobs.Describe(id, providerName(w.cfg), modelName(w.cfg))
 		if w.own {
 			a.noteOwnWorkDefault(w.decision)
 		}
 		if budget == 0 {
 			budget = a.jobs.Budget()
 		}
-		if budget > 0 {
-			var cancel context.CancelFunc
-			jobCtx, cancel = context.WithTimeoutCause(jobCtx, budget, fmt.Errorf("%w after %s", job.ErrBudget, budget))
-			defer cancel()
-		}
+		a.jobs.Limit(id, budget)
 		return run(jobCtx)
 	}
 }
@@ -362,7 +463,7 @@ func (w *idleWatch) stop() bool {
 // drainMoved is a moved request's job: it reads the rest of the stream and
 // returns the text the turn had not read, or runs the work the reply handed
 // off.
-func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, kept bool, carried string, handOff func(context.Context, config.WorkerTierName) (string, error)) func(context.Context) (string, error) {
+func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, carried string, handOff func(context.Context, config.WorkerTierName) (string, error)) func(context.Context) (string, error) {
 	return func(jobCtx context.Context) (string, error) {
 		idle := p.watchMovedIdle(rec)
 		var rest strings.Builder
@@ -397,9 +498,17 @@ func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, ke
 			failure, result.Recovered = fmt.Errorf("the model sent nothing for %s, so the reply was stopped", idle.limit), false
 		}
 		id := job.IDFromContext(jobCtx)
+		if failure == nil {
+			rec.mu.Lock()
+			rec.movable.finished = true
+			rec.mu.Unlock()
+		}
 		switch kind := routeKindFromBrain(result.Route); {
 		case kind == RouteSpawn && (failure == nil || result.Recovered):
 			if failure != nil {
+				rec.mu.Lock()
+				rec.movable.finished = true
+				rec.mu.Unlock()
 				p.emit(events.Error{Stage: "brain", Message: id + ": " + failure.Error()})
 			}
 			return handOff(jobCtx, result.RouteTier)
@@ -416,11 +525,16 @@ func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, ke
 			}
 			// Like a live reply that fails partway, the part that arrived is
 			// delivered and saved as unfinished, and the reason is reported.
-			p.Agency.noteIncomplete(id, failure)
+			// A live reply stops speaking at its output limit or a repetition.
+			unspoken := errors.Is(failure, brain.ErrResponseLimit) || errors.Is(failure, brain.ErrResponseRepetition)
+			p.Agency.noteIncomplete(id, failure, unspoken)
 			p.emit(events.Error{Stage: "brain", Message: id + ": the reply was cut short: " + failure.Error()})
 			return text, nil
 		}
-		if strings.TrimSpace(text) == "" && !kept {
+		rec.mu.Lock()
+		kept := rec.movable.kept
+		rec.mu.Unlock()
+		if strings.TrimSpace(text) == "" && kept == "" {
 			return "", errors.New("the reply ended without any text")
 		}
 		return text, nil
@@ -428,11 +542,11 @@ func (p *Pipeline) drainMoved(rec *transcriptRecording, stream *brain.Stream, ke
 }
 
 // noteIncomplete records that job id's reply ended before it was finished.
-func (a *Agency) noteIncomplete(id string, reason error) {
+func (a *Agency) noteIncomplete(id string, reason error, unspoken bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	origin := a.workerOrigins[id]
-	origin.incomplete = reason
+	origin.incomplete, origin.unspoken = reason, unspoken
 	a.workerOrigins[id] = origin
 }
 
@@ -461,13 +575,6 @@ func (p *Pipeline) finishMovedText(jobCtx context.Context, rec *transcriptRecord
 		p.Agency.saveWorkerThread(job.IDFromContext(jobCtx), []brain.Turn{{Role: "assistant", Content: cleaned, Attachments: refs}})
 	}
 	return cleaned, nil
-}
-
-// finishMovedTurn ends a turn whose reply continues in job id. The part it
-// kept is given as that reply's beginning.
-func (p *Pipeline) finishMovedTurn(turn *turnConductor, metrics *turnMetrics, partial, id string) {
-	p.emitResponse(metrics, events.ResponseReady{Response: brain.CleanForVoice(partial), ContinuedAs: id})
-	turn.finish(TurnMoved)
 }
 
 // MovedContinuity is the conversation as the host reads it from provider
@@ -502,10 +609,24 @@ func (p *Pipeline) movedOn(provider brain.Provider) []*transcriptRecording {
 	return out
 }
 
+func (p *Pipeline) takeMovedJob(id string) *transcriptRecording {
+	p.moves.mu.Lock()
+	defer p.moves.mu.Unlock()
+	rec := p.moves.jobs[id]
+	delete(p.moves.jobs, id)
+	return rec
+}
+
 func (p *Pipeline) forgetMoved(rec *transcriptRecording) {
 	p.moves.mu.Lock()
 	defer p.moves.mu.Unlock()
 	p.moves.moved = slices.DeleteFunc(p.moves.moved, func(r *transcriptRecording) bool { return r == rec })
+}
+
+func (p *Pipeline) hasMovedRequests() bool {
+	p.moves.mu.Lock()
+	defer p.moves.mu.Unlock()
+	return len(p.moves.moved) > 0 || len(p.moves.jobs) > 0
 }
 
 // liveBrainBusy reports whether the live provider still has a request moved
@@ -516,16 +637,17 @@ func (p *Pipeline) liveBrainBusy() bool { return len(p.movedOn(p.Brain)) > 0 }
 // history change or read of its own. A request moved off it means the turn
 // that followed did not install another provider, so the moved request is
 // stopped as the turn would have stopped it: two requests never share one
-// provider.
+// provider. The provider records it itself.
 func (p *Pipeline) reclaimMovedBrain() {
 	for _, rec := range p.movedOn(p.Brain) {
 		rec.mu.Lock()
 		m := rec.movable
 		jobID := m.jobID
-		rec.moved = false
+		rec.moved, m.reclaimed = false, true
 		rec.mu.Unlock()
+		m.stop.Do(func() { close(m.stopped) })
 		if p.Agency != nil {
-			p.Agency.jobs.Abort(jobID)
+			p.Agency.jobs.Stop(jobID, errNotTakenOver)
 		}
 		rec.release()
 		if p.Agency != nil && p.Agency.jobState(jobID) == job.StateDone {
@@ -543,35 +665,59 @@ func (p *Pipeline) reclaimMovedBrain() {
 	}
 }
 
-// awaitMoved waits until provider's moved requests have ended. Each ends on
-// its own, by its job being stopped, or when the conversation closes.
+// awaitMoved waits until provider's moved requests have ended or been told
+// to stop. One told to stop is then waited for as any stopped request is
+// before its provider is closed.
 func (p *Pipeline) awaitMoved(provider brain.Provider) {
 	for _, rec := range p.movedOn(provider) {
-		<-rec.drained
+		select {
+		case <-rec.drained:
+		case <-rec.movable.stopped:
+		}
 		p.forgetMoved(rec)
 	}
 }
 
-// stopMovedRequest stops the request moved to job id once the job has ended,
-// however it ended: a job stopped before it ran never read its stream.
-func (p *Pipeline) stopMovedRequest(id string) {
-	p.moves.mu.Lock()
-	moved := slices.Clone(p.moves.moved)
-	p.moves.mu.Unlock()
-	for _, rec := range moved {
-		rec.mu.Lock()
-		owned := rec.movable.jobID == id
-		rec.mu.Unlock()
-		if owned {
-			rec.cancel()
-		}
+// endMovedJob follows job id to its end. A moved reply whose model did not
+// finish, however its job ended, is recorded as a stopped live reply is: the
+// part kept before the move marked unfinished, and the text that arrived
+// after it, once the request has stopped.
+func (p *Pipeline) endMovedJob(id string, state job.State, err error) {
+	rec := p.takeMovedJob(id)
+	if rec == nil {
+		return
 	}
+	rec.stopMove()
+	rec.mu.Lock()
+	m := rec.movable
+	record := !m.finished && !m.reclaimed && state != job.StateDone
+	kept := m.kept
+	rec.mu.Unlock()
+	defer m.endJob.Do(func() { close(m.jobEnded) })
+	if !record || p.Agency == nil {
+		return
+	}
+	p.moves.recording.Go(func() {
+		settle := time.NewTimer(providerStopTimeout)
+		defer settle.Stop()
+		select {
+		case <-rec.drained:
+		case <-settle.C:
+		}
+		rest, _ := strings.CutPrefix(rec.deliveredText(), kept)
+		reason := err
+		if reason == nil || (state == job.StateAborted && !errors.Is(err, job.ErrBudget)) {
+			reason = context.Canceled
+		}
+		p.Agency.queueUnfinished(id, textclean.StripThinkBlocks(rest), reason)
+	})
 }
 
-// stopMoved stops every moved request, as closing the conversation does.
+// stopMoved stops every moved request and records each, as closing the
+// conversation does.
 func (p *Pipeline) stopMoved() {
 	p.moves.mu.Lock()
-	moved := slices.Clone(p.moves.moved)
+	moved := slices.Collect(maps.Values(p.moves.jobs))
 	p.moves.mu.Unlock()
 	for _, rec := range moved {
 		rec.mu.Lock()
@@ -580,6 +726,16 @@ func (p *Pipeline) stopMoved() {
 		if p.Agency != nil {
 			p.Agency.jobs.Abort(jobID)
 		}
-		rec.cancel()
+		rec.stopMove()
 	}
+	// A job stopped as it starts ends once it has been announced.
+	settle := time.NewTimer(providerStopTimeout)
+	defer settle.Stop()
+	for _, rec := range moved {
+		select {
+		case <-rec.movable.jobEnded:
+		case <-settle.C:
+		}
+	}
+	p.moves.recording.Wait()
 }

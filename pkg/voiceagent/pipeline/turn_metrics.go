@@ -120,8 +120,12 @@ type turnMetrics struct {
 	// moveRequests delivers typed input asking the turn to hand its model
 	// stream to a background job; nil while it may not be moved.
 	moveRequests <-chan moveRequest
-	// movedSpoken, set when a speaking turn is moved, is how many of the
-	// sentences it read it had finished saying.
+	// withdrawMove withdraws the turn's offer to be moved.
+	withdrawMove func()
+	// movedRead is the reply text the turn had read when it was moved, and
+	// movedSpoken, for a speaking turn, how many of those sentences it had
+	// finished saying.
+	movedRead   string
 	movedSpoken *int
 }
 

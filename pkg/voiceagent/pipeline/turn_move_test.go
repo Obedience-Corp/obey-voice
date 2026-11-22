@@ -35,11 +35,14 @@ type workingBrain struct {
 	failText  string
 	recovered bool
 	noResult  bool
-	before    []string
-	last      string
-	trickle   int
-	steps     int
-	gap       time.Duration
+	// none ends the held request with no more text; stubborn holds it until
+	// release even after it is stopped.
+	none, stubborn bool
+	before         []string
+	last           string
+	trickle        int
+	steps          int
+	gap            time.Duration
 
 	mu        sync.Mutex
 	turns     []brain.Turn
@@ -114,6 +117,9 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 		close(b.held)
 		select {
 		case <-ctx.Done():
+			if b.stubborn {
+				<-b.release
+			}
 			done <- brain.StreamResult{Err: ctx.Err()}
 			return
 		case <-b.release:
@@ -146,7 +152,7 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 			}
 		}
 		last := b.last
-		if last == "" {
+		if last == "" && !b.none {
 			last = "Found three files."
 		}
 		if !send(last) {

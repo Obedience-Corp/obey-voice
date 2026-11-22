@@ -23,6 +23,8 @@ const (
 )
 
 type playbackEvent struct {
+	// silent marks a playbackNotEnqueued segment that had nothing to speak.
+	silent      bool
 	synthError  string
 	traceStatus string
 	attemptID   string

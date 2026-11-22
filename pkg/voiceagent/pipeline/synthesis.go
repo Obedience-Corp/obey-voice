@@ -57,6 +57,8 @@ func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct
 type segmentSynthesisOutcome struct {
 	enqueued bool
 	failure  *playbackEvent
+	// silent marks a segment that had nothing to speak.
+	silent bool
 }
 
 // synthWork is one admitted segment. index is its position in admission order
@@ -121,7 +123,7 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 	synthStarted := time.Now()
 	stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, sentence, stickFallback, work.joinBeats)
 	if errors.Is(err, errNothingToSpeak) {
-		return segmentSynthesisOutcome{}
+		return segmentSynthesisOutcome{silent: true}
 	}
 	if err != nil {
 		if ctx.Err() == nil {
