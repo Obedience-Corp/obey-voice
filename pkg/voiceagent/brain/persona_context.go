@@ -92,6 +92,8 @@ func contextTurnKey(t Turn) string {
 	if t.Role == "tool" && t.ToolCallID != "" {
 		return "tool:" + t.ToolCallID
 	}
+	// What a message carries is not part of which message it is.
+	t.PostedImages = nil
 	data, _ := json.Marshal(t)
 	return string(data)
 }

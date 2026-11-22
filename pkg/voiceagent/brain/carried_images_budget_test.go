@@ -185,6 +185,27 @@ func TestSavedPersonaContextKeepsAPostedPicture(t *testing.T) {
 	}
 }
 
+// A record whose messages do not say what they carry still matches a context
+// saved from a working view that does, and the picture stays on its message.
+func TestSavedPersonaContextMatchesARecordWithoutPostedPictures(t *testing.T) {
+	o, ref := trimmedAfterAPostedPicture(t)
+	state := roundTrip(t, CapturePersonaContext(o.ContinuitySnapshot()))
+	canonical := roundTrip(t, o.History())
+	for i := range canonical {
+		canonical[i].PostedImages = nil
+	}
+	if !state.Matches(canonical) {
+		t.Fatal("the saved context no longer matches the record")
+	}
+	r := (&visionFake{}).brain(t, budgetConfig(), "You are Obey.")
+	if err := r.ImportContinuity(state.Reconcile(canonical)); err != nil {
+		t.Fatal(err)
+	}
+	if m := messageWith(t, built(r), "What colour is it?"); strings.Count(m.Content, pictureNamed(ref)) != 1 {
+		t.Fatalf("the question reads %q", m.Content)
+	}
+}
+
 // A saved conversation keeps the picture on the message that carries it, even
 // when the turns loaded no longer hold the reply that posted it.
 func TestSavedConversationKeepsAPostedPicture(t *testing.T) {
