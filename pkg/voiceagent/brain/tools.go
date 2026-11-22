@@ -52,6 +52,9 @@ type toolSession struct {
 	commandTimeout time.Duration
 	// boundary fences file and shell tools to the worker's campaign root.
 	boundary Boundary
+	// viewImage runs view_image for the persona answering; nil where the
+	// tool is not offered.
+	viewImage func(context.Context, string) string
 	// Optional UI hooks (from StreamOptions).
 	onStart func(ToolCall)
 	onEnd   func(ToolResult)
@@ -117,6 +120,9 @@ func (s *toolSession) describe(name, summary, id string) ToolCall {
 // relevant skill without losing capabilities on the legacy worker path.
 func (s *toolSession) tools() api.Tools {
 	tools := routerToolsForSession(s.routerPolicy, s.catalog, s.workerTiers, s.singleCall)
+	if s.viewImage != nil && s.routerPolicy != RouterToolsRouteOnly {
+		tools = append(tools, viewImageTool())
+	}
 	if s.delegation != nil && !(s.routerPolicy == RouterToolsRouteOnly && s.workerTiers != nil) {
 		tools = append(tools, delegationTools()...)
 	}
@@ -190,6 +196,16 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 		observed = failedToolOutcome(started.Summary, err.Error())
 		return "error: " + err.Error()
 	}
+	switch name {
+	case viewImageToolName:
+		if s.viewImage == nil {
+			observed = failedToolOutcome(started.Summary, "view_image is not available in this turn")
+			return "error: view_image is not available in this turn"
+		}
+		return s.viewImage(ctx, toolCallArg(call, "path"))
+	case "read_file":
+		return toolReadFileFor(workDir, call.Function.Arguments.ToMap(), s.viewImage != nil)
+	}
 	if s.imageDelivery && name == "write_file" {
 		if err := checkImageWrite(call); err != nil {
 			observed = failedToolOutcome(started.Summary, err.Error())
@@ -204,7 +220,7 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 func toolArgSummary(call api.ToolCall) string {
 	args := call.Function.Arguments.ToMap()
 	switch call.Function.Name {
-	case "list_files", "read_file", "write_file":
+	case "list_files", "read_file", "write_file", viewImageToolName:
 		if p, _ := args["path"].(string); p != "" {
 			return p
 		}
@@ -606,6 +622,12 @@ func toolListFiles(workDir string, args map[string]any) string {
 }
 
 func toolReadFile(workDir string, args map[string]any) string {
+	return toolReadFileFor(workDir, args, false)
+}
+
+// toolReadFileFor reads a text file. An image file is described, not
+// returned; viewable says whether view_image can show it instead.
+func toolReadFileFor(workDir string, args map[string]any, viewable bool) string {
 	path, _ := args["path"].(string)
 	if path == "" {
 		return "error: path is required"
@@ -615,6 +637,9 @@ func toolReadFile(workDir string, args map[string]any) string {
 	data, err := os.ReadFile(resolved)
 	if err != nil {
 		return fmt.Sprintf("error: %v", err)
+	}
+	if note := imageFileNote(path, data, viewable); note != "" {
+		return note
 	}
 
 	// Limit output to prevent context overflow.

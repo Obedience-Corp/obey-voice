@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -21,11 +22,17 @@ type visionFake struct {
 	requests []api.ChatRequest
 	// textOnly serves a model that cannot view images.
 	textOnly bool
+	// showFails makes the server unable to say what the model can do.
+	showFails atomic.Bool
 }
 
 func (f *visionFake) brain(t *testing.T, cfg *config.Config, system string) *OllamaBrain {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" && f.showFails.Load() {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		if r.URL.Path == "/api/show" {
 			capabilities := []string{"completion", "vision", "tools"}
 			if f.textOnly {

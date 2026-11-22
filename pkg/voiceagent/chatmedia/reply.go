@@ -110,7 +110,23 @@ func (s Store) processReply(text, workDir string, load func(string) (Ref, error)
 	return strings.TrimSpace(strings.Join(lines, "\n")), refs, errors.Join(failures...)
 }
 
+// ImportWorkFile imports one local PNG, JPEG or GIF inside workDir, by the
+// rules a reply image follows except that the store is not a place to read.
+func (s Store) ImportWorkFile(path, workDir string) (Ref, error) {
+	resolved, err := resolveLocalFile(path, workDir, workDir)
+	if err != nil {
+		return Ref{}, err
+	}
+	return s.importReplyFile(resolved)
+}
+
 func (s Store) resolveReplyFile(path, workDir string) (string, error) {
+	return resolveLocalFile(path, workDir, workDir, s.Dir)
+}
+
+// resolveLocalFile resolves path, relative to workDir, to a local file inside
+// one of roots.
+func resolveLocalFile(path, workDir string, roots ...string) (string, error) {
 	if strings.HasPrefix(path, "file://") {
 		u, err := url.Parse(path)
 		if err != nil || (u.Host != "" && u.Host != "localhost") {
@@ -128,7 +144,7 @@ func (s Store) resolveReplyFile(path, workDir string) (string, error) {
 		return "", fmt.Errorf("resolve file: %w", err)
 	}
 	allowed := false
-	for _, root := range []string{workDir, s.Dir} {
+	for _, root := range roots {
 		if root == "" {
 			continue
 		}
@@ -143,7 +159,7 @@ func (s Store) resolveReplyFile(path, workDir string) (string, error) {
 		}
 	}
 	if !allowed {
-		return "", errors.New("result image must be inside the agent work directory")
+		return "", errors.New("image must be inside the agent work directory")
 	}
 	return resolved, nil
 }
