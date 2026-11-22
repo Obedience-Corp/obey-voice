@@ -66,6 +66,7 @@ type localConversation struct {
 	// release ends a request held by ollamaRelease; heldStopped closes if the
 	// host stops that request first.
 	release, heldStopped chan struct{}
+	heldStop             sync.Once
 	// ended closes when the test ends, before the server closes, so no held
 	// request can keep the server open.
 	ended chan struct{}
@@ -200,7 +201,7 @@ func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) 
 			case <-c.release:
 				_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": true, "done_reason": "stop", "message": map[string]string{"role": "assistant", "content": ollamaReleased}})
 			case <-r.Context().Done():
-				close(c.heldStopped)
+				c.heldStop.Do(func() { close(c.heldStopped) })
 			case <-c.ended:
 			}
 			return

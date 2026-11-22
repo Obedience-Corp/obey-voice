@@ -886,6 +886,18 @@ func TestMovedVoiceReplyKeepsWhatItFinishedSaying(t *testing.T) {
 			c.p.Player = player
 			c.p.STT = &fakeSTT{text: "Anika, HOLD and check the build"}
 			c.anika.before, c.anika.last = []string{"One is first. Two is second. "}, "Three is last."
+			// The turn counts a group as said on the loop pass that reports it
+			// finished, so the move it takes afterwards sees the count.
+			var mu sync.Mutex
+			started, said := 0, 0
+			events.Subscribe(c.p.Events, func(events.SpeakingStarted) { mu.Lock(); started++; mu.Unlock() })
+			events.Subscribe(c.p.Events, func(e events.SpeakingComplete) {
+				if !e.Interrupted {
+					mu.Lock()
+					said++
+					mu.Unlock()
+				}
+			})
 			go func() {
 				_, err := c.p.RunTurn(t.Context())
 				c.turn <- err
@@ -893,13 +905,22 @@ func TestMovedVoiceReplyKeepsWhatItFinishedSaying(t *testing.T) {
 			<-c.anika.held
 			c.waitRead()
 			deadline := time.Now().Add(5 * time.Second)
-			for len(voice.Texts()) == 0 {
-				if time.Now().After(deadline) {
-					t.Fatal("nothing was spoken before the move")
+			for {
+				texts := voice.Texts()
+				mu.Lock()
+				ready := started > 0
+				if tc.kept != "" {
+					ready = strings.Contains(strings.Join(texts, " "), "Two is second.") && said == len(texts)
 				}
-				time.Sleep(5 * time.Millisecond)
+				mu.Unlock()
+				if ready {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("speech never reached the point to move at: %q", texts)
+				}
+				time.Sleep(time.Millisecond)
 			}
-			time.Sleep(200 * time.Millisecond)
 			c.move()
 			ready := c.next(func(e events.Event) bool { _, ok := e.(events.ResponseReady); return ok }).(events.ResponseReady)
 			if ready.Response != tc.kept {

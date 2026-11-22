@@ -189,18 +189,18 @@ func TestMoveIsRefusedAtOnceAfterTheModelFinished(t *testing.T) {
 	c.p.ReplaceTTS(voice, nil)
 	c.p.Player = player
 	c.p.STT = &fakeSTT{text: "Anika, check the build"}
+	modelDone := make(chan struct{})
+	var once sync.Once
+	events.Subscribe(c.p.Events, func(events.ThinkingComplete) { once.Do(func() { close(modelDone) }) })
 	go func() {
 		_, err := c.p.RunTurn(t.Context())
 		c.turn <- err
 	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for len(voice.Texts()) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("nothing was spoken")
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-modelDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the model never finished")
 	}
-	time.Sleep(200 * time.Millisecond)
 	asked := time.Now()
 	moved := c.p.MoveTurnToBackground("Hey Obey, what time is it?")
 	took := time.Since(asked)
@@ -451,7 +451,16 @@ func TestTextShownBeforeTheMoveIsNeverLost(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	go func() { time.Sleep(300 * time.Millisecond); close(unblock) }()
+	// The recording resumes while the turn takes the move.
+	names := c.p.NamesOtherPersona
+	var resume sync.Once
+	c.p.NamesOtherPersona = func(input string) bool {
+		ok := names(input)
+		if ok {
+			resume.Do(func() { close(unblock) })
+		}
+		return ok
+	}
 	c.move()
 	ready := c.ready()
 	finished := c.ended().(events.JobFinished)
