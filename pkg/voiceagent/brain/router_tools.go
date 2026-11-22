@@ -174,6 +174,15 @@ func LiveRouterDecision(policy RouterToolsPolicy, calls []api.ToolCall) string {
 	return ""
 }
 
+func callsTool(calls []api.ToolCall, name string) bool {
+	for _, call := range calls {
+		if strings.TrimSpace(call.Function.Name) == name {
+			return true
+		}
+	}
+	return false
+}
+
 func hasRouteCall(calls []api.ToolCall) bool {
 	for _, call := range calls {
 		if strings.TrimSpace(call.Function.Name) == "route" {

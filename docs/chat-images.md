@@ -132,6 +132,22 @@ native-audio persona is sent none; as before, it refuses a conversation whose
 retained turns hold a picture. Only the model request changes: the transcript and
 the saved conversation keep the picture on the reply.
 
+A speaking persona on Ollama with direct tools can look at an image file with the
+`view_image` tool. The path follows the rules for a reply image: a PNG, JPEG or
+GIF inside the work directory or the attachment store (a GIF shows its first
+frame). The file is copied into the attachment store and recorded on the message
+being answered as a picture the persona opened, kept apart from what the user
+attached: the chat never shows it as sent by the user, and the saved conversation
+keeps it. The turn's next request carries it on that message, and later turns
+follow the window, aging and 32 MiB rules above. A persona can open four pictures
+while answering one message. A model that cannot view images, or a native-audio
+persona, gets an answer saying so and the turn goes on. A turn that opens a
+picture is not handed to a background worker afterwards, and workers, routed
+(`route_only`) turns, background reports and group discussion turns are not
+offered the tool. `read_file` on an image file no longer returns its bytes; it
+names the file as an image of N bytes and, where `view_image` is offered, says to
+use it.
+
 Imports are copied into the session attachment store. Saved history contains references,
 so deleting the source screenshot does not remove it from a resumed conversation.
 Missing or changed stored assets produce an explicit error. Attachment storage is local;

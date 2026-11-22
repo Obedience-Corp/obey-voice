@@ -43,3 +43,26 @@ func TestPostedPictureReachesTheNextRequestAndTheNextPersona(t *testing.T) {
 		t.Fatalf("errors: %+v", errs)
 	}
 }
+
+// A picture opened with view_image is saved on the user's line apart from its
+// attachments and reaches the model again after a resume.
+func TestOpenedPictureIsSavedAndResumed(t *testing.T) {
+	c := newLocalConversationWithTools(t, 20, "", "ember")
+	writeChart(t, c.root)
+	c.say(lookAtTheChart)
+	if sent := c.lastOllamaRequest(); !strings.Contains(sent, `"images":[`) || !strings.Contains(sent, "(chart.png): a picture you opened.") {
+		t.Fatalf("the round after view_image:\n%s", sent)
+	}
+	saved := c.saved().Turns
+	if first := saved[0]; first.Content != lookAtTheChart || len(first.Attachments) != 0 || len(first.OpenedImages) != 1 {
+		t.Fatalf("saved user line = %+v", first)
+	}
+	c.resume()
+	c.say("And now?")
+	if sent := c.lastOllamaRequest(); !strings.Contains(sent, `"images":[`) || !strings.Contains(sent, "(chart.png): a picture you opened.") {
+		t.Fatalf("after a resume:\n%s", sent)
+	}
+	if errs := c.errorEvents(); len(errs) > 0 {
+		t.Fatalf("errors: %+v", errs)
+	}
+}

@@ -394,6 +394,7 @@ func deepCopyTurns(in []Turn) []Turn {
 	for i := range out {
 		out[i].Utterance = cloneUtterance(in[i].Utterance)
 		out[i].Attachments = append([]chatmedia.Ref(nil), in[i].Attachments...)
+		out[i].OpenedImages = append([]chatmedia.Ref(nil), in[i].OpenedImages...)
 		out[i].ToolCalls = append([]TurnToolCall(nil), in[i].ToolCalls...)
 	}
 	return out

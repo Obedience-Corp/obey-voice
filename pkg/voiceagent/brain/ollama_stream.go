@@ -333,7 +333,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if len(toolCalls) > 0 {
 				hadTools = true
 				kind := LiveRouterDecision(sess.routerPolicy, toolCalls)
-				if handoff && (inspectedLocally || directWorkerHandoff(toolCalls)) {
+				// A worker has no view_image, so a turn that opens a picture
+				// stays with the persona that opened it.
+				if handoff && !callsTool(toolCalls, viewImageToolName) && (inspectedLocally || directWorkerHandoff(toolCalls)) {
 					kind = "spawn"
 				}
 				if kind != "" {

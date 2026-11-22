@@ -49,7 +49,7 @@ func (o *OllamaBrain) chatRequest(messages []api.Message, tools api.Tools, optio
 // turnToolSession is the tool session a turn's requests are offered tools
 // from.
 func (o *OllamaBrain) turnToolSession(opts StreamOptions) *toolSession {
-	return &toolSession{
+	s := &toolSession{
 		budget:         opts.workerBudget(),
 		catalog:        o.skills,
 		routerPolicy:   opts.effectiveRouterPolicy(),
@@ -61,6 +61,10 @@ func (o *OllamaBrain) turnToolSession(opts StreamOptions) *toolSession {
 		onStart:        opts.OnToolStart,
 		onEnd:          opts.OnToolEnd,
 	}
+	if o.offersViewImage(opts) {
+		s.viewImage = o.viewImage
+	}
+	return s
 }
 
 // requestOptions carries the two settings that decide how the prompt is read.

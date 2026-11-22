@@ -21,7 +21,7 @@ const (
 // KindFor maps a tool name to its kind. Unknown names are KindOther.
 func KindFor(name string) ToolKind {
 	switch name {
-	case "read_file":
+	case "read_file", viewImageToolName:
 		return KindRead
 	case "list_files":
 		return KindListDir

@@ -62,7 +62,7 @@ func ageCarriedLines(content string, keep map[string]bool) string {
 
 // carriedImages is what the user message at working index j carries that the
 // user did not attach: the pictures on the replies since the user message
-// before it, each once.
+// before it, then those a persona opened while answering it, each once.
 func (o *OllamaBrain) carriedImages(working []Turn, j int) []carriedImage {
 	start := j
 	for start > 0 && working[start-1].Role != "user" {
@@ -82,6 +82,24 @@ func (o *OllamaBrain) carriedImages(working []Turn, j int) []carriedImage {
 			if !seen[ref.ID] {
 				seen[ref.ID] = true
 				out = append(out, carriedImage{ref: ref, what: what})
+			}
+		}
+	}
+	if len(working[j].OpenedImages) > 0 {
+		opener := "you"
+		for _, t := range working[j+1:] {
+			if t.Role == "user" {
+				break
+			}
+			if t.Role == "assistant" || t.Role == "samantha" {
+				opener = o.pictureOwner(t)
+				break
+			}
+		}
+		for _, ref := range working[j].OpenedImages {
+			if !seen[ref.ID] {
+				seen[ref.ID] = true
+				out = append(out, carriedImage{ref: ref, what: "a picture " + opener + " opened"})
 			}
 		}
 	}
@@ -111,7 +129,7 @@ func (o *OllamaBrain) carriesImagesFrom(keep int) bool {
 		keep--
 	}
 	for _, t := range o.working[keep:] {
-		if (t.Role == "assistant" || t.Role == "samantha") && len(t.Attachments) > 0 {
+		if (t.Role == "assistant" || t.Role == "samantha") && len(t.Attachments) > 0 || len(t.OpenedImages) > 0 {
 			return true
 		}
 	}

@@ -110,6 +110,16 @@ func (s Store) processReply(text, workDir string, load func(string) (Ref, error)
 	return strings.TrimSpace(strings.Join(lines, "\n")), refs, errors.Join(failures...)
 }
 
+// ImportWorkFile imports one image file by the rules a reply image follows: a
+// local PNG, JPEG or GIF inside workDir or the store.
+func (s Store) ImportWorkFile(path, workDir string) (Ref, error) {
+	resolved, err := s.resolveReplyFile(path, workDir)
+	if err != nil {
+		return Ref{}, err
+	}
+	return s.importReplyFile(resolved)
+}
+
 func (s Store) resolveReplyFile(path, workDir string) (string, error) {
 	if strings.HasPrefix(path, "file://") {
 		u, err := url.Parse(path)
@@ -143,7 +153,7 @@ func (s Store) resolveReplyFile(path, workDir string) (string, error) {
 		}
 	}
 	if !allowed {
-		return "", errors.New("result image must be inside the agent work directory")
+		return "", errors.New("image must be inside the agent work directory")
 	}
 	return resolved, nil
 }
