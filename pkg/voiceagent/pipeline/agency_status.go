@@ -3,7 +3,6 @@ package pipeline
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -13,46 +12,134 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
-// handleAbort ends every running and queued job and says so once, here in
-// the turn that asked. The done callback stays silent for a cancel: three
-// jobs cancelled together are one act, and that callback also carries the
-// budget stop, which has its own line.
+// handleAbort is the exact-phrase cancel: every job in the conversation
+// ends as one act, and the host says so once, here in the turn that asked.
+// The done callback stays silent for a cancel: three jobs cancelled together
+// are one act, and that callback also carries the budget stop, which has its
+// own line. The line waits briefly for the cancelled workers to return so it
+// can say whether they did.
 func (a *Agency) handleAbort(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
+	receipt := a.ControlWork(WorkActor{Kind: WorkActorPhrase}, WorkRequest{Action: WorkCancel, All: true})
+	receipt = a.awaitExits(ctx, receipt)
+	text := phraseCancelLine(receipt)
 	if a.workEnabled() {
-		var cancellationErrors []error
-		for _, item := range a.WorkSnapshot().Jobs {
-			if item.State != work.JobTerminal {
-				cancellationErrors = append(cancellationErrors, a.CancelWork(item.Key.JobID))
-			}
-		}
-		text := "Cancellation requested. Completed results remain in the work inbox."
-		if err := errors.Join(cancellationErrors...); err != nil {
-			text = "Some work could not be cancelled: " + err.Error()
-		}
-		_ = a.pipeline.speakStandalone(ctx, turn, metrics, text)
-		return
+		text = inboxCancelLine(receipt)
 	}
-	var ran []time.Duration
-	var queued, running []string
-	for _, info := range a.jobs.Status() {
-		switch info.State {
-		case job.StateRunning:
-			running = append(running, info.ID)
-			ran = append(ran, info.Elapsed())
-		case job.StateQueued:
-			queued = append(queued, info.ID)
-		}
+	if metrics != nil {
+		metrics.routedNote = a.cancelCheckpoint(receipt)
 	}
-	// Queued first, so the slot a running job frees has nothing to pump.
-	for _, id := range append(queued, running...) {
-		a.jobs.Abort(id)
-	}
-	if err := a.pipeline.speakStandalone(ctx, turn, metrics, abortLine(ran, len(queued))); err != nil {
+	if err := a.pipeline.speakStandalone(ctx, turn, metrics, text); err != nil {
 		a.pipeline.emit(events.Info{Message: fmt.Sprintf("cancel speech failed: %v", err)})
 	}
+}
+
+// phraseCancelLine is what a spoken cancel says outside the work inbox.
+func phraseCancelLine(r WorkReceipt) string {
+	var ran []time.Duration
+	stopping, queued, asked := 0, 0, 0
+	var refused []string
+	for _, item := range r.Jobs {
+		switch {
+		case item.Managed && item.Outcome == ControlRequested:
+			asked++
+		case item.Managed && item.Outcome == ControlRejected:
+			refused = append(refused, item.Reason)
+		case item.Queued:
+			queued++
+		case item.Outcome == ControlStopped || item.Outcome == ControlStopping:
+			ran = append(ran, item.Ran)
+			if item.Outcome == ControlStopping {
+				stopping++
+			}
+		}
+	}
+	var parts []string
+	if len(ran) > 0 || queued > 0 || asked+len(refused) == 0 {
+		parts = append(parts, cancelLine(ran, stopping, queued))
+	}
+	switch {
+	case asked == 1:
+		parts = append(parts, "Asked Obey to cancel the delegated task.")
+	case asked > 1:
+		parts = append(parts, fmt.Sprintf("Asked Obey to cancel %d delegated tasks.", asked))
+	}
+	if len(refused) > 0 {
+		parts = append(parts, "Obey could not cancel the delegated task: "+strings.Join(refused, "; ")+".")
+	}
+	return strings.Join(parts, " ")
+}
+
+// inboxCancelLine is what a spoken cancel says with the work inbox on.
+func inboxCancelLine(r WorkReceipt) string {
+	if err := r.Err(); err != nil {
+		return "Some work could not be cancelled: " + err.Error()
+	}
+	text := "Cancellation requested."
+	switch n := len(r.Stopping()); {
+	case n == 1:
+		text = "Cancellation requested; the worker is still stopping."
+	case n > 1:
+		text = fmt.Sprintf("Cancellation requested; %d workers are still stopping.", n)
+	}
+	return text + " Completed results remain in the work inbox."
+}
+
+// cancelLine is abortLine when every cancelled worker has returned. When
+// some have not, it says the work was cancelled rather than stopped, and
+// how many workers are still stopping.
+func cancelLine(ran []time.Duration, stopping, queued int) string {
+	if stopping == 0 || len(ran) == 0 {
+		return abortLine(ran, queued)
+	}
+	longest := slices.Max(ran)
+	var lead, tail string
+	switch n := len(ran); {
+	case n == 1 && longest < time.Second:
+		lead = "Cancelled"
+	case n == 1:
+		lead = "Cancelled after " + spokenDuration(longest)
+	case longest < time.Second:
+		lead = fmt.Sprintf("Cancelled %d jobs", n)
+	default:
+		lead = fmt.Sprintf("Cancelled %d jobs. The longest ran %s", n, spokenDuration(longest))
+	}
+	switch {
+	case len(ran) == 1:
+		tail = "the worker is still stopping."
+	case stopping == len(ran):
+		tail = "the workers are still stopping."
+	case stopping == 1:
+		tail = "one worker is still stopping."
+	default:
+		tail = fmt.Sprintf("%d workers are still stopping.", stopping)
+	}
+	line := lead + "; " + tail
+	if queued > 0 {
+		line += fmt.Sprintf(" Dropped %s.", plural(queued, "queued job"))
+	}
+	return line
+}
+
+// cancelCheckpoint is what each cancelled running job had done, recorded
+// with the host's cancel line in the conversation history but never spoken,
+// so the persona can later say what the job got through. It says the job
+// did not finish, so it is never taken for the job's answer.
+func (a *Agency) cancelCheckpoint(r WorkReceipt) string {
+	var notes []string
+	for _, item := range r.Jobs {
+		if item.Managed || item.Queued || (item.Outcome != ControlStopped && item.Outcome != ControlStopping) {
+			continue
+		}
+		done := a.work.Summary(item.ID)
+		if done == "" {
+			continue
+		}
+		task, _ := a.jobInfo(item.ID)
+		notes = append(notes, fmt.Sprintf("[%s (%s) was cancelled before it finished. Done so far: %s.]", item.ID, spokenTaskLabel(task), recentProgress(done)))
+	}
+	return strings.Join(notes, " ")
 }
 
 // abortLine is what a cancel says: how long the work ran, and what never got

@@ -777,7 +777,21 @@ type JobAborted struct {
 	Task    string
 	Elapsed time.Duration
 	Reason  string
+	// Stopping means the worker had not returned when the job ended; a
+	// JobExited follows when it does.
+	Stopping bool
 }
+
+// JobExited reports that the worker of an aborted job has returned. It
+// follows a JobAborted whose Stopping was set.
+type JobExited struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
+	ID   string
+	Task string
+}
+
+func (e JobExited) eventType() string { return "job_exited" }
 
 // Abort reasons carried by JobAborted.Reason.
 const (

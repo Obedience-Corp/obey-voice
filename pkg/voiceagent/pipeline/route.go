@@ -29,6 +29,7 @@ const (
 type RouteContext struct {
 	NarrationActive   bool
 	JobActive         bool
+	ManagedWorkActive bool // An Obey-managed task is live; it arms the cancel phrases only.
 	TieredWorkers     bool
 	DirectTools       bool
 	LegacyImageWorker bool // A non-tiered worker is available to take background tasks.
@@ -265,7 +266,7 @@ func classifyPhrase(transcript string, ctx RouteContext) (RouteKind, bool) {
 		if entry.requireNarration && !ctx.NarrationActive {
 			return RouteNone, false
 		}
-		if entry.requireJob && !ctx.JobActive {
+		if entry.requireJob && !ctx.JobActive && !(entry.kind == RouteJobAbort && ctx.ManagedWorkActive) {
 			return RouteNone, false
 		}
 		return entry.kind, true

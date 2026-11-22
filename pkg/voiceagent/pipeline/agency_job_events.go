@@ -134,9 +134,16 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		} else if errors.Is(err, errNotTakenOver) {
 			reason = events.AbortNotTakenOver
 		}
-		a.emitJobTrace(id, events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason})
+		a.emitJobTrace(id, events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason, Stopping: a.jobStopping(id)})
 	}
 	a.tryFlushPending()
+}
+
+// onJobExited reports the late return of an aborted job's worker. It is not
+// spoken: the job's row and the worker manager show it.
+func (a *Agency) onJobExited(id string) {
+	task, _ := a.jobInfo(id)
+	a.emitJobTrace(id, events.JobExited{ID: id, Task: task})
 }
 
 // outOfTimeText reports a job whose time ran out before the worker delivered

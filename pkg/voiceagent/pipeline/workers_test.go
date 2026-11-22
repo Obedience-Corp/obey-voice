@@ -317,6 +317,13 @@ func TestWorkersStopAllCancelsLegacyRunningAndQueued(t *testing.T) {
 	if err := p.StopWorkers(); err != nil {
 		t.Fatal(err)
 	}
+	// Stop all returns without waiting; the cancelled worker is stopping
+	// until its run function returns.
+	exitCtx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if err := jobs.AwaitExit(exitCtx, id); err != nil {
+		t.Fatal(err)
+	}
 	for _, item := range p.Workers() {
 		if item.Active() {
 			t.Fatalf("active after stop all: %+v", item)

@@ -172,6 +172,9 @@ func (p *Pipeline) routeContext() RouteContext {
 	if p.JobActive != nil {
 		ctx.JobActive = p.JobActive()
 	}
+	if p.ManagedWorkActive != nil {
+		ctx.ManagedWorkActive = p.ManagedWorkActive()
+	}
 	if p.Agency != nil {
 		ctx.TieredWorkers = tieredWorkers(p.Agency.currentConfig())
 		ctx.LegacyImageWorker = !ctx.TieredWorkers && p.backgroundWorkerAvailable()
@@ -222,7 +225,9 @@ func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, 
 	}
 	metrics.routedSpeech = nil
 	response := strings.Join(replyParts, " ")
-	err := p.appendRoutedHistory(metrics, transcript, response)
+	recorded := strings.TrimSpace(response + " " + metrics.routedNote)
+	metrics.routedNote = ""
+	err := p.appendRoutedHistory(metrics, transcript, recorded)
 	if err != nil {
 		metrics.degraded = true
 		p.emit(events.Error{Stage: "history", Message: err.Error()})

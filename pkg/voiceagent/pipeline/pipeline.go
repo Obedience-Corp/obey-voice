@@ -183,6 +183,8 @@ type Pipeline struct {
 	NarrationActive func() bool
 	// JobActive reports whether a worker job is running or queued.
 	JobActive func() bool
+	// ManagedWorkActive reports whether an Obey-managed task is live.
+	ManagedWorkActive func() bool
 	// Agency handles spawn/abort/status routes and async worker jobs.
 	Agency      *Agency
 	activeTurns atomic.Int32
