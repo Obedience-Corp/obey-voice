@@ -71,15 +71,18 @@ type turnMetrics struct {
 	sinkAtArm          string
 	// bargeInMu guards bargeIn and speech cancellation shared by the turn and
 	// the TUI's out-of-band keystroke stop.
-	bargeInMu    sync.Mutex
-	bargeIn      time.Time
-	speechStop   bool
-	speechCancel context.CancelFunc
-	stopSource   StopSource
-	stopAt       time.Time
-	stopCount    int
-	interrupted  bool
-	degraded     bool
+	bargeInMu sync.Mutex
+	bargeIn   time.Time
+	// speechInFlight counts speech handed to synthesis whose playback has not
+	// finished or been abandoned.
+	speechInFlight int
+	speechStop     bool
+	speechCancel   context.CancelFunc
+	stopSource     StopSource
+	stopAt         time.Time
+	stopCount      int
+	interrupted    bool
+	degraded       bool
 	// toolLeakLines counts lines the voice gate stripped from speech this
 	// turn (WI-dc9e33 B4). Written only from the turn's own goroutine.
 	toolLeakLines int
@@ -143,8 +146,37 @@ func (m *turnMetrics) speechContext(ctx context.Context) (context.Context, conte
 	return ctx, cancel
 }
 
-func (m *turnMetrics) stopSpeech(source StopSource) {
+func (m *turnMetrics) addSpeechInFlight(n int) {
 	m.bargeInMu.Lock()
+	m.speechInFlight += n
+	m.bargeInMu.Unlock()
+}
+
+// beginSpeech counts one utterance handed to synthesis. The returned func
+// marks it finished or abandoned and may be called more than once.
+func (m *turnMetrics) beginSpeech() func() {
+	if m == nil {
+		return func() {}
+	}
+	m.addSpeechInFlight(1)
+	var once sync.Once
+	return func() { once.Do(func() { m.addSpeechInFlight(-1) }) }
+}
+
+func (m *turnMetrics) speechInFlightCount() int {
+	m.bargeInMu.Lock()
+	defer m.bargeInMu.Unlock()
+	return m.speechInFlight
+}
+
+// stopSpeech reports whether the stop applied. A keystroke while the turn has
+// no speech in flight leaves the turn untouched.
+func (m *turnMetrics) stopSpeech(source StopSource) bool {
+	m.bargeInMu.Lock()
+	if source.Name == StopSourceKeystroke && m.speechInFlight == 0 {
+		m.bargeInMu.Unlock()
+		return false
+	}
 	if m.stopCount == 0 {
 		m.stopSource, m.stopAt = source, time.Now()
 	}
@@ -155,6 +187,7 @@ func (m *turnMetrics) stopSpeech(source StopSource) {
 	if cancel != nil {
 		cancel()
 	}
+	return true
 }
 
 // speechStopRecord runs on the turn goroutine, which owns playbackStart.

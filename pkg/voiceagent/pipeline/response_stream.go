@@ -90,6 +90,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	heard := make(map[string]struct{})
 	var interrupted bool
 	var pending int
+	defer func() { metrics.addSpeechInFlight(-pending) }()
 	var bargeIn <-chan interruptRequest
 	var bargeDone <-chan struct{}
 	// armAt zero = unarmed: barge-in stays off until the turn's first playback
@@ -317,6 +318,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		queuedAt := time.Now()
 		index := nextIndex
 		p.traceSpan(metrics.trace, traceID(metrics.trace, "queue")+":"+fmt.Sprint(index), "segment_queue", "start", "running", queuedAt, time.Time{}, &index, nil)
+		metrics.addSpeechInFlight(1)
 		synthQueue <- synthWork{sentence: text, index: nextIndex, textReady: batchTextReady, queuedAt: queuedAt, joinBeats: joinBeats}
 		groupThrough = append(groupThrough, batchThrough)
 		nextIndex++
@@ -803,6 +805,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				// A synthesis that raced the barge-in finished after Stop();
 				// stop the late playback immediately.
 				p.Player.Stop()
+			}
+			if event.kind != playbackStarted {
+				metrics.addSpeechInFlight(-1)
 			}
 			if p.applyPlaybackEvent(event, metrics, &armAt) {
 				pending--

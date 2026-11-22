@@ -378,14 +378,17 @@ func (p *Pipeline) ttsReady() bool {
 	return primary != nil && primary.Available()
 }
 
-// StopPlayback aborts audible TTS immediately. Used by the TUI when the user
-// types to barge in so speech does not continue until the turn context drains.
-// A stop that lands mid-playback is a barge-in and stamps the active turn's
-// metrics. The remainder of this turn's speech is canceled while reply text
-// keeps streaming, including when the stop arrives before the first audio.
+// StopPlayback aborts audible TTS immediately so speech does not continue
+// until the turn context drains. A stop that lands mid-playback is a barge-in
+// and stamps the active turn's metrics. The remainder of this turn's speech is
+// canceled while reply text keeps streaming, including when the stop arrives
+// before the first audio.
 func (p *Pipeline) StopPlayback() {
 	p.StopPlaybackFrom(StopSource{Name: "unspecified"})
 }
+
+// StopSourceKeystroke names a printable key typed into the composer.
+const StopSourceKeystroke = "keystroke"
 
 // StopSource names the caller of a stop for the turn's metrics, so a reply
 // that went unspoken can be traced to what silenced it. Name is one of
@@ -397,17 +400,25 @@ type StopSource struct {
 	KeyPaste bool
 }
 
-// StopPlaybackFrom is StopPlayback with its caller named.
+// StopPlaybackFrom is StopPlayback with its caller named. A keystroke stops
+// only speech in flight: text handed to synthesis whose playback has not
+// finished. With nothing in flight it is ignored and later speech plays.
 func (p *Pipeline) StopPlaybackFrom(source StopSource) {
 	if p == nil || p.Player == nil {
 		return
 	}
 	p.activeMu.Lock()
 	if m := p.activeMetrics; m != nil {
-		m.stopSpeech(source)
+		if !m.stopSpeech(source) {
+			p.activeMu.Unlock()
+			return
+		}
 		if p.Player.IsPlaying() {
 			m.markBargeIn(time.Now())
 		}
+	} else if source.Name == StopSourceKeystroke && !p.Player.IsPlaying() {
+		p.activeMu.Unlock()
+		return
 	}
 	p.activeMu.Unlock()
 	p.Player.Stop()

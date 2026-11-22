@@ -356,7 +356,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			}
 		}
 		// Reaching here means the key is going into the composer as typed
-		// text — the moment "type to barge in" promises silence.
+		// text, which silences speech in flight.
 		m.keystrokeBargeIn(msg)
 		return m, m.updateComposer(msg)
 
