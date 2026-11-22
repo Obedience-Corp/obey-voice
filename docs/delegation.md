@@ -351,6 +351,20 @@ through its context — Ollama requests, shell tools and CLI-backed providers al
 receive the cancel — and a worker that ignores it lingers on its own goroutine
 without counting against the limit; whatever it returns later is dropped.
 
+An Ollama worker is also made to stop using tools and answer with what it has
+in three cases: it repeated the same tool call with the same result three
+times with nothing new in between; a time limit is set and nearly used (a
+tenth of it, between 15 seconds and a minute and never more than half, is kept
+for the answer); or, in tiered mode, it is down to its last model request. Its
+answer is delivered as usual, but the job counts as cut short: the job row says
+why ("done in 41s · cut short: repeated the same tool call", "cut short: time
+limit nearly reached" or "cut short: request limit reached"), `job_finished`
+carries `cut_short` and `cut_short_reason`, and the conversation saves the
+answer as an unfinished reply with that reason, so the persona later knows the
+job did not finish and why. In the `voice_work_enabled` inbox the result is
+`partial` with the limitation "cut short: …". If the worker writes no answer in
+that round, the job fails with the reason, as before.
+
 Each job is a conversation of its own. The worker starts with no history and
 no CLI session from the job before it, and two jobs running at once never
 write into the same one; the brief carries whatever context the job needs.

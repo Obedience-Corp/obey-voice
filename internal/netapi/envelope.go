@@ -175,6 +175,9 @@ func encodeEvent(e events.Event) map[string]any {
 		if e.CutShort {
 			env["cut_short"] = true
 		}
+		if e.CutShortReason != "" {
+			env["cut_short_reason"] = e.CutShortReason
+		}
 	case events.ResponseReady:
 		env["response"] = e.Response
 		env["interrupted"] = e.Interrupted

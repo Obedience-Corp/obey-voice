@@ -20,4 +20,11 @@ func TestEnvelopeCarriesAContinuedReplyAndAKnowinglyIncompleteJob(t *testing.T) 
 	if _, ok := encodeEvent(events.JobFinished{ID: "job-1"})["cut_short"]; ok {
 		t.Fatal("a complete job carries cut_short")
 	}
+	forced := encodeEvent(events.JobFinished{ID: "job-1", CutShort: true, CutShortReason: "repeated the same tool call"})
+	if forced["cut_short"] != true || forced["cut_short_reason"] != "repeated the same tool call" {
+		t.Fatalf("forced answer envelope = %v", forced)
+	}
+	if _, ok := encodeEvent(events.JobFinished{ID: "job-1", CutShort: true})["cut_short_reason"]; ok {
+		t.Fatal("a job cut short for another reason carries cut_short_reason")
+	}
 }
