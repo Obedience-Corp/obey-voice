@@ -1,6 +1,7 @@
 package summon
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
@@ -24,7 +25,7 @@ func TestAgentMentionControls(t *testing.T) {
 		{"@Venessa hello. @V anything else?", "venessa-agent", ExactControlValid},
 		{"@missing hello", "", ExactControlInvalid},
 		{"@shared hello", "", ExactControlInvalid},
-		{"@Venessa and @Obey hello", "", ExactControlInvalid},
+		{"@Venessa and @Obey hello", "venessa-agent", ExactControlValid},
 		{"Venessa likes festivals.", "", ExactControlNone},
 		{"venessa@example.com", "", ExactControlNone},
 		{"Say \"@Venessa hello\".", "", ExactControlNone},
@@ -33,6 +34,40 @@ func TestAgentMentionControls(t *testing.T) {
 			got := r.ResolveAgentMention(tc.text)
 			if got.Kind != tc.kind || got.Address.PersonaID != tc.id {
 				t.Fatalf("got %+v", got)
+			}
+		})
+	}
+}
+
+func TestAgentMentionsInviteInMentionOrder(t *testing.T) {
+	r, err := NewRoster([]Identity{
+		{ID: "ada", DisplayName: "Ada"},
+		{ID: "p-milo", DisplayName: "Milo Grant"},
+		{ID: "vera", DisplayName: "Vera", Aliases: []string{"V"}},
+		{ID: "nick", DisplayName: "Nick", Aliases: []string{"shared"}},
+		{ID: "nora", DisplayName: "Nora", Aliases: []string{"shared"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		text    string
+		id      string
+		invited []string
+		kind    ExactControlKind
+	}{
+		{"@Milo @Ada what do you two think?", "p-milo", []string{"ada"}, ExactControlValid},
+		{"@vera, @Milo and @nick: thoughts?", "vera", []string{"p-milo", "nick"}, ExactControlValid},
+		{"@Ada over to you. @V you next, then @ada again.", "ada", []string{"vera"}, ExactControlValid},
+		{"@Ada and @ada.", "ada", nil, ExactControlValid},
+		{"@Ada and @missing, thoughts?", "", nil, ExactControlInvalid},
+		{"@Ada and @shared, thoughts?", "", nil, ExactControlInvalid},
+		{"Ada and Vera should weigh in.", "", nil, ExactControlNone},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			got := r.ResolveAgentMention(tc.text)
+			if got.Kind != tc.kind || got.Address.PersonaID != tc.id || !slices.Equal(got.Address.Invited, tc.invited) {
+				t.Fatalf("got %+v, want %s then %v", got, tc.id, tc.invited)
 			}
 		})
 	}
