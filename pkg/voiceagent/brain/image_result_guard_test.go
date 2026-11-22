@@ -60,6 +60,10 @@ func imageClaimBrain(t *testing.T, replies []api.Message) (*OllamaBrain, *[]api.
 	t.Helper()
 	var requests []api.ChatRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion", "tools"}})
+			return
+		}
 		var req api.ChatRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Error(err)

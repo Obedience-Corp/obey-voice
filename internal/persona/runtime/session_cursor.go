@@ -125,7 +125,7 @@ func hostedTurn(t brain.Turn) (brain.Turn, bool) {
 		return brain.Turn{}, false
 	}
 	t = brain.CloneTurns([]brain.Turn{t})[0]
-	t.ToolCalls, t.ToolName, t.ToolCallID, t.Attachments = nil, "", "", nil
+	t.ToolCalls, t.ToolName, t.ToolCallID, t.Attachments, t.OpenedImages = nil, "", "", nil, nil
 	return t, true
 }
 

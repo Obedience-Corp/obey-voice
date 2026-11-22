@@ -52,7 +52,7 @@ func (b Boundary) check(workDir string, call api.ToolCall) error {
 			path = "."
 		}
 		return b.CheckPath(workDir, path)
-	case "read_file", "write_file":
+	case "read_file", "write_file", viewImageToolName:
 		path, _ := args["path"].(string)
 		return b.CheckPath(workDir, path)
 	case "run_command":

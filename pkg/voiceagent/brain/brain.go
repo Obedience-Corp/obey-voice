@@ -122,6 +122,10 @@ type Turn struct {
 	Utterance     *utterance.Finalized `json:"utterance,omitempty"`
 	AudioRetained bool                 `json:"audio_retained,omitempty"`
 	Attachments   []chatmedia.Ref      `json:"attachments,omitempty"`
+	// OpenedImages are the pictures a persona opened with view_image while
+	// answering this user turn. They are not the user's attachments, and the
+	// chat never shows them as sent by the user.
+	OpenedImages []chatmedia.Ref `json:"opened_images,omitempty"`
 	// RoutedInput is the request sent to the model after a direct address was
 	// removed. Content retains the original finalized input for the transcript.
 	RoutedInput string `json:"routed_input,omitempty"`

@@ -267,7 +267,12 @@ func ToolSurfaceContext(cfg *config.Config) string {
 	// A worker is given the full tool list whatever the live policy says, so
 	// its prompt must not tell it that route is its only tool.
 	if (cfg != nil && cfg.IsWorker) || configuredLiveToolsPolicy(cfg) == RouterToolsDirect {
-		return "\n" + systemPrompt(cfg, "tool-surface-legacy", nil)
+		names := "list_files, read_file, write_file, run_command, web_search and fetch_url"
+		// The speaking persona's own turns offer view_image; a worker's never do.
+		if cfg == nil || !cfg.IsWorker {
+			names = "list_files, read_file, view_image, write_file, run_command, web_search and fetch_url"
+		}
+		return "\n" + systemPrompt(cfg, "tool-surface-legacy", map[string]string{"tool_names": names})
 	}
 	if singleCallConfigured(cfg) {
 		return "\n" + systemPrompt(cfg, "tool-surface-single-call", nil)

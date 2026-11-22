@@ -202,6 +202,7 @@ func (o *OllamaBrain) ContextHistory() []Turn {
 		content, speaker := m.Content, ""
 		if m.Role == "user" {
 			speaker, content = decodeOllamaUser(m.Content)
+			content = withoutCarriedLines(content)
 		}
 		turns[i] = Turn{
 			Role:       m.Role,
@@ -393,6 +394,7 @@ func deepCopyTurns(in []Turn) []Turn {
 	for i := range out {
 		out[i].Utterance = cloneUtterance(in[i].Utterance)
 		out[i].Attachments = append([]chatmedia.Ref(nil), in[i].Attachments...)
+		out[i].OpenedImages = append([]chatmedia.Ref(nil), in[i].OpenedImages...)
 		out[i].ToolCalls = append([]TurnToolCall(nil), in[i].ToolCalls...)
 	}
 	return out
@@ -465,6 +467,7 @@ func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) error {
 		}
 	}
 	o.attachInputImages(opts.Attachments, images)
+	o.carryImages(turnWindowStart(o.history, imageTurns), 0)
 	if opts.Utterance != nil {
 		last := len(o.canonical) - 1
 		o.canonical[last].TypedInput = input

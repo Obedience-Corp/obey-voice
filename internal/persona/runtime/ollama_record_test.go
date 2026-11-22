@@ -121,12 +121,20 @@ func newLocalConversationWithTools(t *testing.T, maxHistory int, routerTools str
 	return c
 }
 
+// Lines that script the fake model to post or open chart.png.
+const (
+	drawTheChart   = "Draw the chart."
+	lookAtTheChart = "Look at the chart."
+)
+
 // textOnlyModel is the fixture model that cannot view images.
 const textOnlyModel = "text-only:latest"
 
 // serveOllama answers a request offering the route tool by choosing chat,
-// one offering read_file for a line asking to read by reading notes.txt, and
-// any other request with a reply numbered by its request.
+// one offering read_file for a line asking to read by reading notes.txt, one
+// offering view_image for lookAtTheChart by opening chart.png, drawTheChart
+// with a reply that posts chart.png, and any other request with a reply
+// numbered by its request.
 func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.URL.Path == "/api/show" {
@@ -161,10 +169,11 @@ func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) 
 	n := len(c.bodies)
 	c.mu.Unlock()
 	last := req.Messages[len(req.Messages)-1]
-	routing, reading := false, false
+	routing, reading, viewing := false, false, false
 	for _, tool := range req.Tools {
 		routing = routing || tool.Function.Name == "route"
 		reading = reading || tool.Function.Name == "read_file"
+		viewing = viewing || tool.Function.Name == "view_image"
 	}
 	enc := json.NewEncoder(w)
 	call := func(name string, args map[string]string) {
@@ -177,6 +186,14 @@ func (c *localConversation) serveOllama(w http.ResponseWriter, r *http.Request) 
 	}
 	if reading && last.Role != "tool" && strings.Contains(lastUserLine(req.Messages), "Read the notes") {
 		call("read_file", map[string]string{"path": "notes.txt"})
+		return
+	}
+	if viewing && last.Role != "tool" && strings.Contains(lastUserLine(req.Messages), lookAtTheChart) {
+		call("view_image", map[string]string{"path": "chart.png"})
+		return
+	}
+	if strings.Contains(lastUserLine(req.Messages), drawTheChart) {
+		_ = enc.Encode(map[string]any{"model": "fixture:latest", "done": true, "done_reason": "stop", "message": map[string]string{"role": "assistant", "content": "Here it is.\n![Chart](<" + filepath.Join(c.root, "chart.png") + ">)"}})
 		return
 	}
 	if strings.Contains(lastUserLine(req.Messages), ollamaStall) {

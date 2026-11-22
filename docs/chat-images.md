@@ -116,8 +116,43 @@ pass through the normal file validation above.
 Returned images also appear in worker threads and desktop background-result cards.
 A queued worker keeps the images from its originating request; cancelling foreground
 speech or switching personas does not retarget its images to a different conversation.
-Outbound assets remain presentation attachments; Ollama sends user images as vision
-input, while returned files keep their caption in subsequent model history.
+Outbound assets remain presentation attachments; the reply keeps its caption in
+subsequent model history. With a vision-capable Ollama model, the pictures of a
+reply are also sent as vision input on the next user message, with a line naming
+each one and who posted it ("you" for the persona's own reply, the persona's name
+for another's). They follow the user's pictures' rules: they stay for the same
+three user turns and are then named as no longer attached, and they count toward
+the 32 MiB a request carries. A posted picture that no longer loads or does not
+fit is named as no longer attached instead of failing the turn. A model that
+cannot view images is sent none, its line says so, and it keeps saying so once the
+picture ages; the user is not told about pictures they did not attach. If the
+Ollama server cannot say whether the model views images and only posted pictures
+are involved, that request names them as not attached to it, the turn goes on,
+and the next request that can ask shows them. Pictures posted since the last user message wait for the next one: a
+request with no new user message, such as a background report or another persona
+continuing, does not carry them, though earlier messages keep theirs. A
+native-audio persona is sent none; as before, it refuses a conversation whose
+retained turns hold a picture. Only the model request changes: the transcript and
+the saved conversation keep the picture on the reply.
+
+A speaking persona on Ollama with direct tools can look at an image file with the
+`view_image` tool. The file must be a PNG, JPEG or GIF inside the work directory
+(a GIF shows its first frame); unlike a reply image, a file in the attachment
+store is not opened. Symbolic links and `..` are resolved before the check. The file is copied into the attachment store and recorded on the message
+being answered as a picture the persona opened, kept apart from what the user
+attached: the chat never shows it as sent by the user, and the saved conversation
+keeps it. The turn's next request carries it on that message, and later turns
+follow the window, aging and 32 MiB rules above. A picture that request cannot
+carry is not recorded, and the answer gives the reason. A persona can open four
+pictures while answering one message. A model that cannot view images, or a
+native-audio persona, gets an answer saying so and the turn goes on. Opening a
+picture keeps a round of local tools from turning into a background job by
+itself, though the persona can still start background work explicitly. The
+speaking persona's tool list names `view_image`; workers, routed
+(`route_only`) turns, background reports and group discussion turns are not
+offered the tool. `read_file` on an image file no longer returns its bytes; it
+names the file as an image of N bytes and, where `view_image` is offered, says to
+use it.
 
 Imports are copied into the session attachment store. Saved history contains references,
 so deleting the source screenshot does not remove it from a resumed conversation.

@@ -139,7 +139,7 @@ func directWorkerHandoff(calls []api.ToolCall) bool {
 func onlyLocalInspection(calls []api.ToolCall) bool {
 	for _, call := range calls {
 		switch call.Function.Name {
-		case "list_files", "read_file", "read_skill":
+		case "list_files", "read_file", "read_skill", viewImageToolName:
 		default:
 			return false
 		}
@@ -172,6 +172,15 @@ func LiveRouterDecision(policy RouterToolsPolicy, calls []api.ToolCall) string {
 		}
 	}
 	return ""
+}
+
+func callsTool(calls []api.ToolCall, name string) bool {
+	for _, call := range calls {
+		if strings.TrimSpace(call.Function.Name) == name {
+			return true
+		}
+	}
+	return false
 }
 
 func hasRouteCall(calls []api.ToolCall) bool {

@@ -64,8 +64,8 @@ func (o *OllamaBrain) SetReplyMedia(text string, refs []chatmedia.Ref) error {
 	if err := setMediaViews(o.canonical, o.working, text, refs); err != nil {
 		return err
 	}
-	// Native history remains text at assistant authority. Images are rehydrated
-	// by prepareImageHistory when another model request needs them.
+	// The reply stays text at assistant authority. Its images ride on the user
+	// message after it, which carryImages gives them on the next request.
 	for i := len(o.history) - 1; i >= 0; i-- {
 		if o.history[i].Role == "assistant" && len(o.history[i].ToolCalls) == 0 && o.history[i].Content == original {
 			o.history[i].Content = text
