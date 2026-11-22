@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -499,4 +500,93 @@ func TestWorkerFinalAnswerIsCutOffBeforeTheDeadline(t *testing.T) {
 			t.Fatalf("error text = %q", msg)
 		}
 	})
+}
+
+func TestForcedAnswerReportsItsReason(t *testing.T) {
+	saved := workerTimeReserve
+	workerTimeReserve = func(time.Duration) time.Duration { return time.Minute }
+	t.Cleanup(func() { workerTimeReserve = saved })
+	answerOrRead := func(path func(n int) string) func(int, api.ChatRequest) api.ChatResponse {
+		return func(n int, req api.ChatRequest) api.ChatResponse {
+			if len(req.Tools) == 0 {
+				return answerResponse("Some of the work is done.")
+			}
+			return toolResponse(readFileCall(path(n)))
+		}
+	}
+	distinct := func(n int) string { return fmt.Sprintf("file-%d.txt", n) }
+	for _, tc := range []struct {
+		name   string
+		ctx    func(t *testing.T) context.Context
+		worker bool
+		budget *WorkerBudget
+		reply  func(int, api.ChatRequest) api.ChatResponse
+		want   ForcedAnswer
+	}{
+		{name: "repeat", worker: true, reply: answerOrRead(func(int) string { return "same.txt" }), want: ForcedByRepeat},
+		{name: "time", worker: true, ctx: func(t *testing.T) context.Context {
+			return WithWorkerDeadline(t.Context(), time.Now().Add(30*time.Second))
+		}, reply: answerOrRead(distinct), want: ForcedByTime},
+		{name: "requests", budget: NewWorkerBudget(BudgetLimits{MaxRequests: 3}), reply: answerOrRead(distinct), want: ForcedByRequests},
+		{name: "live round cap", reply: answerOrRead(distinct)},
+		{name: "finished", worker: true, reply: func(n int, _ api.ChatRequest) api.ChatResponse {
+			if n == 1 {
+				return toolResponse(readFileCall("notes.txt"))
+			}
+			return answerResponse("All of the work is done.")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			if tc.ctx != nil {
+				ctx = tc.ctx(t)
+			}
+			opts := WorkerStreamOptions(true)
+			opts.WorkerBudget = tc.budget
+			var got []ForcedAnswer
+			opts.OnForcedAnswer = func(reason ForcedAnswer) { got = append(got, reason) }
+			run := runRounds(t, ctx, false, tc.worker, opts, tc.reply)
+			if run.err != nil || run.answer == "" {
+				t.Fatalf("answer=%q err=%v", run.answer, run.err)
+			}
+			want := []ForcedAnswer{tc.want}
+			if tc.want == "" {
+				want = nil
+			}
+			if !slices.Equal(got, want) {
+				t.Fatalf("reported %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestForcedAnswerIsNotReportedWithoutAnAnswer(t *testing.T) {
+	var got []ForcedAnswer
+	opts := WorkerStreamOptions(true)
+	opts.OnForcedAnswer = func(reason ForcedAnswer) { got = append(got, reason) }
+	run := runRounds(t, t.Context(), false, true, opts, func(_ int, req api.ChatRequest) api.ChatResponse {
+		if len(req.Tools) == 0 {
+			return answerResponse("")
+		}
+		return toolResponse(readFileCall("same.txt"))
+	})
+	if run.err == nil || !strings.Contains(run.err.Error(), stopRepeat) || len(got) != 0 {
+		t.Fatalf("err=%v reported=%q", run.err, got)
+	}
+}
+
+func TestForcedAnswerTellsTheModelWhyItWasCutShort(t *testing.T) {
+	long := strings.Repeat("word ", 400)
+	got := modelTurnContent(Turn{Role: "assistant", Content: long, Disposition: IncompleteDisposition(ForcedByRepeat)})
+	if !strings.HasPrefix(got, "[Incomplete assistant response; not a completed answer. The job was cut short: repeated the same tool call.]\n") || !strings.Contains(got, strings.TrimSpace(long)) {
+		t.Fatalf("model sees %q", got)
+	}
+	for _, reason := range []ForcedAnswer{ForcedByRepeat, ForcedByTime, ForcedByRequests} {
+		if IncompleteDisposition(fmt.Errorf("job: %w", reason)) != forcedDispositions[reason] || ForcedAnswerReason(reason) != string(reason) {
+			t.Fatalf("reason %q lost", reason)
+		}
+	}
+	if ForcedAnswerReason(ErrResponseLimit) != "" || IncompleteDisposition(ErrResponseLimit) != "output_limit" {
+		t.Fatal("an output limit was taken for a forced answer")
+	}
 }

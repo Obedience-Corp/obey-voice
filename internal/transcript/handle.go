@@ -202,7 +202,7 @@ func encodeEvent(e events.Event) (record, bool) {
 	case events.JobStarted:
 		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "started"}, true
 	case events.JobFinished:
-		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "finished", ElapsedS: x.Elapsed.Seconds(), CutShort: x.CutShort}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "finished", ElapsedS: x.Elapsed.Seconds(), CutShort: x.CutShort, Reason: x.CutShortReason}, true
 	case events.JobResultDelivered:
 		state := "result_shown"
 		if x.Spoken {

@@ -82,6 +82,8 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		opts.OnWorkerUsage = a.workerUsageHook(job.IDFromContext(ctx), budget)
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
 		id := job.IDFromContext(ctx)
+		// Set, never cleared, so an image-repair retry keeps the first reason.
+		opts.OnForcedAnswer = func(reason brain.ForcedAnswer) { a.noteForcedAnswer(id, reason) }
 		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief, Attachments: refs}})
 		start, end := opts.OnToolStart, opts.OnToolEnd
 		opts.OnToolStart = func(call brain.ToolCall) { a.captureWorkerThread(id, worker); start(call) }

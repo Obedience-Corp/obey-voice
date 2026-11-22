@@ -28,6 +28,9 @@ type StreamOptions struct {
 	// WorkerBudget is the job-shared operational budget for this worker job.
 	WorkerBudget  *WorkerBudget
 	OnWorkerUsage func(WorkerUsage)
+	// OnForcedAnswer reports that the returned answer was written in a
+	// tools-free round the host imposed, and why. Ollama workers only.
+	OnForcedAnswer func(ForcedAnswer)
 	// WorkerTiers is the live, policy-only availability snapshot for the route
 	// tool. It contains no provider, model, or pricing information.
 	WorkerTiers *WorkerTierAvailability
