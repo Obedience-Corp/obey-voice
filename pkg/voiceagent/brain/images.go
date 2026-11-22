@@ -197,7 +197,7 @@ func modelImageType(ref chatmedia.Ref) string {
 // conversation record for a model that can view them.
 func (o *OllamaBrain) prepareImageHistory(ctx context.Context, opts StreamOptions) error {
 	keep := turnWindowStart(o.history, imageTurns-1)
-	o.imagesWithheld = false
+	o.imagesWithheld, o.imagesUnchecked = false, false
 	// current is what a model that views images would be sent with this
 	// request of the pictures the user attached. Pictures from replies are
 	// not the user's, so a model that cannot view them is not reported.
@@ -214,7 +214,15 @@ func (o *OllamaBrain) prepareImageHistory(ctx context.Context, opts StreamOption
 		if err != nil && len(current) > 0 {
 			return err
 		}
-		if err != nil || !views {
+		if err != nil {
+			// Only pictures from replies: leave them out of this request and
+			// let the next one that can ask show them.
+			o.imagesUnchecked = true
+			o.carryImages(keep, 0)
+			o.retireAgedImages()
+			return nil
+		}
+		if !views {
 			o.withholdImages()
 			o.carryImages(keep, 0)
 			o.retireAgedImages()
@@ -227,8 +235,19 @@ func (o *OllamaBrain) prepareImageHistory(ctx context.Context, opts StreamOption
 		if err != nil {
 			return err
 		}
-		for _, image := range images {
-			reserved += len(image)
+		// A group discussion has already recorded its message with these.
+		held := map[string]bool{}
+		for i, turn := range o.working {
+			if i >= keep && turn.Role == "user" {
+				for _, ref := range turn.Attachments {
+					held[ref.ID] = true
+				}
+			}
+		}
+		for i, image := range images {
+			if !held[opts.Attachments[i].ID] {
+				reserved += len(image)
+			}
 		}
 	}
 	for i, t := range o.working {
@@ -345,7 +364,9 @@ func (o *OllamaBrain) retireAgedImages() {
 		}
 		carried := o.carriedImages(o.working, i)
 		for _, c := range carried {
-			m.Content = setCarriedLine(m.Content, c, carriedAged)
+			if _, ok := carriedLineState(m.Content, c.ref.ID); !ok {
+				m.Content = setCarriedLine(m.Content, c, carriedAged)
+			}
 		}
 		if len(carried) > 0 || carriedLine.MatchString(m.Content) {
 			m.Content, m.Images = ageCarriedLines(m.Content, nil), nil

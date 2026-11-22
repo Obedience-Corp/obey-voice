@@ -17,6 +17,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/ollama/ollama/api"
 )
 
@@ -96,9 +97,7 @@ func toolResult(t *testing.T, req api.ChatRequest, name string) string {
 	return ""
 }
 
-func openedLine(ref chatmedia.Ref) string {
-	return "Attached image " + ref.ID + " (" + ref.Name + "): a picture you opened."
-}
+func openedLine(ref chatmedia.Ref) string { return pictureLine(ref, attached, openedByYou) }
 
 func TestViewImageShowsThePictureOnTheNextRound(t *testing.T) {
 	for name, ask := range askBothWays {
@@ -125,7 +124,7 @@ func TestViewImageShowsThePictureOnTheNextRound(t *testing.T) {
 			if len(carrier.Images) != 1 || !bytes.Equal(carrier.Images[0], want) || strings.Count(carrier.Content, openedLine(ref)) != 1 {
 				t.Fatalf("the next round's user message carries %d images and reads %q", len(carrier.Images), carrier.Content)
 			}
-			if result := toolResult(t, requests[1], "view_image"); !strings.Contains(result, strings.TrimSuffix(attachedImageLabel(ref), ":")+" is now attached") {
+			if result := toolResult(t, requests[1], "view_image"); !strings.Contains(result, "Picture "+ref.ID+" ("+ref.Name+") is now attached") {
 				t.Fatalf("tool result = %q", result)
 			}
 			assertWorkingAligned(t, o)
@@ -231,7 +230,7 @@ func TestOpenedPictureAges(t *testing.T) {
 		}
 	}
 	ref := o.History()[0].OpenedImages[0]
-	aged := strings.TrimSuffix(openedLine(ref), ".") + ", no longer attached."
+	aged := pictureLine(ref, agedOut, openedByYou)
 	requests := sent()
 	if m := messageWith(t, requests[len(requests)-2], "Look at shot.png."); len(m.Images) != 1 {
 		t.Fatalf("the third turn's request carries %d images", len(m.Images))
@@ -280,6 +279,9 @@ func TestViewImageIsOfferedOnlyOnLiveTurns(t *testing.T) {
 		"background":    {o, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, Background: true}, false},
 		"worker":        {worker, directTools, false},
 		"worker budget": {o, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, WorkerBudget: &WorkerBudget{}}, false},
+		"continuation":  {o, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, AgentContinuation: true}, false},
+		"discussion":    {o, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, Discussion: &discussion.Directive{}}, false},
+		"transient":     {o, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, TransientHistory: true}, false},
 	} {
 		if got := hasTool(tc.brain.turnToolSession(tc.opts).tools(), "view_image"); got != tc.want {
 			t.Errorf("%s: view_image offered = %t", name, got)
@@ -311,5 +313,141 @@ func TestOpeningAPictureIsNotHandedToAWorker(t *testing.T) {
 	requests := sent()
 	if len(requests) != 3 || len(messageWith(t, requests[2], "Find the screenshot").Images) != 1 {
 		t.Fatalf("%d requests; the last does not carry the picture", len(requests))
+	}
+}
+
+// A picture this request cannot carry is not recorded as opened, and the
+// answer says why.
+func TestViewImageThatIsNotCarriedIsNotRecorded(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	o, sent := toolModel(t, true, opensThenAnswers("shot.png"))
+	writePNG(t, filepath.Join(o.workDir, "shot.png"))
+	o.maxImageBytes = 1
+	if _, err := o.ThinkFull(t.Context(), "Look at shot.png.", directTools); err != nil {
+		t.Fatal(err)
+	}
+	if result := toolResult(t, sent()[1], "view_image"); !strings.Contains(result, "could not be attached") || !strings.Contains(result, "32 MiB") {
+		t.Fatalf("tool result = %q", result)
+	}
+	if carrier := messageWith(t, sent()[1], "Look at shot.png."); len(carrier.Images) != 0 || strings.Contains(carrier.Content, "Picture ") {
+		t.Fatalf("the message reads %q with %d images", carrier.Content, len(carrier.Images))
+	}
+	if len(o.History()[0].OpenedImages) != 0 {
+		t.Fatal("a picture that was not attached is recorded as opened")
+	}
+	if again := o.viewImage(t.Context(), "shot.png"); strings.Contains(again, "already attached") {
+		t.Fatalf("a second try reads %q", again)
+	}
+	o.maxImageBytes = 0
+	if _, err := o.ThinkFull(t.Context(), "And now?", StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if carrier := messageWith(t, sent()[len(sent())-1], "Look at shot.png."); len(carrier.Images) != 0 {
+		t.Fatal("a picture that was not attached reached a later request")
+	}
+
+	// A request sent without images gives that reason.
+	o.appendMessage(api.Message{Role: "user", Content: "Look again."}, nil)
+	o.imagesWithheld = true
+	if result := o.viewImage(t.Context(), "shot.png"); !strings.Contains(result, "cannot view images") || strings.Contains(result, "MiB") {
+		t.Fatalf("tool result = %q", result)
+	}
+	if len(o.canonical[len(o.canonical)-1].OpenedImages) != 0 {
+		t.Fatal("a withheld picture is recorded as opened")
+	}
+}
+
+// A file name with a line break is named on one line, once, however many
+// requests carry it.
+func TestNewlineInAFileNameStaysOnOneLine(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	o, sent := toolModel(t, true, opensThenAnswers("a\nb.png"))
+	writePNG(t, filepath.Join(o.workDir, "a\nb.png"))
+	if _, err := o.ThinkFull(t.Context(), "Look at it.", directTools); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := o.ThinkFull(t.Context(), "", StreamOptions{Background: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ref := o.History()[0].OpenedImages[0]
+	for i, req := range sent()[1:] {
+		m := messageWith(t, req, "Look at it.")
+		if strings.Count(m.Content, pictureNamed(ref)) != 1 || !strings.Contains(m.Content, ": a b.png, "+openedByYou+".") {
+			t.Fatalf("request %d reads %q", i, m.Content)
+		}
+	}
+	assertWorkingAligned(t, o)
+}
+
+func callTools(w http.ResponseWriter, req api.ChatRequest, names ...string) {
+	var calls []api.ToolCall
+	for _, name := range names {
+		args := map[string]any{}
+		if name == "view_image" {
+			args["path"] = "shot.png"
+		}
+		calls = append(calls, api.ToolCall{ID: name + "-1", Function: api.ToolCallFunction{Name: name, Arguments: mustArgs(args)}})
+	}
+	answer(w, req, api.Message{Role: "assistant", ToolCalls: calls}, "stop")
+}
+
+// Asking for background work hands the turn off as it always has, with or
+// after view_image. A picture in a response that is handed off is not opened.
+func TestBackgroundWorkIsHandedOffBesideViewImage(t *testing.T) {
+	for name, tc := range map[string]struct {
+		rounds [][]string
+		opened int
+	}{
+		"same response":  {[][]string{{"view_image", backgroundWorkTool}}, 0},
+		"after one look": {[][]string{{"view_image"}, {backgroundWorkTool}}, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			config.SetConfigDirForTest(t, t.TempDir())
+			o, sent := toolModel(t, true, func(w http.ResponseWriter, n int, req api.ChatRequest) {
+				if n <= len(tc.rounds) {
+					callTools(w, req, tc.rounds[n-1]...)
+					return
+				}
+				answer(w, req, api.Message{Role: "assistant", Content: "Done."}, "stop")
+			})
+			writePNG(t, filepath.Join(o.workDir, "shot.png"))
+			opts := directTools
+			opts.BackgroundWorker = true
+			turn := runRoutedTurn(t, o, "Look at shot.png, then research it in the background.", opts)
+			if turn.result.Err != nil || turn.result.Route != "spawn" || len(sent()) != len(tc.rounds) {
+				t.Fatalf("route=%q err=%v requests=%d", turn.result.Route, turn.result.Err, len(sent()))
+			}
+			opened := 0
+			for _, t := range o.canonical {
+				opened += len(t.OpenedImages)
+			}
+			if opened != tc.opened {
+				t.Fatalf("%d pictures recorded as opened, want %d", opened, tc.opened)
+			}
+		})
+	}
+}
+
+// After a look at a picture, a further local step stays with the persona.
+func TestALookAtAPictureIsNotFollowedByAnImplicitHandOff(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	o, sent := toolModel(t, true, func(w http.ResponseWriter, n int, req api.ChatRequest) {
+		switch n {
+		case 1:
+			callTools(w, req, "view_image")
+		case 2:
+			callTool(w, req, "read_file", map[string]any{"path": "notes.txt"})
+		default:
+			answer(w, req, api.Message{Role: "assistant", Content: "A grey rectangle."}, "stop")
+		}
+	})
+	writePNG(t, filepath.Join(o.workDir, "shot.png"))
+	opts := directTools
+	opts.BackgroundWorker = true
+	turn := runRoutedTurn(t, o, "Look at shot.png and check the notes.", opts)
+	if turn.result.Err != nil || turn.result.Route != "" || len(sent()) != 3 {
+		t.Fatalf("route=%q err=%v requests=%d", turn.result.Route, turn.result.Err, len(sent()))
 	}
 }

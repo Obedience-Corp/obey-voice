@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,7 +20,7 @@ func viewImageTool() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        viewImageToolName,
-			Description: "Look at a PNG, JPEG or GIF file inside the work directory. The picture is attached to the user's latest message for your next step; a GIF shows its first frame. read_file cannot show pictures.",
+			Description: "Look at a PNG, JPEG or GIF file inside your work directory. The picture is attached to the user's latest message for your next step; a GIF shows its first frame. read_file cannot show pictures.",
 			Parameters: api.ToolFunctionParameters{
 				Type:     "object",
 				Required: []string{"path"},
@@ -39,9 +40,9 @@ func (o *OllamaBrain) offersViewImage(opts StreamOptions) bool {
 		!opts.Background && !opts.AgentContinuation && opts.Discussion == nil && !opts.TransientHistory
 }
 
-// viewImage imports an image file the way a reply image is imported and
-// records it on the user turn being answered as a picture the persona opened.
-// The turn's next request carries it on that user message.
+// viewImage imports an image file inside the work directory and records it on
+// the user turn being answered as a picture the persona opened, when this
+// request can carry it. The turn's next request carries it on that message.
 func (o *OllamaBrain) viewImage(ctx context.Context, path string) string {
 	if strings.TrimSpace(path) == "" {
 		return "error: path is required"
@@ -70,7 +71,7 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) string {
 	if _, err := storeImageLimit.load(ref); err != nil {
 		return "error: " + err.Error()
 	}
-	label := strings.TrimSuffix(attachedImageLabel(ref), ":")
+	label := "Picture " + ref.ID + " (" + singleLine(ref.Name) + ")"
 	for _, held := range append(o.working[w].Attachments, o.working[w].OpenedImages...) {
 		if held.ID == ref.ID {
 			return label + " is already attached to the user's latest message."
@@ -78,10 +79,22 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) string {
 	}
 	o.canonical[c].OpenedImages = append(o.canonical[c].OpenedImages, ref)
 	o.working[w].OpenedImages = append(o.working[w].OpenedImages, ref)
-	if !o.carryImages(turnWindowStart(o.history, imageTurns), 0)[ref.ID] {
-		return fmt.Sprintf("error: %s could not be attached to this request, which carries at most 32 MiB of images", label)
+	keep := turnWindowStart(o.history, imageTurns)
+	why, carried := o.carryImages(keep, 0)[ref.ID]
+	if !carried {
+		why = errors.New("there is no user message to attach it to")
 	}
-	return label + " is now attached to the user's latest message, named there as a picture you opened."
+	if why != nil {
+		// Only a picture this request carries counts as opened.
+		o.canonical[c].OpenedImages = o.canonical[c].OpenedImages[:len(o.canonical[c].OpenedImages)-1]
+		o.working[w].OpenedImages = o.working[w].OpenedImages[:len(o.working[w].OpenedImages)-1]
+		if w < len(o.history) && o.history[w].Role == "user" {
+			o.history[w].Content = withoutCarriedLine(o.history[w].Content, ref.ID)
+		}
+		o.carryImages(keep, 0)
+		return fmt.Sprintf("error: %s could not be attached: %v", label, why)
+	}
+	return label + " is now attached to the user's latest message, where it is named as a picture you opened."
 }
 
 func lastUserTurn(turns []Turn) int {

@@ -104,6 +104,12 @@ type OllamaBrain struct {
 	stopped ollamaStopped
 	// imagesWithheld is set for a request whose model cannot view images.
 	imagesWithheld bool
+	// imagesUnchecked is set for a request that carries only pictures from
+	// replies and could not learn whether its model views images.
+	imagesUnchecked bool
+	// maxImageBytes lowers the image data a request carries below
+	// maxRequestImageBytes when set.
+	maxImageBytes int
 }
 
 // NewOllama creates an Ollama brain provider.

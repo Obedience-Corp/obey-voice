@@ -1,8 +1,11 @@
 package brain
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/ollama/ollama/api"
@@ -25,23 +28,39 @@ const (
 	carriedShown carriedState = iota
 	carriedAged
 	carriedUnseen
+	carriedUnchecked
 )
 
-func (c carriedImage) line(state carriedState) string {
-	line := "\n" + attachedImageLabel(c.ref) + " " + c.what
-	switch state {
-	case carriedAged:
-		return line + ", no longer attached."
-	case carriedUnseen:
-		return line + ", not shown, because this model cannot view images."
-	}
-	return line + "."
+// carriedStates are the words that follow a carried picture's id. They come
+// before its name, so a line's state is read without reading the name.
+var carriedStates = map[carriedState]string{
+	carriedShown:     "attached",
+	carriedAged:      "no longer attached",
+	carriedUnseen:    "not shown, because this model cannot view images",
+	carriedUnchecked: "not attached to this request",
 }
 
-// carriedLine matches a line written by carriedImage.line in any state. A
-// line names its picture, so it can be aged or removed after the reply it
-// came from has left the history.
-var carriedLine = regexp.MustCompile(`\nAttached image ([0-9a-f]+) \([^\n]*?\): a picture [^\n]*?(, no longer attached|, not shown, because this model cannot view images)?\.(?m:$)`)
+// carriedPrefix opens every carried line. A note about the user's own
+// pictures starts with "Attached image" and never with this.
+const carriedPrefix = "\nPicture "
+
+func (c carriedImage) line(state carriedState) string {
+	return carriedPrefix + c.ref.ID + " " + carriedStates[state] + ": " + singleLine(c.ref.Name) + ", " + c.what + "."
+}
+
+// singleLine keeps a file name on the one line that names its picture.
+func singleLine(name string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, name)
+}
+
+// carriedLine matches a whole carried line by its prefix, the picture's id
+// and its state.
+var carriedLine = regexp.MustCompile(`\nPicture ([0-9a-f]+) (attached|no longer attached|not shown, because this model cannot view images|not attached to this request): [^\n]*`)
 
 // withoutCarriedLines is content without the lines about carried pictures.
 func withoutCarriedLines(content string) string {
@@ -49,15 +68,41 @@ func withoutCarriedLines(content string) string {
 }
 
 // ageCarriedLines says of each carried picture in content that is not in keep
-// that it is no longer attached.
+// that it is no longer attached. One that was never shown because the model
+// cannot view images keeps saying so.
 func ageCarriedLines(content string, keep map[string]bool) string {
 	return carriedLine.ReplaceAllStringFunc(content, func(line string) string {
 		m := carriedLine.FindStringSubmatch(line)
-		if keep[m[1]] {
+		if keep[m[1]] || m[2] == carriedStates[carriedUnseen] {
 			return line
 		}
-		return strings.TrimSuffix(strings.TrimSuffix(line, "."), m[2]) + ", no longer attached."
+		return strings.Replace(line, " "+m[2]+": ", " "+carriedStates[carriedAged]+": ", 1)
 	})
+}
+
+// carriedLineState is the state of id's line in content, if it has one.
+func carriedLineState(content, id string) (carriedState, bool) {
+	for _, m := range carriedLine.FindAllStringSubmatch(content, -1) {
+		if m[1] != id {
+			continue
+		}
+		for state, words := range carriedStates {
+			if words == m[2] {
+				return state, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// withoutCarriedLine is content without id's line.
+func withoutCarriedLine(content, id string) string {
+	for _, at := range carriedLine.FindAllStringSubmatchIndex(content, -1) {
+		if content[at[2]:at[3]] == id {
+			return content[:at[0]] + content[at[1]:]
+		}
+	}
+	return content
 }
 
 // carriedImages is what the user message at working index j carries that the
@@ -136,19 +181,34 @@ func (o *OllamaBrain) carriesImagesFrom(keep int) bool {
 	return false
 }
 
+var (
+	errImagesWithheld    = errors.New("pictures are left out of this request because this model cannot view images")
+	errImagesUnchecked   = errors.New("pictures are left out of this request because whether this model can view images could not be checked")
+	errNoImageRoom       = fmt.Errorf("this request already carries as much picture data as it can (%d MiB)", maxRequestImageBytes>>20)
+	errOwnImagesUnloaded = errors.New("the message's own pictures did not load")
+)
+
+// imageByteLimit is the most image data one request carries.
+func (o *OllamaBrain) imageByteLimit() int {
+	if o.maxImageBytes > 0 {
+		return o.maxImageBytes
+	}
+	return maxRequestImageBytes
+}
+
 // carryImages gives each user message from keep on the pictures it carries,
 // after its own, and a line naming each one. A model that cannot view images
 // is sent none. A picture that no longer loads, or does not fit within the
-// request's 32 MiB once the user's own pictures and reserved bytes are
+// request's limit once the user's own pictures and reserved bytes are
 // counted, is left out with a line saying so, the oldest first. It runs on
 // every request and changes nothing that is already as it should be. It
-// returns the pictures it attached.
-func (o *OllamaBrain) carryImages(keep, reserved int) map[string]bool {
+// returns, for each picture it carries, nil when it is attached or why not.
+func (o *OllamaBrain) carryImages(keep, reserved int) map[string]error {
 	if o.audioResolver != nil || len(o.working) != len(o.history) {
 		return nil
 	}
 	own := make([][]api.ImageData, len(o.history))
-	budget := maxRequestImageBytes - reserved
+	budget := o.imageByteLimit() - reserved
 	for j := keep; j < len(o.history); j++ {
 		if o.history[j].Role != "user" || o.working[j].Role != "user" {
 			continue
@@ -159,7 +219,7 @@ func (o *OllamaBrain) carryImages(keep, reserved int) map[string]bool {
 			budget -= len(image)
 		}
 	}
-	shown := map[string]bool{}
+	outcome := map[string]error{}
 	full := false
 	for j := len(o.history) - 1; j >= keep; j-- {
 		m := &o.history[j]
@@ -173,23 +233,32 @@ func (o *OllamaBrain) carryImages(keep, reserved int) map[string]bool {
 		states := make([]carriedState, len(carried))
 		data := make([][]byte, len(carried))
 		for k := len(carried) - 1; k >= 0; k-- {
+			id := carried[k].ref.ID
 			states[k] = carriedAged
-			if o.imagesWithheld {
-				states[k] = carriedUnseen
+			switch {
+			case o.imagesWithheld:
+				states[k], outcome[id] = carriedUnseen, errImagesWithheld
 				continue
-			}
-			if full || !loaded {
+			case o.imagesUnchecked:
+				states[k], outcome[id] = carriedUnchecked, errImagesUnchecked
+				continue
+			case !loaded:
+				outcome[id] = errOwnImagesUnloaded
+				continue
+			case full:
+				outcome[id] = errNoImageRoom
 				continue
 			}
 			image, err := storeImageLimit.load(carried[k].ref)
 			if err != nil {
+				outcome[id] = err
 				continue
 			}
 			if len(image) > budget {
-				full = true
+				full, outcome[id] = true, errNoImageRoom
 				continue
 			}
-			data[k], budget, states[k] = image, budget-len(image), carriedShown
+			data[k], budget, states[k], outcome[id] = image, budget-len(image), carriedShown, nil
 		}
 		known := map[string]bool{}
 		images := own[j]
@@ -198,7 +267,6 @@ func (o *OllamaBrain) carryImages(keep, reserved int) map[string]bool {
 			m.Content = setCarriedLine(m.Content, c, states[k])
 			if states[k] == carriedShown {
 				images = append(images, api.ImageData(data[k]))
-				shown[c.ref.ID] = true
 			}
 		}
 		// A line whose reply has left the history can no longer be shown.
@@ -208,7 +276,7 @@ func (o *OllamaBrain) carryImages(keep, reserved int) map[string]bool {
 		}
 		m.Images = images
 	}
-	return shown
+	return outcome
 }
 
 // setCarriedLine writes c's line in state in place of the line that names
