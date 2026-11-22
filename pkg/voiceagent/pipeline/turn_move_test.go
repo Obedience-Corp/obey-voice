@@ -50,11 +50,18 @@ type workingBrain struct {
 	holdCtx   context.Context
 	holdEnded chan struct{}
 	stopped   int
+	// ended closes when the test ends, so no request outlives it however
+	// the test ended.
+	ended   chan struct{}
+	endOnce sync.Once
 }
 
 func newWorkingBrain() *workingBrain {
-	return &workingBrain{release: make(chan struct{}), held: make(chan struct{}), holdEnded: make(chan struct{})}
+	return &workingBrain{release: make(chan struct{}), held: make(chan struct{}), holdEnded: make(chan struct{}), ended: make(chan struct{})}
 }
+
+// end stops every request still running when the test ends.
+func (b *workingBrain) end() { b.endOnce.Do(func() { close(b.ended) }) }
 
 func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
 	b.mu.Lock()
@@ -66,6 +73,8 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 		case out <- text:
 			return true
 		case <-ctx.Done():
+			return false
+		case <-b.ended:
 			return false
 		}
 	}
@@ -118,11 +127,17 @@ func (b *workingBrain) ThinkStream(ctx context.Context, input string, opts brain
 		select {
 		case <-ctx.Done():
 			if b.stubborn {
-				<-b.release
+				select {
+				case <-b.release:
+				case <-b.ended:
+				}
 			}
 			done <- brain.StreamResult{Err: ctx.Err()}
 			return
 		case <-b.release:
+		case <-b.ended:
+			done <- brain.StreamResult{Err: context.Canceled}
+			return
 		}
 		if opts.OnToolStart != nil {
 			opts.OnToolStart(brain.ToolCall{ID: "call-2", Name: "read_file"})
@@ -264,6 +279,7 @@ func newMovingConversation(t *testing.T, opts ...job.Option) *movingConversation
 	c.p.NamesOtherPersona = func(input string) bool { return strings.HasPrefix(input, "Hey Obey") }
 	c.jobs = job.NewTable(t.Context(), opts...)
 	t.Cleanup(c.jobs.Close)
+	t.Cleanup(c.anika.end)
 	NewAgency(c.p, c.jobs, nil, &config.Config{AgentName: "Anika", ActivePersona: "anika"}, nil).Wire()
 	keep := func(e events.Event) {
 		select {

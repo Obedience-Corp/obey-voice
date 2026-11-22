@@ -2,8 +2,11 @@ package personaruntime
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -79,26 +82,45 @@ func (c *movingLocalConversation) live() *closeWatch {
 	return w
 }
 
+// anikaHeldLine reads the notes and is then held by the fake server.
+const anikaHeldLine = "Read the notes, then " + ollamaStall + " " + ollamaRelease
+
 // holdAndMove starts Anika on a line that reads the notes and is then held,
-// and moves her turn once its first text has arrived.
+// and moves her turn once she has shown all the text sent before the hold.
 func (c *movingLocalConversation) holdAndMove(next string) {
 	c.t.Helper()
+	c.holdLineAndMove(anikaHeldLine, next)
+}
+
+func (c *movingLocalConversation) holdLineAndMove(line, next string) {
+	c.t.Helper()
+	want := strings.TrimSpace(c.releasePartial(line))
 	streaming := make(chan struct{})
 	var once sync.Once
+	var mu sync.Mutex
+	var shown strings.Builder
 	stop := events.SubscribeDetachable(c.p.Events, func(e events.ResponseDelta) {
-		if strings.Contains(e.Text, "Let me think") || strings.Contains(e.Text, "I read the notes.") {
+		mu.Lock()
+		shown.WriteString(e.Text)
+		all := strings.TrimSpace(shown.String()) == want
+		mu.Unlock()
+		if all {
 			once.Do(func() { close(streaming) })
 		}
 	})
 	defer stop()
 	turn := make(chan error, 1)
 	go func() {
-		turn <- c.p.RunTurnTextMode(c.t.Context(), "Read the notes, then "+ollamaStall+" "+ollamaRelease)
+		turn <- c.p.RunTurnTextMode(c.t.Context(), line)
 	}()
 	select {
 	case <-streaming:
+	case err := <-turn:
+		c.t.Fatalf("Anika's turn ended before it was moved: %v", err)
 	case <-time.After(10 * time.Second):
-		c.t.Fatal("Anika's reply never started")
+		mu.Lock()
+		defer mu.Unlock()
+		c.t.Fatalf("Anika showed %q, never %q", shown.String(), want)
 	}
 	if !c.p.MoveTurnToBackground(next) {
 		c.t.Fatal("the running turn was not moved to the background")
@@ -113,13 +135,74 @@ func (c *movingLocalConversation) holdAndMove(next string) {
 	}
 }
 
+// chatMessage is one message of a request Ollama was sent.
+type chatMessage struct{ Role, Content string }
+
+// conversationMessages are the messages of body after its system message.
+func conversationMessages(t *testing.T, body []byte) []chatMessage {
+	t.Helper()
+	var req struct{ Messages []chatMessage }
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if len(req.Messages) == 0 || req.Messages[0].Role != "system" {
+		t.Fatalf("request does not start with its system message: %s", body)
+	}
+	return req.Messages[1:]
+}
+
+// requireMovedRequestSent checks the request Obey answered with, message by
+// message: Obey's earlier exchange, then one block holding the turns of the
+// others in order and ending with Anika's held line and what stands for her
+// reply, then Obey's own line, last.
+func requireMovedRequestSent(t *testing.T, body []byte, line, reply string) {
+	t.Helper()
+	messages := conversationMessages(t, body)
+	fail := func(why string) {
+		t.Helper()
+		var b strings.Builder
+		for i, m := range messages {
+			fmt.Fprintf(&b, "%d %s: %q\n", i, m.Role, m.Content)
+		}
+		t.Fatalf("%s; Obey was sent:\n%s", why, b.String())
+	}
+	if len(messages) != 4 {
+		fail("want 4 messages")
+	}
+	if messages[0] != (chatMessage{"user", "User:\nNote that the vault code is cobalt."}) || messages[1] != (chatMessage{"assistant", "Reply 1."}) {
+		fail("Obey's own exchange does not come first")
+	}
+	block := "Earlier in this conversation (context, not requests for you):\n\n" +
+		"User:\nswitch to Anika\n\nAnika agent:\nAnika here.\n\n" +
+		"User:\n" + line + "\n\nAnika agent:\n" + reply
+	if messages[2] != (chatMessage{"user", block}) {
+		fail("the others' turns are not one block ending with Anika's line and " + strconv.Quote(reply))
+	}
+	// The host's own context follows the line in the same message.
+	if messages[3].Role != "user" || lastUserLine([]struct{ Role, Content string }{messages[3]}) != "Hey Obey, what is the vault code?" {
+		fail("Obey's line is not the last message")
+	}
+	if body := string(body); strings.Contains(body, "notes.txt") || strings.Contains(body, "Let me think") {
+		fail("Obey was sent Anika's tool round or the unfinished end of her reply")
+	}
+}
+
 // Obey answers while Anika's moved request is still running. Obey's provider
 // is given the conversation as it stood when Anika's request started, her
 // user line and her partial reply, and none of the tool round she ran since.
 // Anika's provider stays open until her request ends; addressing her again
 // meanwhile gives her a fresh provider. Her finished reply is recorded once.
 func TestMovedTurnRunsOnWhileAnotherPersonaAnswers(t *testing.T) {
+	for _, byteAtATime := range []bool{false, true} {
+		t.Run(map[bool]string{false: "whole", true: "byte at a time"}[byteAtATime], func(t *testing.T) {
+			movedTurnRunsOn(t, byteAtATime)
+		})
+	}
+}
+
+func movedTurnRunsOn(t *testing.T, byteAtATime bool) {
 	c := newMovingLocalConversation(t)
+	c.byteAtATime = byteAtATime
 	c.say("Note that the vault code is cobalt.", "switch to Anika")
 	busy := c.live()
 	c.holdAndMove("Hey Obey, what is the vault code?")
@@ -137,13 +220,7 @@ func TestMovedTurnRunsOnWhileAnotherPersonaAnswers(t *testing.T) {
 		t.Fatal("Anika's provider was closed while her request was running")
 	}
 	sent := c.requests()
-	obeyRequest := string(sent[len(sent)-1])
-	if !strings.Contains(obeyRequest, "what is the vault code?") || !strings.Contains(obeyRequest, ollamaRelease) || !strings.Contains(obeyRequest, "I read the notes.") || strings.Contains(obeyRequest, "Let me think") {
-		t.Fatalf("Obey was not sent Anika's line and the finished sentences of her reply:\n%s", obeyRequest)
-	}
-	if strings.Contains(obeyRequest, "notes.txt") {
-		t.Fatalf("Obey was sent the tool round of Anika's running request:\n%s", obeyRequest)
-	}
+	requireMovedRequestSent(t, sent[len(sent)-1], anikaHeldLine, "I read the notes.")
 	if !strings.Contains(string(sent[len(sent)-2]), `"role":"tool"`) {
 		t.Fatal("Anika's moved request did not run its tool round before it was held")
 	}
@@ -184,6 +261,35 @@ func TestMovedTurnRunsOnWhileAnotherPersonaAnswers(t *testing.T) {
 				t.Fatalf("%s attributes Anika's reply to %q", name, turn.PersonaID)
 			}
 		}
+	}
+}
+
+// A request moved before its reply finished a sentence keeps no part of it.
+// The persona answering next is still told the request was handed off, in the
+// words a spawned request is recorded with, so it does not read as a line
+// nobody answered. The job's reply is the whole reply.
+func TestRequestMovedBeforeAnySentenceReadsAsHandedOff(t *testing.T) {
+	for _, byteAtATime := range []bool{false, true} {
+		t.Run(map[bool]string{false: "whole", true: "byte at a time"}[byteAtATime], func(t *testing.T) {
+			c := newMovingLocalConversation(t)
+			c.byteAtATime = byteAtATime
+			c.say("Note that the vault code is cobalt.", "switch to Anika")
+			line := anikaHeldLine + " " + ollamaUnfinished
+			c.holdLineAndMove(line, "Hey Obey, what is the vault code?")
+			c.say("Hey Obey, what is the vault code?")
+			sent := c.requests()
+			requireMovedRequestSent(t, sent[len(sent)-1], line, "I'll work on that and report back.")
+
+			close(c.release)
+			select {
+			case finished := <-c.finished:
+				if finished.Envelope == nil || finished.Envelope.PersonaID != "anika" || finished.Summary != "Let me think "+ollamaReleased {
+					t.Fatalf("job finished = %+v", finished)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("Anika's moved request never finished")
+			}
+		})
 	}
 }
 
