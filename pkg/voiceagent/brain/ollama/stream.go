@@ -4,6 +4,7 @@ package ollama
 import (
 	"context"
 	"strings"
+	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
@@ -16,9 +17,28 @@ type Stream struct {
 	Speak, Think func(string) error
 	spoken       strings.Builder
 	// breakNext puts a paragraph break ahead of the next speech. The break is
-	// sent with that speech, not before it, so a turn never ends on one; and
-	// it is not part of what any round said, so it stays out of spoken.
+	// sent when a later round's text arrives, not when the tool call is made,
+	// and it is not part of what any round said, so it stays out of spoken.
 	breakNext bool
+	// tailBreaks counts the line breaks the text sent so far ends on.
+	tailBreaks int
+}
+
+// send writes text to the listener and notes how many line breaks it ends on.
+func (s *Stream) send(text string) error {
+	if text == "" {
+		return nil
+	}
+	if err := s.Speak(text); err != nil {
+		return err
+	}
+	body := strings.TrimRightFunc(text, unicode.IsSpace)
+	breaks := strings.Count(text[len(body):], "\n")
+	if body == "" {
+		breaks += s.tailBreaks
+	}
+	s.tailBreaks = breaks
+	return nil
 }
 
 // Filter consumes incremental text and releases its remaining text at end of stream.
@@ -81,13 +101,17 @@ func (r *Round) deliver(text string) error {
 		}
 		r.outputChecked = true
 	}
+	sent := text
 	if r.stream.breakNext {
-		if err := r.stream.Speak("\n\n"); err != nil {
+		// The break replaces the white space the model left on either side of
+		// the tool call, so the two thoughts are always one blank line apart.
+		sent = strings.TrimLeftFunc(text, unicode.IsSpace)
+		if err := r.stream.send(strings.Repeat("\n", max(0, 2-r.stream.tailBreaks))); err != nil {
 			return err
 		}
-		r.stream.breakNext = false
+		r.stream.breakNext = sent == ""
 	}
-	if err := r.stream.Speak(text); err != nil {
+	if err := r.stream.send(sent); err != nil {
 		return err
 	}
 	r.stream.spoken.WriteString(text)
