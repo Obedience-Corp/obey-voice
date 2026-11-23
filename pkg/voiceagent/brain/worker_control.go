@@ -36,6 +36,7 @@ const (
 	NotAppliedContext = "context limit reached"
 	NotAppliedStopped = "the job was stopped"
 	NotAppliedFailed  = "the job failed"
+	NotAppliedReport  = "a report was requested"
 )
 
 // DispositionSuperseded marks a worker answer a correction replaced.
@@ -44,6 +45,29 @@ const DispositionSuperseded = "superseded"
 // ToolNotRunCorrection answers a tool call the worker had not started when a
 // correction arrived.
 const ToolNotRunCorrection = "not run: a correction arrived"
+
+// ToolNotRunReport answers a tool call the worker had not started when a
+// report was requested.
+const ToolNotRunReport = "not run: a report was requested"
+
+// ReportState is what a request for a job's report found.
+type ReportState string
+
+const (
+	// ReportAccepted: the job stops using tools; its next model request is
+	// its answer.
+	ReportAccepted ReportState = "accepted"
+	// ReportRepeated: the job was already reporting; nothing changed.
+	ReportRepeated ReportState = "repeated"
+	// ReportNotStarted: the worker has not started.
+	ReportNotStarted ReportState = "not_started"
+	// ReportNoInput: the running worker cannot take input.
+	ReportNoInput ReportState = "no_input"
+	// ReportFinishing: an image repair runs; the job answers when it ends.
+	ReportFinishing ReportState = "finishing"
+	// ReportFinished: the job had already finished.
+	ReportFinished ReportState = "finished"
+)
 
 // Correction is one correction to a job and its disposition.
 type Correction struct {
@@ -62,10 +86,11 @@ type correction struct {
 	taken bool
 }
 
-// WorkerControl carries corrections to one job from admission to its end.
-// Any goroutine may add a correction or end the job; only the worker's own
-// goroutine takes corrections into its history. Acceptances and dispositions
-// are reported in order, with no lock held.
+// WorkerControl carries corrections, and a request to report, to one job from
+// admission to its end. Any goroutine may add a correction, ask for the report
+// or end the job; only the worker's own goroutine takes corrections into its
+// history. Acceptances and dispositions are reported in order, with no lock
+// held.
 type WorkerControl struct {
 	mu          sync.Mutex
 	corrections []correction
@@ -74,6 +99,8 @@ type WorkerControl struct {
 	noInput     string
 	sealed      bool
 	finishing   bool // an image repair runs; no more corrections
+	reported    bool // the job was asked to report; no more corrections
+	reportNote  string
 	outbox      []Correction
 	draining    bool
 	notify      func(Correction)
@@ -102,6 +129,9 @@ func (c *WorkerControl) Steer(text string) Correction {
 	case c.sealed:
 		c.mu.Unlock()
 		return Correction{Text: text, State: CorrectionRefused, Reason: "already finished"}
+	case c.reported:
+		c.mu.Unlock()
+		return Correction{Text: text, State: CorrectionRejected, Reason: "the job is reporting"}
 	case c.started && c.noInput != "":
 		c.mu.Unlock()
 		return Correction{Text: text, State: CorrectionRejected, Reason: c.noInput}
@@ -244,9 +274,10 @@ func (c *WorkerControl) Corrected() bool {
 	return len(c.corrections) > 0
 }
 
-// BeginRepair admits an image repair for a job that took no correction, and
-// closes it to corrections while the repair runs. It fails when the job has
-// accepted one, which the job takes instead.
+// BeginRepair admits an image repair for a job that took no correction and
+// was not asked to report, and closes it to corrections and reports while the
+// repair runs. It fails when the job has accepted either, which the job takes
+// instead.
 func (c *WorkerControl) BeginRepair() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -254,11 +285,66 @@ func (c *WorkerControl) BeginRepair() bool {
 		// The job already ended; the repair fails on its own.
 		return true
 	}
-	if len(c.corrections) > 0 {
+	if len(c.corrections) > 0 || c.reported {
 		return false
 	}
 	c.sealed, c.finishing = true, true
 	return true
+}
+
+// Report asks a running job to stop using tools and answer with what it has
+// done. Accepted once, it keeps checkpoint, settles the corrections the
+// worker has not taken, and refuses later ones; a repeat changes nothing and
+// returns the checkpoint kept. It reports nothing: the caller announces the
+// report, then calls Flush.
+func (c *WorkerControl) Report(checkpoint string) (ReportState, string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case c.finishing:
+		return ReportFinishing, checkpoint
+	case c.sealed:
+		return ReportFinished, ""
+	case !c.started:
+		return ReportNotStarted, ""
+	case c.noInput != "":
+		return ReportNoInput, checkpoint
+	case c.reported:
+		return ReportRepeated, c.reportNote
+	}
+	c.reported, c.reportNote = true, checkpoint
+	c.settleLocked(func(item *correction) bool { return !item.taken }, CorrectionNotApplied, NotAppliedReport)
+	return ReportAccepted, checkpoint
+}
+
+// Reported returns the checkpoint an accepted report kept, whatever became of
+// the job afterwards.
+func (c *WorkerControl) Reported() (checkpoint string, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reportNote, c.reported
+}
+
+func (c *WorkerControl) reporting() bool {
+	_, ok := c.Reported()
+	return ok
+}
+
+// notRun is the result for a tool call the worker has not started that a
+// waiting correction or a report keeps from running, or "" when it may run.
+func (c *WorkerControl) notRun() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case c.waitingLocked():
+		return ToolNotRunCorrection
+	case c.reported:
+		return ToolNotRunReport
+	}
+	return ""
 }
 
 // Corrections is every accepted correction, in order.

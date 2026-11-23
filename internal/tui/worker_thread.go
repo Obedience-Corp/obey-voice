@@ -52,7 +52,7 @@ func workerThreadEntries(item pipeline.WorkerInfo) []workerThreadEntry {
 			}
 			for k, call := range turn.ToolCalls {
 				tool := &workerThreadTool{call: workfold.Call{ID: call.ID, Name: call.Name, Status: "unknown"}, arguments: call.Arguments, order: -1}
-				// A call a correction kept from running fired no events.
+				// A call a correction or a report kept from running fired no events.
 				if !skipped[[2]int{i, k}] {
 					matchWorkerCall(tool, item.Tools, used)
 				}
@@ -111,7 +111,8 @@ func workerThreadEntries(item pipeline.WorkerInfo) []workerThreadEntry {
 }
 
 // skippedWorkerCalls pairs each assistant turn's calls with the results that
-// follow it, by id or in order, and marks those a correction kept from running.
+// follow it, by id or in order, and marks those a correction or a report kept
+// from running.
 func skippedWorkerCalls(thread []brain.Turn) map[[2]int]bool {
 	skipped := map[[2]int]bool{}
 	for i, turn := range thread {
@@ -123,7 +124,7 @@ func skippedWorkerCalls(thread []brain.Turn) map[[2]int]bool {
 					continue
 				}
 				paired[k] = true
-				if result.Content == brain.ToolNotRunCorrection {
+				if result.Content == brain.ToolNotRunCorrection || result.Content == brain.ToolNotRunReport {
 					skipped[[2]int{i, k}] = true
 				}
 				break

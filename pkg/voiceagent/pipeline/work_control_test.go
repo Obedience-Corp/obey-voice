@@ -200,7 +200,7 @@ func TestControlWorkReceipts(t *testing.T) {
 	if r := h.agency.ControlWork(cmd, WorkRequest{Action: WorkCancel, JobID: "job-9"}); !errors.Is(r.Err(), work.ErrUnknown) || r.Jobs[0].Outcome != ControlUnknown {
 		t.Fatalf("unknown id receipt = %+v", r)
 	}
-	if r := h.agency.ControlWork(cmd, WorkRequest{Action: "report", JobID: "job-1"}); r.Rejected == "" || r.Err() == nil {
+	if r := h.agency.ControlWork(cmd, WorkRequest{Action: "pause", JobID: "job-1"}); r.Rejected == "" || r.Err() == nil {
 		t.Fatalf("unsupported action receipt = %+v", r)
 	}
 	if r := h.agency.ControlWork(cmd, WorkRequest{Action: WorkCancel}); r.Rejected == "" {

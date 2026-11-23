@@ -207,11 +207,13 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		requestCtx = withModelRequestPurpose(requestCtx, purpose)
 		if ctl != nil {
 			// A correction cannot change the answer round a limit imposed; it
-			// lifts one the repeat guard imposed.
+			// lifts one the repeat guard imposed. A report turns a request for
+			// more tools, not yet sent, into the answer round.
 			limitAnswer := finalAnswer && rounds.limitAnswer()
+			toolRound := !finalAnswer
 			requestCtx = withRequestControl(requestCtx, requestControl{
 				answered: ctl.answered,
-				obsolete: func() bool { return !limitAnswer && ctl.waiting() },
+				obsolete: func() bool { return !limitAnswer && (ctl.waiting() || toolRound && ctl.reporting()) },
 			})
 		}
 		response, responseComplete, err := o.chatFullWithContinuation(requestCtx, req, opts, responseLimit, &continuations, chat)
@@ -290,10 +292,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 			results := make([]string, 0, len(response.ToolCalls))
 			for k, tc := range response.ToolCalls {
-				if ctl != nil && ctl.waiting() {
+				if note := ctl.notRun(); note != "" {
 					// Every call still gets a result, so the exchange stays paired.
 					for _, skipped := range response.ToolCalls[k:] {
-						o.appendProjectedToolResult(skipped, ToolNotRunCorrection, opts.Identity)
+						o.appendProjectedToolResult(skipped, note, opts.Identity)
 					}
 					checkpoint(opts)
 					break

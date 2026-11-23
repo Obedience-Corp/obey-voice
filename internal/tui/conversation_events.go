@@ -453,6 +453,9 @@ func (m *conversationModel) handleEvent(e events.Event) {
 
 	case events.JobCorrection:
 		m.jobCorrection(e)
+
+	case events.JobReport:
+		m.jobReport(e)
 	}
 }
 

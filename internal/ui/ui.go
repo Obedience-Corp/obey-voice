@@ -116,6 +116,7 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onJobAborted)
 	events.Subscribe(bus, u.onJobExited)
 	events.Subscribe(bus, u.onJobCorrection)
+	events.Subscribe(bus, u.onJobReport)
 	events.Subscribe(bus, u.onVoiceGateStripped)
 	events.Subscribe(bus, u.onWorkStateChanged)
 	events.Subscribe(bus, u.onRouteDecided)
@@ -580,6 +581,20 @@ func (u *UI) onJobCorrection(e events.JobCorrection) {
 	line := fmt.Sprintf("✎ %s correction %s", e.ID, state)
 	if e.Reason != "" {
 		line += ": " + e.Reason
+	}
+	u.dimLine(line)
+}
+
+func (u *UI) onJobReport(e events.JobReport) {
+	u.authorityMu.Lock()
+	current := u.conversationScope
+	u.authorityMu.Unlock()
+	if e.Scope.Valid() && (current == nil || current() != e.Scope) {
+		return
+	}
+	line := fmt.Sprintf("✎ %s report requested · done so far: %s", e.ID, e.Checkpoint)
+	if !e.Answer {
+		line += " · the work continues"
 	}
 	u.dimLine(line)
 }

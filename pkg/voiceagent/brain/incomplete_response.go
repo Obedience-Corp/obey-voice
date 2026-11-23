@@ -24,6 +24,8 @@ const (
 	// ForcedByFailedCorrection: a correction's run failed, so the answer
 	// written before it was delivered.
 	ForcedByFailedCorrection ForcedAnswer = "the corrected run failed"
+	// ForcedByReport: the user asked the job to stop using tools and answer.
+	ForcedByReport ForcedAnswer = "report requested"
 )
 
 var forcedDispositions = map[ForcedAnswer]string{
@@ -31,6 +33,7 @@ var forcedDispositions = map[ForcedAnswer]string{
 	ForcedByTime:             "time_limit",
 	ForcedByRequests:         "request_limit",
 	ForcedByFailedCorrection: "correction_failed",
+	ForcedByReport:           "report_requested",
 }
 
 // ForcedAnswerReason is the phrase for a forced answer, or "" for any other error.

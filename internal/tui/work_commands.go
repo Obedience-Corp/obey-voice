@@ -22,6 +22,10 @@ type workTeller interface {
 	TellWork(id, instruction string) pipeline.WorkReceipt
 }
 
+type workReporter interface {
+	ReportWork(id string) pipeline.WorkReceipt
+}
+
 func (m *conversationModel) runWorkCommand(args []string) tea.Cmd {
 	if len(args) > 0 && args[0] == "tell" {
 		id, text := "", ""
@@ -29,6 +33,19 @@ func (m *conversationModel) runWorkCommand(args []string) tea.Cmd {
 			id, text = args[1], strings.Join(args[2:], " ")
 		}
 		return m.runWorkTell(id, text)
+	}
+	if len(args) > 0 && args[0] == "report" {
+		if len(args) != 2 {
+			m.commandError("usage: /work report job")
+			return nil
+		}
+		notice, ok := reportNotice(m.deps.runner, args[1])
+		if !ok {
+			m.commandError(notice)
+			return nil
+		}
+		m.commandNotice(notice)
+		return nil
 	}
 	m.recoverWorkNow()
 	if len(args) == 0 || (len(args) == 1 && args[0] == "all") {
@@ -91,7 +108,7 @@ func (m *conversationModel) runWorkCommand(args []string) tea.Cmd {
 		}
 		err = controller.WorkResultAction(m.workScope, id, action)
 	default:
-		m.commandError("Unknown work action; use cancel, tell, dismiss, speak or replay")
+		m.commandError("Unknown work action; use cancel, tell, report, dismiss, speak or replay")
 		return nil
 	}
 	if err != nil {
@@ -114,7 +131,38 @@ func (m *conversationModel) runWorkCommand(args []string) tea.Cmd {
 	return nil
 }
 
-const workUsage = "/work [job|all|cancel job|tell job text|dismiss job|speak job|replay job|logs]"
+const workUsage = "/work [job|all|logs|cancel|report|dismiss|speak|replay job|tell job text]"
+
+// reportNotice asks job id for its report and says what it had done and what
+// happens next; ok is false for a refusal that gives no checkpoint.
+func reportNotice(runner any, id string) (notice string, ok bool) {
+	reporter, ok := runner.(workReporter)
+	if !ok {
+		return "Reports are unavailable", false
+	}
+	receipt := reporter.ReportWork(id)
+	if receipt.Rejected != "" {
+		return "Report not requested: " + receipt.Rejected, false
+	}
+	if len(receipt.Jobs) != 1 {
+		return "Report not requested", false
+	}
+	item := receipt.Jobs[0]
+	done := "Done so far in " + id + ": " + item.Checkpoint + "."
+	switch {
+	case item.Outcome == pipeline.ControlAccepted:
+		return "Report requested. " + done + " It stops using tools and writes its answer now.", true
+	case item.Outcome == pipeline.ControlFinished:
+		return id + " has already finished; there is nothing to report.", false
+	case item.Outcome == pipeline.ControlUnknown:
+		return "No running job " + id, false
+	case item.Queued:
+		return id + " has not started; it stays queued, and /work cancel drops it.", false
+	case item.Checkpoint != "" && item.Reason != "":
+		return done + " " + strings.ToUpper(item.Reason[:1]) + item.Reason[1:] + ".", true
+	}
+	return "Report not requested from " + id + ": " + item.Reason, false
+}
 
 // runWorkTell sends a correction to one job and reports the receipt at once.
 // When the correction reaches the worker, its row says so.
@@ -228,7 +276,7 @@ func (m conversationModel) renderWorkActivity() string {
 			}
 		}
 	}
-	out.WriteString("\n/work cancel ID · /work tell ID text · /work dismiss ID · /work speak ID · /work replay ID\n/work logs · Esc clears detail, then returns to Chat")
+	out.WriteString("\n/work cancel ID · /work tell ID text · /work report ID · /work dismiss ID · /work speak ID · /work replay ID\n/work logs · Esc clears detail, then returns to Chat")
 	if m.journalIncomplete {
 		out.WriteString("\nDiagnostic history incomplete; canonical results remain available.")
 	}

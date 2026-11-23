@@ -38,6 +38,9 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool, prev
 		}
 		blocks = append(blocks, activity)
 	}
+	if item.Checkpoint != "" {
+		blocks = append(blocks, dimStyle.Render(wrapWorkerPlain("Report requested · done so far: "+item.Checkpoint, width)))
+	}
 	if item.Err != "" {
 		blocks = append(blocks, errorStyle.Render(wrapWorkerPlain("Error: "+item.Err, width)))
 	}
@@ -50,6 +53,9 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool, prev
 		status = "◌ Queued"
 	case "running":
 		status = "● Working…"
+		if item.Report == "reporting" {
+			status = "● Writing its report…"
+		}
 	case "stopping":
 		status = "◌ Stopping…"
 	default:
@@ -129,6 +135,9 @@ func workerDetailMeta(item pipeline.WorkerInfo) string {
 	}
 	if item.Correction != "" {
 		meta += dimStyle.Render(" · " + compactWorkerText(item.Correction))
+	}
+	if item.Report != "" {
+		meta += dimStyle.Render(" · " + compactWorkerText(item.Report))
 	}
 	return meta
 }
