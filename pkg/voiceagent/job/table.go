@@ -78,6 +78,10 @@ type Spec struct {
 	// OnAccepted publishes caller metadata after enqueue succeeds, before
 	// queued/start callbacks or execution. It runs outside the table lock.
 	OnAccepted func(id string)
+	// Register runs under the table lock once the job's id is chosen, before
+	// any caller can see the job, so state keyed by the id exists for every
+	// later status, cancel or done callback. It must not call the table.
+	Register func(id string)
 	// Immediate is for work already under way: it starts at once, past the
 	// concurrency and queue limits, and holds a running slot like any job.
 	Immediate bool
@@ -309,6 +313,9 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	} else if _, exists := t.jobs[id]; exists {
 		t.mu.Unlock()
 		return "", fmt.Errorf("job %q already exists", id)
+	}
+	if spec.Register != nil {
+		spec.Register(id)
 	}
 	budgetEnd := new(atomic.Int64)
 	base := context.WithValue(WithID(context.WithoutCancel(t.lifetime), id), budgetEndKey{}, budgetEnd)

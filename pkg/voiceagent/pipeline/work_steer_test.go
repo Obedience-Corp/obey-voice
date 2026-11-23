@@ -3,12 +3,10 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
-	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -19,6 +17,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/ollama/ollama/api"
 )
 
@@ -44,14 +43,36 @@ type steerJobHarness struct {
 	failed   chan events.JobFailed
 	aborted  chan events.JobAborted
 	queued   chan string
+	accepted chan string
+	snapshot chan work.Snapshot
+
+	// jobID is the spawned job's id, for a reply that must name it.
+	jobID   string
+	idReady chan struct{}
+}
+
+// steerSetup selects how the harness admits jobs.
+type steerSetup struct {
+	// tieredRequests > 0 runs tiered workers on the local Ollama worker,
+	// each job allowed that many model requests.
+	tieredRequests int
+	// inbox turns the work inbox on.
+	inbox bool
+	// budget is the job table's runtime budget; zero is none.
+	budget time.Duration
 }
 
 func newSteerJobHarness(t *testing.T, reply func(n int, req api.ChatRequest) (api.ChatResponse, int)) *steerJobHarness {
+	return newSteerJobHarnessWith(t, steerSetup{}, reply)
+}
+
+func newSteerJobHarnessWith(t *testing.T, setup steerSetup, reply func(n int, req api.ChatRequest) (api.ChatResponse, int)) *steerJobHarness {
 	t.Helper()
 	config.SetConfigDirForTest(t, t.TempDir())
 	h := &steerJobHarness{t: t, root: t.TempDir(), reply: reply,
 		finished: make(chan events.JobFinished, 4), failed: make(chan events.JobFailed, 4),
-		aborted: make(chan events.JobAborted, 4), queued: make(chan string, 4)}
+		aborted: make(chan events.JobAborted, 4), queued: make(chan string, 4), accepted: make(chan string, 4),
+		snapshot: make(chan work.Snapshot, 64), idReady: make(chan struct{})}
 	for _, name := range []string{"notes.txt", "other.txt"} {
 		if err := os.WriteFile(filepath.Join(h.root, name), []byte("contents of "+name), 0o600); err != nil {
 			t.Fatal(err)
@@ -60,7 +81,7 @@ func newSteerJobHarness(t *testing.T, reply func(n int, req api.ChatRequest) (ap
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/tags":
-			_, _ = w.Write([]byte(`{"models":[{"name":"fixture"}]}`))
+			_, _ = w.Write([]byte(`{"models":[{"name":"fixture"},{"name":"fixture:cloud"}]}`))
 			return
 		case "/api/show":
 			_, _ = w.Write([]byte(`{"capabilities":["completion","tools"],"details":{"family":"fixture"}}`))
@@ -91,6 +112,15 @@ func newSteerJobHarness(t *testing.T, reply func(n int, req api.ChatRequest) (ap
 	}))
 	t.Cleanup(server.Close)
 	cfg := &config.Config{OllamaHost: server.URL, OllamaModel: "fixture", WorkDir: h.root, PromptsDir: filepath.Join(h.root, "prompts"), MaxHistory: 100, OllamaNumCtx: 32768, VoiceWorkerProvider: "ollama", VoiceWorkerModel: "fixture", VoiceToolsEnabled: true}
+	if setup.tieredRequests > 0 {
+		w := config.DefaultVoiceWorkers()
+		w.Mode, w.Revision = config.WorkerModeTiered, 1
+		host := server.URL
+		w.Tiers.Simple.Enabled, w.Tiers.Simple.Revision = true, 1
+		w.Tiers.Simple.Assignment = &config.WorkerAssignment{Provider: "ollama", Model: "fixture", EndpointRef: &host, Billing: config.WorkerBillingLocal}
+		w.Tiers.Simple.Limits.ModelRequests = setup.tieredRequests
+		cfg.VoiceWorkers = w
+	}
 	h.workCfg = cfg.Clone()
 	h.workCfg.IsWorker = true
 	worker, err := brain.NewOllama(h.workCfg)
@@ -105,14 +135,36 @@ func newSteerJobHarness(t *testing.T, reply func(n int, req api.ChatRequest) (ap
 	}
 	h.p = &Pipeline{Brain: live, Events: events.NewBus()}
 	h.p.SetOutputMuted(true)
-	h.table = job.NewTable(context.Background())
+	var tableOpts []job.Option
+	if setup.budget > 0 {
+		tableOpts = append(tableOpts, job.WithBudget(setup.budget))
+	}
+	h.table = job.NewTable(context.Background(), tableOpts...)
 	t.Cleanup(h.table.Close)
 	h.a = NewAgency(h.p, h.table, worker, cfg, nil)
+	h.a.planFactory = func(context.Context, *config.Config, *config.WorkerPlan) (brain.Provider, error) { return worker, nil }
 	h.a.Wire()
+	if setup.inbox {
+		if err := h.p.EnableConversationWork("steer", nil, cfg); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = h.p.CloseWork() })
+	}
 	events.Subscribe(h.p.Events, func(e events.JobFinished) { h.finished <- e })
 	events.Subscribe(h.p.Events, func(e events.JobFailed) { h.failed <- e })
 	events.Subscribe(h.p.Events, func(e events.JobAborted) { h.aborted <- e })
 	events.Subscribe(h.p.Events, func(e events.JobQueued) { h.queued <- e.ID })
+	events.Subscribe(h.p.Events, func(e events.RouteDecided) {
+		if e.State == "accepted" {
+			h.accepted <- e.JobID
+		}
+	})
+	events.Subscribe(h.p.Events, func(e events.WorkStateChanged) {
+		select {
+		case h.snapshot <- e.Snapshot:
+		default:
+		}
+	})
 	events.Subscribe(h.p.Events, func(e events.JobCorrection) {
 		h.mu.Lock()
 		h.corrections = append(h.corrections, e)
@@ -124,14 +176,68 @@ func newSteerJobHarness(t *testing.T, reply func(n int, req api.ChatRequest) (ap
 func (h *steerJobHarness) spawn(task string) string {
 	h.t.Helper()
 	metrics := newTurnMetrics()
-	h.a.HandleRoute(context.Background(), h.p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteSpawn, Transcript: task})
+	d := RouteDecision{Kind: RouteSpawn, Transcript: task}
+	if h.a.cfg != nil && h.a.cfg.VoiceWorkers != nil {
+		d.Tier = config.WorkerTierSimple
+	}
+	h.a.HandleRoute(context.Background(), h.p.newTurnConductor(metrics), metrics, d)
 	select {
-	case id := <-h.queued:
+	case id := <-h.accepted:
 		return id
 	case <-time.After(5 * time.Second):
 		h.t.Fatal("job was not admitted")
 		return ""
 	}
+}
+
+// setAccepted names the spawned job for replies waiting on lastAccepted.
+func (h *steerJobHarness) setAccepted(id string) {
+	h.jobID = id
+	close(h.idReady)
+}
+
+func (h *steerJobHarness) lastAccepted() string {
+	<-h.idReady
+	return h.jobID
+}
+
+// awaitOutcome waits for the work inbox to publish job id's outcome.
+func (h *steerJobHarness) awaitOutcome(id string) work.Outcome {
+	h.t.Helper()
+	timeout := time.After(10 * time.Second)
+	for {
+		for _, j := range h.p.WorkSnapshot().Jobs {
+			if j.Key.JobID == id && j.Outcome != nil {
+				return *j.Outcome
+			}
+		}
+		select {
+		case <-h.snapshot:
+		case <-timeout:
+			h.t.Fatal("no outcome was published")
+			return work.Outcome{}
+		}
+	}
+}
+
+// steerState is where job id's newest correction stands.
+func (h *steerJobHarness) steerState(id string) brain.CorrectionState {
+	all := h.a.steerFor(id).control.Corrections()
+	if len(all) == 0 {
+		return ""
+	}
+	return all[len(all)-1].State
+}
+
+// holdSlot fills the only worker slot until the returned func is called.
+func (h *steerJobHarness) holdSlot() func() {
+	h.t.Helper()
+	h.table.SetWorkerLimits(1, 4)
+	hold := make(chan struct{})
+	if _, err := h.table.Start(context.Background(), job.Spec{Task: "hold the slot", Run: func(context.Context) (string, error) { <-hold; return "", nil }}); err != nil {
+		h.t.Fatal(err)
+	}
+	return func() { close(hold) }
 }
 
 func (h *steerJobHarness) awaitFinished(id string) events.JobFinished {
@@ -182,7 +288,20 @@ func userCount(req api.ChatRequest, text string) int {
 	return n
 }
 
-func TestTellRunningJobReachesItsNextRequest(t *testing.T) {
+func threadUsers(info WorkerInfo) []string {
+	var users []string
+	for _, turn := range info.Thread {
+		if turn.Role == "user" {
+			users = append(users, turn.Content)
+		}
+	}
+	return users
+}
+
+// The correction arrives while the worker's first request is in flight,
+// after it took its brief: it is accepted, and the answer that request
+// returns is replaced by one written after the correction.
+func TestTellAfterTheWorkerStartsReachesItsNextRequest(t *testing.T) {
 	inFlight, release := make(chan struct{}), make(chan struct{})
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
 		switch n {
@@ -207,7 +326,7 @@ func TestTellRunningJobReachesItsNextRequest(t *testing.T) {
 		t.Fatalf("delivered %+v", finished)
 	}
 	reqs := h.requests()
-	if len(reqs) != 3 {
+	if len(reqs) != 3 || userCount(reqs[1], steerText) != 0 {
 		t.Fatalf("requests=%d", len(reqs))
 	}
 	msgs := reqs[2].Messages
@@ -224,151 +343,52 @@ func TestTellRunningJobReachesItsNextRequest(t *testing.T) {
 	if info.Correction != "correction included" || info.State != string(job.StateDone) {
 		t.Fatalf("workers row=%+v", info)
 	}
-	var users []string
-	for _, turn := range info.Thread {
-		if turn.Role == "user" {
-			users = append(users, turn.Content)
-		}
-	}
-	if len(users) != 2 || users[1] != steerText {
+	if users := threadUsers(info); len(users) != 2 || users[1] != steerText {
 		t.Fatalf("saved thread user turns=%q", users)
 	}
 	if last := info.Thread[len(info.Thread)-1]; last.Role != "assistant" || last.Content != finished.Summary {
 		t.Fatalf("saved thread ends %+v, delivered %q", last, finished.Summary)
 	}
-	if after := h.p.TellWork(id, "Another one."); after.Jobs[0].Outcome != ControlFinished {
-		t.Fatalf("correction after finish: %+v", after)
+	replaced := slices.IndexFunc(info.Thread, func(turn brain.Turn) bool { return turn.Disposition == brain.DispositionSuperseded })
+	if replaced < 0 || info.Thread[replaced].Content != "notes.txt holds its contents." {
+		t.Fatalf("the replaced answer is not marked in the thread: %+v", info.Thread)
 	}
 }
 
-func TestTellQueuedJobAddsToItsBrief(t *testing.T) {
+// The correction arrives while the job waits for a slot, before the worker
+// takes its brief: it is in the brief once, and included once the first
+// request is answered.
+func TestTellBeforeTheWorkerStartsIsInItsBrief(t *testing.T) {
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
 		return textReply("Read other.txt."), 0
 	})
-	h.table.SetWorkerLimits(1, 4)
-	hold := make(chan struct{})
-	if _, err := h.table.Start(context.Background(), job.Spec{Task: "hold the slot", Run: func(context.Context) (string, error) { <-hold; return "", nil }}); err != nil {
-		t.Fatal(err)
-	}
+	release := h.holdSlot()
 	<-h.queued
 	id := h.spawn("Read notes.txt in the fixture folder")
 	receipt := h.p.TellWork(id, steerText)
 	if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlBriefed {
 		t.Fatalf("receipt=%+v", receipt)
 	}
-	close(hold)
-	h.awaitFinished(id)
-	first := h.requests()[0]
-	if n := userCount(first, "Correction from the user: "+steerText); n != 1 {
-		t.Fatalf("brief carries the correction %d times: %+v", n, first.Messages)
+	if got := h.states(); !slices.Equal(got, []string{"pending"}) || !h.events()[0].Brief {
+		t.Fatalf("events before the start=%+v", h.events())
 	}
-	if got := h.states(); !slices.Equal(got, []string{"pending", "included"}) || !h.events()[0].Brief {
-		t.Fatalf("correction events=%+v", h.events())
-	}
-}
-
-func TestTellRacingQueuePromotionAppliesOnce(t *testing.T) {
-	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-		if n == 1 {
-			return readCall("notes.txt"), 0
-		}
-		return textReply("Read other.txt."), 0
-	})
-	h.table.SetWorkerLimits(1, 4)
-	hold := make(chan struct{})
-	if _, err := h.table.Start(context.Background(), job.Spec{Task: "hold the slot", Run: func(context.Context) (string, error) { <-hold; return "", nil }}); err != nil {
-		t.Fatal(err)
-	}
-	<-h.queued
-	id := h.spawn("Read notes.txt in the fixture folder")
-	var receipt WorkReceipt
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		for range rand.IntN(40000) {
-			runtime.Gosched()
-		}
-		receipt = h.p.TellWork(id, steerText)
-	})
-	close(hold)
-	wg.Wait()
-	h.awaitFinished(id)
-	t.Logf("correction outcome: %s", receipt.Jobs[0].Outcome)
-	if o := receipt.Jobs[0].Outcome; o != ControlBriefed && o != ControlAccepted {
-		t.Fatalf("receipt=%+v", receipt)
-	}
-	reqs := h.requests()
-	if n := userCount(reqs[len(reqs)-1], steerText); n != 1 {
-		t.Fatalf("the last request carries the correction %d times", n)
-	}
-	if got := h.states(); got[len(got)-1] != "included" {
-		t.Fatalf("correction events=%q", got)
-	}
-}
-
-func TestFinalAnswerRaceNeverLosesACorrection(t *testing.T) {
-	inFlight := make(chan struct{})
-	var once sync.Once
-	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-		if n == 1 {
-			once.Do(func() { close(inFlight) })
-			return textReply("Finished the first plan."), 0
-		}
-		return textReply("Followed the correction."), 0
-	})
-	id := h.spawn("Read notes.txt in the fixture folder")
-	<-inFlight
-	// A random number of yields spreads the correction across the reply's
-	// return, its import and the seal.
-	for range rand.IntN(40000) {
-		runtime.Gosched()
-	}
-	receipt := h.p.TellWork(id, steerText)
+	release()
 	finished := h.awaitFinished(id)
 	reqs := h.requests()
-	carried := userCount(reqs[len(reqs)-1], steerText)
-	t.Logf("correction outcome: %s", receipt.Jobs[0].Outcome)
-	switch receipt.Jobs[0].Outcome {
-	case ControlAccepted:
-		if carried != 1 || finished.Summary != "Followed the correction." {
-			t.Fatalf("accepted but carried=%d delivered=%q", carried, finished.Summary)
-		}
-		if got := h.states(); !slices.Equal(got, []string{"pending", "included"}) {
-			t.Fatalf("correction events=%q", got)
-		}
-	case ControlFinished:
-		if carried != 0 || finished.Summary != "Finished the first plan." || len(h.events()) != 0 {
-			t.Fatalf("refused but carried=%d delivered=%q events=%+v", carried, finished.Summary, h.events())
-		}
-	default:
-		t.Fatalf("receipt=%+v", receipt)
+	if len(reqs) != 1 || userCount(reqs[0], "Correction from the user: "+steerText) != 1 {
+		t.Fatalf("requests=%d brief=%+v", len(reqs), reqs[0].Messages)
+	}
+	if got := h.states(); !slices.Equal(got, []string{"pending", "included"}) {
+		t.Fatalf("correction events=%+v", h.events())
+	}
+	if finished.Summary != "Read other.txt." {
+		t.Fatalf("delivered %q", finished.Summary)
 	}
 }
 
-func TestCancelSupersedesAPendingCorrection(t *testing.T) {
-	inFlight, release := make(chan struct{}), make(chan struct{})
-	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-		close(inFlight)
-		<-release
-		return textReply("Too late."), 0
-	})
-	defer close(release)
-	id := h.spawn("Read notes.txt in the fixture folder")
-	<-inFlight
-	if r := h.p.TellWork(id, steerText); r.Jobs[0].Outcome != ControlAccepted {
-		t.Fatalf("receipt=%+v", r)
-	}
-	if err := h.p.CancelWork(id); err != nil {
-		t.Fatal(err)
-	}
-	if got := h.states(); !slices.Equal(got, []string{"pending", "superseded"}) {
-		t.Fatalf("correction events=%q", got)
-	}
-	if r := h.p.TellWork(id, "After the cancel."); r.Jobs[0].Outcome != ControlFinished {
-		t.Fatalf("correction after cancel: %+v", r)
-	}
-}
-
-func TestCorrectionDuringAttachmentImportContinuesTheJob(t *testing.T) {
+// A correction that waits while the reply's images are imported, before the
+// answer is sealed, continues the job.
+func TestCorrectionBeforeTheSealContinuesTheJob(t *testing.T) {
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
 		if n == 1 {
 			return textReply("Here is the chart.\n![chart](missing-chart.png)"), 0
@@ -384,19 +404,111 @@ func TestCorrectionDuringAttachmentImportContinuesTheJob(t *testing.T) {
 	})
 	id := h.spawn("Read notes.txt in the fixture folder")
 	finished := h.awaitFinished(id)
-	if receipt.Jobs == nil || receipt.Jobs[0].Outcome != ControlAccepted {
+	if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlAccepted {
 		t.Fatalf("no correction during import: %+v", receipt)
 	}
 	reqs := h.requests()
 	if len(reqs) != 2 || userCount(reqs[1], "Skip the chart; text only.") != 1 {
 		t.Fatalf("requests=%d", len(reqs))
 	}
-	if finished.Summary != "Text only, as asked: notes.txt holds its contents." {
-		t.Fatalf("delivered %q", finished.Summary)
+	if got := h.states(); !slices.Equal(got, []string{"pending", "included"}) {
+		t.Fatalf("correction events=%q", got)
+	}
+	if finished.Summary != "Text only, as asked: notes.txt holds its contents." || finished.CutShort {
+		t.Fatalf("delivered %+v", finished)
 	}
 }
 
-func TestNoImageRepairAfterAnIncludedCorrection(t *testing.T) {
+// After the answer is sealed a correction is refused and changes nothing.
+func TestCorrectionAfterTheSealIsRefused(t *testing.T) {
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		return textReply("Finished the first plan."), 0
+	})
+	id := h.spawn("Read notes.txt in the fixture folder")
+	finished := h.awaitFinished(id)
+	receipt := h.p.TellWork(id, steerText)
+	if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlFinished {
+		t.Fatalf("receipt=%+v", receipt)
+	}
+	if len(h.requests()) != 1 || len(h.events()) != 0 || finished.Summary != "Finished the first plan." {
+		t.Fatalf("requests=%d events=%+v delivered=%q", len(h.requests()), h.events(), finished.Summary)
+	}
+}
+
+func TestCancelSupersedesCorrections(t *testing.T) {
+	t.Run("running job", func(t *testing.T) {
+		inFlight, release := make(chan struct{}), make(chan struct{})
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			close(inFlight)
+			<-release
+			return textReply("Too late."), 0
+		})
+		defer close(release)
+		id := h.spawn("Read notes.txt in the fixture folder")
+		<-inFlight
+		if r := h.p.TellWork(id, steerText); r.Jobs[0].Outcome != ControlAccepted {
+			t.Fatalf("receipt=%+v", r)
+		}
+		if err := h.p.CancelWork(id); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.states(); !slices.Equal(got, []string{"pending", "superseded"}) {
+			t.Fatalf("correction events=%q", got)
+		}
+		if r := h.p.TellWork(id, "After the cancel."); r.Jobs[0].Outcome != ControlFinished {
+			t.Fatalf("correction after cancel: %+v", r)
+		}
+	})
+	t.Run("queued job that never starts", func(t *testing.T) {
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			t.Error("a cancelled queued job ran")
+			return textReply("ran"), 0
+		})
+		release := h.holdSlot()
+		defer release()
+		<-h.queued
+		id := h.spawn("Read notes.txt in the fixture folder")
+		if r := h.p.TellWork(id, steerText); r.Jobs[0].Outcome != ControlBriefed {
+			t.Fatalf("receipt=%+v", r)
+		}
+		if err := h.p.CancelWork(id); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.states(); !slices.Equal(got, []string{"pending", "superseded"}) {
+			t.Fatalf("correction events=%q", got)
+		}
+		if r := h.p.TellWork(id, "After the cancel."); r.Jobs[0].Outcome != ControlFinished {
+			t.Fatalf("correction to a cancelled queued job: %+v", r)
+		}
+	})
+	t.Run("cancel all", func(t *testing.T) {
+		inFlight, release := make(chan struct{}), make(chan struct{})
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			close(inFlight)
+			<-release
+			return textReply("Too late."), 0
+		})
+		defer close(release)
+		h.table.SetWorkerLimits(1, 4)
+		running := h.spawn("Read notes.txt in the fixture folder")
+		<-inFlight
+		queued := h.spawn("Read other.txt in the fixture folder")
+		h.p.TellWork(running, "First correction.")
+		h.p.TellWork(queued, "Second correction.")
+		if err := h.p.StopWorkers(); err != nil {
+			t.Fatal(err)
+		}
+		final := map[string]string{}
+		for _, e := range h.events() {
+			final[e.ID] = e.State
+		}
+		if final[running] != "superseded" || final[queued] != "superseded" {
+			t.Fatalf("dispositions=%v", final)
+		}
+	})
+}
+
+func TestNoImageRepairAfterACorrectionAndTheAnswerSaysSo(t *testing.T) {
 	var a *Agency
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
 		if n == 1 {
@@ -406,16 +518,19 @@ func TestNoImageRepairAfterAnIncludedCorrection(t *testing.T) {
 		return textReply("A described picture: a plain chart of the notes."), 0
 	})
 	a = h.a
-	steer := a.newJobSteer()
-	a.registerSteer("job-1", steer)
-	ctx := withJobSteer(job.WithID(t.Context(), "job-1"), steer)
-	ctx = context.WithValue(ctx, imageDeliveryKey{}, true)
-	result, err := a.workerRunWithBudget("Send a picture of the notes.", h.worker, h.workCfg, nil, true)(ctx)
-	if err != nil || result != "A described picture: a plain chart of the notes." {
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	result, err := h.directSteerRun(ctx, "Send a picture of the notes.", nil)
+	if err != nil || result != "A described picture: a plain chart of the notes.\n\n"+noImageMarker {
 		t.Fatalf("result=%q err=%v", result, err)
 	}
 	if n := len(h.requests()); n != 2 {
 		t.Fatalf("requests=%d: an image repair ran after the correction", n)
+	}
+	h.a.mu.Lock()
+	noImage := h.a.workerOrigins["job-1"].noImage
+	h.a.mu.Unlock()
+	if !noImage {
+		t.Fatal("the job does not record that no image was attached")
 	}
 }
 
@@ -481,7 +596,31 @@ func TestTellRejections(t *testing.T) {
 	}
 }
 
-// directSteerRun runs the worker run for job-1 directly, with a correction
+func TestCloudAliasWorkerRefusesCorrections(t *testing.T) {
+	var a *Agency
+	var receipt WorkReceipt
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		receipt = a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: steerText})
+		return textReply("Done."), 0
+	})
+	a = h.a
+	cloudCfg := h.workCfg.Clone()
+	cloudCfg.OllamaModel = "fixture:cloud"
+	cloud, err := brain.NewOllama(cloudCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cloud.Close() })
+	h.worker = cloud
+	if _, err := h.directSteerRun(t.Context(), "Read notes.txt.", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlRejected || receipt.Jobs[0].Reason != steerRemote {
+		t.Fatalf("receipt=%+v", receipt)
+	}
+}
+
+// directSteerRun runs the worker run for job-1 directly, with corrections
 // reachable as on a spawned job.
 func (h *steerJobHarness) directSteerRun(ctx context.Context, brief string, budget *brain.WorkerBudget) (string, error) {
 	steer := h.a.newJobSteer()
@@ -490,45 +629,59 @@ func (h *steerJobHarness) directSteerRun(ctx context.Context, brief string, budg
 	return h.a.workerRunWithBudget(brief, h.worker, h.workCfg, budget, true)(ctx)
 }
 
-func TestCorrectionAtARequestLimitIsDeliveredCutShort(t *testing.T) {
-	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-		if n == 1 {
-			return readCall("notes.txt"), 0
-		}
-		return textReply("notes.txt holds its contents."), 0
-	})
-	var once sync.Once
-	events.Subscribe(h.p.Events, func(e events.ToolCallFinished) {
-		once.Do(func() {
-			h.a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: steerText})
+// Four requests: three identical tool rounds trip the repeat guard, and a
+// correction arrives while the forced answer is written. No request is left
+// for it, so that answer is delivered cut short rather than discarded.
+func TestRepeatForcedAnswerStandsWhenACorrectionHasNoRequest(t *testing.T) {
+	for _, inbox := range []bool{false, true} {
+		t.Run(map[bool]string{false: "legacy", true: "inbox"}[inbox], func(t *testing.T) {
+			var h *steerJobHarness
+			var receipt WorkReceipt
+			h = newSteerJobHarnessWith(t, steerSetup{tieredRequests: 4, inbox: inbox}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+				if n <= 3 {
+					return readCall("notes.txt"), 0
+				}
+				receipt = h.p.TellWork(h.lastAccepted(), steerText)
+				return textReply("notes.txt kept returning the same lines."), 0
+			})
+			id := h.spawn("Read notes.txt in the fixture folder")
+			h.setAccepted(id)
+			if inbox {
+				outcome := h.awaitOutcome(id)
+				if outcome.Status != work.OutcomePartial || outcome.Limitations != "cut short: repeated the same tool call" || outcome.Text != "notes.txt kept returning the same lines." {
+					t.Fatalf("outcome=%+v", outcome)
+				}
+			} else {
+				finished := h.awaitFinished(id)
+				if !finished.CutShort || finished.CutShortReason != string(brain.ForcedByRepeat) || finished.Summary != "notes.txt kept returning the same lines." {
+					t.Fatalf("delivered %+v", finished)
+				}
+			}
+			if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlAccepted {
+				t.Fatalf("receipt=%+v", receipt)
+			}
+			if n := len(h.requests()); n != 4 {
+				t.Fatalf("requests=%d", n)
+			}
+			got := h.events()
+			if last := got[len(got)-1]; last.State != "not_applied" || last.Reason != brain.NotAppliedLimit {
+				t.Fatalf("correction events=%+v", got)
+			}
 		})
-	})
-	result, err := h.directSteerRun(t.Context(), "Read notes.txt.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 2}))
-	if err != nil || result != "notes.txt holds its contents." {
-		t.Fatalf("result=%q err=%v", result, err)
-	}
-	h.a.mu.Lock()
-	reason := brain.ForcedAnswerReason(h.a.workerOrigins["job-1"].incomplete)
-	h.a.mu.Unlock()
-	if reason != string(brain.ForcedByRequests) {
-		t.Fatalf("answer not cut short: reason=%q", reason)
-	}
-	got := h.events()
-	if last := got[len(got)-1]; last.State != "not_applied" || last.Reason != brain.NotAppliedLimit {
-		t.Fatalf("correction events=%+v", got)
-	}
-	if n := userCount(h.requests()[1], steerText); n != 0 {
-		t.Fatal("the answer round carried a correction that could not apply")
 	}
 }
 
-func TestCorrectionDuringImageRepairIsTaken(t *testing.T) {
+// A repeat-forced answer misses its image; the repair takes a correction and
+// answers normally. The delivered answer is not marked by the first reason.
+func TestCorrectionDuringImageRepairDecidesTheReason(t *testing.T) {
 	var a *Agency
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-		switch n {
-		case 1:
+		switch {
+		case n <= 3:
+			return readCall("notes.txt"), 0
+		case n == 4:
 			return textReply("I could not find a chart to attach."), 0
-		case 2:
+		case n == 5:
 			a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Skip the picture; text only."})
 			return readCall("notes.txt"), 0
 		}
@@ -537,17 +690,131 @@ func TestCorrectionDuringImageRepairIsTaken(t *testing.T) {
 	a = h.a
 	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
 	result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
-	if err != nil || result != "Text only: notes.txt lists three action items." {
+	if err != nil || result != "Text only: notes.txt lists three action items.\n\n"+noImageMarker {
 		t.Fatalf("result=%q err=%v", result, err)
 	}
 	reqs := h.requests()
-	if len(reqs) != 3 || userCount(reqs[1], "could not be attached") == 0 {
-		t.Fatalf("no image repair before the correction: requests=%d", len(reqs))
+	if len(reqs) != 6 || userCount(reqs[4], "could not be attached") == 0 || userCount(reqs[5], "Skip the picture; text only.") != 1 {
+		t.Fatalf("requests=%d", len(reqs))
 	}
-	if userCount(reqs[2], "Skip the picture; text only.") != 1 {
-		t.Fatal("the correction did not reach the repair's next request")
+	h.a.mu.Lock()
+	incomplete := h.a.workerOrigins["job-1"].incomplete
+	h.a.mu.Unlock()
+	if incomplete != nil {
+		t.Fatalf("the corrected answer kept the first attempt's reason: %v", incomplete)
 	}
-	if got := h.states(); !slices.Equal(got, []string{"pending", "included"}) {
-		t.Fatalf("correction events=%q", got)
+}
+
+// Tools off, so no repair: a correction that waits while the image import
+// fails is weighed before the failure is committed.
+func TestWaitingCorrectionPreemptsAnImageFailure(t *testing.T) {
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		if n == 1 {
+			return textReply("Here: ![chart](missing-chart.png)"), 0
+		}
+		return textReply("Text only: notes.txt lists three action items."), 0
+	})
+	h.workCfg.VoiceToolsEnabled = false
+	var once sync.Once
+	events.Subscribe(h.p.Events, func(e events.Info) {
+		if strings.Contains(e.Message, "missing-chart.png") {
+			once.Do(func() { h.p.TellWork("job-1", "Skip the chart; text only.") })
+		}
+	})
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	result, err := h.directSteerRun(ctx, "Send a chart of the notes.", nil)
+	if err != nil || result != "Text only: notes.txt lists three action items.\n\n"+noImageMarker {
+		t.Fatalf("result=%q err=%v", result, err)
 	}
+}
+
+// The table's budget stop, not the worker waking to a cancelled context,
+// decides why an open correction could not apply.
+func TestBudgetStopIsALimitForAnOpenCorrection(t *testing.T) {
+	inFlight := make(chan struct{})
+	var once sync.Once
+	stopped := make(chan struct{})
+	h := newSteerJobHarnessWith(t, steerSetup{budget: 300 * time.Millisecond}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		once.Do(func() { close(inFlight) })
+		<-stopped
+		return textReply("Too late."), 0
+	})
+	var stop sync.Once
+	events.Subscribe(h.p.Events, func(events.JobAborted) { stop.Do(func() { close(stopped) }) })
+	id := h.spawn("Read notes.txt in the fixture folder")
+	<-inFlight
+	if r := h.p.TellWork(id, steerText); r.Jobs[0].Outcome != ControlAccepted {
+		t.Fatalf("receipt=%+v", r)
+	}
+	select {
+	case <-h.aborted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the budget did not stop the job")
+	}
+	got := h.events()
+	if last := got[len(got)-1]; last.State != "not_applied" || last.Reason != brain.NotAppliedLimit {
+		t.Fatalf("correction events=%+v", got)
+	}
+}
+
+func TestClearedConversationReportsNoCorrections(t *testing.T) {
+	h := newSteerJobHarnessWith(t, steerSetup{inbox: true}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		return textReply("ran"), 0
+	})
+	release := h.holdSlot()
+	defer release()
+	id := h.spawn("Read notes.txt in the fixture folder")
+	if r := h.p.TellWork(id, steerText); r.Jobs[0].Outcome != ControlBriefed {
+		t.Fatalf("receipt=%+v", r)
+	}
+	before := len(h.events())
+	if err := h.p.ClearConversation(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.events(); len(got) != before {
+		t.Fatalf("a cleared conversation's job reported %+v", got[before:])
+	}
+	if state := h.steerState(id); state != brain.CorrectionNotApplied {
+		t.Fatalf("the correction was left %q", state)
+	}
+}
+
+func TestOwnJobAndTieredWorkerTakeCorrections(t *testing.T) {
+	t.Run("own job", func(t *testing.T) {
+		var a *Agency
+		var receipt WorkReceipt
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			if n == 1 {
+				receipt = a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: steerText})
+				return textReply("Read notes.txt."), 0
+			}
+			return textReply("Read other.txt."), 0
+		})
+		a = h.a
+		h.a.ownFactory = func(_ context.Context, cfg *config.Config) (brain.Provider, error) { return brain.NewOllama(h.workCfg) }
+		steer := h.a.newJobSteer()
+		h.a.registerSteer("job-1", steer)
+		ctx := withJobSteer(job.WithID(t.Context(), "job-1"), steer)
+		result, err := h.a.ownWorkRun("Read notes.txt.", h.workCfg, nil)(ctx)
+		if err != nil || result != "Read other.txt." || receipt.Jobs[0].Outcome != ControlAccepted {
+			t.Fatalf("result=%q err=%v receipt=%+v", result, err, receipt)
+		}
+	})
+	t.Run("tiered local worker", func(t *testing.T) {
+		var h *steerJobHarness
+		var receipt WorkReceipt
+		h = newSteerJobHarnessWith(t, steerSetup{tieredRequests: 10}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			if n == 1 {
+				receipt = h.p.TellWork(h.lastAccepted(), steerText)
+				return textReply("Read notes.txt."), 0
+			}
+			return textReply("Read other.txt."), 0
+		})
+		id := h.spawn("Read notes.txt in the fixture folder")
+		h.setAccepted(id)
+		finished := h.awaitFinished(id)
+		if finished.Summary != "Read other.txt." || receipt.Jobs[0].Outcome != ControlAccepted {
+			t.Fatalf("delivered %q receipt=%+v", finished.Summary, receipt)
+		}
+	})
 }

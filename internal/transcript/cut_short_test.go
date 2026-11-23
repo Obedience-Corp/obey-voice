@@ -22,3 +22,11 @@ func TestRecordsCarryAContinuedReplyAndAKnowinglyIncompleteJob(t *testing.T) {
 		t.Fatalf("job record = %+v", job)
 	}
 }
+
+func TestCorrectionRecordsKeepTheirIdentity(t *testing.T) {
+	first, _ := encodeEvent(events.JobCorrection{ID: "job-1", Revision: 1, Text: "Use the other file.", State: "pending", Brief: true})
+	second, _ := encodeEvent(events.JobCorrection{ID: "job-1", Revision: 2, Text: "Use the other file.", State: "pending"})
+	if first.ID != "job-1#1" || first.Kind != "brief" || second.ID != "job-1#2" || second.Kind != "" || first.State != "correction_pending" {
+		t.Fatalf("records = %+v, %+v", first, second)
+	}
+}

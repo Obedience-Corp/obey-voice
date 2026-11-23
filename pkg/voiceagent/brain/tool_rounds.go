@@ -121,14 +121,13 @@ func (r *toolRounds) limitInstruction(ctx context.Context, i int) string {
 // limitReached reports a time or request limit that forces the next round to
 // be the answer round, without changing any state.
 func (r *toolRounds) limitReached(ctx context.Context) ForcedAnswer {
-	deadline, timed := WorkerDeadline(ctx)
-	if timed && time.Until(deadline) <= workerTimeReserve(deadline.Sub(r.start)) {
-		return ForcedByTime
-	}
-	if left, counted := r.budget.RemainingRequests(); counted && left <= 1 {
-		return ForcedByRequests
-	}
-	return ""
+	return WorkerLimitDue(ctx, r.budget, r.start)
+}
+
+// limitAnswer reports a final round a time or request limit imposed, which a
+// correction cannot change.
+func (r *toolRounds) limitAnswer() bool {
+	return r.forced == ForcedByTime || r.forced == ForcedByRequests
 }
 
 // redirect starts the repeat guard over when the user corrects the job, and

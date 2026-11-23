@@ -135,6 +135,9 @@ func (m *conversationModel) renderWorkResult(v work.ResultView) string {
 	if v.Outcome.Limitations != "" {
 		meta = append(meta, "limitations: "+v.Outcome.Limitations)
 	}
+	if c := m.jobCorrections[v.Outcome.JobID]; c.label != "" {
+		meta = append(meta, c.label)
+	}
 	if v.LastAttempt != nil && v.LastAttempt.AttemptID != "" {
 		attempt := "attempt: " + v.LastAttempt.AttemptID
 		if v.LastAttempt.Mode != "" {
@@ -171,6 +174,7 @@ func (m *conversationModel) clearJobProjection() {
 	m.jobs = make(map[string]*jobView)
 	m.jobOrder = nil
 	m.completedJobItems = make(map[string]int)
+	m.jobCorrections = nil
 	m.work = workfold.New()
 }
 

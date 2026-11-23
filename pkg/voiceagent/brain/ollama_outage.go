@@ -52,7 +52,9 @@ func ollamaOutage(err error) *ProviderOutage {
 	return nil
 }
 
-func waitOutageRetry(ctx context.Context) error {
+// waitOutageRetry is the pause before resending after an outage. It is a
+// variable so tests can act during it.
+var waitOutageRetry = func(ctx context.Context) error {
 	timer := time.NewTimer(250 * time.Millisecond)
 	defer timer.Stop()
 	select {

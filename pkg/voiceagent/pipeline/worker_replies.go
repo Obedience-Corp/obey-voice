@@ -32,6 +32,9 @@ type workerOrigin struct {
 	// unspoken marks a result shown and saved but not spoken, as a live reply
 	// stops speaking at its output limit.
 	unspoken bool
+	// noImage marks a result without the image its task asked for, which a
+	// correction may have dropped.
+	noImage bool
 }
 type workerReply struct {
 	Attachments []chatmedia.Ref

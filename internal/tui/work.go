@@ -31,8 +31,12 @@ type jobView struct {
 	terminal bool
 	tool     string // the tool the worker is on, until the fold has a row
 	tier     string
-	// correction is how the job's newest correction stands.
-	correction string
+}
+
+// jobCorrectionView is the newest correction a job's row shows.
+type jobCorrectionView struct {
+	revision int
+	label    string
 }
 
 func (m *conversationModel) canonicalJob(v work.JobView) {
@@ -112,6 +116,9 @@ func (m *conversationModel) jobFinished(e events.JobFinished) {
 		if e.CutShortReason != "" {
 			suffix += ": " + e.CutShortReason
 		}
+	}
+	if e.NoImage {
+		suffix += " · no image attached"
 	}
 	m.jobEnded(e.ID, "finished", suffix, e.Elapsed)
 	// Image results are readable immediately, even behind another speaker.
@@ -198,16 +205,24 @@ func (m *conversationModel) jobCorrection(e events.JobCorrection) {
 	if !m.acceptWorkScope(e.Scope) {
 		return
 	}
-	label := pipeline.CorrectionLabel(brain.Correction{State: brain.CorrectionState(e.State), Reason: e.Reason}, e.Brief)
+	label := pipeline.CorrectionLabel(brain.Correction{State: brain.CorrectionState(e.State), Reason: e.Reason, Brief: e.Brief})
 	if label == "" {
 		return
 	}
-	m.appendActivity("job", e.ID+" "+label, 0)
+	m.appendActivity("job", fmt.Sprintf("%s correction %d: %s", e.ID, e.Revision, label), 0)
+	// The row shows the newest correction; a disposition of an older one is
+	// in the activity feed only.
+	if shown, ok := m.jobCorrections[e.ID]; ok && shown.revision > e.Revision {
+		return
+	}
+	if m.jobCorrections == nil {
+		m.jobCorrections = make(map[string]jobCorrectionView)
+	}
+	m.jobCorrections[e.ID] = jobCorrectionView{revision: e.Revision, label: label}
 	v, ok := m.jobs[e.ID]
 	if !ok {
 		return
 	}
-	v.correction = label
 	suffix := " · queued"
 	if v.running {
 		suffix = " · working"
@@ -456,8 +471,8 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	if job := m.jobs[id]; job != nil && job.persona != "" {
 		label = job.persona + " · " + label
 	}
-	if job := m.jobs[id]; job != nil && job.correction != "" {
-		label += " · " + job.correction
+	if c := m.jobCorrections[id]; c.label != "" {
+		label += " · " + c.label
 	}
 	line := dimStyle.Render("  ⚙ " + id + origin + " · " + label + suffix)
 	line += m.renderJobToolDetails(id)

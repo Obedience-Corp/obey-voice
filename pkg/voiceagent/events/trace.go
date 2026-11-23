@@ -307,6 +307,8 @@ func SourceWorkScope(event Event) (runtime, session, epoch string, ok bool) {
 	switch e := event.(type) {
 	case JobFinished:
 		scope = e.Scope
+	case JobCorrection:
+		scope = e.Scope
 	case JobResultDelivered:
 		scope = e.Scope
 	case WorkStateChanged:

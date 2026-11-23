@@ -730,6 +730,9 @@ type JobFinished struct {
 	// answer early; any other reason is reported separately as an Error event.
 	CutShort       bool   `json:"cut_short,omitempty"`
 	CutShortReason string `json:"cut_short_reason,omitempty"`
+	// NoImage means the task asked for an image, a correction followed, and
+	// the answer came back without one.
+	NoImage bool `json:"no_image,omitempty"`
 }
 
 func (e JobFinished) eventType() string { return "job_finished" }

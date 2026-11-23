@@ -1,6 +1,7 @@
 package transcript
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -216,7 +217,14 @@ func encodeEvent(e events.Event) (record, bool) {
 	case events.JobAborted:
 		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "aborted", Reason: x.Reason, ElapsedS: x.Elapsed.Seconds()}, true
 	case events.JobCorrection:
-		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Text, State: "correction_" + x.State, Reason: x.Reason}, true
+		// The record's id names the correction, job and revision, so two
+		// corrections with the same text stay apart; kind marks one given
+		// while the job was queued.
+		kind := ""
+		if x.Brief {
+			kind = "brief"
+		}
+		return record{Type: "job", JobID: x.ID, Name: x.ID, ID: fmt.Sprintf("%s#%d", x.ID, x.Revision), Kind: kind, Text: x.Text, State: "correction_" + x.State, Reason: x.Reason}, true
 	case events.Error:
 		return record{Type: "error", Stage: x.Stage, Message: x.Message}, true
 	case events.Info:

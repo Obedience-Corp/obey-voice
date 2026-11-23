@@ -60,8 +60,10 @@ type Agency struct {
 	heldReplies map[string]workerReply
 	// workerThreadRevs is the revision of each saved thread checkpoint.
 	workerThreadRevs map[string]uint64 // guarded by mu
-	// steers are the spawned jobs a correction can reach.
-	steers map[string]*jobSteer // guarded by mu
+	// steers are the spawned jobs a correction can reach. Registration runs
+	// under the job table's lock, so it has a mutex of its own.
+	steersMu sync.Mutex
+	steers   map[string]*jobSteer
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction

@@ -21,12 +21,16 @@ const (
 	ForcedByRepeat   ForcedAnswer = "repeated the same tool call"
 	ForcedByTime     ForcedAnswer = "time limit nearly reached"
 	ForcedByRequests ForcedAnswer = "request limit reached"
+	// ForcedByFailedCorrection: a correction's run failed, so the answer
+	// written before it was delivered.
+	ForcedByFailedCorrection ForcedAnswer = "the corrected run failed"
 )
 
 var forcedDispositions = map[ForcedAnswer]string{
-	ForcedByRepeat:   "repeated_tool_call",
-	ForcedByTime:     "time_limit",
-	ForcedByRequests: "request_limit",
+	ForcedByRepeat:           "repeated_tool_call",
+	ForcedByTime:             "time_limit",
+	ForcedByRequests:         "request_limit",
+	ForcedByFailedCorrection: "correction_failed",
 }
 
 // ForcedAnswerReason is the phrase for a forced answer, or "" for any other error.
@@ -70,6 +74,9 @@ func modelTurnContent(t Turn) string {
 	}
 	if t.Disposition == "" {
 		return t.Content
+	}
+	if t.Disposition == DispositionSuperseded {
+		return "[Answer replaced by a later correction from the user; it was not delivered.]\n" + strings.TrimSpace(t.Content)
 	}
 	// A forced answer is a whole wrap-up, not a runaway tail, so it is kept.
 	for forced, disposition := range forcedDispositions {

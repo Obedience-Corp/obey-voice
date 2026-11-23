@@ -8,35 +8,38 @@ import (
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
 
-// Refusals a correction can get from a worker that cannot take one.
+// Refusals a correction can get from a job that cannot take one.
 const (
 	steerNoInput = "this worker cannot take a correction while it runs"
 	steerPaid    = "a paid worker cannot take a correction while it runs"
+	steerRemote  = "a worker not served on this machine cannot take a correction while it runs"
 	steerMoved   = "a reply moved to the background cannot take a correction"
 	steerManaged = "a managed delegation cannot take a correction"
 	steerOther   = "this job cannot take a correction"
 )
 
-// jobSteer is what a correction to one spawned job reaches: the job's brief
-// until its worker takes it, then the worker's control when the worker can
-// take input. The run closure and the registry share it from admission on.
+// jobSteer is a spawned job's correction state from admission to its end:
+// the run closure and the registry share it. Its control holds the
+// corrections; the job table's ending of the job settles them.
 type jobSteer struct {
-	id string
-	a  *Agency
-
-	mu      sync.Mutex
-	started bool
-	closed  bool
-	briefed []string
+	a       *Agency
 	control *brain.WorkerControl
+
+	mu sync.Mutex
+	id string
+	// cancelled: a cancel asked the table to end the job, so the corrections
+	// it ends are superseded rather than stopped.
+	cancelled bool
+	// noInput, set before the worker starts, is why it will not read
+	// corrections while it runs.
 	noInput string
-	log     []brain.Correction
 	// checkpoint is the revision of the last worker thread saved, across
-	// every attempt of the job.
+	// every run of the job.
 	checkpoint uint64
 }
 
@@ -51,56 +54,65 @@ func jobSteerFrom(ctx context.Context) *jobSteer {
 	return s
 }
 
-// registerSteer makes a spawned job reachable by corrections. It runs in the
-// job's accept callback, before the job can start or be named.
+func (a *Agency) newJobSteer() *jobSteer {
+	s := &jobSteer{a: a}
+	s.control = brain.NewWorkerControl(s.report)
+	return s
+}
+
+// registerSteer makes a job reachable by corrections. It runs before the
+// job's id is visible to anyone who could name it.
 func (a *Agency) registerSteer(id string, s *jobSteer) {
 	s.mu.Lock()
 	s.id = id
 	s.mu.Unlock()
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.steersMu.Lock()
+	defer a.steersMu.Unlock()
 	if a.steers == nil {
 		a.steers = make(map[string]*jobSteer)
 	}
 	a.steers[id] = s
 }
 
+// unregisterSteer forgets a job that was never admitted.
+func (a *Agency) unregisterSteer(id string, s *jobSteer) {
+	s.control.Close(brain.NotAppliedStopped)
+	a.steersMu.Lock()
+	defer a.steersMu.Unlock()
+	if a.steers[id] == s {
+		delete(a.steers, id)
+	}
+}
+
 func (a *Agency) steerFor(id string) *jobSteer {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.steersMu.Lock()
+	defer a.steersMu.Unlock()
 	return a.steers[id]
 }
 
-// begin is the worker taking its first input: the brief gains every queued
-// correction exactly once, and a worker that reads a control while it runs
-// gets one. It returns the brief to send and the control, if any.
-func (s *jobSteer) begin(brief string, worker brain.Provider) (string, *brain.WorkerControl) {
+// begin is the worker taking its first input: the brief gains the
+// corrections given before the start, exactly once. It returns the brief and
+// the control when the worker reads corrections while it runs.
+func (s *jobSteer) begin(ctx context.Context, brief string, worker brain.Provider, cfg *config.Config) (string, *brain.WorkerControl) {
 	if s == nil {
 		return brief, nil
 	}
 	s.mu.Lock()
-	s.started = true
-	if s.closed {
-		s.mu.Unlock()
+	noInput := s.noInput
+	s.mu.Unlock()
+	if noInput == "" && !brain.TakesCorrections(worker) {
+		noInput = steerNoInput
+	}
+	// A cloud model behind Ollama would bill a correction's extra requests.
+	if noInput == "" && !servedLocally(ctx, cfg, worker) {
+		noInput = steerRemote
+	}
+	corrections := s.control.Begin(noInput == "", noInput)
+	brief = briefWithCorrections(brief, corrections)
+	if noInput != "" {
 		return brief, nil
 	}
-	briefed := append([]string(nil), s.briefed...)
-	var included []brain.Correction
-	for i := range s.log {
-		s.log[i].State = brain.CorrectionIncluded
-		included = append(included, s.log[i])
-	}
-	if s.noInput == "" && brain.TakesCorrections(worker) {
-		s.control = brain.NewWorkerControl(s.record, len(briefed))
-	} else if s.noInput == "" {
-		s.noInput = steerNoInput
-	}
-	control := s.control
-	s.mu.Unlock()
-	for _, c := range included {
-		s.a.emitCorrection(s.id, c, false)
-	}
-	return briefWithCorrections(brief, briefed), control
+	return brief, s.control
 }
 
 // briefWithCorrections labels each correction given before the job started.
@@ -127,73 +139,56 @@ func (s *jobSteer) refuseInput(reason string) {
 	}
 }
 
-// corrected reports a correction the worker has been sent, in its brief or
-// in a request, which may have changed what the task asks for.
+// corrected reports a correction the worker was given, which may have
+// changed what the task asks for.
 func (s *jobSteer) corrected() bool {
-	if s == nil {
-		return false
-	}
-	s.mu.Lock()
-	briefed, control := len(s.briefed), s.control
-	s.mu.Unlock()
-	return briefed > 0 || (control != nil && control.Included() > 0)
+	return s != nil && s.control.Corrected()
 }
 
-// record keeps a control's correction for /workers and reports it.
-func (s *jobSteer) record(c brain.Correction) {
+// report publishes a correction's acceptance or new disposition.
+func (s *jobSteer) report(c brain.Correction) {
 	s.mu.Lock()
-	replaced := false
-	for i := range s.log {
-		if s.log[i].Revision == c.Revision {
-			s.log[i], replaced = c, true
-		}
-	}
-	if !replaced {
-		s.log = append(s.log, c)
-	}
+	id := s.id
 	s.mu.Unlock()
-	s.a.emitCorrection(s.id, c, false)
+	if id != "" {
+		s.a.emitCorrection(id, c)
+	}
 }
 
-// end closes the job to corrections. A cancel supersedes what was not yet
-// sent; any other end means it could not apply, for reason.
-func (s *jobSteer) end(cancelled bool, reason string) {
+// markCancel records that a cancel is asking the table to end the job.
+func (s *jobSteer) markCancel() {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
+	s.cancelled = true
+	s.mu.Unlock()
+}
+
+// ended settles the job's corrections from the table's ending of it: a
+// cancel supersedes them, a budget stop is a limit, any other stop or failure
+// is reported as such. A delivered answer has already sealed the control.
+func (s *jobSteer) ended(state job.State, err error) {
+	if s == nil {
 		return
 	}
-	s.closed = true
-	control := s.control
-	state := brain.CorrectionNotApplied
-	if cancelled {
-		state, reason = brain.CorrectionSuperseded, ""
-	}
-	var settled []brain.Correction
-	if !s.started {
-		for i := range s.log {
-			s.log[i].State, s.log[i].Reason = state, reason
-			settled = append(settled, s.log[i])
-		}
-	}
+	s.mu.Lock()
+	cancelled := s.cancelled
 	s.mu.Unlock()
-	for _, c := range settled {
-		s.a.emitCorrection(s.id, c, false)
-	}
 	switch {
-	case control == nil:
-	case cancelled:
-		control.Supersede()
+	case state == job.StateAborted && errors.Is(err, job.ErrBudget):
+		s.control.Close(brain.NotAppliedLimit)
+	case state == job.StateAborted && cancelled:
+		s.control.Supersede()
+	case state == job.StateFailed:
+		s.control.Close(brain.NotAppliedReason(err))
 	default:
-		control.Close(reason)
+		s.control.Close(brain.NotAppliedStopped)
 	}
 }
 
 // saveCheckpoint saves the worker's thread as the job's newest evidence. It
-// runs on the worker's goroutine, after history holds a complete step.
+// runs on the worker's goroutine.
 func (s *jobSteer) saveCheckpoint(worker brain.Provider) {
 	turns := worker.History()
 	if len(turns) == 0 {
@@ -201,28 +196,25 @@ func (s *jobSteer) saveCheckpoint(worker brain.Provider) {
 	}
 	s.mu.Lock()
 	s.checkpoint++
-	revision := s.checkpoint
+	revision, id := s.checkpoint, s.id
 	s.mu.Unlock()
-	s.a.saveWorkerThreadAt(s.id, turns, revision)
+	s.a.saveWorkerThreadAt(id, turns, revision)
 }
-
-func (a *Agency) newJobSteer() *jobSteer { return &jobSteer{a: a} }
 
 // label is how the job's newest correction reads in /workers.
 func (s *jobSteer) label() string {
 	if s == nil {
 		return ""
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.log) == 0 {
+	all := s.control.Corrections()
+	if len(all) == 0 {
 		return ""
 	}
-	return CorrectionLabel(s.log[len(s.log)-1], !s.started)
+	return CorrectionLabel(all[len(all)-1])
 }
 
 // steerJob handles a correction. Only a command may give one for now; the
-// worker's control, not the job table, decides whether it is in time.
+// job's control, not the job table, decides whether it is in time.
 func (a *Agency) steerJob(receipt *WorkReceipt) {
 	req := receipt.Request
 	text := strings.TrimSpace(req.Instruction)
@@ -248,7 +240,18 @@ func (a *Agency) steerOne(id, text string) JobControl {
 		return JobControl{ID: id, Outcome: ControlUnknown}
 	}
 	if s := a.steerFor(id); s != nil {
-		return s.add(text)
+		c := s.control.Steer(text)
+		switch c.State {
+		case brain.CorrectionRefused:
+			return JobControl{ID: id, Outcome: ControlFinished}
+		case brain.CorrectionRejected:
+			return JobControl{ID: id, Outcome: ControlRejected, Reason: c.Reason}
+		case brain.CorrectionPending:
+			if c.Brief {
+				return JobControl{ID: id, Outcome: ControlBriefed, Revision: c.Revision}
+			}
+			return JobControl{ID: id, Outcome: ControlAccepted, Revision: c.Revision}
+		}
 	}
 	for _, info := range a.jobs.Status() {
 		if info.ID != id {
@@ -268,62 +271,18 @@ func (a *Agency) steerOne(id, text string) JobControl {
 	return JobControl{ID: id, Outcome: ControlUnknown}
 }
 
-func (s *jobSteer) add(text string) JobControl {
-	item := JobControl{ID: s.id}
-	s.mu.Lock()
-	switch {
-	case s.closed:
-		s.mu.Unlock()
-		item.Outcome = ControlFinished
-		return item
-	case !s.started:
-		s.briefed = append(s.briefed, text)
-		c := brain.Correction{Revision: len(s.briefed), Text: text, State: brain.CorrectionPending}
-		s.log = append(s.log, c)
-		s.mu.Unlock()
-		s.a.emitCorrection(s.id, c, true)
-		item.Outcome, item.Revision = ControlBriefed, c.Revision
-		return item
-	case s.control == nil:
-		item.Outcome, item.Reason = ControlRejected, s.noInput
-		s.mu.Unlock()
-		return item
-	}
-	control := s.control
-	s.mu.Unlock()
-	c := control.Steer(text)
-	if c.State == brain.CorrectionRefused {
-		item.Outcome = ControlFinished
-		return item
-	}
-	item.Outcome, item.Revision = ControlAccepted, c.Revision
-	return item
-}
-
-// endSteer closes a job to corrections when it ends, however it ends.
-func (a *Agency) endSteer(id string, cancelled bool, reason string) {
-	a.steerFor(id).end(cancelled, reason)
-}
-
-// steerEndReason is why a job's open corrections could not apply when the
-// table ended it.
-func steerEndReason(state job.State, err error) string {
-	switch {
-	case errors.Is(err, job.ErrBudget):
-		return brain.NotAppliedLimit
-	case state == job.StateFailed:
-		return brain.NotAppliedFailed
-	default:
-		return brain.NotAppliedStopped
-	}
-}
-
-func (a *Agency) emitCorrection(id string, c brain.Correction, brief bool) {
+// emitCorrection publishes a correction event for a job of the current
+// conversation, with its admitted scope. A retired conversation's job is
+// settled silently.
+func (a *Agency) emitCorrection(id string, c brain.Correction) {
 	if a.pipeline == nil {
 		return
 	}
-	_, key, _ := a.callbackKey(id)
-	a.emitJobTrace(id, events.JobCorrection{Scope: key.Scope, ID: id, Revision: c.Revision, Text: c.Text, State: string(c.State), Reason: c.Reason, Brief: brief})
+	_, key, ok := a.callbackKey(id)
+	if !ok {
+		return
+	}
+	a.emitJobTrace(id, events.JobCorrection{Scope: key.Scope, ID: id, Revision: c.Revision, Text: c.Text, State: string(c.State), Reason: c.Reason, Brief: c.Brief})
 }
 
 // TellWork gives one job a correction from the keyboard. It never waits for
@@ -335,14 +294,16 @@ func (p *Pipeline) TellWork(id, instruction string) WorkReceipt {
 	return p.Agency.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: id, Instruction: instruction})
 }
 
-// CorrectionLabel is how a job's newest correction reads on its row.
-func CorrectionLabel(c brain.Correction, brief bool) string {
+// CorrectionLabel is how a correction reads on its job's row.
+func CorrectionLabel(c brain.Correction) string {
 	switch c.State {
 	case brain.CorrectionPending:
-		if brief {
+		if c.Brief {
 			return "correction added to brief"
 		}
 		return "correction pending"
+	case brain.CorrectionBriefed:
+		return "correction added to brief"
 	case brain.CorrectionIncluded:
 		return "correction included"
 	case brain.CorrectionNotApplied:
@@ -352,8 +313,6 @@ func CorrectionLabel(c brain.Correction, brief bool) string {
 		return fmt.Sprintf("correction could not apply: %s", c.Reason)
 	case brain.CorrectionSuperseded:
 		return "correction superseded by cancel"
-	case brain.CorrectionRefused:
-		return "correction refused: already finished"
 	}
 	return ""
 }

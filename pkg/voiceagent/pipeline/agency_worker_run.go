@@ -1,10 +1,12 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -83,86 +85,174 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
 		id := job.IDFromContext(ctx)
 		steer := jobSteerFrom(ctx)
-		brief, control := steer.begin(brief, worker)
+		brief, control := steer.begin(ctx, brief, worker, cfg)
 		opts.Control = control
-		// The reason the delivered answer was forced, if it was. For a job
-		// that takes corrections it is noted once the answer is sealed, since
-		// a correction can still replace that answer.
-		var forced brain.ForcedAnswer
+		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief, Attachments: refs}})
+		r := workerRun{a: a, ctx: ctx, id: id, brief: brief, worker: worker, cfg: cfg, budget: budget, steer: steer,
+			tools: tools, allowImageRepair: allowImageRepair, workDir: config.WorkDirFrom(cfg)}
+		r.warn = func(message string) { a.pipeline.emit(events.Info{Message: message}) }
 		if control == nil {
 			// Set, never cleared, so an image-repair retry keeps the first reason.
 			opts.OnForcedAnswer = func(reason brain.ForcedAnswer) { a.noteForcedAnswer(id, reason) }
-		} else {
-			opts.OnForcedAnswer = func(reason brain.ForcedAnswer) {
-				if forced == "" {
-					forced = reason
-				}
-			}
-		}
-		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief, Attachments: refs}})
-		if control == nil {
 			start, end := opts.OnToolStart, opts.OnToolEnd
 			opts.OnToolStart = func(call brain.ToolCall) { a.captureWorkerThread(id, worker); start(call) }
 			opts.OnToolEnd = func(result brain.ToolResult) { end(result); a.captureWorkerThread(id, worker) }
 			defer a.captureWorkerThread(id, worker)
-		} else {
-			// Versioned checkpoints of complete steps replace the hook
-			// snapshots, which can hold calls without results or a history
-			// a failed request rolled back.
-			opts.OnCheckpoint = func() { steer.saveCheckpoint(worker) }
-		}
-		workDir := config.WorkDirFrom(cfg)
-		warn := func(message string) { a.pipeline.emit(events.Info{Message: message}) }
-		firstReply, err := worker.ThinkFull(ctx, brief, opts)
-		if control == nil {
+			r.think = func(input string) (string, error) { return worker.ThinkFull(ctx, input, opts) }
+			firstReply, err := r.think(brief)
 			if err != nil {
 				return firstReply, err
 			}
-			return a.finishWorkerReply(ctx, firstReply, brief, worker, cfg, budget, opts, steer, tools, allowImageRepair, workDir, warn)
+			done := r.finish(firstReply)
+			return done.text, done.err
 		}
-		// The runner, not the worker loop, commits the answer: a correction
-		// may arrive while the reply is imported or repaired. Then the job
-		// continues from that correction with the same worker and budget.
-		for {
-			if err != nil {
-				control.Close(brain.NotAppliedReason(ctx, err))
-				return firstReply, err
-			}
-			cleaned, finishErr := a.finishWorkerReply(ctx, firstReply, brief, worker, cfg, budget, opts, steer, tools, allowImageRepair, workDir, warn)
-			if finishErr != nil {
-				control.Close(brain.NotAppliedReason(ctx, finishErr))
-				return cleaned, finishErr
-			}
-			sealed, limit := control.Seal()
-			if sealed {
-				if forced == "" {
-					forced = limit
-				}
-				if forced != "" {
-					a.noteForcedAnswer(id, forced)
-				}
-				// Delivery reads the reply's imported images from this thread.
-				steer.saveCheckpoint(worker)
-				return cleaned, nil
-			}
-			forced = ""
-			firstReply, err = worker.ThinkFull(ctx, "", opts)
-		}
+		// Versioned checkpoints replace the hook snapshots, which a history a
+		// failed request rolled back could overwrite.
+		opts.OnCheckpoint = func() { steer.saveCheckpoint(worker) }
+		return r.steered(control, opts)
 	}
 }
 
-// finishWorkerReply imports the reply's images and, when an image the task
-// required is missing, asks the worker once more. A corrected task may no
-// longer want the image, so after a correction a missing one is not an error
-// and is not repaired.
-func (a *Agency) finishWorkerReply(ctx context.Context, firstReply, brief string, worker brain.Provider, cfg *config.Config, budget *brain.WorkerBudget, opts brain.StreamOptions, steer *jobSteer, tools, allowImageRepair bool, workDir string, warn func(string)) (string, error) {
+// workerRun is one job's run on its worker, from the first reply to the
+// answer it delivers.
+type workerRun struct {
+	a                *Agency
+	ctx              context.Context
+	id, brief        string
+	worker           brain.Provider
+	cfg              *config.Config
+	budget           *brain.WorkerBudget
+	steer            *jobSteer
+	tools            bool
+	allowImageRepair bool
+	workDir          string
+	warn             func(string)
+	think            func(input string) (string, error)
+	// forced is why the answer being finished was forced, if it was.
+	forced brain.ForcedAnswer
+}
+
+// finished is a reply after its images were imported, and repaired if they
+// had to be.
+type finished struct {
+	text string
+	err  error
+	// preempted: a correction arrived before the reply was finished, so the
+	// job may continue from it instead.
+	preempted bool
+	// noImage: the task asked for an image, a correction was given, and no
+	// image came back. It is not an error, but it is said.
+	noImage bool
+}
+
+// steered runs a job that takes corrections. The runner, not the worker loop,
+// commits the answer: a correction can arrive while a reply is imported or
+// repaired. Then the job continues from that correction with the same worker
+// and budget, holding the answer in hand until a replacement succeeds or a
+// limit leaves no request for one.
+func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptions) (string, error) {
+	start := time.Now()
+	r.think = func(input string) (string, error) {
+		var got brain.ForcedAnswer
+		opts.OnForcedAnswer = func(reason brain.ForcedAnswer) {
+			if got == "" {
+				got = reason
+			}
+		}
+		before := control.Included()
+		reply, err := r.worker.ThinkFull(r.ctx, input, opts)
+		// The reason belongs to the answer's revision: one written after a
+		// correction is judged on its own, while an uncorrected repair keeps
+		// the first reason.
+		if err == nil && (control.Included() > before || r.forced == "") {
+			r.forced = got
+		}
+		return reply, err
+	}
+	var held *finished
+	var heldForced brain.ForcedAnswer
+	reply, err := r.think(r.brief)
+	for {
+		if err != nil {
+			if errors.Is(r.ctx.Err(), context.Canceled) {
+				// The job table ended the job; its ending settles the corrections.
+				return reply, err
+			}
+			control.Close(brain.NotAppliedReason(err))
+			if held == nil {
+				return reply, err
+			}
+			// The corrected run failed; the answer it would have replaced stands.
+			r.forced = cmp.Or(heldForced, failedCorrectionReason(err, r.budget))
+			return r.deliver(*held)
+		}
+		done := r.finish(reply)
+		if done.err != nil && !done.preempted {
+			control.Close(brain.NotAppliedReason(done.err))
+			return done.text, done.err
+		}
+		sealed, limit := control.Seal(brain.WorkerLimitDue(r.ctx, r.budget, start))
+		if sealed {
+			if limit != "" && r.forced == "" {
+				r.forced = limit
+			}
+			return r.deliver(done)
+		}
+		held, heldForced = &done, r.forced
+		r.forced = ""
+		reply, err = r.think("")
+	}
+}
+
+// deliver notes how the answer was finished and saves the thread it was
+// imported into; delivery reads the reply's images from that thread.
+func (r *workerRun) deliver(done finished) (string, error) {
+	if r.forced != "" {
+		r.a.noteForcedAnswer(r.id, r.forced)
+	}
+	if done.noImage && done.err == nil {
+		r.a.noteNoImage(r.id)
+		done.text = strings.TrimRight(done.text, "\n") + "\n\n" + noImageMarker
+	}
+	r.steer.saveCheckpoint(r.worker)
+	return done.text, done.err
+}
+
+// noImageMarker ends an answer that came back without the image its task
+// asked for, after a correction.
+const noImageMarker = "(No image attached.)"
+
+// failedCorrectionReason is why an answer held while a correction ran is
+// delivered cut short when that run failed.
+func failedCorrectionReason(err error, budget *brain.WorkerBudget) brain.ForcedAnswer {
+	switch {
+	case errors.Is(err, brain.ErrWorkerOutOfTime), errors.Is(err, context.DeadlineExceeded):
+		return brain.ForcedByTime
+	case errors.Is(err, brain.ErrWorkerBudgetExceeded):
+		if left, counted := budget.RemainingRequests(); counted && left == 0 {
+			return brain.ForcedByRequests
+		}
+	}
+	return brain.ForcedByFailedCorrection
+}
+
+// finish imports the reply's images and, when an image the task required is
+// missing, asks the worker once more. A correction waiting before the repair
+// or the failure is reported preempts both. After a correction the original
+// task's image is no longer required and is not repaired.
+func (r *workerRun) finish(reply string) finished {
+	ctx, worker := r.ctx, r.worker
 	asked, _ := ctx.Value(imageDeliveryKey{}).(bool)
+	waiting := func() bool { return r.steer != nil && r.steer.control.Waiting() }
+	noImage := false
 	finalize := func(result string) (string, error) {
-		required := asked && !steer.corrected()
-		cleaned, attached, err := finalizeProviderReply(worker, result, workDir, warn)
+		corrected := r.steer.corrected()
+		required := asked && !corrected
+		cleaned, attached, err := finalizeProviderReply(worker, result, r.workDir, r.warn)
 		if len(attached) > 0 {
 			return cleaned, nil
 		}
+		noImage = asked && corrected
 		if required && err == nil {
 			err = errNoImageDelivered
 		}
@@ -171,40 +261,44 @@ func (a *Agency) finishWorkerReply(ctx context.Context, firstReply, brief string
 		}
 		return cleaned, err
 	}
-	cleaned, importErr := finalize(firstReply)
+	cleaned, importErr := finalize(reply)
 	if importErr == nil {
-		return cleaned, nil
+		return finished{text: cleaned, noImage: noImage}
 	}
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return finished{err: err}
 	}
-	attachmentErr := workerImageFailure(importErr, firstReply)
-	remaining, limited := budget.RemainingRequests()
+	attachmentErr := workerImageFailure(importErr, reply)
+	if waiting() {
+		return finished{text: cleaned, err: attachmentErr, preempted: true}
+	}
+	remaining, limited := r.budget.RemainingRequests()
 	// An opaque paid dispatch has a single admission and no per-request budget.
-	if !tools || !allowImageRepair || steer.corrected() || (limited && remaining == 0) || (budget == nil && !servedLocally(ctx, cfg, worker)) {
-		return cleaned, attachmentErr
+	if !r.tools || !r.allowImageRepair || r.steer.corrected() || (limited && remaining == 0) || (r.budget == nil && !servedLocally(ctx, r.cfg, worker)) {
+		return finished{text: cleaned, err: attachmentErr}
 	}
-	input, promptErr := prompts.RenderSystem(config.PromptsDirFrom(cfg), "worker-image-repair", map[string]string{
-		"brief": brief, "work_dir": workDir, "import_error": fmt.Sprintf("%.512s", importErr.Error()),
+	input, promptErr := prompts.RenderSystem(config.PromptsDirFrom(r.cfg), "worker-image-repair", map[string]string{
+		"brief": r.brief, "work_dir": r.workDir, "import_error": fmt.Sprintf("%.512s", importErr.Error()),
 	})
 	if promptErr != nil {
-		warn(promptErr.Error())
+		r.warn(promptErr.Error())
 		if strings.TrimSpace(input) == "" {
-			return cleaned, attachmentErr
+			return finished{text: cleaned, err: attachmentErr}
 		}
 	}
-	retryReply, err := worker.ThinkFull(ctx, input, opts)
+	retryReply, err := r.think(input)
 	if errors.Is(err, brain.ErrWorkerBudgetExceeded) {
-		return cleaned, attachmentErr
+		return finished{text: cleaned, err: attachmentErr}
 	}
 	if err != nil {
-		return retryReply, workerImageFailure(err, firstReply, retryReply)
+		return finished{text: retryReply, err: workerImageFailure(err, reply, retryReply)}
 	}
 	cleaned, importErr = finalize(retryReply)
 	if importErr != nil {
-		return cleaned, workerImageFailure(importErr, firstReply, retryReply)
+		failure := workerImageFailure(importErr, reply, retryReply)
+		return finished{text: cleaned, err: failure, preempted: waiting()}
 	}
-	return cleaned, nil
+	return finished{text: cleaned, noImage: noImage}
 }
 
 // Failed jobs publish the error to chat. Keep the worker's explanation from

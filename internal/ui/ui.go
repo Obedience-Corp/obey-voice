@@ -555,7 +555,13 @@ func (u *UI) onJobAborted(e events.JobAborted) {
 }
 
 func (u *UI) onJobCorrection(e events.JobCorrection) {
+	if !u.acceptWorkScope(e.Scope) {
+		return
+	}
 	state := strings.ReplaceAll(e.State, "_", " ")
+	if e.State == "briefed" {
+		state = "added to brief"
+	}
 	if e.Brief && e.State == "pending" {
 		state = "added to brief"
 	}

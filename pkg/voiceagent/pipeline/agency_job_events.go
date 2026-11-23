@@ -50,7 +50,7 @@ func (a *Agency) onJobStarted(id, task string) {
 }
 
 func (a *Agency) onJobDone(id string, state job.State, result string, err error) {
-	a.endSteer(id, false, steerEndReason(state, err))
+	a.steerFor(id).ended(state, err)
 	a.pipeline.endMovedJob(id, state, err)
 	a.mu.Lock()
 	releaseVoice := a.workerOrigins[id].releaseVoice
@@ -96,6 +96,12 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 			a.mu.Unlock()
 			if reason != "" {
 				status, limitations = work.OutcomePartial, "cut short: "+reason
+			}
+			a.mu.Lock()
+			noImage := a.workerOrigins[id].noImage
+			a.mu.Unlock()
+			if noImage {
+				limitations = strings.TrimPrefix(limitations+"; no image attached", "; ")
 			}
 		case job.StateFailed:
 			status, text = work.OutcomeFailed, errorText(err, result)

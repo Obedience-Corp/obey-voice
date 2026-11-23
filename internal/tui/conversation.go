@@ -78,6 +78,9 @@ type conversationModel struct {
 	work              *workfold.Tracker
 	jobItems          map[string]int
 	completedJobItems map[string]int
+	// jobCorrections is each job's newest correction, kept past the job's
+	// end for its sealed row and its result row.
+	jobCorrections map[string]jobCorrectionView
 	// continuedItems maps a job to the line saying which reply it continues.
 	continuedItems          map[string]int
 	workScope               work.WorkScope
