@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -278,10 +279,6 @@ func TestCancelDuringTheReportAnswer(t *testing.T) {
 	<-inFlight
 	metrics := newTurnMetrics()
 	h.a.HandleRoute(context.Background(), h.p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteJobAbort, Transcript: "kill it", Source: "phrase"})
-	calls := tts.Calls()
-	if len(calls) == 0 || calls[len(calls)-1] != "Stopped." {
-		t.Fatalf("spoken=%q", calls)
-	}
 	select {
 	case e := <-h.aborted:
 		if e.Reason != events.AbortCancelled {
@@ -294,6 +291,11 @@ func TestCancelDuringTheReportAnswer(t *testing.T) {
 		t.Fatal("the reporting job kept its slot")
 	}
 	info := onlyWorker(t, h.p)
+	// The line is the one any job gets for the time this one ran.
+	calls := tts.Calls()
+	if want := abortLine([]time.Duration{info.Elapsed}, 0); len(calls) == 0 || calls[len(calls)-1] != want {
+		t.Fatalf("spoken=%q, want %q", calls, want)
+	}
 	if receipt.Jobs[0].Checkpoint != oneFileRead || info.Checkpoint != oneFileRead || info.Report != reportAsked {
 		t.Fatalf("receipt=%+v workers row after the cancel=%+v", receipt, info)
 	}
@@ -481,6 +483,21 @@ func TestReportReceipts(t *testing.T) {
 			t.Fatalf("a refused report touched the starting job: %+v", finished)
 		}
 	})
+	t.Run("ended before its worker began", func(t *testing.T) {
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) { return textReply("Done."), 0 })
+		ended := make(chan struct{})
+		h.table.OnDone(func(string, job.State, string, error) { close(ended) })
+		if _, err := h.table.Start(context.Background(), job.Spec{ID: "job-x", Task: "validate", Run: func(context.Context) (string, error) {
+			return "", errors.New("the worker could not be validated")
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		<-ended
+		h.a.registerSteer("job-x", h.a.newJobSteer(work.WorkScope{}))
+		if r := h.p.ReportWork("job-x"); r.Jobs[0].Outcome != ControlFinished || r.Jobs[0].Queued {
+			t.Fatalf("receipt=%+v", r)
+		}
+	})
 	t.Run("job with no control, after a clear", func(t *testing.T) {
 		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) { return textReply("Done."), 0 })
 		if err := h.p.BeginConversationIdentity("conversation-1"); err != nil {
@@ -533,4 +550,40 @@ func TestReportReceipts(t *testing.T) {
 			t.Fatal("a report from another conversation was kept")
 		}
 	})
+}
+
+// emptyThenAnswerWorker takes corrections and reports. Its first run accepts
+// a report as it ends and returns no answer; a later run answers.
+type emptyThenAnswerWorker struct {
+	textWorker
+	report func()
+	runs   *int
+}
+
+func (w emptyThenAnswerWorker) ReadsWorkerControl() bool { return true }
+
+func (w emptyThenAnswerWorker) ThinkFull(_ context.Context, input string, opts brain.StreamOptions) (string, error) {
+	if *w.runs++; *w.runs == 1 {
+		w.report()
+		return "", nil
+	}
+	if opts.OnForcedAnswer != nil {
+		opts.OnForcedAnswer(brain.ForcedByReport)
+	}
+	return "Nothing was read yet.", nil
+}
+
+// A run that ends with no answer as a report is accepted is not delivered as
+// one: the job goes on to its report round.
+func TestEmptyReplyAtTheSealGoesToTheReportRound(t *testing.T) {
+	h := newSteerJobHarness(t, func(int, api.ChatRequest) (api.ChatResponse, int) { return textReply("unused"), 0 })
+	runs := 0
+	worker := emptyThenAnswerWorker{runs: &runs, report: func() {
+		h.a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkReport, JobID: "job-1"})
+	}}
+	h.worker = worker
+	result, err := h.directSteerRun(t.Context(), "Read notes.txt.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
+	if err != nil || result != "Nothing was read yet." || runs != 2 {
+		t.Fatalf("result=%q err=%v runs=%d", result, err, runs)
+	}
 }

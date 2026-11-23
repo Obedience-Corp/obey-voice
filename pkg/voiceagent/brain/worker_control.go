@@ -229,11 +229,20 @@ func (c *WorkerControl) CloseUnlessWaiting(reason string) bool {
 // request for the waiting corrections settles them as unable to apply and is
 // returned, so the answer in hand is delivered cut short.
 func (c *WorkerControl) Seal(limit ForcedAnswer) (sealed bool, applied ForcedAnswer) {
+	return c.SealReply(limit, false)
+}
+
+// SealReply is Seal for a reply that may hold no answer. Such a reply is not
+// committed once a report was accepted: the report round answers instead.
+func (c *WorkerControl) SealReply(limit ForcedAnswer, empty bool) (sealed bool, applied ForcedAnswer) {
 	c.mu.Lock()
 	defer c.flush()
 	defer c.mu.Unlock()
 	if c.sealed {
 		return true, ""
+	}
+	if empty && c.reported {
+		return false, ""
 	}
 	if !c.waitingLocked() {
 		c.sealed = true

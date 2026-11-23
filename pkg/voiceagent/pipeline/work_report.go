@@ -90,11 +90,15 @@ func (a *Agency) reportSteered(id string, s *jobSteer, checkpoint func() string)
 	case brain.ReportRepeated:
 		item.Outcome = ControlAccepted
 	case brain.ReportNotStarted:
-		// The table may have started the job while its worker has not begun.
-		if a.jobState(id) == job.StateRunning {
-			item.Reason = reportStarting
-		} else {
+		// The table may have started the job, or ended it, before its worker
+		// began.
+		switch a.jobState(id) {
+		case job.StateQueued:
 			item.Queued, item.Reason = true, reportNotStarted
+		case job.StateRunning:
+			item.Reason = reportStarting
+		default:
+			return JobControl{ID: id, Outcome: ControlFinished}
 		}
 	case brain.ReportNoInput:
 		item.Reason = reportNoInput

@@ -218,7 +218,8 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 			}
 			done.preempted = true
 		}
-		sealed, limit := control.Seal(brain.WorkerLimitDue(r.ctx, r.budget, start))
+		empty := done.err == nil && !answered(reply, done)
+		sealed, limit := control.SealReply(brain.WorkerLimitDue(r.ctx, r.budget, start), empty)
 		if sealed {
 			// A failed replacement does not displace the last finished answer.
 			if done.err != nil && held != nil {
@@ -230,7 +231,7 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 			}
 			return r.deliver(done)
 		}
-		if done.err == nil {
+		if done.err == nil && !(empty && r.steer.reporting()) {
 			held, heldForced, heldTurn = &done, r.forced, len(r.worker.History())-1
 		}
 		r.forced = ""
