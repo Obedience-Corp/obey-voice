@@ -221,12 +221,12 @@ func TestCorrectionMidBatchSkipsUnstartedCalls(t *testing.T) {
 			results = append(results, m)
 		}
 	}
-	if len(results) != 3 || results[0].ToolCallID != "call-a" || strings.Contains(results[0].Content, toolNotRunCorrection) {
+	if len(results) != 3 || results[0].ToolCallID != "call-a" || strings.Contains(results[0].Content, ToolNotRunCorrection) {
 		t.Fatalf("results=%+v", results)
 	}
 	for i, id := range []string{"call-b", "call-c"} {
 		r := results[i+1]
-		if r.ToolCallID != id || r.ToolName != "read_file" || r.Content != toolNotRunCorrection {
+		if r.ToolCallID != id || r.ToolName != "read_file" || r.Content != ToolNotRunCorrection {
 			t.Fatalf("skipped call %s answered %+v", id, r)
 		}
 	}

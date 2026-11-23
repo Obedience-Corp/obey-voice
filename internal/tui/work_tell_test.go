@@ -297,3 +297,25 @@ func TestOnlyWorkTellIsKeptFromImagePaths(t *testing.T) {
 		})
 	}
 }
+
+// 6. A call a correction kept from running is not shown as the later call
+// that ran with the same provider id.
+func TestWorkerThreadLeavesSkippedCallsUnmatched(t *testing.T) {
+	item := pipeline.WorkerInfo{ID: "job-1", Task: "read the notes", Thread: []brain.Turn{
+		{Role: "user", Content: "read the notes"},
+		{Role: "assistant", ToolCalls: []brain.TurnToolCall{{ID: "c", Name: "read_file", Arguments: `{"path":"a.txt"}`}}},
+		{Role: "tool", ToolCallID: "c", ToolName: "read_file", Content: brain.ToolNotRunCorrection},
+		{Role: "user", Content: "read b.txt instead"},
+		{Role: "assistant", ToolCalls: []brain.TurnToolCall{{ID: "c", Name: "read_file", Arguments: `{"path":"b.txt"}`}}},
+		{Role: "tool", ToolCallID: "c", ToolName: "read_file", Content: "b"},
+	}, Tools: []workfold.Call{{ID: "c", Name: "read_file", Status: "succeeded"}}}
+	var tools []*workerThreadTool
+	for _, e := range workerThreadEntries(item) {
+		if e.tool != nil {
+			tools = append(tools, e.tool)
+		}
+	}
+	if len(tools) != 2 || tools[0].call.Status == "succeeded" || tools[1].call.Status != "succeeded" || tools[1].result != "b" {
+		t.Fatalf("tools=%+v", tools)
+	}
+}

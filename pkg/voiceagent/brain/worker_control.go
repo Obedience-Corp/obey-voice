@@ -41,9 +41,9 @@ const (
 // DispositionSuperseded marks a worker answer a correction replaced.
 const DispositionSuperseded = "superseded"
 
-// toolNotRunCorrection answers a tool call the worker had not started when a
+// ToolNotRunCorrection answers a tool call the worker had not started when a
 // correction arrived.
-const toolNotRunCorrection = "not run: a correction arrived"
+const ToolNotRunCorrection = "not run: a correction arrived"
 
 // Correction is one correction to a job and its disposition.
 type Correction struct {

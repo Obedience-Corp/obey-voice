@@ -293,7 +293,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				if ctl != nil && ctl.waiting() {
 					// Every call still gets a result, so the exchange stays paired.
 					for _, skipped := range response.ToolCalls[k:] {
-						o.appendProjectedToolResult(skipped, toolNotRunCorrection, opts.Identity)
+						o.appendProjectedToolResult(skipped, ToolNotRunCorrection, opts.Identity)
 					}
 					checkpoint(opts)
 					break
