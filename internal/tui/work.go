@@ -196,6 +196,10 @@ func (m *conversationModel) jobExited(e events.JobExited) {
 		return
 	}
 	m.items[idx].sys = strings.Replace(m.items[idx].sys, stoppingMark, "", 1)
+	if row, ok := m.sealedRows[e.ID]; ok {
+		row.suffix = strings.Replace(row.suffix, stoppingMark, "", 1)
+		m.sealedRows[e.ID] = row
+	}
 	m.refreshContent()
 }
 

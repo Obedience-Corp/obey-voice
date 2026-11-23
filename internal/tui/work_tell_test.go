@@ -319,3 +319,17 @@ func TestExistingImagePathThatStartsLikeACommandIsAttached(t *testing.T) {
 		})
 	}
 }
+
+func TestLateDispositionAfterAnExitKeepsTheRowStopped(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.ready = true
+	step := func(e events.Event) { m, _ = m.Update(busEventMsg{event: e}) }
+	step(events.JobStarted{ID: "job-1", Task: "summarize the notes"})
+	step(events.JobAborted{ID: "job-1", Task: "summarize the notes", Elapsed: 4 * time.Second, Reason: events.AbortCancelled, Stopping: true})
+	step(events.JobExited{ID: "job-1", Task: "summarize the notes"})
+	step(events.JobCorrection{ID: "job-1", Revision: 1, State: "superseded"})
+	row := stripANSI(m.items[m.completedJobItems["job-1"]].sys)
+	if strings.Contains(row, "stopping") || !strings.Contains(row, "correction superseded by cancel") {
+		t.Fatalf("row = %q", row)
+	}
+}
