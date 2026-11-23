@@ -270,7 +270,12 @@ func (o *OllamaBrain) compactionMessages(skillCtx string) []api.Message {
 		end--
 	}
 	if end < 1 {
-		return messages
+		// No user message: before the last one, as always, unless that
+		// would come between a call and its result.
+		end = len(messages) - 1
+		if messages[end].Role == "tool" {
+			return messages
+		}
 	}
 	result := append([]api.Message(nil), messages[:end]...)
 	result = append(result, recalled...)

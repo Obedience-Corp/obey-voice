@@ -186,3 +186,13 @@ func TestWorkerThreadMarksAReplacedAnswer(t *testing.T) {
 		t.Fatalf("view = %q", view)
 	}
 }
+
+func TestJobRowSaysNoImageWasAttached(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.ready = true
+	m, _ = m.Update(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "send a picture of the notes"}})
+	m, _ = m.Update(busEventMsg{event: events.JobFinished{ID: "job-1", Task: "send a picture of the notes", Elapsed: 9 * time.Second, NoImage: true, Summary: "Described in text."}})
+	if row := stripANSI(m.items[m.completedJobItems["job-1"]].sys); !strings.Contains(row, "done in 9s · no image attached") {
+		t.Fatalf("row = %q", row)
+	}
+}

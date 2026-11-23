@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 	"github.com/ollama/ollama/api"
 )
 
@@ -691,8 +692,9 @@ func TestRecallAfterWorkerCompactionKeepsToolResultsPaired(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Projection and archive both on, as shipped.
 	cfg := continuityConfig()
-	cfg.IsWorker, cfg.ContinuityProjectionEnabled, cfg.ContinuitySoftLimitRatio = true, false, 0.5
+	cfg.IsWorker, cfg.ContinuitySoftLimitRatio = true, 0.5
 	h.o.cfg = cfg
 	if _, err := h.o.ThinkFull(t.Context(), "Inspect the artifacts.", h.opts()); err != nil {
 		t.Fatal(err)
@@ -869,5 +871,27 @@ func TestContinuedRunKeepsToolIDsAndMarksTheReplacedAnswer(t *testing.T) {
 		return m.Role == "assistant" && strings.HasPrefix(m.Content, "[Answer replaced by a later correction")
 	}) {
 		t.Fatal("the continued request presents the replaced answer as an ordinary reply")
+	}
+}
+
+func TestContinuedRunKeepsTheJobsSkills(t *testing.T) {
+	h := newSteerHarness(t, nil, func(h *steerHarness, n int, req api.ChatRequest) (api.ChatResponse, int) {
+		if n == 1 {
+			h.ctl.Steer("Use b.txt.")
+			return answerResponse("a.txt is read."), 0
+		}
+		return answerResponse("b.txt is read."), 0
+	})
+	h.o.skills = []skills.Skill{{Name: "planner", Body: "Always cite line numbers.", Dir: h.o.workDir}}
+	if _, err := h.o.ThinkFull(WithActivatedSkills(t.Context(), []string{"planner"}), "Read a.txt.", h.opts()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.o.ThinkFull(t.Context(), "", h.opts()); err != nil {
+		t.Fatal(err)
+	}
+	for i, req := range h.requests() {
+		if !slices.ContainsFunc(req.Messages, func(m api.Message) bool { return strings.Contains(m.Content, "Always cite line numbers.") }) {
+			t.Fatalf("request %d lost the job's skill", i+1)
+		}
 	}
 }

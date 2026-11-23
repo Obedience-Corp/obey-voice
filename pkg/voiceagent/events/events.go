@@ -798,9 +798,10 @@ type JobExited struct {
 func (e JobExited) eventType() string { return "job_exited" }
 
 // JobCorrection reports a correction to a job: once when it is accepted, and
-// again each time its disposition changes. State is "pending", "included",
-// "not_applied" (Reason says why) or "superseded". Brief marks a correction
-// added to the brief of a job that had not started.
+// again each time its disposition changes. State is "pending", "included"
+// (a request carrying it was answered), "briefed" (in the brief of a worker
+// that cannot report more), "not_applied" (Reason says why) or "superseded".
+// Brief marks a correction given before the job started.
 type JobCorrection struct {
 	Trace *TraceContext `json:"trace,omitempty"`
 
