@@ -137,7 +137,8 @@ to show or hide tool arguments and results. Tool failures remain visible when
 details are hidden; an unreported outcome is never treated as success.
 Home/End jump to the start/latest activity. Scrolling up pauses following;
 returning to the bottom resumes it. `s` stops the selected task, `e` returns to
-Chat with `/work tell JOB_ID ` in the composer, `x` requests Stop all (confirm
+Chat with `/work tell JOB_ID ` in the composer (a draft already there is kept,
+and the command is shown instead), `x` requests Stop all (confirm
 with `y`), `t` toggles new workers, and Escape returns to the list.
 Messages appear as the provider's cached history updates at tool boundaries and
 completion; this view does not add token streaming or a worker message composer.

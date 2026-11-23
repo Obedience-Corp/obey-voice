@@ -395,7 +395,8 @@ discussions do not carry it. The sentence that introduces the list is the
 list; ask it "what's happening" or open `/workers`.
 
 In the TUI, `/workers` provides **Stop task** (`s`), **Correct task** (`e`,
-which returns to the conversation with `/work tell JOB_ID ` typed for you),
+which returns to the conversation with `/work tell JOB_ID ` typed for you, or,
+when you had started a message there, keeps it and shows the command),
 **Stop all** (`x`, then `y`), and **Allow background workers** (`t`). The permission is global, not
 persona-specific, and is saved as `voice_workers_disabled` (default `false`).
 Turning workers off rejects new spawned and managed jobs but lets already
