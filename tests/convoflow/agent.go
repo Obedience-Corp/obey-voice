@@ -317,6 +317,37 @@ func tellNewestJob(workers []pipeline.WorkerInfo, tell func(id, text string) pip
 	return nil
 }
 
+// reportWork asks the newest running job for its report as the keyboard's
+// /work report does: no model decides whether it is accepted.
+func (r *liveRunner) reportWork(context.Context) error {
+	if r.agent == nil || r.agent.Pipeline == nil {
+		return fmt.Errorf("work report: agent is not configured")
+	}
+	return reportNewestJob(r.agent.Pipeline.Workers(), r.agent.Pipeline.ReportWork)
+}
+
+func reportNewestJob(workers []pipeline.WorkerInfo, report func(id string) pipeline.WorkReceipt) error {
+	var newest *pipeline.WorkerInfo
+	for i, w := range workers {
+		if w.State == "running" && (newest == nil || w.Started.After(newest.Started)) {
+			newest = &workers[i]
+		}
+	}
+	if newest == nil {
+		return fmt.Errorf("work report: no running job")
+	}
+	receipt := report(newest.ID)
+	if receipt.Rejected != "" {
+		return fmt.Errorf("work report %s: %s", newest.ID, receipt.Rejected)
+	}
+	for _, j := range receipt.Jobs {
+		if j.Outcome != pipeline.ControlAccepted {
+			return fmt.Errorf("work report %s: %s %s", newest.ID, j.Outcome, j.Reason)
+		}
+	}
+	return nil
+}
+
 func (r *liveRunner) runBackground(ctx context.Context) error {
 	if r.agent == nil || r.agent.Pipeline == nil {
 		return fmt.Errorf("background work: agent is not configured")
