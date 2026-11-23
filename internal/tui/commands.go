@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -132,10 +133,14 @@ func slashRemainder(value string, n int) string {
 	return strings.TrimSpace(rest)
 }
 
-// isSlashCommandLine reports a line that names a known slash command.
-func isSlashCommandLine(value string) bool {
-	_, _, found, slash := parseSlashCommand(value)
-	return slash && found
+// imagePaths is the image paths typed or pasted text names, unless the text
+// is a command line: one whose first word is a known command name or alias,
+// such as /work tell job-1 use chart.png. /work/chart.png is still a path.
+func imagePaths(text string) ([]string, bool) {
+	if _, _, found, slash := parseSlashCommand(text); slash && found {
+		return nil, false
+	}
+	return chatmedia.Paths(text)
 }
 
 func matchingSlashCommands(value string) []slashCommand {

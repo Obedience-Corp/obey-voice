@@ -196,3 +196,37 @@ func TestJobRowSaysNoImageWasAttached(t *testing.T) {
 		t.Fatalf("row = %q", row)
 	}
 }
+
+// One rule decides whether typed or pasted text is a command or image paths:
+// an exact command name wins; a path that only starts like one stays a path.
+func TestCommandOrImagePathIsDecidedTheSameWayEverywhere(t *testing.T) {
+	entries := map[string]func(m conversationModel, text string) conversationModel{
+		"submit": func(m conversationModel, text string) conversationModel {
+			m.input.SetValue(text)
+			m.handleSubmit()
+			return m
+		},
+		"clipboard paste": func(m conversationModel, text string) conversationModel {
+			m, _ = m.Update(clipboardPasteMsg{text: text})
+			return m
+		},
+		"terminal paste": func(m conversationModel, text string) conversationModel {
+			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
+			return m
+		},
+	}
+	for name, enter := range entries {
+		t.Run(name, func(t *testing.T) {
+			m := sizedConversation(t, 120, 24)
+			m.deps.runner = &tellRunner{fakeTurnRunner: &fakeTurnRunner{}, receipt: pipeline.WorkReceipt{Jobs: []pipeline.JobControl{{ID: "job-1", Outcome: pipeline.ControlAccepted}}}}
+			if m = enter(m, "/work tell job-1 use chart.png"); m.media.importing {
+				t.Fatal("a /work tell line was taken for an image path")
+			}
+			m = sizedConversation(t, 120, 24)
+			m.deps.runner = &tellRunner{fakeTurnRunner: &fakeTurnRunner{}}
+			if m = enter(m, "/work/chart.png"); !m.media.importing {
+				t.Fatal("an image path that starts like a command was not imported")
+			}
+		})
+	}
+}

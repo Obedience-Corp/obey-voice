@@ -22,12 +22,7 @@ func (m *conversationModel) mediaInputCommand() (tea.Cmd, bool) {
 	if text == "/image" || strings.HasPrefix(text, "/image ") {
 		return m.imageCommand(strings.TrimSpace(strings.TrimPrefix(text, "/image"))), true
 	}
-	// A command line that ends in a file name, such as /work tell job-1 use
-	// chart.png, is a command, not an image path.
-	if isSlashCommandLine(text) {
-		return nil, false
-	}
-	if paths, ok := chatmedia.Paths(text); ok {
+	if paths, ok := imagePaths(text); ok {
 		return m.importMediaDraft(paths), true
 	}
 	return nil, false

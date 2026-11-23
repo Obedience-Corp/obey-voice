@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -171,7 +170,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		if len(msg.image) > 0 {
 			return m, m.importMedia(nil, msg.image)
 		}
-		if paths, ok := chatmedia.Paths(msg.text); ok && !isSlashCommandLine(msg.text) {
+		if paths, ok := imagePaths(msg.text); ok {
 			return m, m.importMedia(paths, nil)
 		}
 		m.insertClipboardText(msg.text)
@@ -232,7 +231,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			return m, m.updatePicturePanelKey(msg)
 		}
 		if msg.Paste {
-			if paths, ok := chatmedia.Paths(string(msg.Runes)); ok {
+			if paths, ok := imagePaths(string(msg.Runes)); ok {
 				return m, m.importMedia(paths, nil)
 			}
 		}
