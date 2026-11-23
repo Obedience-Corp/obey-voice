@@ -32,6 +32,15 @@ type UI struct {
 	allowWorkScopeChange bool
 	authorityMu          sync.Mutex
 	authoritativeWork    func() work.Snapshot
+	conversationScope    func() work.WorkScope
+}
+
+// SetConversationScope binds the display to the host's current conversation,
+// which a correction event names whether or not the work inbox is on.
+func (u *UI) SetConversationScope(get func() work.WorkScope) {
+	u.authorityMu.Lock()
+	u.conversationScope = get
+	u.authorityMu.Unlock()
 }
 
 // SetWorkSnapshot binds the display to the host's current work authority.
@@ -555,7 +564,10 @@ func (u *UI) onJobAborted(e events.JobAborted) {
 }
 
 func (u *UI) onJobCorrection(e events.JobCorrection) {
-	if !u.acceptWorkScope(e.Scope) {
+	u.authorityMu.Lock()
+	current := u.conversationScope
+	u.authorityMu.Unlock()
+	if e.Scope.Valid() && (current == nil || current() != e.Scope) {
 		return
 	}
 	state := strings.ReplaceAll(e.State, "_", " ")

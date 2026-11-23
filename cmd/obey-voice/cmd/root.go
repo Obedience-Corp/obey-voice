@@ -673,6 +673,7 @@ func startPipeline(_ *config.Config, resumeSession *session.Session) error {
 	defer rt.Cleanup()
 	display := ui.New(rt.Bus, rt.AgentName)
 	display.SetWorkSnapshot(rt.Pipeline.WorkSnapshot)
+	display.SetConversationScope(rt.Pipeline.ConversationScope)
 	display.ShowWelcome()
 	input := rt.SessionCfg.STTProvider
 	if rt.Pipeline.Native != nil {
