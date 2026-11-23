@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
@@ -198,42 +199,6 @@ func TestJobRowSaysNoImageWasAttached(t *testing.T) {
 	}
 }
 
-// One rule decides whether typed or pasted text is a command or image paths:
-// an exact command name wins; a path that only starts like one stays a path.
-func TestCommandOrImagePathIsDecidedTheSameWayEverywhere(t *testing.T) {
-	entries := map[string]func(m conversationModel, text string) conversationModel{
-		"submit": func(m conversationModel, text string) conversationModel {
-			m.input.SetValue(text)
-			m.handleSubmit()
-			return m
-		},
-		"clipboard paste": func(m conversationModel, text string) conversationModel {
-			m, _ = m.Update(clipboardPasteMsg{text: text})
-			return m
-		},
-		"terminal paste": func(m conversationModel, text string) conversationModel {
-			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
-			return m
-		},
-	}
-	for name, enter := range entries {
-		t.Run(name, func(t *testing.T) {
-			m := sizedConversation(t, 120, 24)
-			m.deps.runner = &tellRunner{fakeTurnRunner: &fakeTurnRunner{}, receipt: pipeline.WorkReceipt{Jobs: []pipeline.JobControl{{ID: "job-1", Outcome: pipeline.ControlAccepted}}}}
-			if m = enter(m, "/work tell job-1 use chart.png"); m.media.importing {
-				t.Fatal("a /work tell line was taken for an image path")
-			}
-			m = sizedConversation(t, 120, 24)
-			m.deps.runner = &tellRunner{fakeTurnRunner: &fakeTurnRunner{}}
-			if m = enter(m, "/work/chart.png"); !m.media.importing {
-				t.Fatal("an image path that starts like a command was not imported")
-			}
-		})
-	}
-}
-
-// A disposition that arrives after the job's last row was written updates
-// that row, and never adds a row for a job that has ended.
 func TestLateCorrectionDispositionUpdatesTheTerminalRow(t *testing.T) {
 	t.Run("legacy", func(t *testing.T) {
 		m := sizedConversation(t, 120, 24)
@@ -282,12 +247,23 @@ func TestWorkerThreadMatchesARepeatedProviderCallID(t *testing.T) {
 	}
 }
 
-// An existing image whose path starts with a command word is still attached,
-// as before; a line naming no existing file stays the command.
-func TestExistingImagePathThatStartsLikeACommandIsAttached(t *testing.T) {
-	exists := imageFileExists
-	t.Cleanup(func() { imageFileExists = exists })
-	imageFileExists = func(path string) bool { return path == "/work photos/chart.png" }
+func TestLateDispositionAfterAnExitKeepsTheRowStopped(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.ready = true
+	step := func(e events.Event) { m, _ = m.Update(busEventMsg{event: e}) }
+	step(events.JobStarted{ID: "job-1", Task: "summarize the notes"})
+	step(events.JobAborted{ID: "job-1", Task: "summarize the notes", Elapsed: 4 * time.Second, Reason: events.AbortCancelled, Stopping: true})
+	step(events.JobExited{ID: "job-1", Task: "summarize the notes"})
+	step(events.JobCorrection{ID: "job-1", Revision: 1, State: "superseded"})
+	row := stripANSI(m.items[m.completedJobItems["job-1"]].sys)
+	if strings.Contains(row, "stopping") || !strings.Contains(row, "correction superseded by cancel") {
+		t.Fatalf("row = %q", row)
+	}
+}
+
+// (d) Only /work tell is kept from image-path detection, on submit, clipboard
+// paste and terminal paste; every other line is decided as before.
+func TestOnlyWorkTellIsKeptFromImagePaths(t *testing.T) {
 	entries := map[string]func(m conversationModel, text string) conversationModel{
 		"submit": func(m conversationModel, text string) conversationModel {
 			m.input.SetValue(text)
@@ -306,30 +282,18 @@ func TestExistingImagePathThatStartsLikeACommandIsAttached(t *testing.T) {
 	for name, enter := range entries {
 		t.Run(name, func(t *testing.T) {
 			m := sizedConversation(t, 120, 24)
-			m.deps.runner = &tellRunner{fakeTurnRunner: &fakeTurnRunner{}}
-			if m = enter(m, "/work photos/chart.png"); !m.media.importing {
-				t.Fatal("an existing image was taken for a command")
-			}
-			m = sizedConversation(t, 120, 24)
-			runner := &tellRunner{fakeTurnRunner: &fakeTurnRunner{}, receipt: pipeline.WorkReceipt{Jobs: []pipeline.JobControl{{ID: "job-1", Outcome: pipeline.ControlAccepted}}}}
-			m.deps.runner = runner
+			m.deps.runner = &tellRunner{fakeTurnRunner: &fakeTurnRunner{}, receipt: pipeline.WorkReceipt{Jobs: []pipeline.JobControl{{ID: "job-1", Outcome: pipeline.ControlAccepted}}}}
 			if m = enter(m, "/work tell job-1 use chart.png"); m.media.importing {
 				t.Fatal("a /work tell line was taken for an image path")
 			}
+			for _, line := range []string{"/speakers name 1 Alice.png", "/work photos/chart.png", "/work/chart.png"} {
+				_, before := chatmedia.Paths(line)
+				m := sizedConversation(t, 120, 24)
+				m.deps.runner = &tellRunner{fakeTurnRunner: &fakeTurnRunner{}}
+				if m = enter(m, line); m.media.importing != before {
+					t.Fatalf("%q: importing=%v, before %v", line, m.media.importing, before)
+				}
+			}
 		})
-	}
-}
-
-func TestLateDispositionAfterAnExitKeepsTheRowStopped(t *testing.T) {
-	m := sizedConversation(t, 120, 24)
-	m.ready = true
-	step := func(e events.Event) { m, _ = m.Update(busEventMsg{event: e}) }
-	step(events.JobStarted{ID: "job-1", Task: "summarize the notes"})
-	step(events.JobAborted{ID: "job-1", Task: "summarize the notes", Elapsed: 4 * time.Second, Reason: events.AbortCancelled, Stopping: true})
-	step(events.JobExited{ID: "job-1", Task: "summarize the notes"})
-	step(events.JobCorrection{ID: "job-1", Revision: 1, State: "superseded"})
-	row := stripANSI(m.items[m.completedJobItems["job-1"]].sys)
-	if strings.Contains(row, "stopping") || !strings.Contains(row, "correction superseded by cancel") {
-		t.Fatalf("row = %q", row)
 	}
 }

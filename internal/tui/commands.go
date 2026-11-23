@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"unicode"
@@ -134,30 +133,13 @@ func slashRemainder(value string, n int) string {
 	return strings.TrimSpace(rest)
 }
 
-// imagePaths is the image paths typed or pasted text names. A line whose
-// first word is a known command name or alias, such as /work tell job-1 use
-// chart.png, is the command unless every path it names is an existing file,
-// as /work photos/chart.png may be. /work/chart.png is always a path.
+// imagePaths is the image paths typed or pasted text names. Only a /work tell
+// line is kept from it: its correction may end in a file name.
 func imagePaths(text string) ([]string, bool) {
-	paths, ok := chatmedia.Paths(text)
-	if !ok {
+	if fields := strings.Fields(text); len(fields) >= 2 && strings.EqualFold(fields[0], "/work") && fields[1] == "tell" {
 		return nil, false
 	}
-	if _, _, found, slash := parseSlashCommand(text); slash && found {
-		for _, path := range paths {
-			if !imageFileExists(path) {
-				return nil, false
-			}
-		}
-	}
-	return paths, true
-}
-
-// imageFileExists reports an existing regular file. It is a variable so tests
-// need not create files under the filesystem root.
-var imageFileExists = func(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
+	return chatmedia.Paths(text)
 }
 
 func matchingSlashCommands(value string) []slashCommand {
