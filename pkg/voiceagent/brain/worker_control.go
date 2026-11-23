@@ -153,12 +153,24 @@ func (c *WorkerControl) Supersede() { c.end(CorrectionSuperseded, "") }
 func (c *WorkerControl) Close(reason string) { c.end(CorrectionNotApplied, reason) }
 
 func (c *WorkerControl) end(state CorrectionState, reason string) {
-	c.mu.Lock()
-	c.sealed = true
-	c.settleLocked(func(*correction) bool { return true }, state, reason)
-	c.mu.Unlock()
+	c.Decide(state, reason)
 	c.flush()
 }
+
+// Decide ends the job as Supersede or Close do, without reporting: the caller
+// may hold a lock no subscriber may wait on, and reports later with Flush.
+func (c *WorkerControl) Decide(state CorrectionState, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sealed {
+		return
+	}
+	c.sealed = true
+	c.settleLocked(func(*correction) bool { return true }, state, reason)
+}
+
+// Flush reports the changes decided so far, in order.
+func (c *WorkerControl) Flush() { c.flush() }
 
 // Seal commits the job's answer. It fails while a correction is waiting and
 // limit is empty; the runner then continues the job. A limit that leaves no

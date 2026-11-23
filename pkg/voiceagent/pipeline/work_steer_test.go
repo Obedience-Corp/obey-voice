@@ -949,3 +949,59 @@ func TestCorrectedPictureJobSaysNoImageWasAttached(t *testing.T) {
 		})
 	}
 }
+
+// Once the table has ended a job, a correction to it is refused, even from a
+// callback that runs before the job's own done callback.
+func TestTellAfterTheTableEndedTheJobIsRefused(t *testing.T) {
+	t.Run("cancel all, then a tell from the first abort", func(t *testing.T) {
+		inFlight, release := make(chan struct{}), make(chan struct{})
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			close(inFlight)
+			<-release
+			return textReply("Too late."), 0
+		})
+		defer close(release)
+		h.table.SetWorkerLimits(1, 4)
+		running := h.spawn("Read notes.txt in the fixture folder")
+		<-inFlight
+		queued := h.spawn("Read other.txt in the fixture folder")
+		var once sync.Once
+		var receipt WorkReceipt
+		events.Subscribe(h.p.Events, func(e events.JobAborted) {
+			if e.ID == running {
+				once.Do(func() { receipt = h.p.TellWork(queued, steerText) })
+			}
+		})
+		if err := h.p.StopWorkers(); err != nil {
+			t.Fatal(err)
+		}
+		if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlFinished {
+			t.Fatalf("a tell to a job the table had ended: %+v", receipt)
+		}
+	})
+	t.Run("cancel during the start announcement, then a tell", func(t *testing.T) {
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			t.Error("a job cancelled while it was announced ran")
+			return textReply("ran"), 0
+		})
+		var once sync.Once
+		var receipt WorkReceipt
+		events.Subscribe(h.p.Events, func(e events.JobStarted) {
+			once.Do(func() {
+				if err := h.p.CancelWork(e.ID); err != nil {
+					t.Error(err)
+				}
+				receipt = h.p.TellWork(e.ID, steerText)
+			})
+		})
+		h.spawn("Read notes.txt in the fixture folder")
+		select {
+		case <-h.aborted:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the job was not stopped")
+		}
+		if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlFinished {
+			t.Fatalf("a tell after the stop had won: %+v", receipt)
+		}
+	})
+}

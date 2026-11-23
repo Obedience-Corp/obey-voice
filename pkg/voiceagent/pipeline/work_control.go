@@ -229,14 +229,15 @@ func (a *Agency) cancelOne(id string) JobControl {
 	if !a.jobInConversation(id) {
 		return JobControl{ID: id, Outcome: ControlUnknown}
 	}
-	// The table's ending of the job settles its corrections; this marks that
-	// ending, if this cancel wins it, as a cancel.
-	a.steerFor(id).markCancel()
 	before, ok := a.jobs.Cancel(id)
 	if !ok {
 		return JobControl{ID: id, Outcome: ControlUnknown}
 	}
-	return a.tableControl(before)
+	item := a.tableControl(before)
+	// The table settled the job's corrections when it ended the job; they
+	// are reported once the receipt is taken.
+	a.steerFor(id).flush()
+	return item
 }
 
 // cancelAll ends every table job in this conversation as one act, then asks
@@ -248,16 +249,12 @@ func (a *Agency) cancelAll(receipt *WorkReceipt) {
 			outside[info.ID] = true
 		}
 	}
-	// The selection runs under the table lock, so the jobs marked as
-	// cancelled are exactly the ones this cancel ends.
-	for _, before := range a.jobs.CancelAll(func(id string) bool {
-		if outside[id] {
-			return true
-		}
-		a.steerFor(id).markCancel()
-		return false
-	}) {
+	ended := a.jobs.CancelAll(func(id string) bool { return outside[id] })
+	for _, before := range ended {
 		receipt.Jobs = append(receipt.Jobs, a.tableControl(before))
+	}
+	for _, before := range ended {
+		a.steerFor(before.ID).flush()
 	}
 	for _, runtime := range a.managedRuntimes() {
 		for _, task := range runtime.Tasks() {

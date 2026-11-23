@@ -31,9 +31,6 @@ type jobSteer struct {
 
 	mu sync.Mutex
 	id string
-	// cancelled: a cancel asked the table to end the job, so the corrections
-	// it ends are superseded rather than stopped.
-	cancelled bool
 	// noInput, set before the worker starts, is why it will not read
 	// corrections while it runs.
 	noInput string
@@ -158,35 +155,31 @@ func (s *jobSteer) report(c brain.Correction) {
 	}
 }
 
-// markCancel records that a cancel is asking the table to end the job.
-func (s *jobSteer) markCancel() {
+// decide settles the job's corrections from the table's decision to end it,
+// with the cause that won: a user's cancel supersedes them, a budget stop is
+// a limit, any other stop or failure is reported as such. It runs under the
+// table's lock, so it reports nothing; flush does, later. A delivered answer
+// has already sealed the control.
+func (s *jobSteer) decide(state job.State, err error) {
 	if s == nil {
 		return
 	}
-	s.mu.Lock()
-	s.cancelled = true
-	s.mu.Unlock()
-}
-
-// ended settles the job's corrections from the table's ending of it: a
-// cancel supersedes them, a budget stop is a limit, any other stop or failure
-// is reported as such. A delivered answer has already sealed the control.
-func (s *jobSteer) ended(state job.State, err error) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	cancelled := s.cancelled
-	s.mu.Unlock()
 	switch {
 	case state == job.StateAborted && errors.Is(err, job.ErrBudget):
-		s.control.Close(brain.NotAppliedLimit)
-	case state == job.StateAborted && cancelled:
-		s.control.Supersede()
+		s.control.Decide(brain.CorrectionNotApplied, brain.NotAppliedLimit)
+	case state == job.StateAborted && errors.Is(err, job.ErrCancelled):
+		s.control.Decide(brain.CorrectionSuperseded, "")
 	case state == job.StateFailed:
-		s.control.Close(brain.NotAppliedReason(err))
+		s.control.Decide(brain.CorrectionNotApplied, brain.NotAppliedReason(err))
 	default:
-		s.control.Close(brain.NotAppliedStopped)
+		s.control.Decide(brain.CorrectionNotApplied, brain.NotAppliedStopped)
+	}
+}
+
+// flush reports the corrections' dispositions decided so far.
+func (s *jobSteer) flush() {
+	if s != nil {
+		s.control.Flush()
 	}
 }
 

@@ -99,6 +99,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		RuntimeBudget: runtimeBudget,
 		ID:            jobID,
 		Register:      register,
+		OnEnding:      steer.decide,
 		OnAccepted: func(id string) {
 			a.mu.Lock()
 			a.workerOrigins[id] = origin
