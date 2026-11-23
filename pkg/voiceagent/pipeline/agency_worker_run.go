@@ -84,6 +84,7 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		id := job.IDFromContext(ctx)
 		// Set, never cleared, so an image-repair retry keeps the first reason.
 		opts.OnForcedAnswer = func(reason brain.ForcedAnswer) { a.noteForcedAnswer(id, reason) }
+		opts.OnSameOutput = func(rounds int) { a.noteSameOutput(id, rounds) }
 		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief, Attachments: refs}})
 		start, end := opts.OnToolStart, opts.OnToolEnd
 		opts.OnToolStart = func(call brain.ToolCall) { a.captureWorkerThread(id, worker); start(call) }
@@ -131,6 +132,7 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 				return cleaned, attachmentErr
 			}
 		}
+		a.noteSameOutput(id, 0)
 		retryReply, err := worker.ThinkFull(ctx, input, opts)
 		if errors.Is(err, brain.ErrWorkerBudgetExceeded) {
 			return cleaned, attachmentErr

@@ -23,8 +23,8 @@ const (
 
 // WorkerFactsPrompt renders the host's record of background jobs for a live
 // turn. A job the model is not told about is one it will deny, so a described
-// job carries its task, how long it has run, what it has done and who started
-// it, behind a lead-in that says what the list is. A list of identifiers
+// job carries its task, how long it has run, what it has done, who started it
+// and whether its tools keep returning the same output, behind a lead-in that says what the list is. A list of identifiers
 // alone has nothing for the lead-in to explain and goes without it. Unfinished
 // jobs past the limit are counted, so none is silently left out. Provider and
 // model names and pricing are deliberately excluded.
@@ -85,6 +85,9 @@ func workerFactLine(fact WorkerFact) string {
 	}
 	if progress := oneLine(fact.Progress); progress != "" {
 		fmt.Fprintf(&b, " progress=%q", continuity.Clip(progress, workerFactProgressBytes))
+	}
+	if note := SameOutputNote(fact.SameOutput); state == "running" && note != "" {
+		fmt.Fprintf(&b, " output=%q", note)
 	}
 	return b.String()
 }

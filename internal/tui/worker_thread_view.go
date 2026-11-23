@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 
 	"github.com/charmbracelet/x/ansi"
@@ -124,6 +125,9 @@ func workerDetailMeta(item pipeline.WorkerInfo) string {
 	meta += dimStyle.Render(" · " + roundSeconds(item.Elapsed))
 	if item.PersonaName != "" {
 		meta += dimStyle.Render(" · " + compactWorkerText(item.PersonaName))
+	}
+	if note := brain.SameOutputNote(item.SameOutput); note != "" {
+		meta += metaStyle.Render(" · " + note)
 	}
 	return meta
 }

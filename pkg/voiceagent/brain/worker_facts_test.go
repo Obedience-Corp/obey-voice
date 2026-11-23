@@ -3,6 +3,7 @@ package brain
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -164,5 +165,63 @@ func TestActiveWorkSurvivesTheToolRoundBeforeTheAnswer(t *testing.T) {
 		if !strings.Contains(asked, `task="audit the config"`) {
 			t.Fatalf("request %d lost the job list: %q", i, asked)
 		}
+	}
+}
+
+func TestWorkerFactsPromptNotesSameOutputOnTheRunningJob(t *testing.T) {
+	got := WorkerFactsPrompt(nil, []WorkerFact{
+		{ID: "job-1", Tier: "legacy", State: "running", Task: "list the project folder", SameOutput: 12},
+		{ID: "job-2", Tier: "legacy", State: "running", Task: "watch the build", SameOutput: sameOutputShown - 1},
+		{ID: "job-3", Tier: "legacy", State: "queued", Task: "tidy the notes", SameOutput: 5},
+	})
+	lines := strings.Split(got, "\n")
+	var described []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "job=") {
+			described = append(described, line)
+		}
+	}
+	if len(described) != 3 || !strings.HasSuffix(described[0], ` task="list the project folder" output="same output for 12 rounds"`) {
+		t.Fatalf("facts prompt = %q", got)
+	}
+	if strings.Contains(described[1], "output=") || strings.Contains(described[2], "output=") {
+		t.Fatalf("a short run or a waiting job got the note: %q", got)
+	}
+	leadIn := systemPrompt(nil, "active-work", nil)
+	if !strings.Contains(leadIn, `output="same output for N rounds"`) || strings.Contains(strings.ToLower(leadIn), "stuck") {
+		t.Fatalf("the lead-in should explain the note without calling the job stuck: %q", leadIn)
+	}
+}
+
+func TestWorkerFactsPromptWithoutSameOutputIsUnchanged(t *testing.T) {
+	facts := []WorkerFact{
+		{ID: "job-1", Tier: "legacy", State: "running", Task: "list the project folder", Running: time.Minute, Progress: "ran 2 commands", Own: true},
+		{ID: "job-2", Tier: config.WorkerTierSimple, State: "queued", Task: "tidy the notes", Starter: "Ember"},
+	}
+	want := WorkerFactsPrompt(nil, facts)
+	for _, n := range []int{1, sameOutputShown - 1} {
+		counted := slices.Clone(facts)
+		counted[0].SameOutput, counted[1].SameOutput = n, n
+		if got := WorkerFactsPrompt(nil, counted); got != want {
+			t.Fatalf("a run of %d changed the prompt:\n got %q\nwant %q", n, got, want)
+		}
+	}
+	if strings.Contains(want[strings.Index(want, "\n<active_work>"):], "output=") {
+		t.Fatalf("no job has a count, but the prompt carries the note: %q", want)
+	}
+}
+
+func TestWorkerFactsPromptKeepsItsBoundsWithSameOutput(t *testing.T) {
+	long := strings.Repeat("résumé ", 200)
+	facts := make([]WorkerFact, workerFactLimit+2)
+	for i := range facts {
+		facts[i] = WorkerFact{ID: "W7K2UW4JVOUNNTVWHMH3DCAPE" + string(rune('A'+i)), Tier: config.WorkerTierComplex, State: "running",
+			Task: long, Running: 30 * time.Hour, Progress: long, Starter: long, SameOutput: 1_000_000}
+	}
+	got := WorkerFactsPrompt(nil, facts)
+	block := got[strings.Index(got, "\n<active_work>"):]
+	if strings.Count(block, "job=") != workerFactLimit || strings.Count(block, `output="same output for 1000000 rounds"`) != workerFactLimit ||
+		len(block) > workerFactsBytes || !strings.Contains(block, "unfinished jobs not listed: 2") {
+		t.Fatalf("jobs=%d bytes=%d block=%q", strings.Count(block, "job="), len(block), block)
 	}
 }

@@ -249,6 +249,9 @@ func (a *Agency) activeJobFacts() []brain.WorkerFact {
 			Progress: recentProgress(a.work.Summary(info.ID)),
 			Own:      a.pipeline.startedByLivePersona(origin.admission),
 		}
+		if info.State == job.StateRunning {
+			fact.SameOutput = origin.sameOutput
+		}
 		if !fact.Own {
 			fact.Starter = cmp.Or(strings.TrimSpace(origin.Envelope.DisplayName), strings.TrimSpace(origin.admission["persona"]))
 		}

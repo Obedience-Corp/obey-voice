@@ -22,6 +22,9 @@ type WorkerInfo struct {
 	Tools                              []workfold.Call
 	Thread                             []brain.Turn
 	PersonaID, PersonaName             string
+	// SameOutput is how many tool rounds in a row a running job's tools have
+	// returned the same output, while that is worth showing.
+	SameOutput int
 }
 
 // abortedState is how an aborted table job shows: stopping until its worker
@@ -132,6 +135,9 @@ func (p *Pipeline) Workers() []WorkerInfo {
 		if origin.Scope.Valid() && (origin.Scope != p.ConversationScope() || p.ConversationRetired()) {
 			continue
 		}
+		if item.State == job.StateRunning {
+			info.SameOutput = origin.sameOutput
+		}
 		byID[item.ID] = info
 	}
 	a.workMu.RLock()
@@ -184,6 +190,10 @@ func (p *Pipeline) Workers() []WorkerInfo {
 			if info.Termination == "" || info.Termination == "unknown" {
 				info.Termination = termination
 			}
+		}
+		info.SameOutput = 0
+		if info.State == string(work.JobRunning) {
+			info.SameOutput = origin.sameOutput
 		}
 		byID[info.ID] = info
 	}

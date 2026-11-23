@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
@@ -415,7 +416,25 @@ func (m *conversationModel) renderJobItem(id, suffix string) {
 	if id == "" {
 		return
 	}
-	m.renderJobItemLabel(id, m.jobLabel(id), suffix)
+	m.renderJobItemLabel(id, m.jobLabel(id), suffix+m.sameOutputSuffix(id))
+}
+
+// sameOutputSuffix reads the job's run of identical tool output from the live
+// worker list, so the note is never part of a sealed row.
+func (m *conversationModel) sameOutputSuffix(id string) string {
+	if m.deps.workers == nil {
+		return ""
+	}
+	for _, item := range m.deps.workers() {
+		if item.ID != id {
+			continue
+		}
+		if note := brain.SameOutputNote(item.SameOutput); note != "" {
+			return " · " + note
+		}
+		return ""
+	}
+	return ""
 }
 
 func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {

@@ -31,6 +31,10 @@ type StreamOptions struct {
 	// OnForcedAnswer reports that the returned answer was written in a
 	// tools-free round the host imposed, and why. Ollama workers only.
 	OnForcedAnswer func(ForcedAnswer)
+	// OnSameOutput reports how many consecutive tool rounds returned the same
+	// output, each time the run grows past what is worth showing, and 0 once
+	// when a shown run ends. It is observational only. Ollama workers only.
+	OnSameOutput func(rounds int)
 	// WorkerTiers is the live, policy-only availability snapshot for the route
 	// tool. It contains no provider, model, or pricing information.
 	WorkerTiers *WorkerTierAvailability
@@ -198,6 +202,9 @@ type WorkerFact struct {
 	// persona that started any other job, when the host knows it.
 	Own     bool
 	Starter string
+	// SameOutput is how many tool rounds in a row have returned the same
+	// output; zero when that is not worth mentioning.
+	SameOutput int
 }
 
 // Stream carries a streamed model response and its terminal result.
