@@ -91,7 +91,7 @@ func TestOnEndingNamesTheCauseThatWon(t *testing.T) {
 	}
 }
 
-func TestCancelFreezesTheRunningTimeAtTheStop(t *testing.T) {
+func TestCancelReportsTheJobAsItWasRunning(t *testing.T) {
 	table := NewTable(context.Background())
 	defer table.Close()
 	started := make(chan struct{})
@@ -101,14 +101,15 @@ func TestCancelFreezesTheRunningTimeAtTheStop(t *testing.T) {
 	}
 	<-started
 	before, _ := table.Cancel(id)
+	// A running snapshot has no end; its running time is read when the
+	// receipt is made, after the done callback, as it always was.
 	first := before.Elapsed()
 	for at := time.Now(); !time.Now().After(at); {
 	}
-	if before.State != StateRunning || before.Elapsed() != first {
-		t.Fatalf("state=%s elapsed moved from %v to %v", before.State, first, before.Elapsed())
+	if before.State != StateRunning || !before.Ended.IsZero() || before.Elapsed() <= first {
+		t.Fatalf("state=%s ended=%v elapsed %v then %v", before.State, before.Ended, first, before.Elapsed())
 	}
 }
-
 func TestPanickingRegisterLeavesTheTableUsable(t *testing.T) {
 	table := NewTable(context.Background())
 	defer table.Close()

@@ -474,7 +474,6 @@ func (t *Table) cancelAll(skip func(id string) bool, cause error) []Info {
 			continue
 		}
 		if x, ok := t.endLocked(id, StateAborted, "", cause, true); ok {
-			ended[len(ended)-1] = frozenAt(ended[len(ended)-1], e.info)
 			endings = append(endings, x)
 		}
 	}
@@ -538,7 +537,6 @@ func (t *Table) stop(id string, err error) (Info, bool) {
 		return before, true
 	}
 	x, _ := t.endLocked(id, StateAborted, "", err, true)
-	before = frozenAt(before, e.info)
 	t.mu.Unlock()
 	t.finishEnding(x)
 	return before, true
@@ -599,13 +597,6 @@ func (t *Table) notifyEndingLocked(e *entry, state State, err error) {
 	}
 	e.endingNoted = true
 	e.spec.OnEnding(state, err)
-}
-
-// frozenAt is the snapshot a stop found, with its running time fixed at the
-// stop, so a report made after the done callback does not count that time.
-func frozenAt(before, ended Info) Info {
-	before.Ended, before.TerminalElapsed = ended.Ended, ended.TerminalElapsed
-	return before
 }
 
 func (t *Table) finishEnding(x ending) {
