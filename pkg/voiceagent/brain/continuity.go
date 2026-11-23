@@ -279,7 +279,7 @@ func (o *OllamaBrain) compactionMessages(skillCtx string) []api.Message {
 	}
 	result := append([]api.Message(nil), messages[:end]...)
 	result = append(result, recalled...)
-	result = append(result, messages[end])
+	result = append(result, messages[end:]...)
 	if o.messagesBudgetError(result, nil) != nil {
 		return messages
 	}

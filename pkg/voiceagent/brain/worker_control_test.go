@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 	"github.com/ollama/ollama/api"
 )
@@ -703,12 +704,23 @@ func TestRecallAfterWorkerCompactionKeepsToolResultsPaired(t *testing.T) {
 		t.Fatalf("no compaction with an archive: summaries=%d", summaries)
 	}
 	recalled := false
-	for i, req := range h.requests() {
+	reqs := h.requests()
+	for i, req := range reqs {
 		for _, m := range req.Messages {
 			recalled = recalled || m.ToolCallID == "continuity-recall"
 		}
 		if err := pairedToolMessages(req.Messages); err != nil {
 			t.Fatalf("request %d: %v", i+1, err)
+		}
+		if len(req.Tools) == 0 || i == 0 {
+			continue
+		}
+		// The genuine exchange the previous reply asked for is still there,
+		// call and result, and the request still ends with it.
+		prev := fmt.Sprintf("call-%d", i)
+		last := req.Messages[len(req.Messages)-1]
+		if last.Role != "tool" || last.ToolCallID != prev {
+			t.Fatalf("request %d ends with %+v, not the result of %s", i+1, last, prev)
 		}
 	}
 	if !recalled {
@@ -893,5 +905,24 @@ func TestContinuedRunKeepsTheJobsSkills(t *testing.T) {
 		if !slices.ContainsFunc(req.Messages, func(m api.Message) bool { return strings.Contains(m.Content, "Always cite line numbers.") }) {
 			t.Fatalf("request %d lost the job's skill", i+1)
 		}
+	}
+}
+
+// A foreground reply cut off by its output limit is appended before the
+// summary request is built; recalled notes must not push it out.
+func TestRecalledNotesKeepAPartialReply(t *testing.T) {
+	cfg := continuityConfig()
+	o := &OllamaBrain{cfg: cfg, model: "fixture"}
+	o.appendMessage(api.Message{Role: "user", Content: "Tell me about the archive."}, nil)
+	o.appendMessage(api.Message{Role: "assistant", Content: "[incomplete response] The archive holds"}, nil)
+	o.archive.Add(continuity.Entry{Kind: "turn_block", Summary: "Earlier the user asked about notes."})
+	messages := o.compactionMessages("")
+	recall := slices.IndexFunc(messages, func(m api.Message) bool { return m.ToolCallID == "continuity-recall" })
+	if recall < 0 {
+		t.Fatal("no recalled notes")
+	}
+	last := messages[len(messages)-1]
+	if last.Role != "assistant" || !strings.Contains(last.Content, "The archive holds") {
+		t.Fatalf("the partial reply was dropped: %+v", messages)
 	}
 }
