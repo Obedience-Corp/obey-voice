@@ -184,7 +184,8 @@ Still frames: `demos/frames/workers-stopping.png`, `demos/frames/workers-stopped
 
 `OBEY_VOICE_DEMO_WORKERS=same_output` shows a scripted fixture job with no
 model or job table behind it: one more `run_command` round each second, all
-returning the same listing. The job is not stopped.
+returning the same listing. The job is not stopped. The fixture has fourteen
+commands, so its count stops at 14 while its elapsed time keeps rising.
 
 ```bash
 just demo-workers-same-output

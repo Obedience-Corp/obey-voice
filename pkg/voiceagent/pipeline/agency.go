@@ -58,6 +58,8 @@ type Agency struct {
 	// history may take only the ones the chat already shows, so the saved
 	// thread follows the order the user saw and heard.
 	heldReplies map[string]workerReply
+	// sameOutputs holds each job's run of tool rounds with the same output.
+	sameOutputs map[string]sameOutputRun // guarded by mu
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction

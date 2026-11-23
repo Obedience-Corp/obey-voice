@@ -571,22 +571,6 @@ func (a *Agency) noteForcedAnswer(id string, reason brain.ForcedAnswer) {
 	}
 }
 
-// noteSameOutput records how many tool rounds in a row job id's tools have
-// returned the same output; 0 clears it. It changes nothing about the job.
-func (a *Agency) noteSameOutput(id string, rounds int) {
-	if id == "" || !a.acceptJobCallback(id) {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	origin := a.workerOrigins[id]
-	if origin.sameOutput == rounds {
-		return
-	}
-	origin.sameOutput = rounds
-	a.workerOrigins[id] = origin
-}
-
 // finishMovedText gives a moved reply what a worker's answer gets before it
 // is shown, spoken and saved: thinking removed, and image lines imported as
 // the job's attachments instead of being left as paths.

@@ -32,9 +32,6 @@ type workerOrigin struct {
 	// unspoken marks a result shown and saved but not spoken, as a live reply
 	// stops speaking at its output limit.
 	unspoken bool
-	// sameOutput is how many tool rounds in a row the running job's tools
-	// returned the same output, while that is worth showing.
-	sameOutput int
 }
 type workerReply struct {
 	Attachments []chatmedia.Ref

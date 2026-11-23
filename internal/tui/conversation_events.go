@@ -430,6 +430,9 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 		m.appendActivity("tool", msg, 0)
 
+	case events.WorkerSameOutput:
+		m.jobSameOutput(e)
+
 	case events.JobQueued:
 		m.jobQueued(e)
 

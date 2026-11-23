@@ -236,6 +236,7 @@ func (a *Agency) activeJobFacts() []brain.WorkerFact {
 		}
 		a.mu.Lock()
 		origin := a.workerOrigins[info.ID]
+		same := a.sameOutputLocked(info.ID)
 		a.mu.Unlock()
 		if !a.pipeline.receivesJob(origin.admission) {
 			continue
@@ -249,8 +250,11 @@ func (a *Agency) activeJobFacts() []brain.WorkerFact {
 			Progress: recentProgress(a.work.Summary(info.ID)),
 			Own:      a.pipeline.startedByLivePersona(origin.admission),
 		}
-		if info.State == job.StateRunning {
-			fact.SameOutput = origin.sameOutput
+		// A job left running by a cleared conversation no longer reports its
+		// count, so it is not shown here.
+		current := !origin.Scope.Valid() || (origin.Scope == a.pipeline.ConversationScope() && !a.pipeline.ConversationRetired())
+		if info.State == job.StateRunning && current {
+			fact.SameOutput = same
 		}
 		if !fact.Own {
 			fact.Starter = cmp.Or(strings.TrimSpace(origin.Envelope.DisplayName), strings.TrimSpace(origin.admission["persona"]))

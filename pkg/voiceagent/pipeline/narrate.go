@@ -245,6 +245,8 @@ func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics, tier
 func (n *Narrator) storyWriterRun(own *config.Config, tier *config.OwnTier) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		opts := brain.WorkerStreamOptions(n.cfg == nil || n.cfg.VoiceToolsEnabled)
+		id := job.IDFromContext(ctx)
+		opts.OnSameOutput = func(rounds int) { n.agency.noteSameOutput(id, rounds) }
 		var worker brain.Provider
 		if own != nil {
 			if end, ok := job.BudgetEnd(ctx); ok {

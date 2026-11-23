@@ -30,6 +30,8 @@ type jobView struct {
 	terminal bool
 	tool     string // the tool the worker is on, until the fold has a row
 	tier     string
+	// sameOutput is the job's run of tool rounds with the same output.
+	sameOutput int
 }
 
 func (m *conversationModel) canonicalJob(v work.JobView) {
@@ -416,25 +418,28 @@ func (m *conversationModel) renderJobItem(id, suffix string) {
 	if id == "" {
 		return
 	}
-	m.renderJobItemLabel(id, m.jobLabel(id), suffix+m.sameOutputSuffix(id))
+	if job := m.jobs[id]; job != nil && job.running && !job.terminal {
+		if note := brain.SameOutputNote(job.sameOutput); note != "" {
+			suffix += " · " + note
+		}
+	}
+	m.renderJobItemLabel(id, m.jobLabel(id), suffix)
 }
 
-// sameOutputSuffix reads the job's run of identical tool output from the live
-// worker list, so the note is never part of a sealed row.
-func (m *conversationModel) sameOutputSuffix(id string) string {
-	if m.deps.workers == nil {
-		return ""
+// jobSameOutput rewrites a running job's row when its run of identical tool
+// output changes. A sealed row never carries it.
+func (m *conversationModel) jobSameOutput(e events.WorkerSameOutput) {
+	if !m.acceptWorkScope(e.Scope) {
+		return
 	}
-	for _, item := range m.deps.workers() {
-		if item.ID != id {
-			continue
-		}
-		if note := brain.SameOutputNote(item.SameOutput); note != "" {
-			return " · " + note
-		}
-		return ""
+	job, ok := m.jobs[e.JobID]
+	if !ok || job.terminal || job.sameOutput == e.Rounds {
+		return
 	}
-	return ""
+	job.sameOutput = e.Rounds
+	if job.running {
+		m.renderJobItem(e.JobID, " · working")
+	}
 }
 
 func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {

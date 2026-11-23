@@ -417,10 +417,13 @@ each returned, without the arguments and without the command `run_command`
 echoes, in any call order. A round in which the tools all print nothing counts
 as the same output too. From three such rounds, the job's row in the chat,
 its line in `/workers` and its header in the job's detail view add `same output
-for 12 rounds`, and the persona answering is told the same on that job
-(`output="same output for 12 rounds"`). Different output clears it, and so does
-the end of the job. It is never saved to the conversation, and it has no say
-in when the repeat guard or any limit steps in.
+for 12 rounds`. A persona on Ollama answering you is told the same on that
+job (`output="same output for 12 rounds"`), with one sentence explaining it,
+the `system/active-work-same-output.yaml` prompt, sent only while a listed job
+carries it. A job left running by a cleared conversation is still listed
+without its count. Different output clears it, and so does the end of the job.
+It is never saved to the conversation, and it has no say in when the repeat
+guard or any limit steps in.
 
 Each job is a conversation of its own. The worker starts with no history and
 no CLI session from the job before it, and two jobs running at once never

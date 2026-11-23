@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -36,23 +37,43 @@ func TestWorkersListAndDetailShowSameOutput(t *testing.T) {
 	}
 }
 
+// The worker stores the count after its round's last tool has finished, so
+// the count event follows that tool's finish event.
 func TestJobRowShowsSameOutputUntilTheJobEnds(t *testing.T) {
 	m := sizedConversation(t, 140, 24)
-	info := pipeline.WorkerInfo{ID: "job-1", Task: "list the project folder", State: "running"}
-	m.deps.workers = func() []pipeline.WorkerInfo { return []pipeline.WorkerInfo{info} }
 	m, _ = m.Update(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "list the project folder"}})
-	row := func() string { return stripANSI(m.items[m.jobItems["job-1"]].sys) }
+	row := func() string { return strings.SplitN(stripANSI(m.items[m.jobItems["job-1"]].sys), "\n", 2)[0] }
+	send := func(e events.Event) { m, _ = m.Update(busEventMsg{event: e}) }
+	round := func(n int, rounds int) {
+		id := fmt.Sprintf("c%d", n)
+		send(events.ToolCallStarted{ID: id, JobID: "job-1", Name: "run_command", Kind: "execute", Summary: "ls -1"})
+		send(events.ToolCallFinished{ID: id, JobID: "job-1", Name: "run_command", Kind: "execute"})
+		if rounds >= 0 {
+			send(events.WorkerSameOutput{JobID: "job-1", Rounds: rounds})
+		}
+	}
+	round(1, -1)
+	round(2, -1)
+	round(3, 3)
+	if !strings.HasSuffix(row(), " · working · same output for 3 rounds") {
+		t.Fatalf("row after the third round: %q", row())
+	}
+	round(4, 4)
+	if !strings.HasSuffix(row(), " · working · same output for 4 rounds") {
+		t.Fatalf("row after the fourth round: %q", row())
+	}
+	round(5, 0)
 	if strings.Contains(row(), "same output") {
-		t.Fatalf("row before any count: %q", row())
+		t.Fatalf("row after different output: %q", row())
 	}
-	info.SameOutput = 7
-	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "c1", JobID: "job-1", Name: "run_command", Kind: "execute", Summary: "ls -1"}})
-	if !strings.Contains(strings.SplitN(row(), "\n", 2)[0], " · working · same output for 7 rounds") {
-		t.Fatalf("row while repeating: %q", row())
-	}
+	send(events.WorkerSameOutput{JobID: "job-1", Rounds: 7})
 	idx := m.jobItems["job-1"]
-	m, _ = m.Update(busEventMsg{event: events.JobFinished{ID: "job-1", Task: "list the project folder", Elapsed: 41 * time.Second, Summary: "Three files."}})
+	send(events.JobFinished{ID: "job-1", Task: "list the project folder", Elapsed: 41 * time.Second, Summary: "Three files."})
 	if sealed := stripANSI(m.items[idx].sys); strings.Contains(sealed, "same output") || !strings.Contains(sealed, "done in 41s") {
 		t.Fatalf("sealed row: %q", sealed)
+	}
+	send(events.WorkerSameOutput{JobID: "job-1", Rounds: 8})
+	if sealed := stripANSI(m.items[idx].sys); strings.Contains(sealed, "same output") {
+		t.Fatalf("a late count reopened the sealed row: %q", sealed)
 	}
 }
