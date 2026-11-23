@@ -25,7 +25,7 @@ func demoWorkCueVariant() string {
 
 func demoWorkCueEnabled() bool {
 	switch demoWorkCueVariant() {
-	case "1", "true", "yes", "on", demoWorkCueCutShort, demoWorkCueTell:
+	case "1", "true", "yes", "on", demoWorkCueCutShort, demoWorkCueTell, demoWorkCueReport:
 		return true
 	default:
 		return false
@@ -41,6 +41,13 @@ const demoWorkCueCutShort = "cut_short"
 const demoWorkCueTell = "tell"
 
 const demoTellTask = "Summarize the action items in notes.txt"
+
+// demoWorkCueReport scripts a running job that the user asks for its report
+// with /work report; demoReportRunner answers the command and scripts the
+// worker's side.
+const demoWorkCueReport = "report"
+
+const demoReportTask = "Collect the action items from the meeting notes"
 
 func startDemoWorkCue(bus *events.Bus) tea.Cmd {
 	if bus == nil {
@@ -60,6 +67,9 @@ func runDemoWorkCue(bus *events.Bus) {
 		return
 	case demoWorkCueTell:
 		runDemoTell(emit)
+		return
+	case demoWorkCueReport:
+		runDemoReport(emit)
 		return
 	}
 	time.Sleep(600 * time.Millisecond)
@@ -140,4 +150,45 @@ func (d demoTellRunner) TellWork(id, text string) pipeline.WorkReceipt {
 			Summary: "notes-2.txt has three action items: send the draft, book the room, and update the budget sheet."})
 	}()
 	return pipeline.WorkReceipt{Jobs: []pipeline.JobControl{{ID: id, Outcome: pipeline.ControlAccepted, Revision: 1}}}
+}
+
+func runDemoReport(emit func(events.Event)) {
+	time.Sleep(600 * time.Millisecond)
+	emit(events.UserInput{Text: "Collect the action items from the meeting notes."})
+	emit(events.ThinkingStarted{})
+	time.Sleep(700 * time.Millisecond)
+	emit(events.JobStarted{ID: "job-1", Task: demoReportTask})
+	emit(events.ResponseReady{Response: "Working on it."})
+	emit(events.STTPhase{Phase: "listening"})
+	ok := &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}
+	for i, name := range []string{"monday.txt", "tuesday.txt"} {
+		id := "call-" + string(rune('1'+i))
+		time.Sleep(900 * time.Millisecond)
+		emit(events.ToolCallStarted{ID: id, JobID: "job-1", Name: "read_file", Kind: "read", Summary: name})
+		time.Sleep(500 * time.Millisecond)
+		emit(events.ToolCallFinished{ID: id, JobID: "job-1", Name: "read_file", Kind: "read", Outcome: ok})
+	}
+	time.Sleep(900 * time.Millisecond)
+	emit(events.ToolCallStarted{ID: "call-3", JobID: "job-1", Name: "read_file", Kind: "read", Summary: "wednesday.txt"})
+}
+
+// demoReportRunner is the live pipeline with /work report answered by a
+// script: the report is accepted at once, as on an in-process worker; the
+// call already running finishes and the answer follows, cut short.
+type demoReportRunner struct {
+	*pipeline.Pipeline
+	bus *events.Bus
+}
+
+func (d demoReportRunner) ReportWork(id string) pipeline.WorkReceipt {
+	const checkpoint = "read 2 files (2 succeeded, 1 active)"
+	d.bus.Emit(events.JobReport{ID: id, Checkpoint: checkpoint, Answer: true})
+	go func() {
+		time.Sleep(1200 * time.Millisecond)
+		d.bus.Emit(events.ToolCallFinished{ID: "call-3", JobID: id, Name: "read_file", Kind: "read", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}})
+		time.Sleep(2500 * time.Millisecond)
+		d.bus.Emit(events.JobFinished{ID: id, Task: demoReportTask, Elapsed: 26 * time.Second, CutShort: true, CutShortReason: "report requested",
+			Summary: "Monday and Tuesday have five action items: send the draft, book the room, update the budget sheet, call the venue and file the receipts. Wednesday's notes are read but not sorted yet; Thursday and Friday are not read. Nothing was written to disk."})
+	}()
+	return pipeline.WorkReceipt{Jobs: []pipeline.JobControl{{ID: id, Outcome: pipeline.ControlAccepted, Checkpoint: checkpoint}}}
 }

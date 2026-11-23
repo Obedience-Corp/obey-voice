@@ -108,7 +108,7 @@ func demoWorkers(inner workerController) workerController {
 	if demoWorkCueEnabled() {
 		task = demoWorkCueTask
 	}
-	if v := demoWorkCueVariant(); v == demoWorkCueCutShort || v == demoWorkCueTell {
+	if v := demoWorkCueVariant(); v == demoWorkCueCutShort || v == demoWorkCueTell || v == demoWorkCueReport {
 		return &demoWorkerController{inner: inner}
 	}
 	return &demoWorkerController{

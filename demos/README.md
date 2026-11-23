@@ -195,6 +195,25 @@ Still frames: `demos/frames/work-tell-running.png`,
 `demos/frames/work-tell-accepted.png`, `demos/frames/work-tell-included.png`,
 `demos/frames/work-tell-done.png`
 
+## work-report.gif — asking a running job for its report
+
+1. A job starts and reads `monday.txt`, `tuesday.txt`, then `wednesday.txt`
+2. `/work report job-1` is typed; the receipt line prints what the job has
+   done so far and says it stops using tools and writes its answer
+3. The job's row reads `reporting`; the call already running finishes
+4. The answer arrives, and the sealed row reads `cut short: report requested`
+
+`OBEY_VOICE_DEMO_WORK_CUE=report` scripts the job's events and the worker's
+side of the report. The `/work report` command, its receipt and the job row
+are the real conversation TUI; there is no microphone or model.
+
+```bash
+just demo-work-report
+```
+
+Still frames: `demos/frames/work-report-running.png`,
+`demos/frames/work-report-reporting.png`, `demos/frames/work-report-done.png`
+
 ## work-cue.gif — background work during conversation
 
 The real conversation TUI shows an animated **Working** cue beside the

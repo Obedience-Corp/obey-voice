@@ -211,6 +211,18 @@ demo-work-tell: build
         vhs demos/work-tell.tape
     ls -lh demos/work-tell.gif demos/frames/work-tell-accepted.png demos/frames/work-tell-included.png demos/frames/work-tell-done.png
 
+# Conversation: a running job asked for its report with /work report, its row marked "reporting".
+# Scripted bus events; no mic or model required.
+demo-work-report: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/work-report.tape
+    ls -lh demos/work-report.gif demos/frames/work-report-running.png demos/frames/work-report-reporting.png demos/frames/work-report-done.png
+
 # Settings → Persona: list seeded agents and switch active persona.
 demo-persona-switch: build
     #!/usr/bin/env bash
