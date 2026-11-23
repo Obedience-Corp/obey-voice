@@ -44,6 +44,9 @@ func TestPlayStreamDrainsWhenWaitReadyFails(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("WaitReady failure did not complete playback")
 	}
+	if started, _ := pb.WaitStart(nil); started {
+		t.Fatal("a stream that failed before any audio was counted as heard")
+	}
 }
 
 func TestIsPlayingOnlyDuringDrain(t *testing.T) {

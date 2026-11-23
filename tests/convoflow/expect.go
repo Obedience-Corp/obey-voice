@@ -42,7 +42,11 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 			return fmt.Errorf("want a job_finished with an answer, cut short: %s", ex.CutShort)
 		}
 	case ex.ToolsStopAfterReport != nil:
-		if late := toolsAfterReport(st.events, rec); (late == 0) != *ex.ToolsStopAfterReport {
+		late := toolsAfterReport(st.events, rec)
+		if late < 0 {
+			return fmt.Errorf("want a job_report")
+		}
+		if (late == 0) != *ex.ToolsStopAfterReport {
 			return fmt.Errorf("tool calls started after the report: %d", late)
 		}
 	case ex.Event != "":
@@ -482,8 +486,8 @@ func hasCutShort(turnLog []timedEvent, rec *recorder, reason string) bool {
 	return false
 }
 
-// toolsAfterReport counts the reported job's tool calls that started after
-// its job_report event, or -1 when there is no report.
+// toolsAfterReport counts the tool calls of the first reported job that
+// started after its job_report event, or -1 when there is no report.
 func toolsAfterReport(turnLog []timedEvent, rec *recorder) int {
 	src := turnLog
 	if src == nil && rec != nil {
@@ -493,7 +497,9 @@ func toolsAfterReport(turnLog []timedEvent, rec *recorder) int {
 	for _, te := range src {
 		switch e := te.event.(type) {
 		case events.JobReport:
-			id, late = e.ID, 0
+			if id == "" {
+				id, late = e.ID, 0
+			}
 		case events.ToolCallStarted:
 			if id != "" && e.JobID == id {
 				late++

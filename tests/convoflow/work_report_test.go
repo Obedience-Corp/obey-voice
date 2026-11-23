@@ -93,6 +93,14 @@ func TestCutShortExpectation(t *testing.T) {
 	if err := evalExpect(Expectation{ToolsStopAfterReport: &stop}, &recorder{}, turnState{events: log[:1]}); err == nil {
 		t.Fatal("a turn with no report passed")
 	}
+	still := false
+	if err := evalExpect(Expectation{ToolsStopAfterReport: &still}, &recorder{}, turnState{events: log[:1]}); err == nil {
+		t.Fatal("a turn with no report passed as tools still starting")
+	}
+	log = append(log, timedEvent{event: events.JobReport{ID: "job-1"}})
+	if err := evalExpect(Expectation{ToolsStopAfterReport: &stop}, &recorder{}, turnState{events: log}); err == nil {
+		t.Fatal("a later report hid a tool call that started after the first")
+	}
 }
 
 func TestReportNewestJob(t *testing.T) {
