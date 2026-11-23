@@ -103,8 +103,7 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 			if err != nil {
 				return firstReply, err
 			}
-			done := r.finish(firstReply)
-			return done.text, done.err
+			return r.note(r.finish(firstReply), true)
 		}
 		// Versioned checkpoints replace the hook snapshots, which a history a
 		// failed request rolled back could overwrite.
@@ -215,19 +214,25 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 // deliver notes how the answer was finished and saves the thread it was
 // imported into; delivery reads the reply's images from that thread.
 func (r *workerRun) deliver(done finished) (string, error) {
+	text, err := r.note(done, true)
 	r.steer.saveCheckpoint(r.worker)
-	return r.note(done)
+	return text, err
 }
 
-// note records how the answer was finished and returns it, marked when it
-// came back without the image its task asked for.
-func (r *workerRun) note(done finished) (string, error) {
+// note records how the answer was finished and returns it. An answer that
+// came back without the image its task asked for is cleaned and marked once
+// here, and, when save is set, the worker's own record of the reply is given
+// the same text, so the saved thread, the delivery and speech agree.
+func (r *workerRun) note(done finished, save bool) (string, error) {
 	if r.forced != "" {
 		r.a.noteForcedAnswer(r.id, r.forced)
 	}
 	if done.noImage && done.err == nil {
 		r.a.noteNoImage(r.id)
-		done.text = strings.TrimRight(done.text, "\n") + "\n\n" + noImageMarker
+		done.text = cleanWorkerReply(strings.TrimSpace(done.text)) + "\n\n" + noImageMarker
+		if writer, ok := r.worker.(brain.ReplyMediaWriter); ok && save {
+			_ = writer.SetReplyMedia(done.text, nil)
+		}
 	}
 	return done.text, done.err
 }
@@ -238,7 +243,7 @@ func (r *workerRun) note(done finished) (string, error) {
 // apart from it for delivery.
 func (r *workerRun) deliverHeld(held finished) (string, error) {
 	r.a.keepReplyMedia(r.id, held.media)
-	return r.note(held)
+	return r.note(held, false)
 }
 
 // noImageMarker ends an answer that came back without the image its task

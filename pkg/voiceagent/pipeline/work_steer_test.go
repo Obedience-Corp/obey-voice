@@ -1149,3 +1149,54 @@ func TestTakingCorrectionsAddsNoMetadataRequest(t *testing.T) {
 		t.Fatalf("metadata requests: %d with corrections, %d without", steered, plain)
 	}
 }
+
+// textWorker answers every request with one reply and keeps no input.
+type textWorker struct{ reply string }
+
+func (w textWorker) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	return (&fakeBrain{chunks: []string{w.reply}}).ThinkStream(ctx, input, opts)
+}
+func (w textWorker) ThinkFull(context.Context, string, brain.StreamOptions) (string, error) {
+	return w.reply, nil
+}
+func (textWorker) ClearHistory()            {}
+func (textWorker) History() []brain.Turn    { return nil }
+func (textWorker) LoadHistory([]brain.Turn) {}
+
+// The no-image marker is applied once, after the hand-off cleaner, and the
+// delivered text and the saved thread agree, whichever kind of worker ran.
+func TestNoImageMarkerIsAppliedOnceToTheFinishedAnswer(t *testing.T) {
+	const handoff = "\n\nNow give the result to the user as Ada, briefly (2–3 sentences). No markdown."
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	t.Run("worker that takes no input", func(t *testing.T) {
+		h := newSteerJobHarness(t, func(int, api.ChatRequest) (api.ChatResponse, int) { return textReply("unused"), 0 })
+		steer := h.a.newJobSteer(work.WorkScope{})
+		h.a.registerSteer("job-1", steer)
+		steer.control.Steer("Text only, please.")
+		run := withJobSteer(job.WithID(ctx, "job-1"), steer)
+		result, err := h.a.workerRunWithBudget("Send a picture of the notes.", textWorker{reply: "Text only, as asked." + handoff}, h.workCfg, nil, false)(run)
+		if err != nil || result != "Text only, as asked.\n\n"+noImageMarker {
+			t.Fatalf("result=%q err=%v", result, err)
+		}
+	})
+	t.Run("worker that takes corrections", func(t *testing.T) {
+		var h *steerJobHarness
+		h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			if n == 1 {
+				h.a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Text only, please."})
+				return readCall("notes.txt"), 0
+			}
+			return textReply("Text only, as asked." + handoff), 0
+		})
+		result, err := h.directSteerRun(ctx, "Send a picture of the notes.", nil)
+		if err != nil || result != "Text only, as asked.\n\n"+noImageMarker {
+			t.Fatalf("result=%q err=%v", result, err)
+		}
+		h.a.mu.Lock()
+		thread := copyWorkerThread(h.a.workerThreads["job-1"])
+		h.a.mu.Unlock()
+		if last := thread[len(thread)-1]; last.Role != "assistant" || last.Content != result {
+			t.Fatalf("saved thread ends %q, delivered %q", last.Content, result)
+		}
+	})
+}
