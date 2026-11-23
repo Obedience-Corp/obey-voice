@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -64,6 +65,9 @@ type Agency struct {
 	// under the job table's lock, so it has a mutex of its own.
 	steersMu sync.Mutex
 	steers   map[string]*jobSteer
+	// heldMedia are the images of an answer delivered in place of a failed
+	// correction's run, kept apart from that job's saved thread.
+	heldMedia map[string][]chatmedia.Ref // guarded by mu
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction

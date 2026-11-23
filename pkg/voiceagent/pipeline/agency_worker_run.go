@@ -143,6 +143,8 @@ type finished struct {
 	// noImage: the task asked for an image, a correction was given, and no
 	// image came back. It is not an error, but it is said.
 	noImage bool
+	// media are the images the reply attached.
+	media []chatmedia.Ref
 }
 
 // steered runs a job that takes corrections. The runner, not the worker loop,
@@ -184,11 +186,17 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 			}
 			// The corrected run failed; the answer it would have replaced stands.
 			r.forced = cmp.Or(heldForced, failedCorrectionReason(err, r.budget))
-			return r.deliver(*held)
+			return r.deliverHeld(*held)
 		}
 		done := r.finish(reply)
 		if done.err != nil && !done.preempted {
 			control.Close(brain.NotAppliedReason(done.err))
+			// A replacement counts only once it is finished; one whose
+			// images could not be attached leaves the answer in hand.
+			if held != nil && !errors.Is(r.ctx.Err(), context.Canceled) {
+				r.forced = cmp.Or(heldForced, brain.ForcedByFailedCorrection)
+				return r.deliverHeld(*held)
+			}
 			return done.text, done.err
 		}
 		sealed, limit := control.Seal(brain.WorkerLimitDue(r.ctx, r.budget, start))
@@ -207,6 +215,13 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 // deliver notes how the answer was finished and saves the thread it was
 // imported into; delivery reads the reply's images from that thread.
 func (r *workerRun) deliver(done finished) (string, error) {
+	r.steer.saveCheckpoint(r.worker)
+	return r.note(done)
+}
+
+// note records how the answer was finished and returns it, marked when it
+// came back without the image its task asked for.
+func (r *workerRun) note(done finished) (string, error) {
 	if r.forced != "" {
 		r.a.noteForcedAnswer(r.id, r.forced)
 	}
@@ -214,8 +229,16 @@ func (r *workerRun) deliver(done finished) (string, error) {
 		r.a.noteNoImage(r.id)
 		done.text = strings.TrimRight(done.text, "\n") + "\n\n" + noImageMarker
 	}
-	r.steer.saveCheckpoint(r.worker)
 	return done.text, done.err
+}
+
+// deliverHeld delivers the answer held while a correction ran, after that run
+// failed. The worker's history was rolled back past the corrected run, so the
+// saved thread keeps its newest evidence and the answer's images are kept
+// apart from it for delivery.
+func (r *workerRun) deliverHeld(held finished) (string, error) {
+	r.a.keepReplyMedia(r.id, held.media)
+	return r.note(held)
 }
 
 // noImageMarker ends an answer that came back without the image its task
@@ -245,11 +268,13 @@ func (r *workerRun) finish(reply string) finished {
 	asked, _ := ctx.Value(imageDeliveryKey{}).(bool)
 	waiting := func() bool { return r.steer != nil && r.steer.control.Waiting() }
 	noImage := false
+	var media []chatmedia.Ref
 	finalize := func(result string) (string, error) {
 		corrected := r.steer.corrected()
 		required := asked && !corrected
 		cleaned, attached, err := finalizeProviderReply(worker, result, r.workDir, r.warn)
 		if len(attached) > 0 {
+			media = attached
 			return cleaned, nil
 		}
 		noImage = asked && corrected
@@ -263,7 +288,7 @@ func (r *workerRun) finish(reply string) finished {
 	}
 	cleaned, importErr := finalize(reply)
 	if importErr == nil {
-		return finished{text: cleaned, noImage: noImage}
+		return finished{text: cleaned, noImage: noImage, media: media}
 	}
 	if err := ctx.Err(); err != nil {
 		return finished{err: err}
@@ -298,7 +323,7 @@ func (r *workerRun) finish(reply string) finished {
 		failure := workerImageFailure(importErr, reply, retryReply)
 		return finished{text: cleaned, err: failure, preempted: waiting()}
 	}
-	return finished{text: cleaned, noImage: noImage}
+	return finished{text: cleaned, noImage: noImage, media: media}
 }
 
 // Failed jobs publish the error to chat. Keep the worker's explanation from

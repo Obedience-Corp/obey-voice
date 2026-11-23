@@ -1005,3 +1005,48 @@ func TestTellAfterTheTableEndedTheJobIsRefused(t *testing.T) {
 		}
 	})
 }
+
+// The answer in hand is delivered when the run that would replace it fails:
+// at finalization, or at a later request after completing tools, without
+// losing the tools the corrected run completed from the saved thread.
+func TestHeldAnswerStandsWhenItsReplacementFails(t *testing.T) {
+	t.Run("replacement's image import fails", func(t *testing.T) {
+		var h *steerJobHarness
+		h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			if n == 1 {
+				h.p.TellWork(h.lastAccepted(), "Attach the chart too.")
+				return textReply("notes.txt lists three action items."), 0
+			}
+			return textReply("![chart](missing-chart.png)"), 0
+		})
+		id := h.spawn("Read notes.txt in the fixture folder")
+		h.setAccepted(id)
+		finished := h.awaitFinished(id)
+		if finished.Summary != "notes.txt lists three action items." || !finished.CutShort || finished.CutShortReason != string(brain.ForcedByFailedCorrection) {
+			t.Fatalf("delivered %+v", finished)
+		}
+	})
+	t.Run("replacement fails after a tool", func(t *testing.T) {
+		var h *steerJobHarness
+		h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			switch n {
+			case 1:
+				h.p.TellWork(h.lastAccepted(), "Read other.txt too.")
+				return textReply("notes.txt lists three action items."), 0
+			case 2:
+				return readCall("other.txt"), 0
+			}
+			return api.ChatResponse{}, http.StatusBadRequest
+		})
+		id := h.spawn("Read notes.txt in the fixture folder")
+		h.setAccepted(id)
+		finished := h.awaitFinished(id)
+		if finished.Summary != "notes.txt lists three action items." || !finished.CutShort {
+			t.Fatalf("delivered %+v", finished)
+		}
+		info := onlyWorker(t, h.p)
+		if !slices.ContainsFunc(info.Thread, func(turn brain.Turn) bool { return turn.Role == "tool" && strings.Contains(turn.Content, "other.txt") }) {
+			t.Fatalf("the corrected run's completed tool was lost from the thread: %+v", info.Thread)
+		}
+	})
+}
