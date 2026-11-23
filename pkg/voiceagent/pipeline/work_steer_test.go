@@ -60,6 +60,9 @@ type steerSetup struct {
 	inbox bool
 	// budget is the job table's runtime budget; zero is none.
 	budget time.Duration
+	// workerProvider, when set, is the configured legacy worker provider,
+	// which a tiered or own job does not run on.
+	workerProvider string
 }
 
 func newSteerJobHarness(t *testing.T, reply func(n int, req api.ChatRequest) (api.ChatResponse, int)) *steerJobHarness {
@@ -112,6 +115,9 @@ func newSteerJobHarnessWith(t *testing.T, setup steerSetup, reply func(n int, re
 	}))
 	t.Cleanup(server.Close)
 	cfg := &config.Config{OllamaHost: server.URL, OllamaModel: "fixture", WorkDir: h.root, PromptsDir: filepath.Join(h.root, "prompts"), MaxHistory: 100, OllamaNumCtx: 32768, VoiceWorkerProvider: "ollama", VoiceWorkerModel: "fixture", VoiceToolsEnabled: true}
+	if setup.workerProvider != "" {
+		cfg.VoiceWorkerProvider = setup.workerProvider
+	}
 	if setup.tieredRequests > 0 {
 		w := config.DefaultVoiceWorkers()
 		w.Mode, w.Revision = config.WorkerModeTiered, 1
@@ -795,7 +801,10 @@ func TestOwnJobAndTieredWorkerTakeCorrections(t *testing.T) {
 		steer := h.a.newJobSteer()
 		h.a.registerSteer("job-1", steer)
 		ctx := withJobSteer(job.WithID(t.Context(), "job-1"), steer)
-		result, err := h.a.ownWorkRun("Read notes.txt.", h.workCfg, nil)(ctx)
+		// The persona talks on Ollama while the configured worker is a CLI.
+		own := h.workCfg.Clone()
+		own.BrainProvider, own.VoiceWorkerProvider = "ollama", "claude"
+		result, err := h.a.ownWorkRun("Read notes.txt.", own, nil)(ctx)
 		if err != nil || result != "Read other.txt." || receipt.Jobs[0].Outcome != ControlAccepted {
 			t.Fatalf("result=%q err=%v receipt=%+v", result, err, receipt)
 		}
@@ -803,7 +812,7 @@ func TestOwnJobAndTieredWorkerTakeCorrections(t *testing.T) {
 	t.Run("tiered local worker", func(t *testing.T) {
 		var h *steerJobHarness
 		var receipt WorkReceipt
-		h = newSteerJobHarnessWith(t, steerSetup{tieredRequests: 10}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		h = newSteerJobHarnessWith(t, steerSetup{tieredRequests: 10, workerProvider: "claude"}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
 			if n == 1 {
 				receipt = h.p.TellWork(h.lastAccepted(), steerText)
 				return textReply("Read notes.txt."), 0
@@ -817,4 +826,126 @@ func TestOwnJobAndTieredWorkerTakeCorrections(t *testing.T) {
 			t.Fatalf("delivered %q receipt=%+v", finished.Summary, receipt)
 		}
 	})
+}
+
+// Two calls of a batch finish and the third hits the tool limit; the run
+// fails and rolls back, and the saved thread still holds both results.
+func TestThreadKeepsCompletedResultsWhenALaterCallFails(t *testing.T) {
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		args := func(path string) api.ToolCallFunctionArguments {
+			a := api.NewToolCallFunctionArguments()
+			a.Set("path", path)
+			return a
+		}
+		return api.ChatResponse{Done: true, DoneReason: "stop", Message: api.Message{Role: "assistant", ToolCalls: []api.ToolCall{
+			{ID: "c1", Function: api.ToolCallFunction{Name: "read_file", Arguments: args("notes.txt")}},
+			{ID: "c2", Function: api.ToolCallFunction{Name: "read_file", Arguments: args("other.txt")}},
+			{ID: "c3", Function: api.ToolCallFunction{Name: "read_file", Arguments: args("notes.txt")}},
+		}}}, 0
+	})
+	if _, err := h.directSteerRun(t.Context(), "Read the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10, MaxToolCalls: 2})); err == nil {
+		t.Fatal("the tool limit did not fail the run")
+	}
+	h.a.mu.Lock()
+	thread := copyWorkerThread(h.a.workerThreads["job-1"])
+	h.a.mu.Unlock()
+	results := 0
+	for _, turn := range thread {
+		if turn.Role == "tool" {
+			results++
+		}
+	}
+	if results != 2 {
+		t.Fatalf("saved thread holds %d results: %+v", results, thread)
+	}
+}
+
+func TestQueuedCorrectionDispositionsAtTheFirstRequest(t *testing.T) {
+	t.Run("worker that cannot report", func(t *testing.T) {
+		h := newControlHarness(t, stubbornHookWorker{release: make(chan struct{})}, false)
+		var mu sync.Mutex
+		var states []string
+		events.Subscribe(h.agency.pipeline.Events, func(e events.JobCorrection) {
+			mu.Lock()
+			states = append(states, e.State)
+			mu.Unlock()
+		})
+		h.agency.jobs.SetWorkerLimits(1, 4)
+		hold := make(chan struct{})
+		if _, err := h.agency.jobs.Start(context.Background(), job.Spec{Task: "hold", Run: func(context.Context) (string, error) { <-hold; return "", nil }}); err != nil {
+			t.Fatal(err)
+		}
+		h.spawn("list the files here")
+		var id string
+		for _, info := range h.agency.jobs.Status() {
+			if info.Task != "hold" {
+				id = info.ID
+			}
+		}
+		if r := h.agency.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: id, Instruction: steerText}); r.Jobs[0].Outcome != ControlBriefed {
+			t.Fatalf("receipt=%+v", r)
+		}
+		close(hold)
+		<-h.tool
+		mu.Lock()
+		defer mu.Unlock()
+		if !slices.Equal(states, []string{"pending", "briefed"}) {
+			t.Fatalf("correction events=%q", states)
+		}
+		if label := h.agency.steerFor(id).label(); label != "correction added to brief" {
+			t.Fatalf("workers label=%q", label)
+		}
+	})
+	t.Run("first request draws no response", func(t *testing.T) {
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			return api.ChatResponse{}, http.StatusBadRequest
+		})
+		release := h.holdSlot()
+		<-h.queued
+		id := h.spawn("Read notes.txt in the fixture folder")
+		if r := h.p.TellWork(id, steerText); r.Jobs[0].Outcome != ControlBriefed {
+			t.Fatalf("receipt=%+v", r)
+		}
+		release()
+		select {
+		case <-h.failed:
+		case <-time.After(10 * time.Second):
+			t.Fatal("job did not fail")
+		}
+		got := h.events()
+		if len(got) != 2 || got[1].State != "not_applied" || got[1].Reason != brain.NotAppliedFailed {
+			t.Fatalf("correction events=%+v", got)
+		}
+	})
+}
+
+// A job asked for a picture is corrected and answers in text: the answer is
+// delivered, says no image was attached, and the job and inbox say so too.
+func TestCorrectedPictureJobSaysNoImageWasAttached(t *testing.T) {
+	for _, inbox := range []bool{false, true} {
+		t.Run(map[bool]string{false: "legacy", true: "inbox"}[inbox], func(t *testing.T) {
+			var h *steerJobHarness
+			h = newSteerJobHarnessWith(t, steerSetup{inbox: inbox}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+				if n == 1 {
+					h.p.TellWork(h.lastAccepted(), "No picture; describe it in text.")
+					return readCall("notes.txt"), 0
+				}
+				return textReply("A plain chart of the notes, described."), 0
+			})
+			id := h.spawn("Send me a picture of the notes")
+			h.setAccepted(id)
+			want := "A plain chart of the notes, described.\n\n" + noImageMarker
+			if inbox {
+				outcome := h.awaitOutcome(id)
+				if outcome.Status != work.OutcomeSucceeded || outcome.Limitations != "no image attached" || outcome.Text != want {
+					t.Fatalf("outcome=%+v", outcome)
+				}
+				return
+			}
+			finished := h.awaitFinished(id)
+			if !finished.NoImage || finished.CutShort || finished.Summary != want {
+				t.Fatalf("delivered %+v", finished)
+			}
+		})
+	}
 }

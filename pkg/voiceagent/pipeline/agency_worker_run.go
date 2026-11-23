@@ -85,7 +85,7 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
 		id := job.IDFromContext(ctx)
 		steer := jobSteerFrom(ctx)
-		brief, control := steer.begin(ctx, brief, worker, cfg)
+		brief, control := steer.begin(ctx, brief, worker)
 		opts.Control = control
 		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief, Attachments: refs}})
 		r := workerRun{a: a, ctx: ctx, id: id, brief: brief, worker: worker, cfg: cfg, budget: budget, steer: steer,

@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
@@ -93,7 +92,7 @@ func (a *Agency) steerFor(id string) *jobSteer {
 // begin is the worker taking its first input: the brief gains the
 // corrections given before the start, exactly once. It returns the brief and
 // the control when the worker reads corrections while it runs.
-func (s *jobSteer) begin(ctx context.Context, brief string, worker brain.Provider, cfg *config.Config) (string, *brain.WorkerControl) {
+func (s *jobSteer) begin(ctx context.Context, brief string, worker brain.Provider) (string, *brain.WorkerControl) {
 	if s == nil {
 		return brief, nil
 	}
@@ -104,8 +103,12 @@ func (s *jobSteer) begin(ctx context.Context, brief string, worker brain.Provide
 		noInput = steerNoInput
 	}
 	// A cloud model behind Ollama would bill a correction's extra requests.
-	if noInput == "" && !servedLocally(ctx, cfg, worker) {
-		noInput = steerRemote
+	// The worker itself is asked: the configured worker provider may name
+	// another backend than the one a tiered or own job runs on.
+	if noInput == "" {
+		if local, ok := worker.(brain.LegacyWorkerValidator); !ok || local.ValidateLegacyWorker(ctx) != nil {
+			noInput = steerRemote
+		}
 	}
 	corrections := s.control.Begin(noInput == "", noInput)
 	brief = briefWithCorrections(brief, corrections)
