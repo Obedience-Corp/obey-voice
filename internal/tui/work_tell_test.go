@@ -286,7 +286,7 @@ func TestOnlyWorkTellIsKeptFromImagePaths(t *testing.T) {
 			if m = enter(m, "/work tell job-1 use chart.png"); m.media.importing {
 				t.Fatal("a /work tell line was taken for an image path")
 			}
-			for _, line := range []string{"/speakers name 1 Alice.png", "/work photos/chart.png", "/work/chart.png"} {
+			for _, line := range []string{"/speakers name 1 Alice.png", "/work photos/chart.png", "/work/chart.png", "/WORK tell job-1 photo.png"} {
 				_, before := chatmedia.Paths(line)
 				m := sizedConversation(t, 120, 24)
 				m.deps.runner = &tellRunner{fakeTurnRunner: &fakeTurnRunner{}}

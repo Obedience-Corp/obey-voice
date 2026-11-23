@@ -136,7 +136,7 @@ func slashRemainder(value string, n int) string {
 // imagePaths is the image paths typed or pasted text names. Only a /work tell
 // line is kept from it: its correction may end in a file name.
 func imagePaths(text string) ([]string, bool) {
-	if fields := strings.Fields(text); len(fields) >= 2 && strings.EqualFold(fields[0], "/work") && fields[1] == "tell" {
+	if fields := strings.Fields(text); len(fields) >= 2 && fields[0] == "/work" && fields[1] == "tell" {
 		return nil, false
 	}
 	return chatmedia.Paths(text)
