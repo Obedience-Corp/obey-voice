@@ -143,3 +143,34 @@ func TestEndedJobReleasesItsRunFunction(t *testing.T) {
 		t.Fatal("the ended job still holds its run function")
 	}
 }
+
+// A panicking ending hook cannot leave the table locked or the job unended.
+func TestPanickingOnEndingLeavesTheTableUsable(t *testing.T) {
+	table := NewTable(context.Background())
+	defer table.Close()
+	id, err := table.Start(context.Background(), Spec{Task: "x",
+		OnEnding: func(State, error) { panic("ending failed") },
+		Run:      func(ctx context.Context) (string, error) { <-ctx.Done(); return "", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() { _ = recover() }()
+		table.Cancel(id)
+	}()
+	done := make(chan []Info)
+	go func() {
+		wait, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = table.AwaitExit(wait, id)
+		done <- table.Status()
+	}()
+	select {
+	case infos := <-done:
+		if len(infos) != 1 || infos[0].State != StateAborted {
+			t.Fatalf("status=%+v", infos)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the table lock was left held")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -591,11 +592,18 @@ func (t *Table) endLocked(id string, state State, result string, err error, earl
 }
 
 // notifyEndingLocked runs the job's OnEnding once, with the cause that won.
+// A panic in it is contained: the transition it is part of must still finish
+// and release the lock.
 func (t *Table) notifyEndingLocked(e *entry, state State, err error) {
 	if e.endingNoted || e.spec.OnEnding == nil {
 		return
 	}
 	e.endingNoted = true
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("obey-voice: job %s ending hook panicked: %v", e.info.ID, r)
+		}
+	}()
 	e.spec.OnEnding(state, err)
 }
 
