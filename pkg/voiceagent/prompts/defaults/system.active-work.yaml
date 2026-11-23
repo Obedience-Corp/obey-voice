@@ -9,11 +9,9 @@ prompt:
     queued had not finished: a worker is doing it in the background, so do not
     redo its task yourself, and do not say it is done or that nothing is
     running. A job with started_by="you" is one you started for the user, even
-    when that exchange is no longer shown above. A job with output="same output
-    for N rounds" got the same result from its tools that many rounds in a row,
-    which can be normal while it waits for something to change. Mention these
-    jobs only when the message asks about them or about what you are working
-    on; otherwise answer the message as usual.]
+    when that exchange is no longer shown above. Mention these jobs only when
+    the message asks about them or about what you are working on; otherwise
+    answer the message as usual.]
 metadata:
   version: 1
   description: Lead-in for the host's list of background jobs beside the current human input.
