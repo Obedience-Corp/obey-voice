@@ -296,6 +296,16 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 			return err
 		}
 		e.latencyWorkerID = ""
+	} else if turn.Op == "work_tell" {
+		teller, ok := e.runner.(interface {
+			tellWork(context.Context, string) error
+		})
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support work corrections", turn.ID)
+		}
+		if err := teller.tellWork(turnCtx, turn.User); err != nil {
+			return err
+		}
 	} else if turn.Op == "run_background" {
 		bg, ok := e.runner.(backgroundRunner)
 		if !ok {
@@ -394,8 +404,9 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 	}
 
 	st := turnState{
-		spoken: e.rec.spokenText(),
-		events: e.rec.snapshot()[mark:],
+		spoken:  e.rec.spokenText(),
+		events:  e.rec.snapshot()[mark:],
+		workDir: e.profile.WorkDir,
 	}
 	for _, te := range st.events {
 		if ev, ok := te.event.(events.ResponseReady); ok {

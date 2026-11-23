@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -23,10 +26,17 @@ type turnState struct {
 	liveBrainCalled    bool
 	workerCalled       bool
 	persona            personaTurnState
+	workDir            string
 }
 
 func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 	switch {
+	case ex.Correction != "":
+		if !hasCorrection(st.events, rec, ex.Correction) {
+			return fmt.Errorf("want a job_correction %q", ex.Correction)
+		}
+	case ex.WorkFile != "":
+		return checkWorkFile(st.workDir, ex.WorkFile, ex.WorkFileContains)
 	case ex.Event != "":
 		if !hasNamedEvent(st.events, rec, ex.Event) {
 			return fmt.Errorf("want event %q", ex.Event)
@@ -438,6 +448,50 @@ func compareMetric(got int, op string, want int) bool {
 // is exactly the assertion that the earlier spawn's JobStarted does not
 // belong to this turn, and a positive `event:` that only the previous turn
 // satisfied would be a false pass.
+func hasCorrection(turnLog []timedEvent, rec *recorder, state string) bool {
+	src := turnLog
+	if src == nil && rec != nil {
+		src = rec.snapshot()
+	}
+	for _, te := range src {
+		if c, ok := te.event.(events.JobCorrection); ok && c.State == state {
+			return true
+		}
+	}
+	return false
+}
+
+// checkWorkFile finds name at any depth under dir; a worker may write into a
+// folder of its own there.
+func checkWorkFile(dir, name, contains string) error {
+	if dir == "" {
+		return fmt.Errorf("work_file %q: the run has no work directory", name)
+	}
+	var found []string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && d.Name() == name {
+			found = append(found, path)
+		}
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("work_file %q: %w", name, err)
+	}
+	if len(found) == 0 {
+		return fmt.Errorf("work_file %q: not under %s", name, dir)
+	}
+	for _, path := range found {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("work_file %q: %w", name, err)
+		}
+		if strings.Contains(string(body), contains) {
+			return nil
+		}
+	}
+	return fmt.Errorf("work_file %q: no copy holds %q", name, contains)
+}
+
 func hasNamedEvent(turnLog []timedEvent, rec *recorder, name string) bool {
 	src := turnLog
 	if src == nil && rec != nil {

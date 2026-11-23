@@ -113,6 +113,8 @@ func eventName(e events.Event) string {
 		return "job_started"
 	case events.JobFinished, events.JobFailed, events.JobAborted:
 		return "job_terminal"
+	case events.JobCorrection:
+		return "job_correction"
 	case events.ToolCallStarted:
 		return "tool_call_started"
 	case events.ResponseReady:

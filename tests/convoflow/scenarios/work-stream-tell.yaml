@@ -1,0 +1,37 @@
+name: work-stream-tell
+description: a typed correction reaches the running worker job, which keeps its id and finishes with the corrected work; no model decides whether it is accepted
+duration: 6m
+input: text
+router_tools: route_only
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: spawn
+    user: "in the work directory, create three small text files one at a time: alpha.txt, beta.txt and third.txt, each holding one short sentence; then list the directory"
+    wait: job_started
+    timeout: 90s
+    expect:
+      - { event: job_queued }
+      - { event: job_started }
+      - { route_kind: spawn }
+      - { no_event: job_terminal }
+
+  - id: tell
+    op: work_tell
+    user: "name the third file gamma.txt instead and put the single word corrected in it"
+    wait: job_terminal
+    timeout: 4m
+    expect:
+      - { correction: pending }
+      - { correction: included }
+      - { no_event: job_queued }
+      - { event: job_terminal }
+      - { work_file: gamma.txt, work_file_contains: corrected }
+
+expect:
+  - { metric: job_started, op: "==", value: 1 }
+  - { metric: job_finished, op: "==", value: 1 }
+  - { metric: job_aborted, op: "==", value: 0 }
+  - { metric: job_failed, op: "==", value: 0 }
+  - { metric: crackle_failing_wavs, op: "==", value: 0 }

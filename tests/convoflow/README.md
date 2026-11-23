@@ -18,6 +18,7 @@ CONVOFLOW_LIVE_MODEL=qwen3.8:27b just convoflow gate  # three Layer-1 scenarios 
 just convoflow live-router                            # soft live-brain spawn
 just convoflow run work-stream-gate                   # worker tool calls carry job ids; queued → started → terminal
 just convoflow run work-stream-cancel                 # "kill it" aborts the running job; "Stopped after …" spoken once
+just convoflow run work-stream-tell                   # a typed correction (op work_tell) is included by the running job, which finishes with the corrected file
 just convoflow run work-stream-boundary               # a worker told to leave the campaign is refused by its tools (boundary_refusals >= 1)
 just convoflow run search-web-intent -worker-provider=grok   # comparison, not the gate
 ```
@@ -59,6 +60,13 @@ Job lifecycle names in expects: `job_queued` (the table accepted the job),
 carries a `job_id` is the worker's and counts in `worker_tool_calls`;
 `live_tool_calls` counts only the talking brain's own tools, and `route` is
 `live_router_hit`.
+
+`op: work_tell` sends the turn's `user` text to the newest running job the way
+the keyboard's `/work tell` does; the turn fails unless the correction is
+accepted. `correction: <state>` wants a `job_correction` event in that state
+during the turn (`pending` once taken, `included` once a model request carried
+it). `work_file: <name>` wants that file at any depth under the run's `work/`,
+holding `work_file_contains` when set.
 
 Two no-model paths exist, neither is the gate:
 
