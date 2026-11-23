@@ -26,6 +26,11 @@ import (
 
 // OllamaBrain implements Provider using the Ollama API with tool calling.
 type OllamaBrain struct {
+	// jobScoped marks a worker made by Fresh for one job, which keeps the
+	// model metadata it fetched: the model cannot change during the job.
+	jobScoped             bool
+	shownMu               sync.Mutex
+	shown                 *api.ShowResponse
 	healthMu              sync.Mutex
 	healthState           string
 	inputRetry            *ollamaInputRetry

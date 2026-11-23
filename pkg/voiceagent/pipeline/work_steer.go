@@ -18,6 +18,7 @@ const (
 	steerNoInput = "this worker cannot take a correction while it runs"
 	steerPaid    = "a paid worker cannot take a correction while it runs"
 	steerRemote  = "a worker not served on this machine cannot take a correction while it runs"
+	steerUnsure  = "this worker cannot take a correction: whether it runs on this machine could not be checked"
 	steerMoved   = "a reply moved to the background cannot take a correction"
 	steerManaged = "a managed delegation cannot take a correction"
 	steerOther   = "this job cannot take a correction"
@@ -39,6 +40,9 @@ type jobSteer struct {
 	// noInput, set before the worker starts, is why it will not read
 	// corrections while it runs.
 	noInput string
+	// local marks a worker whose admission already proved it runs on this
+	// machine: a tiered local worker.
+	local bool
 	// checkpoint is the revision of the last worker thread saved, across
 	// every run of the job.
 	checkpoint uint64
@@ -99,16 +103,22 @@ func (s *jobSteer) begin(ctx context.Context, brief string, worker brain.Provide
 		return brief, nil
 	}
 	s.mu.Lock()
-	noInput := s.noInput
+	noInput, local := s.noInput, s.local
 	s.mu.Unlock()
 	if noInput == "" && !brain.TakesCorrections(worker) {
 		noInput = steerNoInput
 	}
-	// A cloud model behind Ollama would bill a correction's extra requests.
-	// The worker itself is asked: the configured worker provider may name
-	// another backend than the one a tiered or own job runs on.
-	if noInput == "" {
-		if local, ok := worker.(brain.LegacyWorkerValidator); !ok || local.ValidateLegacyWorker(ctx) != nil {
+	// A model on another machine or behind a cloud alias would spend a
+	// correction's extra requests there. The worker itself is asked, with the
+	// metadata its job already fetched; the configured worker provider may
+	// name another backend than the one a tiered or own job runs on.
+	if checker, ok := worker.(interface {
+		OnThisMachine(context.Context) (bool, error)
+	}); noInput == "" && !local && ok {
+		switch onMachine, err := checker.OnThisMachine(ctx); {
+		case err != nil:
+			noInput = steerUnsure
+		case !onMachine:
 			noInput = steerRemote
 		}
 	}
@@ -142,6 +152,16 @@ func (s *jobSteer) refuseInput(reason string) {
 	if s.noInput == "" {
 		s.noInput = reason
 	}
+}
+
+// localWorker marks a worker whose admission proved it runs on this machine.
+func (s *jobSteer) localWorker() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.local = true
 }
 
 // corrected reports a correction the worker was given, which may have

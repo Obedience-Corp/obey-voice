@@ -143,6 +143,7 @@ func (o *OllamaBrain) Fresh() Provider {
 	delegationBorrowed := o.delegationBorrowed
 	o.stateMu.Unlock()
 	return &OllamaBrain{
+		jobScoped:          true,
 		delegation:         delegationRuntime,
 		delegationBorrowed: delegationBorrowed,
 		client:             o.client,

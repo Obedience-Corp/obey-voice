@@ -37,6 +37,7 @@ type steerJobHarness struct {
 
 	mu          sync.Mutex
 	reqs        []api.ChatRequest
+	shows       int
 	corrections []events.JobCorrection
 	reply       func(n int, req api.ChatRequest) (api.ChatResponse, int)
 
@@ -88,6 +89,9 @@ func newSteerJobHarnessWith(t *testing.T, setup steerSetup, reply func(n int, re
 			_, _ = w.Write([]byte(`{"models":[{"name":"fixture"},{"name":"fixture:cloud"}]}`))
 			return
 		case "/api/show":
+			h.mu.Lock()
+			h.shows++
+			h.mu.Unlock()
 			_, _ = w.Write([]byte(`{"capabilities":["completion","tools"],"details":{"family":"fixture"}}`))
 			return
 		}
@@ -1118,5 +1122,30 @@ func TestTellDoesNotCrossAClearedConversation(t *testing.T) {
 	}
 	if err := h.p.CancelWork(id); err != nil {
 		t.Fatalf("the leftover job can no longer be cancelled: %v", err)
+	}
+}
+
+// Taking corrections costs a job no model metadata request of its own: the
+// check reuses what the job's validation fetched.
+func TestTakingCorrectionsAddsNoMetadataRequest(t *testing.T) {
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		return textReply("Done."), 0
+	})
+	count := func() int {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.shows
+	}
+	before := count()
+	if _, err := h.a.workerRunWithBudget("Read notes.txt.", h.worker, h.workCfg, nil, true)(job.WithID(t.Context(), "job-0")); err != nil {
+		t.Fatal(err)
+	}
+	plain := count() - before
+	before = count()
+	if _, err := h.directSteerRun(t.Context(), "Read notes.txt.", nil); err != nil {
+		t.Fatal(err)
+	}
+	if steered := count() - before; steered != plain {
+		t.Fatalf("metadata requests: %d with corrections, %d without", steered, plain)
 	}
 }

@@ -3,6 +3,8 @@ package brain
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"time"
 
@@ -27,6 +29,12 @@ func (o *OllamaBrain) workerMetadata(ctx context.Context) (*api.ShowResponse, er
 	if ctx == nil {
 		return nil, fmt.Errorf("ollama worker validation: nil context")
 	}
+	o.shownMu.Lock()
+	cached := o.shown
+	o.shownMu.Unlock()
+	if cached != nil {
+		return cached, nil
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	shown, err := o.client.Show(probeCtx, &api.ShowRequest{Model: o.model})
@@ -36,7 +44,42 @@ func (o *OllamaBrain) workerMetadata(ctx context.Context) (*api.ShowResponse, er
 	if shown == nil {
 		return nil, fmt.Errorf("cannot inspect Ollama worker model %q: empty metadata", o.model)
 	}
+	if o.jobScoped {
+		o.shownMu.Lock()
+		o.shown = shown
+		o.shownMu.Unlock()
+	}
 	return shown, nil
+}
+
+// OnThisMachine reports whether this worker runs on this machine: its
+// endpoint is a loopback address and its model is not a remote or cloud
+// alias. It reuses the metadata the job already fetched. An error means it
+// could not tell.
+func (o *OllamaBrain) OnThisMachine(ctx context.Context) (bool, error) {
+	raw := ""
+	if o.cfg != nil {
+		raw = strings.TrimSpace(o.cfg.OllamaHost)
+	}
+	if raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return false, err
+		}
+		host := strings.ToLower(u.Hostname())
+		if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return false, nil
+		}
+	}
+	name := strings.ToLower(strings.TrimSpace(o.model))
+	if strings.HasSuffix(name, ":cloud") || strings.Contains(name, ":cloud-") {
+		return false, nil
+	}
+	shown, err := o.workerMetadata(ctx)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(shown.RemoteHost) == "" && strings.TrimSpace(shown.RemoteModel) == "", nil
 }
 
 func (o *OllamaBrain) validateWorkerTools(shown *api.ShowResponse) error {

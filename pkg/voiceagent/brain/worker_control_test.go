@@ -926,3 +926,19 @@ func TestRecalledNotesKeepAPartialReply(t *testing.T) {
 		t.Fatalf("the partial reply was dropped: %+v", messages)
 	}
 }
+
+func TestOnThisMachineChecksTheEndpointAndSaysWhenItCannotTell(t *testing.T) {
+	remote := &OllamaBrain{cfg: &config.Config{OllamaHost: "http://192.0.2.10:11434", IsWorker: true}, model: "fixture"}
+	if local, err := remote.OnThisMachine(t.Context()); local || err != nil {
+		t.Fatalf("a worker on another machine: local=%v err=%v", local, err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "busy", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	host, _ := url.Parse(server.URL)
+	unsure := &OllamaBrain{cfg: &config.Config{OllamaHost: server.URL, IsWorker: true}, client: api.NewClient(host, server.Client()), model: "fixture"}
+	if _, err := unsure.OnThisMachine(t.Context()); err == nil {
+		t.Fatal("a failed metadata request was taken for an answer")
+	}
+}
