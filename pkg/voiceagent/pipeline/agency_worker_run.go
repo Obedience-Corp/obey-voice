@@ -129,6 +129,8 @@ type workerRun struct {
 	think            func(input string) (string, error)
 	// forced is why the answer being finished was forced, if it was.
 	forced brain.ForcedAnswer
+	// repaired is set once the job's one image repair was asked for.
+	repaired bool
 }
 
 // finished is a reply after its images were imported, and repaired if they
@@ -319,7 +321,7 @@ func (r *workerRun) finish(reply string) finished {
 	}
 	remaining, limited := r.budget.RemainingRequests()
 	// An opaque paid dispatch has a single admission and no per-request budget.
-	if !r.tools || !r.allowImageRepair || (limited && remaining == 0) || (r.budget == nil && !servedLocally(ctx, r.cfg, worker)) {
+	if r.repaired || !r.tools || !r.allowImageRepair || (limited && remaining == 0) || (r.budget == nil && !servedLocally(ctx, r.cfg, worker)) {
 		return without(cleaned, reply, attachmentErr)
 	}
 	input, promptErr := prompts.RenderSystem(config.PromptsDirFrom(r.cfg), "worker-image-repair", map[string]string{
@@ -334,11 +336,17 @@ func (r *workerRun) finish(reply string) finished {
 	if waiting() {
 		return finished{text: cleaned, err: attachmentErr, preempted: true}
 	}
+	r.repaired = true
+	answer := cleaned
 	retryReply, err := r.think(input)
 	if errors.Is(err, brain.ErrWorkerBudgetExceeded) {
 		return without(cleaned, reply, attachmentErr)
 	}
 	if err != nil {
+		// A corrected job still has the answer it wrote before the repair.
+		if ctx.Err() == nil && r.steer.corrected() {
+			return without(answer, reply, workerImageFailure(err, reply, retryReply))
+		}
 		return finished{text: retryReply, err: workerImageFailure(err, reply, retryReply)}
 	}
 	cleaned, importErr = finalize(retryReply)
@@ -346,6 +354,9 @@ func (r *workerRun) finish(reply string) finished {
 		failure := workerImageFailure(importErr, reply, retryReply)
 		if waiting() {
 			return finished{text: cleaned, err: failure, preempted: true}
+		}
+		if r.steer.corrected() && chatmedia.ReplyProse(retryReply) == "" {
+			return without(answer, reply, failure)
 		}
 		return without(cleaned, retryReply, failure)
 	}

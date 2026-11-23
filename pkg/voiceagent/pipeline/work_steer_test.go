@@ -1232,3 +1232,63 @@ func TestBudgetStopDuringAFailedImportIsALimit(t *testing.T) {
 		t.Fatalf("corrections=%+v", c)
 	}
 }
+
+// A corrected picture job whose repair brings no usable replacement delivers
+// the answer it had, marked; and it never gets a second repair.
+func TestCorrectedPictureJobKeepsItsAnswerAndRepairsOnce(t *testing.T) {
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	tell := func(a *Agency) {
+		a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Use Tuesday's figures."})
+	}
+	repairs := func(reqs []api.ChatRequest) int {
+		n := 0
+		for _, r := range reqs {
+			if userCount(r, "could not be attached") > 0 && strings.Contains(r.Messages[len(r.Messages)-1].Content, "could not be attached") {
+				n++
+			}
+		}
+		return n
+	}
+	for name, repair := range map[string]func() (api.ChatResponse, int){
+		"repair returns only a broken image": func() (api.ChatResponse, int) { return textReply("![chart](missing-chart.png)"), 0 },
+		"repair request fails":               func() (api.ChatResponse, int) { return api.ChatResponse{}, http.StatusBadRequest },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var h *steerJobHarness
+			h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+				switch n {
+				case 1:
+					tell(h.a)
+					return readCall("notes.txt"), 0
+				case 2:
+					return textReply("Tuesday's figures: three items."), 0
+				}
+				return repair()
+			})
+			result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
+			if err != nil || result != "Tuesday's figures: three items.\n\n"+noImageMarker {
+				t.Fatalf("result=%q err=%v", result, err)
+			}
+		})
+	}
+	t.Run("a tell during the repair", func(t *testing.T) {
+		var h *steerJobHarness
+		h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+			switch n {
+			case 1:
+				return textReply("Three items, no chart."), 0
+			case 2:
+				tell(h.a)
+				return textReply("Still no chart."), 0
+			}
+			return textReply("Tuesday's figures: three items."), 0
+		})
+		result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
+		if err != nil || result != "Tuesday's figures: three items.\n\n"+noImageMarker {
+			t.Fatalf("result=%q err=%v", result, err)
+		}
+		if n := repairs(h.requests()); n != 1 {
+			t.Fatalf("repairs=%d", n)
+		}
+	})
+}
