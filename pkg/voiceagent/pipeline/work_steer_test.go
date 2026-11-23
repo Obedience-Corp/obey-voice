@@ -35,9 +35,11 @@ type steerJobHarness struct {
 	worker  brain.Provider
 	workCfg *config.Config
 
-	mu          sync.Mutex
-	reqs        []api.ChatRequest
-	shows       int
+	mu    sync.Mutex
+	reqs  []api.ChatRequest
+	shows int
+	// showGate, when set, holds model metadata requests until it is closed.
+	showGate    chan struct{}
 	corrections []events.JobCorrection
 	reply       func(n int, req api.ChatRequest) (api.ChatResponse, int)
 
@@ -91,7 +93,11 @@ func newSteerJobHarnessWith(t *testing.T, setup steerSetup, reply func(n int, re
 		case "/api/show":
 			h.mu.Lock()
 			h.shows++
+			gate := h.showGate
 			h.mu.Unlock()
+			if gate != nil {
+				<-gate
+			}
 			_, _ = w.Write([]byte(`{"capabilities":["completion","tools"],"details":{"family":"fixture"}}`))
 			return
 		}

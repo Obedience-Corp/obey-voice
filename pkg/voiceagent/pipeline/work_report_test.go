@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -20,18 +19,10 @@ import (
 
 const reportAnswer = "Read notes.txt; other.txt is not read yet."
 
-// reportAfterFirstTool asks job id for its report when its first tool call
-// returns, on the worker's goroutine, before its next request is built.
-func (h *steerJobHarness) reportAfterFirstTool(id func() string) *WorkReceipt {
-	receipt := new(WorkReceipt)
-	report := sync.OnceFunc(func() { *receipt = h.p.ReportWork(id()) })
-	events.Subscribe(h.p.Events, func(e events.ToolCallFinished) {
-		if e.JobID != "" {
-			report()
-		}
-	})
-	return receipt
-}
+// oneFileRead is the fold of a job that has read one file, whose read reports
+// no outcome: the checkpoint a report taken between its first tool call and
+// its next one keeps.
+const oneFileRead = "read 1 file (1 unknown)"
 
 func (h *steerJobHarness) reports() *[]events.JobReport {
 	var got []events.JobReport
@@ -67,9 +58,15 @@ func toolsFree(req api.ChatRequest) bool {
 func TestReportedJobIsDeliveredCutShort(t *testing.T) {
 	for _, inbox := range []bool{false, true} {
 		t.Run(map[bool]string{false: "legacy", true: "inbox"}[inbox], func(t *testing.T) {
-			h := newSteerJobHarnessWith(t, steerSetup{inbox: inbox}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-				if n == 1 {
+			var h *steerJobHarness
+			var receipt WorkReceipt
+			h = newSteerJobHarnessWith(t, steerSetup{inbox: inbox}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+				switch n {
+				case 1:
 					return readCall("notes.txt"), 0
+				case 2:
+					receipt = h.p.ReportWork(h.lastAccepted())
+					return readCall("other.txt"), 0
 				}
 				if !toolsFree(req) {
 					t.Errorf("request %d after the report offered tools or no instruction", n)
@@ -77,7 +74,6 @@ func TestReportedJobIsDeliveredCutShort(t *testing.T) {
 				return textReply(reportAnswer), 0
 			})
 			reports := h.reports()
-			receipt := h.reportAfterFirstTool(h.lastAccepted)
 			id := h.spawn("Read notes.txt and other.txt in the fixture folder")
 			h.setAccepted(id)
 			if inbox {
@@ -98,13 +94,13 @@ func TestReportedJobIsDeliveredCutShort(t *testing.T) {
 					t.Fatalf("saved conversation ends %+v", last)
 				}
 			}
-			if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlAccepted || receipt.Jobs[0].Checkpoint == "" || receipt.Jobs[0].Checkpoint == noActivity {
-				t.Fatalf("receipt=%+v", *receipt)
+			if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlAccepted || receipt.Jobs[0].Checkpoint != oneFileRead {
+				t.Fatalf("receipt=%+v", receipt)
 			}
 			if got := *reports; len(got) != 1 || got[0].ID != id || !got[0].Answer || got[0].Checkpoint != receipt.Jobs[0].Checkpoint {
 				t.Fatalf("job_report events=%+v", got)
 			}
-			if n := len(h.requests()); n != 2 {
+			if n := len(h.requests()); n != 3 {
 				t.Fatalf("requests=%d", n)
 			}
 			info := onlyWorker(t, h.p)
@@ -253,30 +249,38 @@ func TestReportSettlesCorrections(t *testing.T) {
 	}
 }
 
-// A cancel ends a reporting job as it ends any job: its receipt is a cancel's
-// and the checkpoint stays readable.
+// A spoken cancel ends a reporting job as it ends any job: it says what it
+// says for any job, and the checkpoint stays readable.
 func TestCancelDuringTheReportAnswer(t *testing.T) {
 	inFlight, release := make(chan struct{}), make(chan struct{})
-	started := sync.OnceFunc(func() { close(inFlight) })
-	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-		if n == 1 {
+	var h *steerJobHarness
+	var receipt WorkReceipt
+	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch n {
+		case 1:
 			return readCall("notes.txt"), 0
+		case 2:
+			receipt = h.p.ReportWork(h.lastAccepted())
+			return readCall("other.txt"), 0
 		}
-		started()
+		close(inFlight)
 		<-release
 		return textReply("Too late."), 0
 	})
 	defer close(release)
-	receipt := h.reportAfterFirstTool(func() string { return "job-1" })
+	tts := &progressiveFakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	t.Cleanup(func() { _ = player.Close() })
+	h.p.TTS, h.p.Player = tts, player
+	h.p.SetOutputMuted(false)
 	id := h.spawn("Read notes.txt in the fixture folder")
+	h.setAccepted(id)
 	<-inFlight
-	cancel := h.a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkCancel, JobID: id})
-	item := cancel.Jobs[0]
-	if (item.Outcome != ControlStopped && item.Outcome != ControlStopping) || item.Checkpoint != "" || item.Queued || cancel.Err() != nil {
-		t.Fatalf("cancel receipt=%+v", cancel)
-	}
-	if line := phraseCancelLine(cancel); line != "Stopped." && line != "Cancelled; the worker is still stopping." {
-		t.Fatalf("cancel line=%q", line)
+	metrics := newTurnMetrics()
+	h.a.HandleRoute(context.Background(), h.p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteJobAbort, Transcript: "kill it", Source: "phrase"})
+	calls := tts.Calls()
+	if len(calls) == 0 || calls[len(calls)-1] != "Stopped." {
+		t.Fatalf("spoken=%q", calls)
 	}
 	select {
 	case e := <-h.aborted:
@@ -290,26 +294,59 @@ func TestCancelDuringTheReportAnswer(t *testing.T) {
 		t.Fatal("the reporting job kept its slot")
 	}
 	info := onlyWorker(t, h.p)
-	if info.Checkpoint == "" || info.Checkpoint != receipt.Jobs[0].Checkpoint || info.Report != reportAsked {
-		t.Fatalf("workers row after the cancel=%+v", info)
+	if receipt.Jobs[0].Checkpoint != oneFileRead || info.Checkpoint != oneFileRead || info.Report != reportAsked {
+		t.Fatalf("receipt=%+v workers row after the cancel=%+v", receipt, info)
 	}
 }
 
 func TestEmptyReportAnswerFailsTheJob(t *testing.T) {
-	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-		if n == 1 {
+	var h *steerJobHarness
+	var receipt WorkReceipt
+	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch n {
+		case 1:
 			return readCall("notes.txt"), 0
+		case 2:
+			receipt = h.p.ReportWork(h.lastAccepted())
+			return readCall("other.txt"), 0
 		}
 		return textReply(""), 0
 	})
-	receipt := h.reportAfterFirstTool(func() string { return "job-1" })
-	h.spawn("Read notes.txt in the fixture folder")
+	id := h.spawn("Read notes.txt in the fixture folder")
+	h.setAccepted(id)
 	failed := h.awaitFailed()
 	if !strings.Contains(failed.Err, "model returned no final answer") {
 		t.Fatalf("failed=%+v", failed)
 	}
-	if info := onlyWorker(t, h.p); info.Checkpoint == "" || info.Checkpoint != receipt.Jobs[0].Checkpoint {
+	if info := onlyWorker(t, h.p); info.Checkpoint != oneFileRead || receipt.Jobs[0].Checkpoint != oneFileRead {
 		t.Fatalf("workers row=%+v", info)
+	}
+}
+
+// An answer held while a correction's run went on is delivered, cut short as
+// the corrected run failing, when that run's report round brings nothing.
+func TestHeldAnswerStandsWhenTheReportRoundBringsNothing(t *testing.T) {
+	var h *steerJobHarness
+	var receipt WorkReceipt
+	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch n {
+		case 1:
+			h.p.TellWork(h.lastAccepted(), "Read other.txt too.")
+			return textReply("notes.txt lists three action items."), 0
+		case 2:
+			receipt = h.p.ReportWork(h.lastAccepted())
+			return readCall("other.txt"), 0
+		}
+		return textReply(""), 0
+	})
+	id := h.spawn("Read notes.txt in the fixture folder")
+	h.setAccepted(id)
+	finished := h.awaitFinished(id)
+	if receipt.Jobs[0].Outcome != ControlAccepted || len(h.requests()) != 3 {
+		t.Fatalf("receipt=%+v requests=%d", receipt, len(h.requests()))
+	}
+	if finished.Summary != "notes.txt lists three action items." || finished.CutShortReason != string(brain.ForcedByFailedCorrection) {
+		t.Fatalf("delivered %+v", finished)
 	}
 }
 
@@ -379,7 +416,9 @@ func TestReportReceipts(t *testing.T) {
 		}
 	})
 	t.Run("worker that cannot take input", func(t *testing.T) {
-		h := newControlHarness(t, stubbornHookWorker{release: make(chan struct{})}, false)
+		release := make(chan struct{})
+		t.Cleanup(func() { close(release) })
+		h := newControlHarness(t, stubbornHookWorker{release: release}, false)
 		var reports []events.JobReport
 		events.Subscribe(h.agency.pipeline.Events, func(e events.JobReport) { reports = append(reports, e) })
 		h.spawn("list the files here")
@@ -419,6 +458,56 @@ func TestReportReceipts(t *testing.T) {
 			if r := h.a.ControlWork(c.actor, c.req); r.Rejected == "" || len(r.Jobs) != 0 {
 				t.Errorf("%s: receipt=%+v", name, r)
 			}
+		}
+	})
+	t.Run("started, worker not begun", func(t *testing.T) {
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) { return textReply("Done."), 0 })
+		gate := make(chan struct{})
+		started := make(chan string, 1)
+		events.Subscribe(h.p.Events, func(e events.JobStarted) {
+			h.mu.Lock()
+			h.showGate = gate
+			h.mu.Unlock()
+			started <- e.ID
+		})
+		h.spawn("Read notes.txt in the fixture folder")
+		id := <-started
+		r := h.p.ReportWork(id)
+		close(gate)
+		if got := r.Jobs[0]; got.Outcome != ControlRejected || got.Queued || got.Reason != reportStarting || got.Checkpoint != "" {
+			t.Fatalf("receipt=%+v", r)
+		}
+		if finished := h.awaitFinished(id); finished.CutShort || h.a.steerFor(id).reporting() {
+			t.Fatalf("a refused report touched the starting job: %+v", finished)
+		}
+	})
+	t.Run("job with no control, after a clear", func(t *testing.T) {
+		h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) { return textReply("Done."), 0 })
+		if err := h.p.BeginConversationIdentity("conversation-1"); err != nil {
+			t.Fatal(err)
+		}
+		hold, running := make(chan struct{}), make(chan struct{})
+		defer close(hold)
+		id, err := h.table.Start(context.Background(), job.Spec{Task: "a reply moved to the background", Run: func(context.Context) (string, error) {
+			close(running)
+			<-hold
+			return "", nil
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.a.mu.Lock()
+		h.a.workerOrigins[id] = workerOrigin{Scope: h.p.ConversationScope(), continued: true}
+		h.a.mu.Unlock()
+		<-running
+		if r := h.p.ReportWork(id); r.Jobs[0].Outcome != ControlRejected || r.Jobs[0].Checkpoint != noActivity {
+			t.Fatalf("before the clear: %+v", r)
+		}
+		if err := h.p.ClearConversation(); err != nil {
+			t.Fatal(err)
+		}
+		if r := h.p.ReportWork(id); r.Jobs[0].Outcome != ControlUnknown || r.Jobs[0].Checkpoint != "" {
+			t.Fatalf("a checkpoint crossed the clear: %+v", r)
 		}
 	})
 	t.Run("another conversation", func(t *testing.T) {
