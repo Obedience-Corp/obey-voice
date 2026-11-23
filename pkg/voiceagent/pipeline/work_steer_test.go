@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -514,7 +515,9 @@ func TestCancelSupersedesCorrections(t *testing.T) {
 	})
 }
 
-func TestNoImageRepairAfterACorrectionAndTheAnswerSaysSo(t *testing.T) {
+// A correction that drops the picture costs the one repair, which carries it,
+// and the answer is then delivered saying no image was attached.
+func TestTextOnlyCorrectionGetsOneRepairThenSaysNoImage(t *testing.T) {
 	var a *Agency
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
 		if n == 1 {
@@ -529,8 +532,9 @@ func TestNoImageRepairAfterACorrectionAndTheAnswerSaysSo(t *testing.T) {
 	if err != nil || result != "A described picture: a plain chart of the notes.\n\n"+noImageMarker {
 		t.Fatalf("result=%q err=%v", result, err)
 	}
-	if n := len(h.requests()); n != 2 {
-		t.Fatalf("requests=%d: an image repair ran after the correction", n)
+	reqs := h.requests()
+	if len(reqs) != 3 || userCount(reqs[2], "Correction from the user: No picture; describe it in text.") == 0 {
+		t.Fatalf("requests=%d: the one repair did not carry the correction", len(reqs))
 	}
 	h.a.mu.Lock()
 	noImage := h.a.workerOrigins["job-1"].noImage
@@ -1049,4 +1053,37 @@ func TestHeldAnswerStandsWhenItsReplacementFails(t *testing.T) {
 			t.Fatalf("the corrected run's completed tool was lost from the thread: %+v", info.Thread)
 		}
 	})
+}
+
+// A correction keeps the task's picture: an answer without one gets the one
+// repair, asked with the brief and the corrections in order.
+func TestCorrectedPictureJobIsRepairedWithItsCorrections(t *testing.T) {
+	var a *Agency
+	var root string
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch n {
+		case 1:
+			a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Use Tuesday's figures for the chart."})
+			return readCall("notes.txt"), 0
+		case 2:
+			return textReply("The chart uses Tuesday's figures."), 0
+		}
+		return textReply("Here it is.\n![Chart](<" + filepath.Join(root, "chart.png") + ">)"), 0
+	})
+	a, root = h.a, h.root
+	if err := os.WriteFile(filepath.Join(root, "chart.png"), testmedia.PNG(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
+	if err != nil || strings.Contains(result, noImageMarker) {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	reqs := h.requests()
+	if len(reqs) != 3 || userCount(reqs[2], "could not be attached") == 0 || userCount(reqs[2], "Correction from the user: Use Tuesday's figures for the chart.") == 0 {
+		t.Fatalf("requests=%d; the repair did not carry the correction", len(reqs))
+	}
+	if refs := h.a.workerReplyMedia("job-1"); len(refs) != 1 {
+		t.Fatalf("delivered images=%d", len(refs))
+	}
 }

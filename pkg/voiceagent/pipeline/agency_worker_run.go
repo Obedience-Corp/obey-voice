@@ -259,36 +259,40 @@ func failedCorrectionReason(err error, budget *brain.WorkerBudget) brain.ForcedA
 	return brain.ForcedByFailedCorrection
 }
 
-// finish imports the reply's images and, when an image the task required is
-// missing, asks the worker once more. A correction waiting before the repair
-// or the failure is reported preempts both. After a correction the original
-// task's image is no longer required and is not repaired.
+// finish imports the reply's images and, when an image the task asked for is
+// missing, asks the worker once more, with the brief and the corrections it
+// was given in order. A correction waiting before the repair or a failure is
+// reported preempts both. After a correction, an answer still without the
+// image is delivered marked instead of failed: the correction may have
+// dropped it.
 func (r *workerRun) finish(reply string) finished {
 	ctx, worker := r.ctx, r.worker
 	asked, _ := ctx.Value(imageDeliveryKey{}).(bool)
 	waiting := func() bool { return r.steer != nil && r.steer.control.Waiting() }
-	noImage := false
 	var media []chatmedia.Ref
 	finalize := func(result string) (string, error) {
-		corrected := r.steer.corrected()
-		required := asked && !corrected
 		cleaned, attached, err := finalizeProviderReply(worker, result, r.workDir, r.warn)
 		if len(attached) > 0 {
 			media = attached
 			return cleaned, nil
 		}
-		noImage = asked && corrected
-		if required && err == nil {
+		if asked && err == nil {
 			err = errNoImageDelivered
 		}
-		if !required && err != nil && chatmedia.ReplyProse(result) != "" {
+		if !asked && err != nil && chatmedia.ReplyProse(result) != "" {
 			return cleaned, nil
 		}
 		return cleaned, err
 	}
+	without := func(text, result string, failure error) finished {
+		if r.steer.corrected() && chatmedia.ReplyProse(result) != "" {
+			return finished{text: text, noImage: true}
+		}
+		return finished{text: text, err: failure}
+	}
 	cleaned, importErr := finalize(reply)
 	if importErr == nil {
-		return finished{text: cleaned, noImage: noImage, media: media}
+		return finished{text: cleaned, media: media}
 	}
 	if err := ctx.Err(); err != nil {
 		return finished{err: err}
@@ -299,21 +303,21 @@ func (r *workerRun) finish(reply string) finished {
 	}
 	remaining, limited := r.budget.RemainingRequests()
 	// An opaque paid dispatch has a single admission and no per-request budget.
-	if !r.tools || !r.allowImageRepair || r.steer.corrected() || (limited && remaining == 0) || (r.budget == nil && !servedLocally(ctx, r.cfg, worker)) {
-		return finished{text: cleaned, err: attachmentErr}
+	if !r.tools || !r.allowImageRepair || (limited && remaining == 0) || (r.budget == nil && !servedLocally(ctx, r.cfg, worker)) {
+		return without(cleaned, reply, attachmentErr)
 	}
 	input, promptErr := prompts.RenderSystem(config.PromptsDirFrom(r.cfg), "worker-image-repair", map[string]string{
-		"brief": r.brief, "work_dir": r.workDir, "import_error": fmt.Sprintf("%.512s", importErr.Error()),
+		"brief": briefWithCorrections(r.brief, r.steer.runningCorrections()), "work_dir": r.workDir, "import_error": fmt.Sprintf("%.512s", importErr.Error()),
 	})
 	if promptErr != nil {
 		r.warn(promptErr.Error())
 		if strings.TrimSpace(input) == "" {
-			return finished{text: cleaned, err: attachmentErr}
+			return without(cleaned, reply, attachmentErr)
 		}
 	}
 	retryReply, err := r.think(input)
 	if errors.Is(err, brain.ErrWorkerBudgetExceeded) {
-		return finished{text: cleaned, err: attachmentErr}
+		return without(cleaned, reply, attachmentErr)
 	}
 	if err != nil {
 		return finished{text: retryReply, err: workerImageFailure(err, reply, retryReply)}
@@ -321,9 +325,12 @@ func (r *workerRun) finish(reply string) finished {
 	cleaned, importErr = finalize(retryReply)
 	if importErr != nil {
 		failure := workerImageFailure(importErr, reply, retryReply)
-		return finished{text: cleaned, err: failure, preempted: waiting()}
+		if waiting() {
+			return finished{text: cleaned, err: failure, preempted: true}
+		}
+		return without(cleaned, retryReply, failure)
 	}
-	return finished{text: cleaned, noImage: noImage, media: media}
+	return finished{text: cleaned, media: media}
 }
 
 // Failed jobs publish the error to chat. Keep the worker's explanation from

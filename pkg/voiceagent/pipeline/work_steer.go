@@ -145,6 +145,21 @@ func (s *jobSteer) corrected() bool {
 	return s != nil && s.control.Corrected()
 }
 
+// runningCorrections are the corrections answered in a request after the job
+// started, in order; the ones given before the start are in its brief.
+func (s *jobSteer) runningCorrections() []string {
+	if s == nil {
+		return nil
+	}
+	var texts []string
+	for _, c := range s.control.Corrections() {
+		if c.State == brain.CorrectionIncluded && !c.Brief {
+			texts = append(texts, c.Text)
+		}
+	}
+	return texts
+}
+
 // report publishes a correction's acceptance or new disposition.
 func (s *jobSteer) report(c brain.Correction) {
 	s.mu.Lock()
