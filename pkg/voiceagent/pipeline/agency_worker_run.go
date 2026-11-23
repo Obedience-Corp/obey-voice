@@ -210,6 +210,11 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 		}
 		sealed, limit := control.Seal(brain.WorkerLimitDue(r.ctx, r.budget, start))
 		if sealed {
+			// A failed replacement does not displace the last finished answer.
+			if done.err != nil && held != nil && held.err == nil {
+				r.forced = cmp.Or(heldForced, limit, brain.ForcedByFailedCorrection)
+				return r.deliverHeld(*held)
+			}
 			if limit != "" && r.forced == "" {
 				r.forced = limit
 			}

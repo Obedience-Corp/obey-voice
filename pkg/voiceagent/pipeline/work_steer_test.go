@@ -1292,3 +1292,23 @@ func TestCorrectedPictureJobKeepsItsAnswerAndRepairsOnce(t *testing.T) {
 		}
 	})
 }
+
+// Answer A is held; its replacement B comes back with a broken picture while a
+// second correction waits, and no request is left: A is delivered, not B's
+// failure.
+func TestLimitDeliversTheLastFinishedAnswer(t *testing.T) {
+	var h *steerJobHarness
+	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch n {
+		case 1:
+			h.a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Add a chart."})
+			return textReply("notes.txt lists three items."), 0
+		}
+		h.a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Use Tuesday's figures."})
+		return textReply("![chart](missing-chart.png)"), 0
+	})
+	result, err := h.directSteerRun(t.Context(), "Read notes.txt.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 3}))
+	if err != nil || result != "notes.txt lists three items." {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
