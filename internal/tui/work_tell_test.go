@@ -230,3 +230,31 @@ func TestCommandOrImagePathIsDecidedTheSameWayEverywhere(t *testing.T) {
 		})
 	}
 }
+
+// A disposition that arrives after the job's last row was written updates
+// that row, and never adds a row for a job that has ended.
+func TestLateCorrectionDispositionUpdatesTheTerminalRow(t *testing.T) {
+	t.Run("legacy", func(t *testing.T) {
+		m := sizedConversation(t, 120, 24)
+		m.ready = true
+		m, _ = m.Update(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "summarize the notes"}})
+		m, _ = m.Update(busEventMsg{event: events.JobFinished{ID: "job-1", Task: "summarize the notes", Elapsed: 9 * time.Second, Summary: "Done."}})
+		items := len(m.items)
+		m, _ = m.Update(busEventMsg{event: events.JobCorrection{ID: "job-1", Revision: 1, State: "not_applied", Reason: "the job was stopped"}})
+		row := stripANSI(m.items[m.completedJobItems["job-1"]].sys)
+		if !strings.Contains(row, "correction could not apply: the job was stopped · done in 9s") || len(m.items) != items {
+			t.Fatalf("row=%q items %d→%d", row, items, len(m.items))
+		}
+	})
+	t.Run("inbox", func(t *testing.T) {
+		m := sizedConversation(t, 120, 24)
+		m.ready = true
+		m.handleEvent(events.WorkStateChanged{Snapshot: stripSnapshot()})
+		items := len(m.items)
+		m, _ = m.Update(busEventMsg{event: events.JobCorrection{ID: "weather", Revision: 1, State: "included"}})
+		row := stripANSI(m.items[m.workResultItems["forecast"]].sys)
+		if !strings.Contains(row, "correction included") || len(m.items) != items {
+			t.Fatalf("row=%q items %d→%d", row, items, len(m.items))
+		}
+	})
+}

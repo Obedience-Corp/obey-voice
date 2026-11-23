@@ -81,6 +81,7 @@ type conversationModel struct {
 	// jobCorrections is each job's newest correction, kept past the job's
 	// end for its sealed row and its result row.
 	jobCorrections map[string]jobCorrectionView
+	sealedRows     map[string]sealedJobRow
 	// continuedItems maps a job to the line saying which reply it continues.
 	continuedItems          map[string]int
 	workScope               work.WorkScope

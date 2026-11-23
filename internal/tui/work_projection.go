@@ -175,6 +175,7 @@ func (m *conversationModel) clearJobProjection() {
 	m.jobOrder = nil
 	m.completedJobItems = make(map[string]int)
 	m.jobCorrections = nil
+	m.sealedRows = nil
 	m.work = workfold.New()
 }
 
