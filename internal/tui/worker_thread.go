@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func matchWorkerCall(tool *workerThreadTool, calls []workfold.Call, used []bool)
 			continue
 		}
 		if tool.call.ID != "" && call.ID != "" {
-			if tool.call.ID != call.ID {
+			if tool.call.ID != call.ID && (!sameProviderCall(tool.call.ID, call.ID) || tool.call.Name != call.Name) {
 				continue
 			}
 		} else if tool.call.Name == "" || tool.call.Name != call.Name {
@@ -120,6 +121,21 @@ func matchWorkerCall(tool *workerThreadTool, calls []workfold.Call, used []bool)
 		tool.call, tool.order, used[i] = call, i, true
 		return
 	}
+}
+
+// sameProviderCall reports whether an observed call is the history call id:
+// the id itself, or, when a later run reused the provider's id, the id with
+// the occurrence suffix the hooks gave it (c, c#2, c#3).
+func sameProviderCall(history, observed string) bool {
+	if history == observed {
+		return true
+	}
+	n, ok := strings.CutPrefix(observed, history+"#")
+	if !ok || n == "" {
+		return false
+	}
+	_, err := strconv.Atoi(n)
+	return err == nil
 }
 
 func findWorkerTool(entries []workerThreadEntry, turn brain.Turn) *workerThreadTool {
@@ -131,7 +147,7 @@ func findWorkerTool(entries []workerThreadEntry, turn brain.Turn) *workerThreadT
 			continue
 		}
 		if turn.ToolCallID != "" && tool.call.ID != "" {
-			if turn.ToolCallID == tool.call.ID {
+			if sameProviderCall(turn.ToolCallID, tool.call.ID) && (turn.ToolName == "" || turn.ToolName == tool.call.Name) {
 				return tool
 			}
 		} else if turn.ToolName != "" && turn.ToolName == tool.call.Name {

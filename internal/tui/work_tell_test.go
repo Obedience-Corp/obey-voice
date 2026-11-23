@@ -11,6 +11,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
 type tellRunner struct {
@@ -257,4 +258,26 @@ func TestLateCorrectionDispositionUpdatesTheTerminalRow(t *testing.T) {
 			t.Fatalf("row=%q items %d→%d", row, items, len(m.items))
 		}
 	})
+}
+
+// The original run and a later one both used provider call id c; the hook
+// ids are c and c#2. The detail shows two calls, not three.
+func TestWorkerThreadMatchesARepeatedProviderCallID(t *testing.T) {
+	item := pipeline.WorkerInfo{ID: "job-1", Task: "read the notes", Thread: []brain.Turn{
+		{Role: "user", Content: "read the notes"},
+		{Role: "assistant", ToolCalls: []brain.TurnToolCall{{ID: "c", Name: "read_file", Arguments: `{"path":"a.txt"}`}}},
+		{Role: "tool", ToolCallID: "c", ToolName: "read_file", Content: "a"},
+		{Role: "user", Content: "attach the chart"},
+		{Role: "assistant", ToolCalls: []brain.TurnToolCall{{ID: "c", Name: "read_file", Arguments: `{"path":"b.txt"}`}}},
+		{Role: "tool", ToolCallID: "c", ToolName: "read_file", Content: "b"},
+	}, Tools: []workfold.Call{{ID: "c", Name: "read_file", Status: "succeeded"}, {ID: "c#2", Name: "read_file", Status: "succeeded"}}}
+	tools := 0
+	for _, e := range workerThreadEntries(item) {
+		if e.tool != nil {
+			tools++
+		}
+	}
+	if tools != 2 {
+		t.Fatalf("tool entries=%d", tools)
+	}
 }
