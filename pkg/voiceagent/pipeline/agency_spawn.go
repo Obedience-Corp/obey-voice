@@ -61,7 +61,11 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	var key work.JobKey
 	admission := w.admission()
 	// Corrections can reach the job from the moment anyone can name it.
-	steer := a.newJobSteer()
+	admitted := a.pipeline.ConversationScope()
+	if _, scope := a.workAuthority(); scope.Valid() {
+		admitted = scope
+	}
+	steer := a.newJobSteer(admitted)
 	if c, scope := a.workAuthority(); c != nil {
 		jobID = newWorkID()
 		a.registerSteer(jobID, steer)

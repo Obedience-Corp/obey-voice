@@ -10,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // Refusals a correction can get from a job that cannot take one.
@@ -28,6 +29,10 @@ const (
 type jobSteer struct {
 	a       *Agency
 	control *brain.WorkerControl
+
+	// scope is the conversation that admitted the job. Corrections come only
+	// from it, and their events carry it.
+	scope work.WorkScope
 
 	mu sync.Mutex
 	id string
@@ -50,8 +55,8 @@ func jobSteerFrom(ctx context.Context) *jobSteer {
 	return s
 }
 
-func (a *Agency) newJobSteer() *jobSteer {
-	s := &jobSteer{a: a}
+func (a *Agency) newJobSteer(scope work.WorkScope) *jobSteer {
+	s := &jobSteer{a: a, scope: scope}
 	s.control = brain.NewWorkerControl(s.report)
 	return s
 }
@@ -166,7 +171,7 @@ func (s *jobSteer) report(c brain.Correction) {
 	id := s.id
 	s.mu.Unlock()
 	if id != "" {
-		s.a.emitCorrection(id, c)
+		s.a.emitCorrection(id, c, s.scope)
 	}
 }
 
@@ -251,6 +256,9 @@ func (a *Agency) steerOne(id, text string) JobControl {
 		return JobControl{ID: id, Outcome: ControlUnknown}
 	}
 	if s := a.steerFor(id); s != nil {
+		if !a.inAdmittingConversation(s) {
+			return JobControl{ID: id, Outcome: ControlUnknown}
+		}
 		c := s.control.Steer(text)
 		switch c.State {
 		case brain.CorrectionRefused:
@@ -282,18 +290,30 @@ func (a *Agency) steerOne(id, text string) JobControl {
 	return JobControl{ID: id, Outcome: ControlUnknown}
 }
 
+// inAdmittingConversation reports whether the current conversation is the one
+// that admitted the job, in either work mode. Unlike a cancel, a correction
+// never reaches a job a clear left behind.
+func (a *Agency) inAdmittingConversation(s *jobSteer) bool {
+	if c, scope := a.workAuthority(); c != nil {
+		return s.scope == scope && !c.Snapshot(scope).Retired
+	}
+	if !s.scope.Valid() {
+		return true
+	}
+	return a.pipeline != nil && s.scope == a.pipeline.ConversationScope() && !a.pipeline.ConversationRetired()
+}
+
 // emitCorrection publishes a correction event for a job of the current
-// conversation, with its admitted scope. A retired conversation's job is
-// settled silently.
-func (a *Agency) emitCorrection(id string, c brain.Correction) {
+// conversation, with the scope that admitted it. A retired conversation's job
+// is settled silently.
+func (a *Agency) emitCorrection(id string, c brain.Correction, scope work.WorkScope) {
 	if a.pipeline == nil {
 		return
 	}
-	_, key, ok := a.callbackKey(id)
-	if !ok {
+	if _, _, ok := a.callbackKey(id); !ok {
 		return
 	}
-	a.emitJobTrace(id, events.JobCorrection{Scope: key.Scope, ID: id, Revision: c.Revision, Text: c.Text, State: string(c.State), Reason: c.Reason, Brief: c.Brief})
+	a.emitJobTrace(id, events.JobCorrection{Scope: scope, ID: id, Revision: c.Revision, Text: c.Text, State: string(c.State), Reason: c.Reason, Brief: c.Brief})
 }
 
 // TellWork gives one job a correction from the keyboard. It never waits for

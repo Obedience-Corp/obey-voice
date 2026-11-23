@@ -633,7 +633,7 @@ func TestCloudAliasWorkerRefusesCorrections(t *testing.T) {
 // directSteerRun runs the worker run for job-1 directly, with corrections
 // reachable as on a spawned job.
 func (h *steerJobHarness) directSteerRun(ctx context.Context, brief string, budget *brain.WorkerBudget) (string, error) {
-	steer := h.a.newJobSteer()
+	steer := h.a.newJobSteer(work.WorkScope{})
 	h.a.registerSteer("job-1", steer)
 	ctx = withJobSteer(job.WithID(ctx, "job-1"), steer)
 	return h.a.workerRunWithBudget(brief, h.worker, h.workCfg, budget, true)(ctx)
@@ -802,7 +802,7 @@ func TestOwnJobAndTieredWorkerTakeCorrections(t *testing.T) {
 		})
 		a = h.a
 		h.a.ownFactory = func(_ context.Context, cfg *config.Config) (brain.Provider, error) { return brain.NewOllama(h.workCfg) }
-		steer := h.a.newJobSteer()
+		steer := h.a.newJobSteer(work.WorkScope{})
 		h.a.registerSteer("job-1", steer)
 		ctx := withJobSteer(job.WithID(t.Context(), "job-1"), steer)
 		// The persona talks on Ollama while the configured worker is a CLI.
@@ -1085,5 +1085,38 @@ func TestCorrectedPictureJobIsRepairedWithItsCorrections(t *testing.T) {
 	}
 	if refs := h.a.workerReplyMedia("job-1"); len(refs) != 1 {
 		t.Fatalf("delivered images=%d", len(refs))
+	}
+}
+
+// A correction reaches a job only from the conversation that started it; a
+// cleared conversation's job is unknown to a tell, though still cancellable.
+func TestTellDoesNotCrossAClearedConversation(t *testing.T) {
+	inFlight, release := make(chan struct{}), make(chan struct{})
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		close(inFlight)
+		<-release
+		return textReply("Done."), 0
+	})
+	defer close(release)
+	if err := h.p.BeginConversationIdentity("conversation-1"); err != nil {
+		t.Fatal(err)
+	}
+	admitted := h.p.ConversationScope()
+	id := h.spawn("Read notes.txt in the fixture folder")
+	<-inFlight
+	if r := h.p.TellWork(id, "Before the clear."); r.Jobs[0].Outcome != ControlAccepted {
+		t.Fatalf("receipt=%+v", r)
+	}
+	if got := h.events(); len(got) != 1 || got[0].Scope != admitted || !admitted.Valid() {
+		t.Fatalf("correction event scope=%+v, admitted %+v", got, admitted)
+	}
+	if err := h.p.ClearConversation(); err != nil {
+		t.Fatal(err)
+	}
+	if r := h.p.TellWork(id, "After the clear."); len(r.Jobs) != 1 || r.Jobs[0].Outcome != ControlUnknown {
+		t.Fatalf("a tell crossed the clear: %+v", r)
+	}
+	if err := h.p.CancelWork(id); err != nil {
+		t.Fatalf("the leftover job can no longer be cancelled: %v", err)
 	}
 }
