@@ -31,6 +31,14 @@ type StreamOptions struct {
 	// OnForcedAnswer reports that the returned answer was written in a
 	// tools-free round the host imposed, and why. Ollama workers only.
 	OnForcedAnswer func(ForcedAnswer)
+	// Control carries corrections to a running worker job. Ollama workers
+	// read it before each model request and each tool call. With it set, an
+	// empty input adds no turn: the job continues from its corrections.
+	Control *WorkerControl
+	// OnCheckpoint reports, on the worker's goroutine, that history holds a
+	// complete step: a tool batch with all its results, corrections just
+	// added, or the answer. Ollama workers with a Control only.
+	OnCheckpoint func()
 	// WorkerTiers is the live, policy-only availability snapshot for the route
 	// tool. It contains no provider, model, or pricing information.
 	WorkerTiers *WorkerTierAvailability

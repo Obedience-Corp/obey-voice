@@ -82,6 +82,9 @@ func (o *OllamaBrain) chatFullWithContinuation(ctx context.Context, req *api.Cha
 		if !fullWorkerContinuation(opts) || !complete {
 			return api.Message{}, false, fmt.Errorf("ollama full response truncated; generation limit reached")
 		}
+		if requestObsolete(ctx) {
+			return api.Message{}, false, errRequestObsolete
+		}
 		if *attempts >= maxWorkerContinuations {
 			return api.Message{}, false, fmt.Errorf("ollama worker continuation attempts exhausted after %d attempts; task incomplete", *attempts)
 		}

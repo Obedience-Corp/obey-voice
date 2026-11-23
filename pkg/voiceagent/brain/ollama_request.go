@@ -164,6 +164,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 		delivered := false
 		completed := false
 		var callbackErr error
+		requestDispatched(ctx)
 		err := o.clientChat(ctx, req, func(resp api.ChatResponse) error {
 			if resp.Done {
 				completed = true
@@ -179,6 +180,9 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 				if limitErr := budget.Err(); limitErr != nil {
 					o.reportProviderState(ctx, "unavailable")
 					return limitErr
+				}
+				if requestObsolete(ctx) {
+					return errRequestObsolete
 				}
 				if retryErr := budget.AcquireRetry(ctx); retryErr != nil {
 					o.reportProviderState(ctx, "unavailable")
@@ -207,6 +211,9 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			}
 			if limitErr := budget.Err(); limitErr != nil {
 				return limitErr
+			}
+			if requestObsolete(ctx) {
+				return errRequestObsolete
 			}
 			if retryErr := budget.AcquireRetry(ctx); retryErr != nil {
 				return retryErr
@@ -242,6 +249,9 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 					return fmt.Errorf("live model %q does not support tool calls; background workers and lookups require a tool-capable model in Settings > Brain: %w", o.model, err)
 				}
 			}
+		}
+		if requestObsolete(ctx) {
+			return errRequestObsolete
 		}
 		if err := budget.AcquireRetry(ctx); err != nil {
 			return err
