@@ -357,15 +357,14 @@ to a job that has already answered is refused as already finished. Each change
 is a `job_correction` event with the job id, revision, text and state, and the
 session transcript records the revision and whether it went into a brief. A
 correction lifts a stop by the repeat guard, so the redirected job gets its
-tools back, but never a time or request limit. A job asked for a picture keeps
-asking for it after a correction: an answer without one gets the one image
-repair, whose request carries the brief and the corrections in order, so
-"use Tuesday's figures for the chart" still gets its chart. If the picture is
-still missing after that, or the repair brings no usable answer, the
-correction may have dropped it ("text only"), so the answer is delivered rather
-than failed, ending `(No image attached.)`, and its row says `no image
-attached`. A job gets one image repair at most, however many corrections it
-takes. When the worker's context fills, the task and
+tools back, but never a time or request limit. A job that takes a correction
+is never given an image repair: if its task asked for a picture and its answer
+has none, the answer is delivered ending `(No image attached.)`, and its row
+says `no image attached`. A job that took no correction is repaired as before,
+and while that repair runs a correction is refused: "the job is finishing". A
+correction that arrives just as the repair would start is taken instead of the
+repair. When a corrected run answers nothing, the answer the worker already
+had is delivered cut short, as when the run fails. When the worker's context fills, the task and
 every later instruction are kept as written and the tool exchanges between
 them are summarized, in notes that say how many of those instructions they
 come after. A worker keeps its last model request for its answer: with one
