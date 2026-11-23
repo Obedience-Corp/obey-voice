@@ -1290,3 +1290,66 @@ func TestHeldAnswerIsNotShownAsReplacedWhenItIsDelivered(t *testing.T) {
 		}
 	}
 }
+
+// 1. A corrected run that ends with thinking only, no words and no picture,
+// does not replace the answer in hand.
+func TestThinkingOnlyReplacementLeavesTheHeldAnswer(t *testing.T) {
+	var h *steerJobHarness
+	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		if n == 1 {
+			h.p.TellWork(h.lastAccepted(), steerText)
+			return textReply("notes.txt lists three action items."), 0
+		}
+		return api.ChatResponse{Done: true, DoneReason: "stop", Message: api.Message{Role: "assistant", Thinking: "Hmm, which file?"}}, 0
+	})
+	id := h.spawn("Read notes.txt in the fixture folder")
+	h.setAccepted(id)
+	finished := h.awaitFinished(id)
+	if finished.Summary != "notes.txt lists three action items." || finished.CutShortReason != string(brain.ForcedByFailedCorrection) {
+		t.Fatalf("delivered %+v", finished)
+	}
+}
+
+// 2. A correction that wins the repair's admission during the image import
+// keeps the answer's words as the fallback when the corrected run fails.
+func TestCorrectionAtRepairKeepsTheAnswerIfItsRunFails(t *testing.T) {
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		if n == 1 {
+			return textReply("Figures: three items.\n![chart](missing-chart.png)"), 0
+		}
+		return api.ChatResponse{}, http.StatusBadRequest
+	})
+	var once sync.Once
+	events.Subscribe(h.p.Events, func(e events.Info) {
+		if strings.Contains(e.Message, "missing-chart.png") {
+			once.Do(func() { h.p.TellWork("job-1", "Text only.") })
+		}
+	})
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
+	if err != nil || !strings.HasPrefix(result, "Figures: three items.") || !strings.HasSuffix(result, noImageMarker) {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
+// 3. When the corrected run was sent and failed, that is why the answer in
+// hand was cut short, whatever had forced that answer.
+func TestFailedCorrectedRunIsTheReason(t *testing.T) {
+	var h *steerJobHarness
+	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch {
+		case n <= 3:
+			return readCall("notes.txt"), 0
+		case n == 4:
+			h.p.TellWork(h.lastAccepted(), steerText)
+			return textReply("notes.txt kept returning the same lines."), 0
+		}
+		return api.ChatResponse{}, http.StatusBadRequest
+	})
+	id := h.spawn("Read notes.txt in the fixture folder")
+	h.setAccepted(id)
+	finished := h.awaitFinished(id)
+	if finished.Summary != "notes.txt kept returning the same lines." || finished.CutShortReason != string(brain.ForcedByFailedCorrection) {
+		t.Fatalf("delivered %+v", finished)
+	}
+}

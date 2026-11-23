@@ -177,10 +177,6 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 	heldTurn := -1
 	reply, err := r.think(r.brief)
 	for {
-		// The line given for an empty reply does not replace a held answer.
-		if err == nil && held != nil && brain.IsFallbackReply(reply) {
-			err = errEmptyCorrectedReply
-		}
 		if err != nil {
 			if errors.Is(r.ctx.Err(), context.Canceled) {
 				// The job table ended the job; its ending settles the corrections.
@@ -191,10 +187,17 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 				return reply, err
 			}
 			// The corrected run failed; the answer it would have replaced stands.
-			r.forced = cmp.Or(heldForced, failedCorrectionReason(err, r.budget))
+			// A limit that kept the run from starting keeps the answer's own reason.
+			r.forced = failedCorrectionReason(err, r.budget)
+			if r.forced != brain.ForcedByFailedCorrection {
+				r.forced = cmp.Or(heldForced, r.forced)
+			}
 			return r.deliverHeld(*held, heldTurn)
 		}
 		done := r.finish(reply)
+		if held != nil && done.err == nil && !answered(reply, done) {
+			done.err = errEmptyCorrectedReply
+		}
 		if done.err != nil && !done.preempted {
 			if errors.Is(r.ctx.Err(), context.Canceled) {
 				// The job table ended the job; its decision settles the corrections.
@@ -205,7 +208,7 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 				// A replacement counts only once it is finished; one whose
 				// images could not be attached leaves the answer in hand.
 				if held != nil {
-					r.forced = cmp.Or(heldForced, brain.ForcedByFailedCorrection)
+					r.forced = brain.ForcedByFailedCorrection
 					return r.deliverHeld(*held, heldTurn)
 				}
 				return done.text, done.err
@@ -216,7 +219,7 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 		if sealed {
 			// A failed replacement does not displace the last finished answer.
 			if done.err != nil && held != nil {
-				r.forced = cmp.Or(heldForced, limit, brain.ForcedByFailedCorrection)
+				r.forced = brain.ForcedByFailedCorrection
 				return r.deliverHeld(*held, heldTurn)
 			}
 			if limit != "" && r.forced == "" {
@@ -234,6 +237,12 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 
 // errEmptyCorrectedReply is a corrected run that answered nothing.
 var errEmptyCorrectedReply = errors.New("the corrected run gave no answer")
+
+// answered reports a reply that can replace an answer in hand: words or a
+// picture, and not the line given for an empty reply.
+func answered(reply string, done finished) bool {
+	return !brain.IsFallbackReply(reply) && (strings.TrimSpace(done.text) != "" || len(done.media) > 0)
+}
 
 // deliver notes how the answer was finished and saves the thread it was
 // imported into; delivery reads the reply's images from that thread.
@@ -336,6 +345,11 @@ func (r *workerRun) finish(reply string) finished {
 		}
 	}
 	if !r.steer.beginRepair() {
+		// The correction waiting is taken instead; the answer's words stay as
+		// the fallback should its run fail.
+		if chatmedia.ReplyProse(reply) != "" {
+			return finished{text: cleaned, noImage: asked}
+		}
 		return finished{text: cleaned, err: attachmentErr, preempted: true}
 	}
 	retryReply, err := r.think(input)
