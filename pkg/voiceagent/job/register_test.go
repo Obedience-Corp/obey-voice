@@ -2,9 +2,11 @@ package job
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // Whatever Register sets up for an id exists before any caller can see that
@@ -56,5 +58,69 @@ func TestRegisterRunsBeforeTheJobIsVisible(t *testing.T) {
 	wg.Wait()
 	if seenEarly.Load() {
 		t.Fatal("a job was visible before it was registered")
+	}
+}
+
+func TestOnEndingNamesTheCauseThatWon(t *testing.T) {
+	table := NewTable(context.Background())
+	defer table.Close()
+	got := map[string]error{}
+	var mu sync.Mutex
+	start := func(task string) string {
+		started := make(chan struct{})
+		id, err := table.Start(context.Background(), Spec{Task: task,
+			OnEnding: func(state State, err error) {
+				mu.Lock()
+				got[task] = err
+				mu.Unlock()
+			},
+			Run: func(ctx context.Context) (string, error) { close(started); <-ctx.Done(); return "", ctx.Err() }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-started
+		return id
+	}
+	table.Cancel(start("cancelled"))
+	start("aborted")
+	table.AbortAll()
+	mu.Lock()
+	defer mu.Unlock()
+	if !errors.Is(got["cancelled"], ErrCancelled) || errors.Is(got["aborted"], ErrCancelled) || !errors.Is(got["aborted"], errAborted) {
+		t.Fatalf("causes=%v", got)
+	}
+}
+
+func TestCancelFreezesTheRunningTimeAtTheStop(t *testing.T) {
+	table := NewTable(context.Background())
+	defer table.Close()
+	started := make(chan struct{})
+	id, err := table.Start(context.Background(), Spec{Task: "run", Run: func(ctx context.Context) (string, error) { close(started); <-ctx.Done(); return "", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	before, _ := table.Cancel(id)
+	first := before.Elapsed()
+	for at := time.Now(); !time.Now().After(at); {
+	}
+	if before.State != StateRunning || before.Elapsed() != first {
+		t.Fatalf("state=%s elapsed moved from %v to %v", before.State, first, before.Elapsed())
+	}
+}
+
+func TestPanickingRegisterLeavesTheTableUsable(t *testing.T) {
+	table := NewTable(context.Background())
+	defer table.Close()
+	func() {
+		defer func() { _ = recover() }()
+		_, _ = table.Start(context.Background(), Spec{Task: "x", Register: func(string) { panic("register failed") }, Run: func(context.Context) (string, error) { return "", nil }})
+	}()
+	done := make(chan struct{})
+	go func() { table.Status(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the table lock was left held")
 	}
 }
