@@ -250,6 +250,10 @@ func (c *WorkerControl) Corrected() bool {
 func (c *WorkerControl) BeginRepair() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.sealed {
+		// The job already ended; the repair fails on its own.
+		return true
+	}
 	if len(c.corrections) > 0 {
 		return false
 	}

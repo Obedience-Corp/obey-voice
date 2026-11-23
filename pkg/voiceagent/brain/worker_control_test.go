@@ -1056,3 +1056,15 @@ func TestSummaryRetryLeavesTheAnswersRequest(t *testing.T) {
 		t.Fatalf("answer=%q err=%v summaries=%d", answer, err, summaries)
 	}
 }
+
+// 5. A repair admitted after the table ended the job does not make later
+// corrections read as if the job were still finishing.
+func TestRepairAfterTheJobEndedKeepsItFinished(t *testing.T) {
+	ctl := NewWorkerControl(nil)
+	ctl.Begin(true, "")
+	ctl.Supersede()
+	ctl.BeginRepair()
+	if c := ctl.Steer("Late."); c.State != CorrectionRefused {
+		t.Fatalf("correction=%+v", c)
+	}
+}
