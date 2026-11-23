@@ -19,7 +19,7 @@ func (p *Pipeline) RunTranscription(ctx context.Context) (string, error) {
 	turn.to(TurnListening)
 	// The requesting connection receives transcription_result as its terminal
 	// event; this is not a conversational turn and emits no TurnMetrics.
-	text, err := p.transcribeTurn(stt.WithLivePreview(ctx), metrics, turn)
+	text, err := p.transcribeTurn(stt.WithLivePreview(ctx), metrics, turn, nil)
 	if p.Utterance != nil {
 		p.Utterance.Clear()
 	}

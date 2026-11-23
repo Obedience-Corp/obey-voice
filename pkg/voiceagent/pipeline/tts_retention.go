@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
@@ -9,18 +10,23 @@ import (
 type ttsRetention struct {
 	primary, fallback tts.Provider
 	done              chan struct{}
+	cancelBuild       context.CancelFunc
 }
 
 // RetainTTS keeps a worker's admitted voices alive until its result has been
 // spoken or discarded. The voice manager waits for these leases on replacement.
 func (p *Pipeline) RetainTTS(primary, fallback tts.Provider) func() {
-	r := &ttsRetention{primary: primary, fallback: fallback, done: make(chan struct{})}
 	p.ttsMu.Lock()
+	defer p.ttsMu.Unlock()
+	return p.retainTTSLocked(primary, fallback, nil)
+}
+
+func (p *Pipeline) retainTTSLocked(primary, fallback tts.Provider, cancelBuild context.CancelFunc) func() {
+	r := &ttsRetention{primary: primary, fallback: fallback, done: make(chan struct{}), cancelBuild: cancelBuild}
 	if p.ttsRetentions == nil {
 		p.ttsRetentions = make(map[*ttsRetention]struct{})
 	}
 	p.ttsRetentions[r] = struct{}{}
-	p.ttsMu.Unlock()
 	var once sync.Once
 	return func() {
 		once.Do(func() {
