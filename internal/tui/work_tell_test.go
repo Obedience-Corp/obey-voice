@@ -281,3 +281,41 @@ func TestWorkerThreadMatchesARepeatedProviderCallID(t *testing.T) {
 		t.Fatalf("tool entries=%d", tools)
 	}
 }
+
+// An existing image whose path starts with a command word is still attached,
+// as before; a line naming no existing file stays the command.
+func TestExistingImagePathThatStartsLikeACommandIsAttached(t *testing.T) {
+	exists := imageFileExists
+	t.Cleanup(func() { imageFileExists = exists })
+	imageFileExists = func(path string) bool { return path == "/work photos/chart.png" }
+	entries := map[string]func(m conversationModel, text string) conversationModel{
+		"submit": func(m conversationModel, text string) conversationModel {
+			m.input.SetValue(text)
+			m.handleSubmit()
+			return m
+		},
+		"clipboard paste": func(m conversationModel, text string) conversationModel {
+			m, _ = m.Update(clipboardPasteMsg{text: text})
+			return m
+		},
+		"terminal paste": func(m conversationModel, text string) conversationModel {
+			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
+			return m
+		},
+	}
+	for name, enter := range entries {
+		t.Run(name, func(t *testing.T) {
+			m := sizedConversation(t, 120, 24)
+			m.deps.runner = &tellRunner{fakeTurnRunner: &fakeTurnRunner{}}
+			if m = enter(m, "/work photos/chart.png"); !m.media.importing {
+				t.Fatal("an existing image was taken for a command")
+			}
+			m = sizedConversation(t, 120, 24)
+			runner := &tellRunner{fakeTurnRunner: &fakeTurnRunner{}, receipt: pipeline.WorkReceipt{Jobs: []pipeline.JobControl{{ID: "job-1", Outcome: pipeline.ControlAccepted}}}}
+			m.deps.runner = runner
+			if m = enter(m, "/work tell job-1 use chart.png"); m.media.importing {
+				t.Fatal("a /work tell line was taken for an image path")
+			}
+		})
+	}
+}
