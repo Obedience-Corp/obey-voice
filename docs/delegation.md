@@ -327,14 +327,18 @@ after the results, and the worker continues from it. An answer written before
 the correction arrived, or while its pictures were being attached, is kept
 aside: the worker's saved conversation marks it replaced, and the job goes on
 from the correction. If no request is left for that, or the corrected run
-fails, the kept answer is delivered cut short instead, so a correction never
-turns an answer into a failure. Several corrections apply in the order given.
+fails, including when its pictures cannot be attached, the kept answer is
+delivered cut short instead, so a correction never turns an answer into a
+failure. Several corrections apply in the order given.
 A job still queued gets the correction in the brief it starts with, labelled
 `Correction from the user:`. A correction is refused, with the reason, for a
-CLI or hosted worker, a paid worker, an Ollama model that is not served on this
-machine (a cloud alias), an Obey-managed delegation and a reply moved to the
-background; nothing about the job changes. Such a worker still reads a
-correction given while the job is queued, in its brief. Corrections come only
+CLI or hosted worker, a paid worker, an Ollama worker on another machine or
+behind a cloud alias, an Obey-managed delegation and a reply moved to the
+background; nothing about the job changes. When whether the worker runs on
+this machine cannot be checked, the refusal says so. Such a worker still reads
+a correction given while the job is queued, in its brief. A correction reaches
+a job only from the conversation that started it: after a clear, the old
+job's id is unknown to `/work tell`, though `/work cancel` still reaches it. Corrections come only
 from the keyboard for now; no spoken phrase or persona tool makes one.
 
 `/work tell` reports at once whether the correction was accepted, added to a
@@ -353,14 +357,18 @@ to a job that has already answered is refused as already finished. Each change
 is a `job_correction` event with the job id, revision, text and state, and the
 session transcript records the revision and whether it went into a brief. A
 correction lifts a stop by the repeat guard, so the redirected job gets its
-tools back, but never a time or request limit. After a correction, a job asked
-for a picture is not made to attach one and its image repair is skipped, since
-the correction may have changed what it should deliver; an answer that comes
-back without one ends `(No image attached.)`, and its row says `no image
-attached`. When the worker's context fills, the task and every correction are
-kept as written and the tool exchanges between them are summarized, in notes
-that say how many corrections they cover. A worker with one model request left
-does not spend it on that summary.
+tools back, but never a time or request limit. A job asked for a picture keeps
+asking for it after a correction: an answer without one gets the one image
+repair, whose request carries the brief and the corrections in order, so
+"use Tuesday's figures for the chart" still gets its chart. If the picture is
+still missing after that, the correction may have dropped it ("text only"), so
+the answer is delivered rather than failed, ending `(No image attached.)`, and
+its row says `no image attached`. When the worker's context fills, the task and
+every later instruction are kept as written and the tool exchanges between
+them are summarized, in notes that say how many of those instructions they
+come after. A worker keeps its last model request for its answer: with one
+left it does not summarize, and with two left a summary the server is too busy
+to answer is not resent.
 
 Those events are folded for display: consecutive calls of one kind become a
 row, a kind change opens the next. The TUI keeps one transcript entry per job
