@@ -199,6 +199,18 @@ demo-work-cut-short: build
     just _optimize-demo-gif demos/work-cut-short.gif
     ls -lh demos/work-cut-short.gif demos/frames/work-cut-short.png
 
+# Conversation: a running job corrected with /work tell, its row marked "correction included".
+# Scripted bus events; no mic or model required.
+demo-work-tell: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/work-tell.tape
+    ls -lh demos/work-tell.gif demos/frames/work-tell-accepted.png demos/frames/work-tell-included.png demos/frames/work-tell-done.png
+
 # Settings → Persona: list seeded agents and switch active persona.
 demo-persona-switch: build
     #!/usr/bin/env bash

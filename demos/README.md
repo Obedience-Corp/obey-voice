@@ -175,6 +175,26 @@ just demo-workers-stopping
 
 Still frames: `demos/frames/workers-stopping.png`, `demos/frames/workers-stopped.png`, `demos/frames/workers-stopped-detail.png`
 
+## work-tell.gif — correcting a running job
+
+1. A job starts and reads `notes.txt`
+2. `/work tell job-1 use notes-2.txt instead, the newer copy` is typed; the
+   receipt line says the correction was sent
+3. The job's row reads `correction included`, the job reads `notes-2.txt`, and
+   its answer follows; the sealed row keeps `correction included`
+
+`OBEY_VOICE_DEMO_WORK_CUE=tell` scripts the job's events and the worker's side
+of the correction. The `/work tell` command, its receipt and the job row are
+the real conversation TUI; there is no microphone or model.
+
+```bash
+just demo-work-tell
+```
+
+Still frames: `demos/frames/work-tell-running.png`,
+`demos/frames/work-tell-accepted.png`, `demos/frames/work-tell-included.png`,
+`demos/frames/work-tell-done.png`
+
 ## work-cue.gif — background work during conversation
 
 The real conversation TUI shows an animated **Working** cue beside the

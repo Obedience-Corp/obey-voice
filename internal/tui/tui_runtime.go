@@ -199,11 +199,15 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 	a.conversation.setStatus("", false)
 	a.conversation.seedTranscript(msg.rt.Seed)
 	workers := msg.rt.Pipeline.Workers
+	var runner turnRunner = msg.rt.Pipeline
 	if demoWorkCueEnabled() {
 		workers = demoWorkers(msg.rt.Pipeline).Workers
+		if demoWorkCueVariant() == demoWorkCueTell {
+			runner = demoTellRunner{Pipeline: msg.rt.Pipeline, bus: msg.rt.Bus}
+		}
 	}
 	cmd := a.conversation.startConversation(conversationDeps{
-		runner:    msg.rt.Pipeline,
+		runner:    runner,
 		bus:       msg.rt.Bus,
 		clipboard: a.clipboard,
 		clearHistory: func() {

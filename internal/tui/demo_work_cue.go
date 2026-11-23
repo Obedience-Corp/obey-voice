@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 // demoWorkCueEnv scripts a handoff and a second conversation turn while the
@@ -24,7 +25,7 @@ func demoWorkCueVariant() string {
 
 func demoWorkCueEnabled() bool {
 	switch demoWorkCueVariant() {
-	case "1", "true", "yes", "on", demoWorkCueCutShort:
+	case "1", "true", "yes", "on", demoWorkCueCutShort, demoWorkCueTell:
 		return true
 	default:
 		return false
@@ -34,6 +35,12 @@ func demoWorkCueEnabled() bool {
 // demoWorkCueCutShort scripts a job that repeats one tool call until it is
 // made to answer, and finishes cut short.
 const demoWorkCueCutShort = "cut_short"
+
+// demoWorkCueTell scripts a running job that the user corrects with
+// /work tell; demoTellRunner answers the command and scripts the worker's side.
+const demoWorkCueTell = "tell"
+
+const demoTellTask = "Summarize the action items in notes.txt"
 
 func startDemoWorkCue(bus *events.Bus) tea.Cmd {
 	if bus == nil {
@@ -47,8 +54,12 @@ func startDemoWorkCue(bus *events.Bus) tea.Cmd {
 
 func runDemoWorkCue(bus *events.Bus) {
 	emit := func(e events.Event) { bus.Emit(e) }
-	if demoWorkCueVariant() == demoWorkCueCutShort {
+	switch demoWorkCueVariant() {
+	case demoWorkCueCutShort:
 		runDemoCutShort(emit)
+		return
+	case demoWorkCueTell:
+		runDemoTell(emit)
 		return
 	}
 	time.Sleep(600 * time.Millisecond)
@@ -89,4 +100,44 @@ func runDemoCutShort(emit func(events.Event)) {
 	time.Sleep(1200 * time.Millisecond)
 	emit(events.JobFinished{ID: "job-1", Task: task, Elapsed: 41 * time.Second, CutShort: true, CutShortReason: "repeated the same tool call",
 		Summary: "I could not get past reading build.log: it kept returning the same lines. The failing step is not identified yet."})
+}
+
+func runDemoTell(emit func(events.Event)) {
+	time.Sleep(600 * time.Millisecond)
+	emit(events.UserInput{Text: "Summarize the action items in notes.txt."})
+	emit(events.ThinkingStarted{})
+	time.Sleep(700 * time.Millisecond)
+	emit(events.JobStarted{ID: "job-1", Task: demoTellTask})
+	emit(events.ResponseReady{Response: "Working on it."})
+	emit(events.STTPhase{Phase: "listening"})
+	ok := &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}
+	time.Sleep(900 * time.Millisecond)
+	emit(events.ToolCallStarted{ID: "call-1", JobID: "job-1", Name: "read_file", Kind: "read", Summary: "notes.txt"})
+	time.Sleep(500 * time.Millisecond)
+	emit(events.ToolCallFinished{ID: "call-1", JobID: "job-1", Name: "read_file", Kind: "read", Outcome: ok})
+}
+
+// demoTellRunner is the live pipeline with /work tell answered by a script:
+// the correction is accepted at once, as on an in-process worker, and the
+// worker's next request, its reread and its answer follow.
+type demoTellRunner struct {
+	*pipeline.Pipeline
+	bus *events.Bus
+}
+
+func (d demoTellRunner) TellWork(id, text string) pipeline.WorkReceipt {
+	d.bus.Emit(events.JobCorrection{ID: id, Revision: 1, Text: text, State: "pending"})
+	go func() {
+		ok := &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}
+		time.Sleep(1500 * time.Millisecond)
+		d.bus.Emit(events.JobCorrection{ID: id, Revision: 1, Text: text, State: "included"})
+		time.Sleep(600 * time.Millisecond)
+		d.bus.Emit(events.ToolCallStarted{ID: "call-2", JobID: id, Name: "read_file", Kind: "read", Summary: "notes-2.txt"})
+		time.Sleep(500 * time.Millisecond)
+		d.bus.Emit(events.ToolCallFinished{ID: "call-2", JobID: id, Name: "read_file", Kind: "read", Outcome: ok})
+		time.Sleep(1200 * time.Millisecond)
+		d.bus.Emit(events.JobFinished{ID: id, Task: demoTellTask, Elapsed: 18 * time.Second,
+			Summary: "notes-2.txt has three action items: send the draft, book the room, and update the budget sheet."})
+	}()
+	return pipeline.WorkReceipt{Jobs: []pipeline.JobControl{{ID: id, Outcome: pipeline.ControlAccepted, Revision: 1}}}
 }
