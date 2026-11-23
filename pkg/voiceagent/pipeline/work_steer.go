@@ -191,7 +191,7 @@ func (s *jobSteer) report(c brain.Correction) {
 	id := s.id
 	s.mu.Unlock()
 	if id != "" {
-		s.a.emitCorrection(id, c, s.scope)
+		s.a.emitCorrection(id, c, s)
 	}
 }
 
@@ -324,16 +324,14 @@ func (a *Agency) inAdmittingConversation(s *jobSteer) bool {
 }
 
 // emitCorrection publishes a correction event for a job of the current
-// conversation, with the scope that admitted it. A retired conversation's job
-// is settled silently.
-func (a *Agency) emitCorrection(id string, c brain.Correction, scope work.WorkScope) {
-	if a.pipeline == nil {
+// conversation, with the scope that admitted it. The check uses that scope,
+// which outlives the job's entry in the work inbox; a retired conversation's
+// job is settled silently.
+func (a *Agency) emitCorrection(id string, c brain.Correction, s *jobSteer) {
+	if a.pipeline == nil || !a.inAdmittingConversation(s) {
 		return
 	}
-	if _, _, ok := a.callbackKey(id); !ok {
-		return
-	}
-	a.emitJobTrace(id, events.JobCorrection{Scope: scope, ID: id, Revision: c.Revision, Text: c.Text, State: string(c.State), Reason: c.Reason, Brief: c.Brief})
+	a.emitJobTrace(id, events.JobCorrection{Scope: s.scope, ID: id, Revision: c.Revision, Text: c.Text, State: string(c.State), Reason: c.Reason, Brief: c.Brief})
 }
 
 // TellWork gives one job a correction from the keyboard. It never waits for

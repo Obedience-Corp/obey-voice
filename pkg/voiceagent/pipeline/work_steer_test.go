@@ -1312,3 +1312,21 @@ func TestLimitDeliversTheLastFinishedAnswer(t *testing.T) {
 		t.Fatalf("result=%q err=%v", result, err)
 	}
 }
+
+func TestInboxCancelOfAQueuedJobReportsItsCorrection(t *testing.T) {
+	h := newSteerJobHarnessWith(t, steerSetup{inbox: true}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		return textReply("ran"), 0
+	})
+	release := h.holdSlot()
+	defer release()
+	id := h.spawn("Read notes.txt in the fixture folder")
+	if r := h.p.TellWork(id, steerText); r.Jobs[0].Outcome != ControlBriefed {
+		t.Fatalf("receipt=%+v", r)
+	}
+	if err := h.p.CancelWork(id); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.states(); !slices.Equal(got, []string{"pending", "superseded"}) {
+		t.Fatalf("correction events=%q", got)
+	}
+}
