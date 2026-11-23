@@ -73,6 +73,10 @@ func (o *OllamaBrain) chatFullWithContinuation(ctx context.Context, req *api.Cha
 				}
 				combined := partial.String() + response.Content
 				if len(response.ToolCalls) == 0 && (strings.TrimSpace(cleanForVoice(response.Content)) == "" || !hasSpeakableContent(cleanForVoice(combined))) {
+					// What came after the request was superseded is not its failure.
+					if requestObsolete(ctx) {
+						return api.Message{}, false, errRequestObsolete
+					}
 					return api.Message{}, false, fmt.Errorf("ollama worker continuation returned no final answer; task incomplete")
 				}
 				response.Content = combined

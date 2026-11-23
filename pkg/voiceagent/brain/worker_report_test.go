@@ -429,3 +429,129 @@ func TestEmptyReplyAfterAReportGoesToTheReportRound(t *testing.T) {
 		t.Fatalf("answer=%q err=%v forced=%q requests=%d", answer, err, forced, len(h.requests()))
 	}
 }
+
+// A reported job whose brief alone is past the summary threshold, but within
+// the request's own limit, answers without a summary being asked for.
+func TestReportedJobAnswersPastTheSummaryThreshold(t *testing.T) {
+	h := newSteerHarness(t, nil, func(h *steerHarness, n int, req api.ChatRequest) (api.ChatResponse, int) {
+		return answerResponse("Nothing is done yet."), 0
+	})
+	h.o.cfg = continuityConfig()
+	h.o.cfg.IsWorker, h.o.cfg.ContinuityProjectionEnabled = true, false
+	base := estimateMessageTokens(h.o.buildMessages(""), nil)
+	brief := strings.Repeat("x", (h.o.effectiveNumCtx()*82/100-base)*4)
+	h.ctl.Report(checkpointOf(reportCheckpoint))
+	answer, err := h.o.ThinkFull(t.Context(), brief, h.opts())
+	if err != nil || answer != "Nothing is done yet." {
+		t.Fatalf("answer=%q err=%v", answer, err)
+	}
+	if reqs := h.requests(); len(reqs) != 1 || !hasInstruction(reqs[0], toolReportAnswerInstruction) {
+		t.Fatalf("requests=%d", len(reqs))
+	}
+}
+
+// A summary already sent when the report is accepted that comes back empty
+// does not fail the job: the report round answers.
+func TestEmptySummaryAfterAReportGoesToTheReportRound(t *testing.T) {
+	payload := "Finding: " + strings.Repeat("tool detail ", 550)
+	h := newSteerHarness(t, nil, func(h *steerHarness, n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch {
+		case n <= 3:
+			return toolResponse([]api.ToolCall{readCallID("call", "big-"+string(rune('0'+n))+".txt")}), 0
+		case len(req.Tools) == 0 && !hasInstruction(req, toolReportAnswerInstruction):
+			h.ctl.Report(checkpointOf(reportCheckpoint))
+			return answerResponse(""), 0
+		}
+		return answerResponse("Three files each hold one finding."), 0
+	})
+	for i := 1; i <= 3; i++ {
+		if err := os.WriteFile(filepath.Join(h.o.workDir, "big-"+string(rune('0'+i))+".txt"), []byte(payload), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := continuityConfig()
+	cfg.IsWorker, cfg.ContinuityProjectionEnabled, cfg.ContinuitySoftLimitRatio = true, false, 0.5
+	h.o.cfg = cfg
+	answer, err := h.o.ThinkFull(t.Context(), "Inspect the three files.", h.opts())
+	if err != nil || answer != "Three files each hold one finding." {
+		t.Fatalf("answer=%q err=%v", answer, err)
+	}
+	if reqs := h.requests(); len(reqs) != 5 || !hasInstruction(reqs[4], toolReportAnswerInstruction) {
+		t.Fatalf("requests=%d", len(reqs))
+	}
+}
+
+// A report accepted while a cut-off request is being continued, whose
+// continuation brings back nothing, goes to the report round.
+func TestEmptyContinuationAfterAReportGoesToTheReportRound(t *testing.T) {
+	h := newSteerHarness(t, nil, func(h *steerHarness, n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch n {
+		case 1:
+			return api.ChatResponse{Done: true, DoneReason: "length", Message: api.Message{Role: "assistant", Content: "Reading a.txt, which says"}}, 0
+		case 2:
+			h.ctl.Report(checkpointOf(reportCheckpoint))
+			return answerResponse(""), 0
+		}
+		return answerResponse("a.txt is not read yet."), 0
+	})
+	answer, err := h.o.ThinkFull(t.Context(), "Read a.txt.", h.opts())
+	if err != nil || answer != "a.txt is not read yet." {
+		t.Fatalf("answer=%q err=%v", answer, err)
+	}
+	if reqs := h.requests(); len(reqs) != 3 || !hasInstruction(reqs[2], toolReportAnswerInstruction) {
+		t.Fatalf("requests=%d", len(reqs))
+	}
+}
+
+// countingEmbedder counts the prompts it embeds, and runs onPrompt on each.
+type countingEmbedder struct {
+	routingEmbedder
+	prompts  int
+	onPrompt func()
+}
+
+func (e *countingEmbedder) Embed(ctx context.Context, req *api.EmbedRequest) (*api.EmbedResponse, error) {
+	if _, ok := req.Input.(string); ok {
+		e.prompts++
+		if e.onPrompt != nil {
+			e.onPrompt()
+		}
+	}
+	return e.routingEmbedder.Embed(ctx, req)
+}
+
+// A reporting job embeds no prompt to route skills, and a report accepted
+// while skills are routed publishes no activation.
+func TestReportStopsSkillRouting(t *testing.T) {
+	for _, during := range []bool{false, true} {
+		t.Run(map[bool]string{false: "before", true: "during"}[during], func(t *testing.T) {
+			h := newSteerHarness(t, nil, func(h *steerHarness, n int, req api.ChatRequest) (api.ChatResponse, int) {
+				return answerResponse("Nothing is done yet."), 0
+			})
+			embedder := &countingEmbedder{routingEmbedder: routingEmbedder{catalog: [][]float32{{1, 0}}, queries: map[string][]float32{"Greet the team.": {0, 1}}}}
+			router, err := newSemanticSkillRouter(t.Context(), embedder, "embed", .55, []skills.Skill{{Name: "greeter", Description: "Greet people", Body: "Say hello."}}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.o.skillRouter = router
+			h.o.skills = []skills.Skill{{Name: "greeter", Description: "Greet people", Body: "Say hello."}}
+			report := func() { h.ctl.Report(checkpointOf(reportCheckpoint)) }
+			if during {
+				embedder.onPrompt = report
+			} else {
+				report()
+			}
+			opts := h.opts()
+			ctx := WithActivatedSkills(t.Context(), []string{"greeter"})
+			if _, err := h.o.ThinkFull(ctx, "Greet the team.", opts); err != nil {
+				t.Fatal(err)
+			}
+			if wantPrompts := map[bool]int{false: 0, true: 1}[during]; embedder.prompts != wantPrompts {
+				t.Fatalf("prompts embedded=%d", embedder.prompts)
+			}
+			if len(h.started) != 0 {
+				t.Fatalf("published after the report: %q", h.started)
+			}
+		})
+	}
+}

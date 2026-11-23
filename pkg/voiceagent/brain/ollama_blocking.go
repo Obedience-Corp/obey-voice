@@ -46,8 +46,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	if opts.Discussion == nil && !opts.AgentContinuation {
 		if continuing {
 			skillCtx = ctl.skillCtx
-		} else {
-			skillCtx = o.routeSkillContext(o.skillRouteContext(ctx, ctl), input, opts.OnToolStart, opts.OnToolEnd)
+		} else if ctl == nil || !ctl.reporting() {
+			start, end := skillHooks(ctl, opts.OnToolStart, opts.OnToolEnd)
+			skillCtx = o.routeSkillContext(o.skillRouteContext(ctx, ctl), input, start, end)
 		}
 	} else {
 
@@ -408,6 +409,24 @@ func (o *OllamaBrain) skillRouteContext(ctx context.Context, ctl *WorkerControl)
 		return ctx
 	}
 	return withRequestControl(ctx, requestControl{obsolete: func() bool { return ctl.waiting() || ctl.reporting() }})
+}
+
+// skillHooks are the hooks skill routing publishes an activation through: one
+// a report accepted during the routing publishes nothing.
+func skillHooks(ctl *WorkerControl, start func(ToolCall), end func(ToolResult)) (func(ToolCall), func(ToolResult)) {
+	if ctl == nil || (start == nil && end == nil) {
+		return start, end
+	}
+	quiet := false
+	return func(call ToolCall) {
+			if quiet = ctl.reporting(); !quiet && start != nil {
+				start(call)
+			}
+		}, func(result ToolResult) {
+			if !quiet && end != nil {
+				end(result)
+			}
+		}
 }
 
 func checkpoint(opts StreamOptions) {
