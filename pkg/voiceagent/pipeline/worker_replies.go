@@ -244,18 +244,13 @@ func (a *Agency) saveWorkerThreadAt(id string, turns []brain.Turn, revision uint
 	a.workerThreads[id] = copyWorkerThread(turns)
 }
 
-// unmarkDeliveredAnswer clears the replaced mark from the newest answer a
-// correction replaced in job id's saved thread: that answer is being
-// delivered after all. The tool evidence after it stays.
-func (a *Agency) unmarkDeliveredAnswer(id string) {
+// unmarkDeliveredAnswer clears the replaced mark from turn in job id's saved
+// thread: that answer is being delivered after all. The turns after it stay.
+func (a *Agency) unmarkDeliveredAnswer(id string, turn int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	turns := a.workerThreads[id]
-	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Role == "assistant" && turns[i].Disposition == brain.DispositionSuperseded {
-			turns[i].Disposition = ""
-			return
-		}
+	if turns := a.workerThreads[id]; turn >= 0 && turn < len(turns) && turns[turn].Disposition == brain.DispositionSuperseded {
+		turns[turn].Disposition = ""
 	}
 }
 

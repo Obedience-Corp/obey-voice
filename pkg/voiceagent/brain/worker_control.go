@@ -73,6 +73,7 @@ type WorkerControl struct {
 	started     bool
 	noInput     string
 	sealed      bool
+	finishing   bool // an image repair runs; no more corrections
 	outbox      []Correction
 	draining    bool
 	notify      func(Correction)
@@ -95,6 +96,9 @@ func NewWorkerControl(notify func(Correction)) *WorkerControl {
 func (c *WorkerControl) Steer(text string) Correction {
 	c.mu.Lock()
 	switch {
+	case c.finishing:
+		c.mu.Unlock()
+		return Correction{Text: text, State: CorrectionRejected, Reason: "the job is finishing"}
 	case c.sealed:
 		c.mu.Unlock()
 		return Correction{Text: text, State: CorrectionRefused, Reason: "already finished"}
@@ -162,6 +166,7 @@ func (c *WorkerControl) end(state CorrectionState, reason string) {
 func (c *WorkerControl) Decide(state CorrectionState, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.finishing = false
 	if c.sealed {
 		return
 	}
@@ -232,17 +237,24 @@ func (c *WorkerControl) Included() int {
 	return n
 }
 
-// Corrected reports a correction the worker was given: in its brief, or in
-// a request that was answered.
+// Corrected reports that the job accepted a correction, whatever became of it.
 func (c *WorkerControl) Corrected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, item := range c.corrections {
-		if item.State == CorrectionIncluded || item.State == CorrectionBriefed || (item.Brief && item.taken) {
-			return true
-		}
+	return len(c.corrections) > 0
+}
+
+// BeginRepair admits an image repair for a job that took no correction, and
+// closes it to corrections while the repair runs. It fails when the job has
+// accepted one, which the job takes instead.
+func (c *WorkerControl) BeginRepair() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.corrections) > 0 {
+		return false
 	}
-	return false
+	c.sealed, c.finishing = true, true
+	return true
 }
 
 // Corrections is every accepted correction, in order.

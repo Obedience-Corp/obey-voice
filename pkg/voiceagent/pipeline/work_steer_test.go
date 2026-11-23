@@ -519,9 +519,9 @@ func TestCancelSupersedesCorrections(t *testing.T) {
 	})
 }
 
-// A correction that drops the picture costs the one repair, which carries it,
-// and the answer is then delivered saying no image was attached.
-func TestTextOnlyCorrectionGetsOneRepairThenSaysNoImage(t *testing.T) {
+// (a) A corrected picture job is never repaired: an answer without a picture
+// is delivered marked, with no repair request.
+func TestCorrectedPictureJobIsDeliveredMarkedWithoutRepair(t *testing.T) {
 	var a *Agency
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
 		if n == 1 {
@@ -532,19 +532,93 @@ func TestTextOnlyCorrectionGetsOneRepairThenSaysNoImage(t *testing.T) {
 	})
 	a = h.a
 	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
-	result, err := h.directSteerRun(ctx, "Send a picture of the notes.", nil)
+	result, err := h.directSteerRun(ctx, "Send a picture of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
 	if err != nil || result != "A described picture: a plain chart of the notes.\n\n"+noImageMarker {
 		t.Fatalf("result=%q err=%v", result, err)
 	}
-	reqs := h.requests()
-	if len(reqs) != 3 || userCount(reqs[2], "Correction from the user: No picture; describe it in text.") == 0 {
-		t.Fatalf("requests=%d: the one repair did not carry the correction", len(reqs))
+	if repairs := repairRequests(h.requests()); repairs != 0 {
+		t.Fatalf("repair requests=%d", repairs)
 	}
-	h.a.mu.Lock()
-	noImage := h.a.workerOrigins["job-1"].noImage
-	h.a.mu.Unlock()
-	if !noImage {
-		t.Fatal("the job does not record that no image was attached")
+}
+
+func repairRequests(reqs []api.ChatRequest) int {
+	n := 0
+	for _, r := range reqs {
+		if strings.Contains(r.Messages[len(r.Messages)-1].Content, "could not be attached") {
+			n++
+		}
+	}
+	return n
+}
+
+// (b) A correction during an uncorrected job's repair is refused as finishing,
+// and the repair goes on as it always did.
+func TestTellDuringARepairIsRefused(t *testing.T) {
+	var h *steerJobHarness
+	var receipt WorkReceipt
+	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		if n == 1 {
+			return textReply("I could not find a chart to attach."), 0
+		}
+		receipt = h.a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Text only."})
+		return textReply("Here it is.\n![Chart](<" + filepath.Join(h.root, "chart.png") + ">)"), 0
+	})
+	if err := os.WriteFile(filepath.Join(h.root, "chart.png"), testmedia.PNG(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
+	if err != nil || strings.Contains(result, noImageMarker) || len(h.a.workerReplyMedia("job-1")) != 1 {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(receipt.Jobs) != 1 || receipt.Jobs[0].Outcome != ControlRejected || receipt.Jobs[0].Reason != "the job is finishing" {
+		t.Fatalf("receipt=%+v", receipt)
+	}
+	if reqs := h.requests(); len(reqs) != 2 || repairRequests(reqs) != 1 {
+		t.Fatalf("requests=%d", len(reqs))
+	}
+}
+
+// (c) A correction waiting when the repair would start is taken instead.
+func TestCorrectionWaitingAtRepairIsTakenInstead(t *testing.T) {
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		if n == 1 {
+			return textReply("Here: ![chart](missing-chart.png)"), 0
+		}
+		return textReply("Text only: three action items."), 0
+	})
+	var once sync.Once
+	events.Subscribe(h.p.Events, func(e events.Info) {
+		if strings.Contains(e.Message, "missing-chart.png") {
+			once.Do(func() { h.p.TellWork("job-1", "Skip the chart; text only.") })
+		}
+	})
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
+	if err != nil || result != "Text only: three action items.\n\n"+noImageMarker {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	reqs := h.requests()
+	if len(reqs) != 2 || repairRequests(reqs) != 0 || userCount(reqs[1], "Skip the chart; text only.") != 1 {
+		t.Fatalf("requests=%d repairs=%d", len(reqs), repairRequests(reqs))
+	}
+}
+
+// (e) The line given for an empty reply does not replace the answer in hand.
+func TestEmptyCorrectedReplyLeavesTheHeldAnswer(t *testing.T) {
+	var h *steerJobHarness
+	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		if n == 1 {
+			h.p.TellWork(h.lastAccepted(), steerText)
+			return textReply("notes.txt lists three action items."), 0
+		}
+		return textReply(""), 0
+	})
+	id := h.spawn("Read notes.txt in the fixture folder")
+	h.setAccepted(id)
+	finished := h.awaitFinished(id)
+	if finished.Summary != "notes.txt lists three action items." || finished.CutShortReason != string(brain.ForcedByFailedCorrection) {
+		t.Fatalf("delivered %+v", finished)
 	}
 }
 
@@ -685,42 +759,6 @@ func TestRepeatForcedAnswerStandsWhenACorrectionHasNoRequest(t *testing.T) {
 	}
 }
 
-// A repeat-forced answer misses its image; the repair takes a correction and
-// answers normally. The delivered answer is not marked by the first reason.
-func TestCorrectionDuringImageRepairDecidesTheReason(t *testing.T) {
-	var a *Agency
-	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-		switch {
-		case n <= 3:
-			return readCall("notes.txt"), 0
-		case n == 4:
-			return textReply("I could not find a chart to attach."), 0
-		case n == 5:
-			a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Skip the picture; text only."})
-			return readCall("notes.txt"), 0
-		}
-		return textReply("Text only: notes.txt lists three action items."), 0
-	})
-	a = h.a
-	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
-	result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
-	if err != nil || result != "Text only: notes.txt lists three action items.\n\n"+noImageMarker {
-		t.Fatalf("result=%q err=%v", result, err)
-	}
-	reqs := h.requests()
-	if len(reqs) != 6 || userCount(reqs[4], "could not be attached") == 0 || userCount(reqs[5], "Skip the picture; text only.") != 1 {
-		t.Fatalf("requests=%d", len(reqs))
-	}
-	h.a.mu.Lock()
-	incomplete := h.a.workerOrigins["job-1"].incomplete
-	h.a.mu.Unlock()
-	if incomplete != nil {
-		t.Fatalf("the corrected answer kept the first attempt's reason: %v", incomplete)
-	}
-}
-
-// Tools off, so no repair: a correction that waits while the image import
-// fails is weighed before the failure is committed.
 func TestWaitingCorrectionPreemptsAnImageFailure(t *testing.T) {
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
 		if n == 1 {
@@ -1059,41 +1097,6 @@ func TestHeldAnswerStandsWhenItsReplacementFails(t *testing.T) {
 	})
 }
 
-// A correction keeps the task's picture: an answer without one gets the one
-// repair, asked with the brief and the corrections in order.
-func TestCorrectedPictureJobIsRepairedWithItsCorrections(t *testing.T) {
-	var a *Agency
-	var root string
-	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-		switch n {
-		case 1:
-			a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Use Tuesday's figures for the chart."})
-			return readCall("notes.txt"), 0
-		case 2:
-			return textReply("The chart uses Tuesday's figures."), 0
-		}
-		return textReply("Here it is.\n![Chart](<" + filepath.Join(root, "chart.png") + ">)"), 0
-	})
-	a, root = h.a, h.root
-	if err := os.WriteFile(filepath.Join(root, "chart.png"), testmedia.PNG(), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
-	result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
-	if err != nil || strings.Contains(result, noImageMarker) {
-		t.Fatalf("result=%q err=%v", result, err)
-	}
-	reqs := h.requests()
-	if len(reqs) != 3 || userCount(reqs[2], "could not be attached") == 0 || userCount(reqs[2], "Correction from the user: Use Tuesday's figures for the chart.") == 0 {
-		t.Fatalf("requests=%d; the repair did not carry the correction", len(reqs))
-	}
-	if refs := h.a.workerReplyMedia("job-1"); len(refs) != 1 {
-		t.Fatalf("delivered images=%d", len(refs))
-	}
-}
-
-// A correction reaches a job only from the conversation that started it; a
-// cleared conversation's job is unknown to a tell, though still cancellable.
 func TestTellDoesNotCrossAClearedConversation(t *testing.T) {
 	inFlight, release := make(chan struct{}), make(chan struct{})
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
@@ -1233,69 +1236,6 @@ func TestBudgetStopDuringAFailedImportIsALimit(t *testing.T) {
 	}
 }
 
-// A corrected picture job whose repair brings no usable replacement delivers
-// the answer it had, marked; and it never gets a second repair.
-func TestCorrectedPictureJobKeepsItsAnswerAndRepairsOnce(t *testing.T) {
-	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
-	tell := func(a *Agency) {
-		a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Use Tuesday's figures."})
-	}
-	repairs := func(reqs []api.ChatRequest) int {
-		n := 0
-		for _, r := range reqs {
-			if userCount(r, "could not be attached") > 0 && strings.Contains(r.Messages[len(r.Messages)-1].Content, "could not be attached") {
-				n++
-			}
-		}
-		return n
-	}
-	for name, repair := range map[string]func() (api.ChatResponse, int){
-		"repair returns only a broken image": func() (api.ChatResponse, int) { return textReply("![chart](missing-chart.png)"), 0 },
-		"repair request fails":               func() (api.ChatResponse, int) { return api.ChatResponse{}, http.StatusBadRequest },
-	} {
-		t.Run(name, func(t *testing.T) {
-			var h *steerJobHarness
-			h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-				switch n {
-				case 1:
-					tell(h.a)
-					return readCall("notes.txt"), 0
-				case 2:
-					return textReply("Tuesday's figures: three items."), 0
-				}
-				return repair()
-			})
-			result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
-			if err != nil || result != "Tuesday's figures: three items.\n\n"+noImageMarker {
-				t.Fatalf("result=%q err=%v", result, err)
-			}
-		})
-	}
-	t.Run("a tell during the repair", func(t *testing.T) {
-		var h *steerJobHarness
-		h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
-			switch n {
-			case 1:
-				return textReply("Three items, no chart."), 0
-			case 2:
-				tell(h.a)
-				return textReply("Still no chart."), 0
-			}
-			return textReply("Tuesday's figures: three items."), 0
-		})
-		result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
-		if err != nil || result != "Tuesday's figures: three items.\n\n"+noImageMarker {
-			t.Fatalf("result=%q err=%v", result, err)
-		}
-		if n := repairs(h.requests()); n != 1 {
-			t.Fatalf("repairs=%d", n)
-		}
-	})
-}
-
-// Answer A is held; its replacement B comes back with a broken picture while a
-// second correction waits, and no request is left: A is delivered, not B's
-// failure.
 func TestLimitDeliversTheLastFinishedAnswer(t *testing.T) {
 	var h *steerJobHarness
 	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
