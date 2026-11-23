@@ -261,6 +261,7 @@ func (r *workerRun) note(done finished, save bool) (string, error) {
 // apart from it for delivery.
 func (r *workerRun) deliverHeld(held finished) (string, error) {
 	r.a.keepReplyMedia(r.id, held.media)
+	r.a.unmarkDeliveredAnswer(r.id)
 	return r.note(held, false)
 }
 

@@ -1330,3 +1330,23 @@ func TestInboxCancelOfAQueuedJobReportsItsCorrection(t *testing.T) {
 		t.Fatalf("correction events=%q", got)
 	}
 }
+
+func TestHeldAnswerIsNotShownAsReplacedWhenItIsDelivered(t *testing.T) {
+	var h *steerJobHarness
+	h = newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		if n == 1 {
+			h.p.TellWork(h.lastAccepted(), "Attach the chart too.")
+			return textReply("notes.txt lists three action items."), 0
+		}
+		return textReply("![chart](missing-chart.png)"), 0
+	})
+	id := h.spawn("Read notes.txt in the fixture folder")
+	h.setAccepted(id)
+	finished := h.awaitFinished(id)
+	info := onlyWorker(t, h.p)
+	for _, turn := range info.Thread {
+		if turn.Role == "assistant" && turn.Content == finished.Summary && turn.Disposition == brain.DispositionSuperseded {
+			t.Fatalf("the delivered answer is shown as replaced: %+v", turn)
+		}
+	}
+}
