@@ -374,17 +374,21 @@ to answer is not resent.
 A running job can also be asked for its report with `/work report JOB_ID`:
 stop using tools and hand over what was done, instead of cancelling and
 getting nothing back. No model decides whether it is accepted. The command
-prints at once what the job had done, from the same activity rows its line
-shows (`read 3 files · ran 1 command`, or "no tool activity recorded yet"),
-and that checkpoint stays on the task in `/workers` whatever happens to the
-job afterwards. On the in-process Ollama worker serving a model on this
+prints at once what the job had done when the report was accepted, from the
+same activity rows its line shows (`read 3 files · ran 1 command`, or "no tool
+activity recorded yet"), and for an accepted report that checkpoint stays on
+the task in `/workers` whatever happens to the job afterwards. On the in-process Ollama worker serving a model on this
 machine (the workers a correction reaches) the job keeps its slot and stays
 `running`; its row and `/workers` show `reporting`. A tool call it has not
 started is not run and is answered `not run: a report was requested`; a call
-already running finishes first, and a request already sent is answered first.
-Its next model request is a tools-free answer round asking it to say what is
-done, what is not, and where anything it made is, and nothing gives it its
-tools back, a resend after an outage or a continuation included. There is no
+already running finishes first, and a request already sent is answered first,
+though one that brings back nothing goes on to the report round. Its next
+model request is a tools-free answer round asking it to say what is done, what
+is not, and where anything it made is: no summary of its context or skill
+check is asked for first, and nothing gives it its tools back, a resend after
+an outage or a continuation included. If its conversation is too large to
+answer without a summary, the job fails at the context limit as any job
+does. There is no
 clock on that answer: a slow model takes the time it needs, and a cancel still
 ends the job at once, as for any job, leaving the checkpoint as what was
 reported. The answer is delivered cut short with the reason "report
@@ -393,25 +397,34 @@ result is `partial` with "cut short: report requested", and the conversation
 saves it as an unfinished reply. A job asked for a picture may report in
 words: it is not given an image repair and fails for no missing picture, while
 a picture it did attach is still checked and delivered. If the round brings
-no answer, the job fails as any forced answer does. If the job's own final
+no answer, the job fails as any forced answer does, unless a correction's run
+was under way with an answer already written and held: then that held answer
+is delivered cut short as "the corrected run failed". If the job's own final
 answer was already written when the report came, that answer is delivered as
 usual, not cut short, and `/workers` says the job finished before it was
 asked. A job already answering because a limit or the repeat guard stopped it
-keeps that reason. A second report changes nothing and returns the same
-checkpoint. Corrections still waiting when the report is accepted could not
+keeps that reason, and so does a report accepted while that round is being
+asked for; a report accepted while a round of tools runs is the reason even if
+that round trips the repeat guard. A second report while the job runs changes
+nothing and returns the same checkpoint; once the job has ended, a report says
+it has already finished. Corrections still waiting when the report is accepted could not
 apply ("a report was requested"); one a request already carries is left to be
 included; a later `/work tell` is refused with "the job is reporting". A report
 and an image repair exclude each other: a job being repaired answers a report
 with "the job is already finishing its answer", and a reporting job is not
 repaired. A queued job is not reported: it has not started, stays queued, and
-`/work cancel` drops it. A CLI, hosted or paid worker, an Ollama worker on
+`/work cancel` drops it. A job that has started but whose worker is still
+getting ready says it is starting and there is nothing to report yet. A CLI, hosted or paid worker, an Ollama worker on
 another machine or behind a cloud alias, an Obey-managed delegation and a
 reply moved to the background give the checkpoint only and say this worker
-cannot be asked to stop, so the work continues; nothing about the job changes.
-An accepted report, and a checkpoint-only one for a job that has a control, is
-a `job_report` event with the job id, the checkpoint and whether a worker
+cannot be asked to stop, so the work continues; nothing about the job changes,
+and the checkpoint is not kept in `/workers`. A moved reply gives it only to
+the conversation it came from. An accepted report, and a checkpoint-only one
+from a CLI, hosted, paid or remote worker, is a `job_report` event with the job id, the checkpoint and whether a worker
 answer will follow, scoped to the conversation that admitted the job like
-`job_correction`; how the job ends is told by its usual terminal event. A
+`job_correction`; an Obey-managed delegation and a moved reply give their
+checkpoint in the receipt only. How the job ends is told by its usual terminal
+event. A
 report comes only from the keyboard for now; no spoken phrase or persona tool
 asks for one.
 
