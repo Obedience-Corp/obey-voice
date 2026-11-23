@@ -131,7 +131,7 @@ func (m *conversationModel) runWorkCommand(args []string) tea.Cmd {
 	return nil
 }
 
-const workUsage = "/work [job|all|logs|cancel|report|dismiss|speak|replay job|tell job text]"
+const workUsage = "/work [job|all|logs|(cancel|report|dismiss|speak|replay) job|tell job text]"
 
 // reportNotice asks job id for its report and says what it had done and what
 // happens next; ok is false for a refusal that gives no checkpoint.

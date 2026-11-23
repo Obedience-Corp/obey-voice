@@ -7,9 +7,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
 type reportRunner struct {
@@ -136,5 +138,42 @@ func TestWorkersReportKeyAndCheckpoint(t *testing.T) {
 	detail := stripANSI(formatWorkerDetail(controller.items[0], 100, false))
 	if !strings.Contains(detail, "Report requested · done so far: read 1 file") {
 		t.Fatalf("detail = %q", detail)
+	}
+}
+
+// A tool result that reads like a marker is a skipped call only in a job that
+// accepted the report or correction it names.
+func TestWorkerThreadReadsMarkersOnlyForAControlledJob(t *testing.T) {
+	for _, c := range []struct {
+		name, marker string
+		item         pipeline.WorkerInfo
+		skipped      bool
+	}{
+		{"report marker, no report", brain.ToolNotRunReport, pipeline.WorkerInfo{}, false},
+		{"report marker, reported", brain.ToolNotRunReport, pipeline.WorkerInfo{Report: "reporting"}, true},
+		{"correction marker, no correction", brain.ToolNotRunCorrection, pipeline.WorkerInfo{}, false},
+		{"correction marker, corrected", brain.ToolNotRunCorrection, pipeline.WorkerInfo{Correction: "correction included"}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			item := c.item
+			item.ID, item.Task = "job-1", "read the notes"
+			item.Thread = []brain.Turn{
+				{Role: "user", Content: "read the notes"},
+				{Role: "assistant", ToolCalls: []brain.TurnToolCall{{ID: "c", Name: "read_file", Arguments: `{"path":"marker.txt"}`}}},
+				{Role: "tool", ToolCallID: "c", ToolName: "read_file", Content: c.marker},
+			}
+			if !c.skipped {
+				item.Tools = []workfold.Call{{ID: "c", Name: "read_file", Status: "succeeded"}}
+			}
+			var tools []*workerThreadTool
+			for _, e := range workerThreadEntries(item) {
+				if e.tool != nil {
+					tools = append(tools, e.tool)
+				}
+			}
+			if len(tools) != 1 || (tools[0].call.Status == "succeeded") == c.skipped {
+				t.Fatalf("tools=%+v", tools)
+			}
+		})
 	}
 }
