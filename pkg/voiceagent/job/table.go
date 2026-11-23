@@ -648,6 +648,8 @@ func (t *Table) markReturnedLocked(e *entry) {
 		return
 	}
 	e.returned = true
+	// Nothing runs it again; let go of what it holds, such as its worker.
+	e.spec.Run = nil
 	close(e.exited)
 }
 

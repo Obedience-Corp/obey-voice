@@ -1003,3 +1003,14 @@ func TestSkillConfirmationIsAbandonedForAWaitingCorrection(t *testing.T) {
 		t.Fatalf("err=%v chats=%d requests=%d", err, len(chats), budget.Snapshot().Requests)
 	}
 }
+
+func TestReleaseDropsTheWorkersRunState(t *testing.T) {
+	ctl := NewWorkerControl(nil)
+	seq, _ := ctl.toolIDs()
+	seq["read_file"] = 3
+	ctl.skillCtx = "skills"
+	ctl.Release()
+	if ctl.callSeq != nil || ctl.hookIDs != nil || ctl.skillCtx != "" {
+		t.Fatal("run state kept after release")
+	}
+}

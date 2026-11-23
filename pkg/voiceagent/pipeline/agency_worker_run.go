@@ -152,6 +152,7 @@ type finished struct {
 // and budget, holding the answer in hand until a replacement succeeds or a
 // limit leaves no request for one.
 func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptions) (string, error) {
+	defer control.Release()
 	start := time.Now()
 	r.think = func(input string) (string, error) {
 		var got brain.ForcedAnswer

@@ -124,3 +124,21 @@ func TestPanickingRegisterLeavesTheTableUsable(t *testing.T) {
 		t.Fatal("the table lock was left held")
 	}
 }
+
+// A job's run function, and all it holds, is let go once the job is over.
+func TestEndedJobReleasesItsRunFunction(t *testing.T) {
+	table := NewTable(context.Background())
+	defer table.Close()
+	id, err := table.Start(context.Background(), Spec{Task: "run", Run: func(context.Context) (string, error) { return "done", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := table.AwaitExit(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	table.mu.Lock()
+	defer table.mu.Unlock()
+	if table.jobs[id].spec.Run != nil {
+		t.Fatal("the ended job still holds its run function")
+	}
+}

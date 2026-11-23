@@ -340,6 +340,12 @@ func (c *WorkerControl) limitReached() {
 	c.flush()
 }
 
+// Release drops what the worker kept across the runs of the job. Call it on
+// the worker's goroutine once the job's runs are over.
+func (c *WorkerControl) Release() {
+	c.callSeq, c.hookIDs, c.skillCtx = nil, nil, ""
+}
+
 // toolIDs is the job's tool hook id allocator, shared by every run.
 func (c *WorkerControl) toolIDs() (map[string]int, map[string]struct{}) {
 	if c.callSeq == nil {
