@@ -1021,3 +1021,38 @@ func TestReleaseDropsTheWorkersRunState(t *testing.T) {
 		t.Fatal("run state kept after release")
 	}
 }
+
+// With two requests left, a summary the server is too busy to answer is not
+// resent: the last request stays the answer's.
+func TestSummaryRetryLeavesTheAnswersRequest(t *testing.T) {
+	payload := "Finding: " + strings.Repeat("tool detail ", 900)
+	summaries := 0
+	h := newSteerHarness(t, nil, func(h *steerHarness, n int, req api.ChatRequest) (api.ChatResponse, int) {
+		last := req.Messages[len(req.Messages)-1].Content
+		switch {
+		case strings.Contains(last, "Summarize this worker task"):
+			summaries++
+			if summaries == 1 {
+				return api.ChatResponse{}, http.StatusServiceUnavailable
+			}
+			return api.ChatResponse{Done: true, DoneReason: "stop", Metrics: api.Metrics{EvalCount: 8}, Message: api.Message{Role: "assistant", Content: "Two findings read."}}, 0
+		case len(req.Tools) == 0:
+			return answerResponse("Both artifacts hold findings."), 0
+		}
+		return toolResponse([]api.ToolCall{readCallID(fmt.Sprintf("call-%d", n), fmt.Sprintf("big-%d.txt", n))}), 0
+	})
+	for i := 1; i <= 4; i++ {
+		if err := os.WriteFile(filepath.Join(h.o.workDir, fmt.Sprintf("big-%d.txt", i)), []byte(payload), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := continuityConfig()
+	cfg.IsWorker, cfg.ContinuityProjectionEnabled, cfg.ContinuityArchiveEnabled, cfg.ContinuitySoftLimitRatio = true, false, false, 0.5
+	h.o.cfg = cfg
+	opts := h.opts()
+	opts.WorkerBudget = NewWorkerBudget(BudgetLimits{MaxRequests: 4, MaxRetries: 5})
+	answer, err := h.o.ThinkFull(t.Context(), "Inspect the artifacts.", opts)
+	if err != nil || answer != "Both artifacts hold findings." || summaries != 1 {
+		t.Fatalf("answer=%q err=%v summaries=%d", answer, err, summaries)
+	}
+}

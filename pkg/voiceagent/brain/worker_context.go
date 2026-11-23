@@ -117,7 +117,13 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 	req.Options["num_predict"] = output
 	var summary, reason string
 	complete := false
-	err := o.chat(ctx, req, func(r api.ChatResponse) error {
+	// With two requests left the summary gets one: a resend would take the
+	// answer's.
+	summaryCtx, reserve := ctx, false
+	if left, counted := opts.workerBudget().RemainingRequests(); counted && left <= 2 {
+		summaryCtx, reserve = context.WithValue(ctx, disableOutageRetryKey{}, true), true
+	}
+	err := o.chat(summaryCtx, req, func(r api.ChatResponse) error {
 		summary += r.Message.Content
 		reason, complete = r.DoneReason, r.Done
 		if r.Done {
@@ -140,6 +146,10 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 		return nil
 	})
 	if err != nil {
+		if reserve && ctx.Err() == nil && ollamaOutage(err) != nil {
+			// The answer keeps its request; its own size check decides.
+			return nil
+		}
 		return fmt.Errorf("compact worker context: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
