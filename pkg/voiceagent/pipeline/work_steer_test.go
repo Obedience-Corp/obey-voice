@@ -283,10 +283,16 @@ func TestTellRacingQueuePromotionAppliesOnce(t *testing.T) {
 	id := h.spawn("Read notes.txt in the fixture folder")
 	var receipt WorkReceipt
 	var wg sync.WaitGroup
-	wg.Go(func() { receipt = h.p.TellWork(id, steerText) })
+	wg.Go(func() {
+		for range rand.IntN(40000) {
+			runtime.Gosched()
+		}
+		receipt = h.p.TellWork(id, steerText)
+	})
 	close(hold)
 	wg.Wait()
 	h.awaitFinished(id)
+	t.Logf("correction outcome: %s", receipt.Jobs[0].Outcome)
 	if o := receipt.Jobs[0].Outcome; o != ControlBriefed && o != ControlAccepted {
 		t.Fatalf("receipt=%+v", receipt)
 	}
@@ -472,5 +478,76 @@ func TestTellRejections(t *testing.T) {
 	}
 	if got := h.agency.jobs.Status(); len(got) != 1 || got[0].State != job.StateRunning {
 		t.Fatalf("a refused correction touched the job: %+v", got)
+	}
+}
+
+// directSteerRun runs the worker run for job-1 directly, with a correction
+// reachable as on a spawned job.
+func (h *steerJobHarness) directSteerRun(ctx context.Context, brief string, budget *brain.WorkerBudget) (string, error) {
+	steer := h.a.newJobSteer()
+	h.a.registerSteer("job-1", steer)
+	ctx = withJobSteer(job.WithID(ctx, "job-1"), steer)
+	return h.a.workerRunWithBudget(brief, h.worker, h.workCfg, budget, true)(ctx)
+}
+
+func TestCorrectionAtARequestLimitIsDeliveredCutShort(t *testing.T) {
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		if n == 1 {
+			return readCall("notes.txt"), 0
+		}
+		return textReply("notes.txt holds its contents."), 0
+	})
+	var once sync.Once
+	events.Subscribe(h.p.Events, func(e events.ToolCallFinished) {
+		once.Do(func() {
+			h.a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: steerText})
+		})
+	})
+	result, err := h.directSteerRun(t.Context(), "Read notes.txt.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 2}))
+	if err != nil || result != "notes.txt holds its contents." {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	h.a.mu.Lock()
+	reason := brain.ForcedAnswerReason(h.a.workerOrigins["job-1"].incomplete)
+	h.a.mu.Unlock()
+	if reason != string(brain.ForcedByRequests) {
+		t.Fatalf("answer not cut short: reason=%q", reason)
+	}
+	got := h.events()
+	if last := got[len(got)-1]; last.State != "not_applied" || last.Reason != brain.NotAppliedLimit {
+		t.Fatalf("correction events=%+v", got)
+	}
+	if n := userCount(h.requests()[1], steerText); n != 0 {
+		t.Fatal("the answer round carried a correction that could not apply")
+	}
+}
+
+func TestCorrectionDuringImageRepairIsTaken(t *testing.T) {
+	var a *Agency
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch n {
+		case 1:
+			return textReply("I could not find a chart to attach."), 0
+		case 2:
+			a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkSteer, JobID: "job-1", Instruction: "Skip the picture; text only."})
+			return readCall("notes.txt"), 0
+		}
+		return textReply("Text only: notes.txt lists three action items."), 0
+	})
+	a = h.a
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	result, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10}))
+	if err != nil || result != "Text only: notes.txt lists three action items." {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	reqs := h.requests()
+	if len(reqs) != 3 || userCount(reqs[1], "could not be attached") == 0 {
+		t.Fatalf("no image repair before the correction: requests=%d", len(reqs))
+	}
+	if userCount(reqs[2], "Skip the picture; text only.") != 1 {
+		t.Fatal("the correction did not reach the repair's next request")
+	}
+	if got := h.states(); !slices.Equal(got, []string{"pending", "included"}) {
+		t.Fatalf("correction events=%q", got)
 	}
 }
