@@ -30,6 +30,16 @@ func keptAfterTask(history []api.Message, task, cut int) (kept, dropped []int) {
 	return kept, dropped
 }
 
+func userCount(history []api.Message) int {
+	n := 0
+	for _, m := range history {
+		if m.Role == "user" {
+			n++
+		}
+	}
+	return n
+}
+
 func firstUserIndex(history []api.Message) int {
 	return slices.IndexFunc(history, func(m api.Message) bool { return m.Role == "user" })
 }
@@ -70,6 +80,11 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 	limit := int(float64(o.effectiveNumCtx()) * min(o.cfg.ContinuitySoftLimitRatio, 0.9))
 	beforeTokens := estimateMessageTokens(o.buildMessages(skillCtx), tools)
 	if beforeTokens <= limit {
+		return nil
+	}
+	// The last request is the answer's. A summary would spend it; the
+	// request's own size check decides whether the answer still fits.
+	if left, counted := opts.workerBudget().RemainingRequests(); counted && left == 1 {
 		return nil
 	}
 	task := firstUserIndex(o.history)
@@ -147,6 +162,9 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 		}
 	}
 	notes := "Worker task notes: " + summary
+	if n := userCount(before[task+1:]); n > 0 {
+		notes = fmt.Sprintf("Worker task notes, a summary of the work through correction %d of %d below: %s", n, n, summary)
+	}
 	var kept, dropped []int
 	for n, cut := range cuts {
 		kept, dropped = keptAfterTask(before, task, cut)

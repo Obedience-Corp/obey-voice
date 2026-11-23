@@ -224,12 +224,16 @@ func TestWorkerCompactionFailurePreservesContextAndHonorsBudget(t *testing.T) {
 			o.appendMessage(api.Message{Role: "assistant", Content: strings.Repeat("Recorded finding. ", 700)}, nil)
 			before, _ := json.Marshal(o.history)
 			canonical, _ := json.Marshal(o.CanonicalHistory())
-			budget := NewWorkerBudget(BudgetLimits{MaxRequests: 1})
+			// Two requests: with one left, the worker keeps it for its answer
+			// and does not compact at all.
+			budget := NewWorkerBudget(BudgetLimits{MaxRequests: 2})
 			if mode == "budget" {
-				if err := budget.AcquireRequest(t.Context()); err != nil {
-					t.Fatal(err)
+				for range 2 {
+					if err := budget.AcquireRequest(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+					budget.RecordUsage(1, 1)
 				}
-				budget.RecordUsage(1, 1)
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
