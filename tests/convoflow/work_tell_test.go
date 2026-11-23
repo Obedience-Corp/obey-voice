@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,5 +140,57 @@ func TestWorkTellScenarioChecks(t *testing.T) {
 		if _, err := loadScenarioString(name, body); err == nil {
 			t.Errorf("%s: loaded", name)
 		}
+	}
+}
+
+func TestWaitWorkerTool(t *testing.T) {
+	t.Parallel()
+	short := func() context.Context {
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		t.Cleanup(cancel)
+		return ctx
+	}
+	rec := &recorder{}
+	rec.add(events.ToolCallFinished{JobID: "job-0", Name: "write_file"})
+	mark := len(rec.snapshot())
+	rec.add(events.JobStarted{ID: "job-1"})
+	rec.add(events.ToolCallFinished{Name: "route"})
+	if err := rec.waitWorkerTool(short(), mark); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a call before the turn or the live brain's own ended the wait: %v", err)
+	}
+	go rec.add(events.ToolCallFinished{JobID: "job-1", Name: "write_file"})
+	if err := rec.waitWorkerTool(t.Context(), mark); err != nil {
+		t.Fatal(err)
+	}
+
+	ended := &recorder{}
+	ended.add(events.JobStarted{ID: "job-1"})
+	ended.add(events.JobFinished{ID: "job-1"})
+	ended.add(events.ToolCallFinished{JobID: "job-2", Name: "write_file"})
+	if err := ended.waitWorkerTool(short(), 0); err == nil || !strings.Contains(err.Error(), "ended before") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestEngineWaitsForTheWorkerTool(t *testing.T) {
+	rec := &recorder{}
+	runner := &fakeRunner{rec: rec, onTurn: func(string) {
+		rec.add(events.JobStarted{ID: "job-1"})
+		rec.add(events.ToolCallFinished{JobID: "job-1", Name: "write_file"})
+	}}
+	scn, err := loadScenarioString("t", "name: t\nturns:\n  - { id: spawn, user: write the files, wait: worker_tool }\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &engine{scn: scn, runDir: t.TempDir(), rec: rec, runner: runner}
+	if err := eng.run(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	rec = &recorder{}
+	runner = &fakeRunner{rec: rec, onTurn: func(string) { rec.add(events.JobFinished{ID: "job-1"}) }}
+	eng = &engine{scn: scn, runDir: t.TempDir(), rec: rec, runner: runner}
+	if err := eng.run(t.Context()); err == nil || !strings.Contains(err.Error(), "wait worker_tool") {
+		t.Fatalf("a job that ended without a tool call passed: %v", err)
 	}
 }

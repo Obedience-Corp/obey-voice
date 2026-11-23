@@ -17,6 +17,9 @@ const (
 	waitJobStarted  waitKind = "job_started"
 	waitJobTerminal waitKind = "job_terminal"
 	waitWorkDurable waitKind = "work_durable"
+	// waitWorkerTool ends when a worker's first tool call of the turn has
+	// finished; the job ending first fails the turn.
+	waitWorkerTool waitKind = "worker_tool"
 )
 
 // Scenario is one scripted conversation. Unknown YAML keys are load errors.
@@ -271,7 +274,7 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 			t.Wait = waitIdle
 		}
 		switch t.Wait {
-		case waitIdle, waitJobStarted, waitJobTerminal, waitWorkDurable:
+		case waitIdle, waitJobStarted, waitJobTerminal, waitWorkDurable, waitWorkerTool:
 		default:
 			return nil, fmt.Errorf("load %s: turn %q: unknown wait %q", name, t.ID, t.Wait)
 		}

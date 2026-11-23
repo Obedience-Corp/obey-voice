@@ -1,5 +1,5 @@
 name: work-stream-tell
-description: a typed correction reaches the running worker job, which keeps its id and finishes with the corrected work; no model decides whether it is accepted
+description: a typed correction sent after the worker's first tool call has finished reaches the running job, which keeps its id and finishes with the corrected work; no model decides whether it is accepted
 duration: 6m
 input: text
 router_tools: route_only
@@ -9,8 +9,8 @@ capture: { audio: true, speakers: false }
 turns:
   - id: spawn
     user: "in the work directory, create three small text files one at a time: alpha.txt, beta.txt and third.txt, each holding one short sentence; then list the directory"
-    wait: job_started
-    timeout: 90s
+    wait: worker_tool
+    timeout: 3m
     expect:
       - { event: job_queued }
       - { event: job_started }

@@ -399,6 +399,10 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		if err := bg.waitWork(turnCtx, true); err != nil {
 			return fmt.Errorf("wait %s: %w", wait, err)
 		}
+	} else if wait == waitWorkerTool {
+		if err := e.rec.waitWorkerTool(turnCtx, mark); err != nil {
+			return fmt.Errorf("wait %s: %w", wait, err)
+		}
 	} else if err := e.rec.waitFor(turnCtx, wait, e.isPlaying); err != nil {
 		return fmt.Errorf("wait %s: %w", wait, err)
 	}
