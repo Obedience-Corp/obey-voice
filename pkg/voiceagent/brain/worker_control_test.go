@@ -19,6 +19,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 	"github.com/ollama/ollama/api"
 )
@@ -66,7 +67,11 @@ func newSteerHarness(t *testing.T, cfg *config.Config, reply steerReply) *steerH
 		if status != 0 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)
-			_, _ = w.Write([]byte(`{"error":"unavailable"}`))
+			body := `{"error":"unavailable"}`
+			if status == http.StatusInternalServerError {
+				body = `{"error":"XML syntax error on line 1: unexpected EOF"}`
+			}
+			_, _ = w.Write([]byte(body))
 			return
 		}
 		_ = json.NewEncoder(w).Encode(response)
@@ -940,5 +945,61 @@ func TestOnThisMachineChecksTheEndpointAndSaysWhenItCannotTell(t *testing.T) {
 	unsure := &OllamaBrain{cfg: &config.Config{OllamaHost: server.URL, IsWorker: true}, client: api.NewClient(host, server.Client()), model: "fixture"}
 	if _, err := unsure.OnThisMachine(t.Context()); err == nil {
 		t.Fatal("a failed metadata request was taken for an answer")
+	}
+}
+
+// A correction given while the worker announces that it will resend a
+// malformed tool call is in the request it sends instead.
+func TestCorrectionDuringTheMalformedCallNoticeIsSent(t *testing.T) {
+	h := newSteerHarness(t, nil, func(h *steerHarness, n int, req api.ChatRequest) (api.ChatResponse, int) {
+		switch n {
+		case 1:
+			return toolResponse([]api.ToolCall{readCallID("call-a", "a.txt")}), 0
+		case 2:
+			return api.ChatResponse{}, http.StatusInternalServerError
+		}
+		return answerResponse("Used b.txt."), 0
+	})
+	var once sync.Once
+	h.o.infoSink = func(info events.Info) {
+		if strings.Contains(info.Message, "malformed tool-call syntax") {
+			once.Do(func() { h.ctl.Steer("Use b.txt.") })
+		}
+	}
+	if _, err := h.o.ThinkFull(t.Context(), "Read a.txt.", h.opts()); err != nil {
+		t.Fatal(err)
+	}
+	reqs := h.requests()
+	last := reqs[len(reqs)-1]
+	if countText(last, "Use b.txt.") != 1 || hasInstruction(last, toolParseRetryInstruction) {
+		t.Fatalf("requests=%d; the stale retry was sent", len(reqs))
+	}
+}
+
+func TestCloseUnlessWaitingKeepsALateCorrection(t *testing.T) {
+	ctl := NewWorkerControl(nil)
+	ctl.Begin(true, "")
+	ctl.Steer("Late.")
+	if ctl.CloseUnlessWaiting(NotAppliedFailed) {
+		t.Fatal("closed with a correction waiting")
+	}
+	if c := ctl.Corrections()[0]; c.State != CorrectionPending {
+		t.Fatalf("correction=%+v", c)
+	}
+}
+
+// Skill confirmation is a model request too: a correction waiting when it
+// would be sent abandons it, uncharged.
+func TestSkillConfirmationIsAbandonedForAWaitingCorrection(t *testing.T) {
+	var chats []api.ChatRequest
+	o := &OllamaBrain{client: recordingSelectionServer(t, &chats), model: "m", cfg: &config.Config{IsWorker: true, OllamaNumCtx: 8192, PromptsDir: t.TempDir()}}
+	ctl := NewWorkerControl(nil)
+	ctl.Begin(true, "")
+	ctl.Steer("Do something else.")
+	budget := NewWorkerBudget(BudgetLimits{MaxRequests: 10})
+	ctx := o.skillRouteContext(budget.Context(t.Context()), ctl)
+	_, err := o.confirmSkillMatches(ctx, "hello", []skills.Skill{{Name: "greeter", Description: "Greet people"}})
+	if !errors.Is(err, errRequestObsolete) || len(chats) != 0 || budget.Snapshot().Requests != 0 {
+		t.Fatalf("err=%v chats=%d requests=%d", err, len(chats), budget.Snapshot().Requests)
 	}
 }

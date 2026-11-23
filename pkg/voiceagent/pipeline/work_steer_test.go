@@ -1200,3 +1200,35 @@ func TestNoImageMarkerIsAppliedOnceToTheFinishedAnswer(t *testing.T) {
 		}
 	})
 }
+
+// The budget expires while a failed image import is being reported: the
+// table's stop, not the import failure, decides why the correction could not
+// apply.
+func TestBudgetStopDuringAFailedImportIsALimit(t *testing.T) {
+	var h *steerJobHarness
+	h = newSteerJobHarnessWith(t, steerSetup{budget: 300 * time.Millisecond}, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		h.p.TellWork(h.lastAccepted(), steerText)
+		return textReply("![chart](missing-chart.png)"), 0
+	})
+	stopped := make(chan struct{})
+	var stop, block sync.Once
+	events.Subscribe(h.p.Events, func(events.JobAborted) { stop.Do(func() { close(stopped) }) })
+	events.Subscribe(h.p.Events, func(e events.Info) {
+		if strings.Contains(e.Message, "missing-chart.png") {
+			block.Do(func() { <-stopped })
+		}
+	})
+	id := h.spawn("Read notes.txt in the fixture folder")
+	h.setAccepted(id)
+	select {
+	case <-h.aborted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the budget did not stop the job")
+	}
+	if state := h.steerState(id); state != brain.CorrectionNotApplied {
+		t.Fatalf("state=%q", state)
+	}
+	if c := h.a.steerFor(id).control.Corrections(); c[len(c)-1].Reason != brain.NotAppliedLimit {
+		t.Fatalf("corrections=%+v", c)
+	}
+}

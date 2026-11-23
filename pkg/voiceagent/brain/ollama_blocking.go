@@ -47,7 +47,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if continuing {
 			skillCtx = ctl.skillCtx
 		} else {
-			skillCtx = o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
+			skillCtx = o.routeSkillContext(o.skillRouteContext(ctx, ctl), input, opts.OnToolStart, opts.OnToolEnd)
 		}
 	} else {
 
@@ -385,6 +385,15 @@ func (o *OllamaBrain) takeCorrections(ctl *WorkerControl, finalAnswer bool, opts
 		o.appendMessage(api.Message{Role: "user", Content: text}, nil)
 	}
 	checkpoint(opts)
+}
+
+// skillRouteContext lets a waiting correction abandon a skill confirmation
+// request before it is sent: the input it would confirm is already stale.
+func (o *OllamaBrain) skillRouteContext(ctx context.Context, ctl *WorkerControl) context.Context {
+	if ctl == nil {
+		return ctx
+	}
+	return withRequestControl(ctx, requestControl{obsolete: ctl.waiting})
 }
 
 func checkpoint(opts StreamOptions) {

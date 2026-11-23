@@ -172,6 +172,23 @@ func (c *WorkerControl) Decide(state CorrectionState, reason string) {
 // Flush reports the changes decided so far, in order.
 func (c *WorkerControl) Flush() { c.flush() }
 
+// CloseUnlessWaiting closes the job, as Close does, unless a correction is
+// waiting, which the job may still take instead. It reports whether it closed.
+func (c *WorkerControl) CloseUnlessWaiting(reason string) bool {
+	c.mu.Lock()
+	if c.waitingLocked() {
+		c.mu.Unlock()
+		return false
+	}
+	if !c.sealed {
+		c.sealed = true
+		c.settleLocked(func(*correction) bool { return true }, CorrectionNotApplied, reason)
+	}
+	c.mu.Unlock()
+	c.flush()
+	return true
+}
+
 // Seal commits the job's answer. It fails while a correction is waiting and
 // limit is empty; the runner then continues the job. A limit that leaves no
 // request for the waiting corrections settles them as unable to apply and is

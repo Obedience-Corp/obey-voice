@@ -189,14 +189,21 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 		}
 		done := r.finish(reply)
 		if done.err != nil && !done.preempted {
-			control.Close(brain.NotAppliedReason(done.err))
-			// A replacement counts only once it is finished; one whose
-			// images could not be attached leaves the answer in hand.
-			if held != nil && !errors.Is(r.ctx.Err(), context.Canceled) {
-				r.forced = cmp.Or(heldForced, brain.ForcedByFailedCorrection)
-				return r.deliverHeld(*held)
+			if errors.Is(r.ctx.Err(), context.Canceled) {
+				// The job table ended the job; its decision settles the corrections.
+				return done.text, done.err
 			}
-			return done.text, done.err
+			// A correction that arrived meanwhile is taken instead of the failure.
+			if control.CloseUnlessWaiting(brain.NotAppliedReason(done.err)) {
+				// A replacement counts only once it is finished; one whose
+				// images could not be attached leaves the answer in hand.
+				if held != nil {
+					r.forced = cmp.Or(heldForced, brain.ForcedByFailedCorrection)
+					return r.deliverHeld(*held)
+				}
+				return done.text, done.err
+			}
+			done.preempted = true
 		}
 		sealed, limit := control.Seal(brain.WorkerLimitDue(r.ctx, r.budget, start))
 		if sealed {
@@ -205,7 +212,10 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 			}
 			return r.deliver(done)
 		}
-		held, heldForced = &done, r.forced
+		// A usable answer in hand is kept over a failed one.
+		if held == nil || done.err == nil {
+			held, heldForced = &done, r.forced
+		}
 		r.forced = ""
 		reply, err = r.think("")
 	}
@@ -319,6 +329,9 @@ func (r *workerRun) finish(reply string) finished {
 		if strings.TrimSpace(input) == "" {
 			return without(cleaned, reply, attachmentErr)
 		}
+	}
+	if waiting() {
+		return finished{text: cleaned, err: attachmentErr, preempted: true}
 	}
 	retryReply, err := r.think(input)
 	if errors.Is(err, brain.ErrWorkerBudgetExceeded) {

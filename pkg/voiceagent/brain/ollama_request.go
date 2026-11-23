@@ -159,14 +159,15 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 		if err := o.applyOutputBudget(req, budget); err != nil {
 			return err
 		}
-		// The last moment before sending, after any backoff and policy check.
-		if requestObsolete(ctx) {
-			budget.abandonRequest(retrying)
-			return errRequestObsolete
-		}
 		if parseRetryPending {
 			o.emitInfo(events.Info{Message: "Ollama returned malformed tool-call syntax; retrying this generation once. No output or tool calls were delivered from the failed attempt."})
 			parseRetryPending = false
+		}
+		// The last moment before sending, after any backoff, policy check and
+		// notice.
+		if requestObsolete(ctx) {
+			budget.abandonRequest(retrying)
+			return errRequestObsolete
 		}
 		var input, output int
 		delivered := false

@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -256,7 +257,7 @@ func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onSta
 			matched, err = o.confirmSkillMatches(ctx, input, matched)
 		}
 		if err != nil {
-			if !o.skillRouterWarned {
+			if !o.skillRouterWarned && !errors.Is(err, errRequestObsolete) {
 				fmt.Fprintf(os.Stderr, "obey-voice: semantic skill routing failed (%v); continuing with the Agent Skills catalog\n", err)
 				o.skillRouterWarned = true
 			}
