@@ -25,9 +25,10 @@ turns:
       - { event: job_report }
       - { cut_short: report requested }
       - { no_event: job_queued }
+      - { tools_stop_after_report: true }
 
   - id: answer
-    wait: answer_spoken
+    wait: report_spoken
     timeout: 2m
 
 expect:

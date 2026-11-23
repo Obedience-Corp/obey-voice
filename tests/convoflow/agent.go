@@ -340,10 +340,11 @@ func reportNewestJob(workers []pipeline.WorkerInfo, report func(id string) pipel
 	if receipt.Rejected != "" {
 		return fmt.Errorf("work report %s: %s", newest.ID, receipt.Rejected)
 	}
-	for _, j := range receipt.Jobs {
-		if j.Outcome != pipeline.ControlAccepted {
-			return fmt.Errorf("work report %s: %s %s", newest.ID, j.Outcome, j.Reason)
-		}
+	if len(receipt.Jobs) != 1 || receipt.Jobs[0].ID != newest.ID {
+		return fmt.Errorf("work report %s: receipt for %d jobs", newest.ID, len(receipt.Jobs))
+	}
+	if j := receipt.Jobs[0]; j.Outcome != pipeline.ControlAccepted {
+		return fmt.Errorf("work report %s: %s %s", newest.ID, j.Outcome, j.Reason)
 	}
 	return nil
 }

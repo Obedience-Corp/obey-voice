@@ -20,9 +20,9 @@ const (
 	// waitWorkerTool ends when a worker's first tool call of the turn has
 	// finished; the job ending first fails the turn.
 	waitWorkerTool waitKind = "worker_tool"
-	// waitAnswerSpoken ends once speech has followed the newest job_finished
-	// and playback is idle.
-	waitAnswerSpoken waitKind = "answer_spoken"
+	// waitReportSpoken ends once the result of the job asked for the newest
+	// report was delivered spoken, and playback is idle.
+	waitReportSpoken waitKind = "report_spoken"
 )
 
 // Scenario is one scripted conversation. Unknown YAML keys are load errors.
@@ -141,6 +141,9 @@ type Expectation struct {
 	// CutShort wants a job_finished event cut short with this reason, and
 	// an answer.
 	CutShort string `yaml:"cut_short"`
+	// ToolsStopAfterReport wants no tool call of the reported job to start
+	// after its job_report event.
+	ToolsStopAfterReport *bool `yaml:"tools_stop_after_report"`
 }
 
 type duration struct{ time.Duration }
@@ -280,12 +283,12 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 			t.Wait = waitIdle
 		}
 		switch t.Wait {
-		case waitIdle, waitJobStarted, waitJobTerminal, waitWorkDurable, waitWorkerTool, waitAnswerSpoken:
+		case waitIdle, waitJobStarted, waitJobTerminal, waitWorkDurable, waitWorkerTool, waitReportSpoken:
 		default:
 			return nil, fmt.Errorf("load %s: turn %q: unknown wait %q", name, t.ID, t.Wait)
 		}
-		if t.User == "" && t.Op == "" && t.Wait != waitJobTerminal && t.Wait != waitIdle && t.Wait != waitWorkDurable && t.Wait != waitAnswerSpoken {
-			return nil, fmt.Errorf("load %s: turn %q: empty user only allowed with wait idle, job_terminal, work_durable or answer_spoken", name, t.ID)
+		if t.User == "" && t.Op == "" && t.Wait != waitJobTerminal && t.Wait != waitIdle && t.Wait != waitWorkDurable && t.Wait != waitReportSpoken {
+			return nil, fmt.Errorf("load %s: turn %q: empty user only allowed with wait idle, job_terminal, work_durable or report_spoken", name, t.ID)
 		}
 	}
 	return &scn, nil

@@ -72,8 +72,10 @@ holding `work_file_contains` when set. `op: work_report` asks the newest
 running job for its report the way the keyboard's `/work report` does; the
 turn fails unless the report is accepted. `cut_short: <reason>` wants a
 `job_finished` with an answer, cut short with that reason, during the turn.
-`wait: answer_spoken` ends once speech has followed the newest `job_finished`
-and playback is idle.
+`tools_stop_after_report: true` wants no tool call of the reported job to
+start after its `job_report`. `wait: report_spoken` ends once the reported
+job's result was delivered spoken (`job_result_delivered` with `Spoken`) and
+playback is idle.
 
 Two no-model paths exist, neither is the gate:
 

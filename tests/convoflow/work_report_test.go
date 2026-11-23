@@ -23,7 +23,7 @@ func (r *reportingRunner) reportWork(context.Context) error {
 	r.reports++
 	r.rec.add(events.JobReport{ID: "job-1", Checkpoint: "wrote 1 file", Answer: true})
 	r.rec.add(events.JobFinished{ID: "job-1", CutShort: true, CutShortReason: "report requested", Summary: "Wrote one.txt; two.txt to five.txt are not written."})
-	go r.rec.add(events.SpeechSegmentReady{Text: "Wrote one.txt; two.txt to five.txt are not written."})
+	go r.rec.add(events.JobResultDelivered{ID: "job-1", Summary: "Wrote one.txt; two.txt to five.txt are not written.", Spoken: true})
 	return nil
 }
 
@@ -77,6 +77,22 @@ func TestCutShortExpectation(t *testing.T) {
 	if err := evalExpect(Expectation{Event: "job_report"}, &recorder{}, turnState{events: []timedEvent{{event: events.JobReport{ID: "job-1"}}}}); err != nil {
 		t.Fatal(err)
 	}
+	stop := true
+	log := []timedEvent{
+		{event: events.ToolCallStarted{JobID: "job-1", Name: "write_file"}},
+		{event: events.JobReport{ID: "job-1"}},
+		{event: events.ToolCallStarted{JobID: "job-2", Name: "write_file"}},
+	}
+	if err := evalExpect(Expectation{ToolsStopAfterReport: &stop}, &recorder{}, turnState{events: log}); err != nil {
+		t.Fatal(err)
+	}
+	log = append(log, timedEvent{event: events.ToolCallStarted{JobID: "job-1", Name: "write_file"}})
+	if err := evalExpect(Expectation{ToolsStopAfterReport: &stop}, &recorder{}, turnState{events: log}); err == nil {
+		t.Fatal("a tool call that started after the report passed")
+	}
+	if err := evalExpect(Expectation{ToolsStopAfterReport: &stop}, &recorder{}, turnState{events: log[:1]}); err == nil {
+		t.Fatal("a turn with no report passed")
+	}
 }
 
 func TestReportNewestJob(t *testing.T) {
@@ -106,9 +122,19 @@ func TestReportNewestJob(t *testing.T) {
 	if err := reportNewestJob(workers[2:], receipt(pipeline.ControlAccepted, "")); err == nil {
 		t.Fatal("a report with no running job passed")
 	}
+	empty := func(string) pipeline.WorkReceipt { return pipeline.WorkReceipt{} }
+	if err := reportNewestJob(workers, empty); err == nil {
+		t.Fatal("a receipt naming no job passed")
+	}
+	other := func(string) pipeline.WorkReceipt {
+		return pipeline.WorkReceipt{Jobs: []pipeline.JobControl{{ID: "job-1", Outcome: pipeline.ControlAccepted}}}
+	}
+	if err := reportNewestJob(workers, other); err == nil {
+		t.Fatal("a receipt for another job passed")
+	}
 }
 
-func TestWaitAnswerSpoken(t *testing.T) {
+func TestWaitReportSpoken(t *testing.T) {
 	t.Parallel()
 	short := func() context.Context {
 		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
@@ -116,19 +142,21 @@ func TestWaitAnswerSpoken(t *testing.T) {
 		return ctx
 	}
 	rec := &recorder{}
+	rec.add(events.JobReport{ID: "job-1", Answer: true})
 	rec.add(events.SpeechSegmentReady{Text: "I'll work on that and report back."})
-	rec.add(events.JobFinished{ID: "job-1", CutShort: true, CutShortReason: "report requested", Summary: "Wrote one file."})
-	if err := rec.waitFor(short(), waitAnswerSpoken, nil); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("speech before the job finished ended the wait: %v", err)
+	rec.add(events.JobResultDelivered{ID: "job-2", Summary: "Another job's answer.", Spoken: true})
+	rec.add(events.JobResultDelivered{ID: "job-1", Summary: "Wrote one file."})
+	if err := rec.waitFor(short(), waitReportSpoken, nil); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("other speech, or the result unspoken, ended the wait: %v", err)
 	}
-	go rec.add(events.SpeechSegmentReady{Text: "Wrote one file."})
-	if err := rec.waitFor(short(), waitAnswerSpoken, func() bool { return true }); !errors.Is(err, context.DeadlineExceeded) {
+	go rec.add(events.JobResultDelivered{ID: "job-1", Summary: "Wrote one file.", Spoken: true})
+	if err := rec.waitFor(short(), waitReportSpoken, func() bool { return true }); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("the wait ended while playback ran: %v", err)
 	}
-	if err := rec.waitFor(t.Context(), waitAnswerSpoken, nil); err != nil {
+	if err := rec.waitFor(t.Context(), waitReportSpoken, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadScenarioString("t", "name: t\nturns:\n  - { id: answer, wait: answer_spoken }\n"); err != nil {
+	if _, err := loadScenarioString("t", "name: t\nturns:\n  - { id: answer, wait: report_spoken }\n"); err != nil {
 		t.Fatal(err)
 	}
 }

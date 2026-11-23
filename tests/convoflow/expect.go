@@ -41,6 +41,10 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		if !hasCutShort(st.events, rec, ex.CutShort) {
 			return fmt.Errorf("want a job_finished with an answer, cut short: %s", ex.CutShort)
 		}
+	case ex.ToolsStopAfterReport != nil:
+		if late := toolsAfterReport(st.events, rec); (late == 0) != *ex.ToolsStopAfterReport {
+			return fmt.Errorf("tool calls started after the report: %d", late)
+		}
 	case ex.Event != "":
 		if !hasNamedEvent(st.events, rec, ex.Event) {
 			return fmt.Errorf("want event %q", ex.Event)
@@ -476,6 +480,27 @@ func hasCutShort(turnLog []timedEvent, rec *recorder, reason string) bool {
 		}
 	}
 	return false
+}
+
+// toolsAfterReport counts the reported job's tool calls that started after
+// its job_report event, or -1 when there is no report.
+func toolsAfterReport(turnLog []timedEvent, rec *recorder) int {
+	src := turnLog
+	if src == nil && rec != nil {
+		src = rec.snapshot()
+	}
+	id, late := "", -1
+	for _, te := range src {
+		switch e := te.event.(type) {
+		case events.JobReport:
+			id, late = e.ID, 0
+		case events.ToolCallStarted:
+			if id != "" && e.JobID == id {
+				late++
+			}
+		}
+	}
+	return late
 }
 
 // checkWorkFile finds name at any depth under dir; a worker may write into a

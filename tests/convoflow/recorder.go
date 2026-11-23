@@ -219,28 +219,19 @@ func (r *recorder) waitFor(ctx context.Context, kind waitKind, playing func() bo
 	}
 }
 
-// spokenAfterFinish reports speech after the newest job_finished.
-func (r *recorder) spokenAfterFinish() bool {
+// reportSpoken reports that the job asked for the newest report had its
+// result delivered spoken.
+func (r *recorder) reportSpoken() bool {
+	id := ""
 	log := r.snapshot()
-	finished := -1
-	for i, te := range log {
-		if _, ok := te.event.(events.JobFinished); ok {
-			finished = i
+	for _, te := range log {
+		if e, ok := te.event.(events.JobReport); ok {
+			id = e.ID
 		}
 	}
-	if finished < 0 {
-		return false
-	}
-	for _, te := range log[finished:] {
-		switch e := te.event.(type) {
-		case events.SpeechSegmentReady:
-			if strings.TrimSpace(e.Text) != "" {
-				return true
-			}
-		case events.GeneratingVoice:
-			if strings.TrimSpace(e.Sentence) != "" {
-				return true
-			}
+	for _, te := range log {
+		if e, ok := te.event.(events.JobResultDelivered); ok && id != "" && e.ID == id && e.Spoken && strings.TrimSpace(e.Summary) != "" {
+			return true
 		}
 	}
 	return false
@@ -273,8 +264,8 @@ func (r *recorder) waitSatisfied(kind waitKind, playing func() bool) bool {
 	switch kind {
 	case waitIdle:
 		return idle
-	case waitAnswerSpoken:
-		return idle && r.spokenAfterFinish()
+	case waitReportSpoken:
+		return idle && r.reportSpoken()
 	case waitJobStarted:
 		return idle && r.hasEvent("job_started")
 	case waitJobTerminal:
