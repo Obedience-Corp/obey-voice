@@ -1068,3 +1068,16 @@ func TestRepairAfterTheJobEndedKeepsItFinished(t *testing.T) {
 		t.Fatalf("correction=%+v", c)
 	}
 }
+
+type wrappedOllamaWorker struct{ *OllamaBrain }
+
+// A provider that embeds the Ollama worker, as a host's observer does, still
+// takes corrections; the check asks the worker rather than naming its type.
+func TestProviderEmbeddingTheOllamaWorkerTakesCorrections(t *testing.T) {
+	if !TakesCorrections(wrappedOllamaWorker{&OllamaBrain{}}) {
+		t.Fatal("a provider embedding the Ollama worker was refused corrections")
+	}
+	if TakesCorrections(nil) {
+		t.Fatal("no provider takes corrections")
+	}
+}

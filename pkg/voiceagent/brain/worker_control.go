@@ -409,9 +409,13 @@ func (c *WorkerControl) flush() {
 // TakesCorrections reports whether a worker provider reads a WorkerControl
 // while it runs: the in-process Ollama worker.
 func TakesCorrections(p Provider) bool {
-	_, ok := p.(*OllamaBrain)
-	return ok
+	reader, ok := p.(interface{ ReadsWorkerControl() bool })
+	return ok && reader.ReadsWorkerControl()
 }
+
+// ReadsWorkerControl marks the in-process Ollama worker, and any provider
+// that embeds it, as one whose tool loop reads a WorkerControl.
+func (o *OllamaBrain) ReadsWorkerControl() bool { return true }
 
 type requestControlKey struct{}
 
