@@ -126,7 +126,12 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			tools = sess.tools()
 		}
 
-		if err := o.prepareWorkerContext(ctx, skillCtx, tools, opts); err != nil {
+		compactCtx := ctx
+		if ctl != nil {
+			// A reporting job's next request is its answer, not a summary.
+			compactCtx = withRequestControl(ctx, requestControl{obsolete: ctl.reporting})
+		}
+		if err := o.prepareWorkerContext(compactCtx, skillCtx, tools, opts); err != nil {
 			return "", err
 		}
 		if ctl != nil && !finalAnswer {
@@ -292,6 +297,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 			results := make([]string, 0, len(response.ToolCalls))
 			for k, tc := range response.ToolCalls {
+				// The thread shows the call running, as it shows its result next.
+				// The control's answer below is what commits the call to run.
+				checkpoint(opts)
 				if note := ctl.notRun(); note != "" {
 					// Every call still gets a result, so the exchange stays paired.
 					for _, skipped := range response.ToolCalls[k:] {
@@ -300,8 +308,6 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 					checkpoint(opts)
 					break
 				}
-				// The thread shows the call running, as it shows its result next.
-				checkpoint(opts)
 				result := sess.execute(ctx, o.workDir, tc)
 				results = append(results, result)
 				if sess.limitErr != nil {
@@ -329,6 +335,11 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		text := cleanForVoice(stripHistoricalAssistantMarkers(raw))
 		if finalAnswer && (!responseComplete || !hasSpeakableContent(text)) {
 			return "", rounds.stopErr("model returned no final answer")
+		}
+		if !finalAnswer && ctl != nil && ctl.reporting() && !hasSpeakableContent(text) {
+			// Nothing to deliver from a request sent before the report: the
+			// report round answers instead.
+			continue
 		}
 		if opts.Discussion != nil && !hasSpeakableContent(text) {
 			return "", fmt.Errorf("group reply was empty")
@@ -389,13 +400,14 @@ func (o *OllamaBrain) takeCorrections(ctl *WorkerControl, finalAnswer bool, opts
 	checkpoint(opts)
 }
 
-// skillRouteContext lets a waiting correction abandon a skill confirmation
-// request before it is sent: the input it would confirm is already stale.
+// skillRouteContext lets a waiting correction or a report abandon a skill
+// confirmation request before it is sent: the input it would confirm is
+// already stale, or the job only answers now.
 func (o *OllamaBrain) skillRouteContext(ctx context.Context, ctl *WorkerControl) context.Context {
 	if ctl == nil {
 		return ctx
 	}
-	return withRequestControl(ctx, requestControl{obsolete: ctl.waiting})
+	return withRequestControl(ctx, requestControl{obsolete: func() bool { return ctl.waiting() || ctl.reporting() }})
 }
 
 func checkpoint(opts StreamOptions) {

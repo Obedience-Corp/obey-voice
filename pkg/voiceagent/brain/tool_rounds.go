@@ -195,7 +195,8 @@ func (r *toolRounds) observe(calls []api.ToolCall, results []string) {
 		r.recent = r.recent[1:]
 	}
 	stuck := r.stale >= maxRepeatedToolRounds-1 && count(r.recent, sig) >= maxRepeatedToolRounds
-	if r.instruction == "" && stuck {
+	// A report accepted while the round ran is the reason the job answers.
+	if r.instruction == "" && stuck && (r.reporting == nil || !r.reporting()) {
 		r.instruction, r.stop, r.forced = toolRepeatAnswerInstruction, stopRepeat, ForcedByRepeat
 	}
 }

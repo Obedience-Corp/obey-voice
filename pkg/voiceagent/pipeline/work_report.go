@@ -13,6 +13,7 @@ const (
 	reportNoInput    = "this worker cannot be asked to stop, so the work continues"
 	reportNotStarted = "the job has not started"
 	reportFinishing  = "the job is already finishing its answer"
+	reportStarting   = "the job is starting; there is nothing to report yet"
 )
 
 // noActivity is a report's checkpoint for a job with no tool activity.
@@ -43,9 +44,9 @@ func (a *Agency) reportJob(receipt *WorkReceipt) {
 }
 
 func (a *Agency) reportOne(id string) JobControl {
-	checkpoint := cmp.Or(a.work.Summary(id), noActivity)
+	checkpoint := func() string { return cmp.Or(a.work.Summary(id), noActivity) }
 	if a.managedOwner(id) != nil {
-		return JobControl{ID: id, Managed: true, Outcome: ControlRejected, Reason: reportNoInput, Checkpoint: checkpoint}
+		return JobControl{ID: id, Managed: true, Outcome: ControlRejected, Reason: reportNoInput, Checkpoint: checkpoint()}
 	}
 	if !a.jobInConversation(id) {
 		return JobControl{ID: id, Outcome: ControlUnknown}
@@ -56,20 +57,28 @@ func (a *Agency) reportOne(id string) JobControl {
 		}
 		return a.reportSteered(id, s, checkpoint)
 	}
+	// A job with no control, such as a reply moved to the background, gives
+	// its activity only to the conversation it came from.
+	a.mu.Lock()
+	scope := a.workerOrigins[id].Scope
+	a.mu.Unlock()
+	if scope.Valid() && (scope != a.pipeline.ConversationScope() || a.pipeline.ConversationRetired()) {
+		return JobControl{ID: id, Outcome: ControlUnknown}
+	}
 	switch state := a.jobState(id); state {
 	case "":
 		return JobControl{ID: id, Outcome: ControlUnknown}
 	case job.StateQueued:
 		return JobControl{ID: id, Outcome: ControlRejected, Queued: true, Reason: reportNotStarted}
 	case job.StateRunning:
-		return JobControl{ID: id, Outcome: ControlRejected, Reason: reportNoInput, Checkpoint: checkpoint}
+		return JobControl{ID: id, Outcome: ControlRejected, Reason: reportNoInput, Checkpoint: checkpoint()}
 	}
 	return JobControl{ID: id, Outcome: ControlFinished}
 }
 
 // reportSteered asks a job that has a control: the control, not the job
 // table, decides whether its worker can still answer.
-func (a *Agency) reportSteered(id string, s *jobSteer, checkpoint string) JobControl {
+func (a *Agency) reportSteered(id string, s *jobSteer, checkpoint func() string) JobControl {
 	got, kept := s.control.Report(checkpoint)
 	item := JobControl{ID: id, Outcome: ControlRejected, Checkpoint: kept}
 	switch got {
@@ -81,7 +90,12 @@ func (a *Agency) reportSteered(id string, s *jobSteer, checkpoint string) JobCon
 	case brain.ReportRepeated:
 		item.Outcome = ControlAccepted
 	case brain.ReportNotStarted:
-		item.Queued, item.Reason = true, reportNotStarted
+		// The table may have started the job while its worker has not begun.
+		if a.jobState(id) == job.StateRunning {
+			item.Reason = reportStarting
+		} else {
+			item.Queued, item.Reason = true, reportNotStarted
+		}
 	case brain.ReportNoInput:
 		item.Reason = reportNoInput
 		a.emitReport(id, s, kept, false)

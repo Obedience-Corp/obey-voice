@@ -293,28 +293,29 @@ func (c *WorkerControl) BeginRepair() bool {
 }
 
 // Report asks a running job to stop using tools and answer with what it has
-// done. Accepted once, it keeps checkpoint, settles the corrections the
-// worker has not taken, and refuses later ones; a repeat changes nothing and
-// returns the checkpoint kept. It reports nothing: the caller announces the
-// report, then calls Flush.
-func (c *WorkerControl) Report(checkpoint string) (ReportState, string) {
+// done. Accepted once, it keeps the checkpoint taken at that moment, settles
+// the corrections the worker has not taken, and refuses later ones; a repeat
+// while the job runs changes nothing and returns the checkpoint kept.
+// checkpoint runs under the control's lock and must not call it. Report
+// reports nothing: the caller announces the report, then calls Flush.
+func (c *WorkerControl) Report(checkpoint func() string) (ReportState, string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch {
 	case c.finishing:
-		return ReportFinishing, checkpoint
+		return ReportFinishing, checkpoint()
 	case c.sealed:
 		return ReportFinished, ""
 	case !c.started:
 		return ReportNotStarted, ""
 	case c.noInput != "":
-		return ReportNoInput, checkpoint
+		return ReportNoInput, checkpoint()
 	case c.reported:
 		return ReportRepeated, c.reportNote
 	}
-	c.reported, c.reportNote = true, checkpoint
+	c.reported, c.reportNote = true, checkpoint()
 	c.settleLocked(func(item *correction) bool { return !item.taken }, CorrectionNotApplied, NotAppliedReport)
-	return ReportAccepted, checkpoint
+	return ReportAccepted, c.reportNote
 }
 
 // Reported returns the checkpoint an accepted report kept, whatever became of

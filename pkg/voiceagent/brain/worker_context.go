@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -146,7 +147,7 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 		return nil
 	})
 	if err != nil {
-		if reserve && ctx.Err() == nil && ollamaOutage(err) != nil {
+		if reserve && ctx.Err() == nil && ollamaOutage(err) != nil || errors.Is(err, errRequestObsolete) {
 			// The answer keeps its request; its own size check decides.
 			return nil
 		}
