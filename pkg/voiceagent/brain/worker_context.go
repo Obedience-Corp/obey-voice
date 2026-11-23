@@ -163,7 +163,11 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 	}
 	notes := "Worker task notes: " + summary
 	if n := userCount(before[task+1:]); n > 0 {
-		notes = fmt.Sprintf("Worker task notes, a summary of the work through correction %d of %d below: %s", n, n, summary)
+		instructions := "the first instruction"
+		if n > 1 {
+			instructions = fmt.Sprintf("the first %d instructions", n)
+		}
+		notes = fmt.Sprintf("Worker task notes, a summary of the work so far, written after %s below: %s", instructions, summary)
 	}
 	var kept, dropped []int
 	for n, cut := range cuts {

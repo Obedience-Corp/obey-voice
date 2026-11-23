@@ -551,6 +551,13 @@ func TestCorrectionCompactsAtTheSoftLimitAndKeepsEveryAnchor(t *testing.T) {
 	if !slices.Equal(users, want) {
 		t.Fatalf("anchors after compaction=%q", users)
 	}
+	// The summary says what it covers without claiming the later turns are
+	// all corrections: a host repair request is one too.
+	if !slices.ContainsFunc(last.Messages, func(m api.Message) bool {
+		return m.Role == "assistant" && strings.HasPrefix(m.Content, "Worker task notes, a summary of the work so far, written after the first instruction below:")
+	}) {
+		t.Fatalf("notes label: %+v", last.Messages)
+	}
 	states := finalStates(h.dispositions())
 	if states[1].State != CorrectionIncluded || states[2].State != CorrectionIncluded {
 		t.Fatalf("dispositions=%+v", h.dispositions())
