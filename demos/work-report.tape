@@ -64,6 +64,7 @@ Sleep 1200ms
 Enter
 Sleep 6500ms
 Screenshot demos/frames/work-report-running.png
+Sleep 800ms
 
 # Ask the running job for its report from the keyboard.
 Type "/work report job-1"
