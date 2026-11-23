@@ -15,15 +15,13 @@ const reportCheckpoint = "read 1 file"
 // reportOnce returns an OnToolEnd hook that asks for the report when the
 // first tool call returns: the barrier is the tool's return.
 func (h *steerHarness) reportOnce() func(ToolResult) {
-	var once sync.Once
-	return func(ToolResult) {
-		once.Do(func() {
-			if got, _ := h.ctl.Report(reportCheckpoint); got != ReportAccepted {
-				h.t.Errorf("report=%q", got)
-			}
-			h.ctl.Flush()
-		})
-	}
+	report := sync.OnceFunc(func() {
+		if got, _ := h.ctl.Report(reportCheckpoint); got != ReportAccepted {
+			h.t.Errorf("report=%q", got)
+		}
+		h.ctl.Flush()
+	})
+	return func(ToolResult) { report() }
 }
 
 func TestReportMakesTheNextRequestTheAnswerRound(t *testing.T) {

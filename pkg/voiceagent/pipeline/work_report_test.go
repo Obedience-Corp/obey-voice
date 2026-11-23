@@ -23,11 +23,11 @@ const reportAnswer = "Read notes.txt; other.txt is not read yet."
 // reportAfterFirstTool asks job id for its report when its first tool call
 // returns, on the worker's goroutine, before its next request is built.
 func (h *steerJobHarness) reportAfterFirstTool(id func() string) *WorkReceipt {
-	var once sync.Once
 	receipt := new(WorkReceipt)
+	report := sync.OnceFunc(func() { *receipt = h.p.ReportWork(id()) })
 	events.Subscribe(h.p.Events, func(e events.ToolCallFinished) {
 		if e.JobID != "" {
-			once.Do(func() { *receipt = h.p.ReportWork(id()) })
+			report()
 		}
 	})
 	return receipt
@@ -257,12 +257,12 @@ func TestReportSettlesCorrections(t *testing.T) {
 // and the checkpoint stays readable.
 func TestCancelDuringTheReportAnswer(t *testing.T) {
 	inFlight, release := make(chan struct{}), make(chan struct{})
-	var once sync.Once
+	started := sync.OnceFunc(func() { close(inFlight) })
 	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
 		if n == 1 {
 			return readCall("notes.txt"), 0
 		}
-		once.Do(func() { close(inFlight) })
+		started()
 		<-release
 		return textReply("Too late."), 0
 	})
