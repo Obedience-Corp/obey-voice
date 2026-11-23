@@ -5,8 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
@@ -29,6 +31,8 @@ type jobView struct {
 	terminal bool
 	tool     string // the tool the worker is on, until the fold has a row
 	tier     string
+	// correction is how the job's newest correction stands.
+	correction string
 }
 
 func (m *conversationModel) canonicalJob(v work.JobView) {
@@ -186,6 +190,29 @@ func (m *conversationModel) jobExited(e events.JobExited) {
 	}
 	m.items[idx].sys = strings.Replace(m.items[idx].sys, stoppingMark, "", 1)
 	m.refreshContent()
+}
+
+// jobCorrection shows where the job's newest correction stands on its row.
+// Acceptance was reported by the command; a later disposition is a notice.
+func (m *conversationModel) jobCorrection(e events.JobCorrection) {
+	if !m.acceptWorkScope(e.Scope) {
+		return
+	}
+	label := pipeline.CorrectionLabel(brain.Correction{State: brain.CorrectionState(e.State), Reason: e.Reason}, e.Brief)
+	if label == "" {
+		return
+	}
+	m.appendActivity("job", e.ID+" "+label, 0)
+	v, ok := m.jobs[e.ID]
+	if !ok {
+		return
+	}
+	v.correction = label
+	suffix := " · queued"
+	if v.running {
+		suffix = " · working"
+	}
+	m.renderJobItem(e.ID, suffix)
 }
 
 // jobEnded logs the transition, seals the job's item with its outcome, and
@@ -428,6 +455,9 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	}
 	if job := m.jobs[id]; job != nil && job.persona != "" {
 		label = job.persona + " · " + label
+	}
+	if job := m.jobs[id]; job != nil && job.correction != "" {
+		label += " · " + job.correction
 	}
 	line := dimStyle.Render("  ⚙ " + id + origin + " · " + label + suffix)
 	line += m.renderJobToolDetails(id)

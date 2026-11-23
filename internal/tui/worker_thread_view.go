@@ -125,6 +125,9 @@ func workerDetailMeta(item pipeline.WorkerInfo) string {
 	if item.PersonaName != "" {
 		meta += dimStyle.Render(" · " + compactWorkerText(item.PersonaName))
 	}
+	if item.Correction != "" {
+		meta += dimStyle.Render(" · " + compactWorkerText(item.Correction))
+	}
 	return meta
 }
 

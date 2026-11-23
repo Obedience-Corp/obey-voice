@@ -218,6 +218,10 @@ func (m *conversationModel) submitLocalSlash(text string) (cmd tea.Cmd, handled 
 		// Leave voice/response turns alone — do not cancel or redispatch.
 		return nil, true
 	}
+	// A correction is the rest of the line as typed, spaces and quotes kept.
+	if command.id == commandWork && len(args) >= 2 && args[0] == "tell" {
+		return m.runWorkTell(args[1], slashRemainder(text, 3)), true
+	}
 	return m.executeSlashCommand(command, args), true
 }
 

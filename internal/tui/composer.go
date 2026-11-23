@@ -46,6 +46,14 @@ func (m conversationModel) textareaCursorOffset() int {
 	return min(offset+min(max(m.cursorColumn(), 0), runeLen(lines[row])), runeLen(m.input.Value()))
 }
 
+// prefillCommand puts text in the composer for the user to finish.
+func (m *conversationModel) prefillCommand(text string) {
+	previous := m.input.Value()
+	m.input.SetValue(text)
+	m.syncEditorFromTextarea()
+	m.syncComposer(previous)
+}
+
 func (m *conversationModel) applyEditor(previous string) {
 	m.input.SetValue(m.editor.text())
 	m.moveTextareaCursorToOffset(m.editor.cursorOffset())

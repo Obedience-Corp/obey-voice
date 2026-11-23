@@ -71,7 +71,7 @@ var slashCommands = []slashCommand{
 	{id: commandSettings, name: "/settings", usage: "/settings", description: "Open TUI settings"},
 	{id: commandParticipation, name: "/participation", usage: "/participation [off|invited|open] [all|id,id]", description: "Show or change agent participation and conversation members"},
 	{id: commandPersonas, name: "/personas", usage: "/personas", description: "Browse, select, create, or edit personas"},
-	{id: commandWork, name: "/work", usage: "/work [job|all|cancel job|dismiss job|speak job|replay job|logs]", description: "Inspect work and control result delivery"},
+	{id: commandWork, name: "/work", usage: workUsage, description: "Inspect work, correct or cancel a job, and control result delivery"},
 	{id: commandWorkers, name: "/workers", usage: "/workers", description: "View background tasks, stop work, or turn workers on/off"},
 	{id: commandVoice, name: "/voice", usage: "/voice", description: "Return to voice mode after fallback", aliases: []string{"/v"}},
 	{id: commandSpeakers, name: "/speakers", usage: "/speakers [on|off|status|name|names]", description: "Live speaker labels, renames, and status"},
@@ -114,6 +114,19 @@ func parseSlashCommand(value string) (slashCommand, []string, bool, bool) {
 	}
 	command, found := commandForToken(strings.ToLower(fields[0]))
 	return command, fields[1:], found, true
+}
+
+// slashRemainder is a command line after its first n words, as typed.
+func slashRemainder(value string, n int) string {
+	rest := strings.TrimSpace(value)
+	for range n {
+		i := strings.IndexAny(rest, " \t")
+		if i < 0 {
+			return ""
+		}
+		rest = strings.TrimLeft(rest[i:], " \t")
+	}
+	return strings.TrimSpace(rest)
 }
 
 func matchingSlashCommands(value string) []slashCommand {
