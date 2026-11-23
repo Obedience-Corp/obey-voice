@@ -141,8 +141,9 @@ Chat with `/work tell JOB_ID ` in the composer (a draft already there is kept,
 and the command is shown instead), `r` asks the selected task for its report
 and shows its checkpoint, `x` requests Stop all (confirm
 with `y`), `t` toggles new workers, and Escape returns to the list. A task
-asked for its report shows `reporting` while its worker writes the answer, and
-its detail keeps `Report requested · done so far: …` after it ends.
+whose report was accepted shows `reporting` while its worker writes the answer,
+and its detail keeps `Report requested · done so far: …` after it ends; a
+worker that cannot be asked gives its checkpoint only in the message.
 Messages appear as the provider's cached history updates at tool boundaries and
 completion; this view does not add token streaming or a worker message composer.
 A correction is written in the conversation's composer as a `/work tell`

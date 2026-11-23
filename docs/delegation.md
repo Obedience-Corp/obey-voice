@@ -381,11 +381,14 @@ the task in `/workers` whatever happens to the job afterwards. On the in-process
 machine (the workers a correction reaches) the job keeps its slot and stays
 `running`; its row and `/workers` show `reporting`. A tool call it has not
 started is not run and is answered `not run: a report was requested`; a call
-already running finishes first, and a request already sent is answered first,
+already running finishes first, including one the worker had committed to run
+when the report was accepted even if its start is shown a moment after the
+receipt, and a request already sent is answered first,
 though one that brings back nothing goes on to the report round. Its next
 model request is a tools-free answer round asking it to say what is done, what
 is not, and where anything it made is: no summary of its context or skill
-check is asked for first, and nothing gives it its tools back, a resend after
+check is asked for first, a summary already under way that fails is set aside,
+and nothing gives it its tools back, a resend after
 an outage or a continuation included. If its conversation is too large to
 answer without a summary, the job fails at the context limit as any job
 does. There is no
