@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -116,17 +117,25 @@ func parseSlashCommand(value string) (slashCommand, []string, bool, bool) {
 	return command, fields[1:], found, true
 }
 
-// slashRemainder is a command line after its first n words, as typed.
+// slashRemainder is a command line after its first n words, as typed. Words
+// are split as strings.Fields splits them, so the remainder starts where the
+// parsed arguments say it does.
 func slashRemainder(value string, n int) string {
 	rest := strings.TrimSpace(value)
 	for range n {
-		i := strings.IndexAny(rest, " \t")
+		i := strings.IndexFunc(rest, unicode.IsSpace)
 		if i < 0 {
 			return ""
 		}
-		rest = strings.TrimLeft(rest[i:], " \t")
+		rest = strings.TrimLeftFunc(rest[i:], unicode.IsSpace)
 	}
 	return strings.TrimSpace(rest)
+}
+
+// isSlashCommandLine reports a line that names a known slash command.
+func isSlashCommandLine(value string) bool {
+	_, _, found, slash := parseSlashCommand(value)
+	return slash && found
 }
 
 func matchingSlashCommands(value string) []slashCommand {

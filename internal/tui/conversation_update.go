@@ -171,7 +171,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		if len(msg.image) > 0 {
 			return m, m.importMedia(nil, msg.image)
 		}
-		if paths, ok := chatmedia.Paths(msg.text); ok {
+		if paths, ok := chatmedia.Paths(msg.text); ok && !isSlashCommandLine(msg.text) {
 			return m, m.importMedia(paths, nil)
 		}
 		m.insertClipboardText(msg.text)

@@ -46,9 +46,14 @@ func (m conversationModel) textareaCursorOffset() int {
 	return min(offset+min(max(m.cursorColumn(), 0), runeLen(lines[row])), runeLen(m.input.Value()))
 }
 
-// prefillCommand puts text in the composer for the user to finish.
+// prefillCommand puts text in the composer for the user to finish. A draft
+// already there is kept, and the command is shown to type instead.
 func (m *conversationModel) prefillCommand(text string) {
 	previous := m.input.Value()
+	if strings.TrimSpace(previous) != "" {
+		m.commandNotice("Your draft was kept. To correct the task, type: " + strings.TrimSpace(text) + " …")
+		return
+	}
 	m.input.SetValue(text)
 	m.syncEditorFromTextarea()
 	m.syncComposer(previous)

@@ -20,6 +20,9 @@ type workerThreadEntry struct {
 	attachments []chatmedia.Ref
 	at          time.Time
 	tool        *workerThreadTool
+	// replaced marks a worker answer a correction replaced; it was not
+	// delivered.
+	replaced bool
 }
 
 type workerThreadTool struct {
@@ -43,7 +46,7 @@ func workerThreadEntries(item pipeline.WorkerInfo) []workerThreadEntry {
 		switch turn.Role {
 		case "user", "assistant":
 			if strings.TrimSpace(turn.Content) != "" || len(turn.Attachments) > 0 {
-				entries = append(entries, workerThreadEntry{role: turn.Role, text: turn.Content, at: turn.At, attachments: turn.Attachments})
+				entries = append(entries, workerThreadEntry{role: turn.Role, text: turn.Content, at: turn.At, attachments: turn.Attachments, replaced: turn.Disposition == brain.DispositionSuperseded})
 			}
 			for _, call := range turn.ToolCalls {
 				tool := &workerThreadTool{call: workfold.Call{ID: call.ID, Name: call.Name, Status: "unknown"}, arguments: call.Arguments, order: -1}
