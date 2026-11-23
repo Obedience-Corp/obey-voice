@@ -74,6 +74,9 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		a.workMu.Unlock()
 	}
 	run, runtimeBudget := a.spawnRun(ctx, metrics, d.Transcript, task, history, a.pipeline.Brain, w)
+	steer := a.newJobSteer()
+	spawned := run
+	run = func(jobCtx context.Context) (string, error) { return spawned(withJobSteer(jobCtx, steer)) }
 	origin := workerOrigin{Scope: a.pipeline.ConversationScope(), Trace: events.TraceFromContext(ctx), admission: admission}
 	if metrics != nil {
 		origin.Envelope = metrics.response
@@ -89,6 +92,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 			a.mu.Lock()
 			a.workerOrigins[id] = origin
 			a.mu.Unlock()
+			a.registerSteer(id, steer)
 			a.emitRouteDecision(d, "accepted", id, "")
 		},
 		// Task is the label the user hears and sees; the brief is what the

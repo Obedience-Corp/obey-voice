@@ -219,6 +219,27 @@ func (a *Agency) saveWorkerThread(id string, turns []brain.Turn) {
 	}
 	a.workerThreads[id] = copyWorkerThread(turns)
 }
+
+// saveWorkerThreadAt saves a checkpoint unless a newer one is already saved,
+// so a late snapshot cannot replace newer evidence.
+func (a *Agency) saveWorkerThreadAt(id string, turns []brain.Turn, revision uint64) {
+	if id == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if revision < a.workerThreadRevs[id] {
+		return
+	}
+	if a.workerThreadRevs == nil {
+		a.workerThreadRevs = make(map[string]uint64)
+	}
+	if a.workerThreads == nil {
+		a.workerThreads = make(map[string][]brain.Turn)
+	}
+	a.workerThreadRevs[id] = revision
+	a.workerThreads[id] = copyWorkerThread(turns)
+}
 func copyWorkerThread(turns []brain.Turn) []brain.Turn {
 	copy := append([]brain.Turn(nil), turns...)
 	for i := range copy {

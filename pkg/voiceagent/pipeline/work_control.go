@@ -36,14 +36,21 @@ type WorkActor struct {
 // WorkAction is what a control does to a job.
 type WorkAction string
 
-// WorkCancel ends a job now.
-const WorkCancel WorkAction = "cancel"
+const (
+	// WorkCancel ends a job now.
+	WorkCancel WorkAction = "cancel"
+	// WorkSteer gives a job a correction, which it reads at its next model
+	// request or tool call, or in its brief if it has not started.
+	WorkSteer WorkAction = "steer"
+)
 
 // WorkRequest names the action and the job, or every job with All.
+// Instruction is a correction's text.
 type WorkRequest struct {
-	Action WorkAction
-	JobID  string
-	All    bool
+	Action      WorkAction
+	JobID       string
+	All         bool
+	Instruction string
 }
 
 // ControlOutcome is what a control found and did to one job.
@@ -63,6 +70,12 @@ const (
 	ControlUnknown ControlOutcome = "unknown"
 	// ControlRejected: the actor may not control this job, or the owner refused.
 	ControlRejected ControlOutcome = "rejected"
+	// ControlAccepted: a correction waits for the running worker's next
+	// model request or tool call.
+	ControlAccepted ControlOutcome = "accepted"
+	// ControlBriefed: the job had not started; the correction was added to
+	// the brief its worker will read.
+	ControlBriefed ControlOutcome = "brief_updated"
 )
 
 // JobControl is the receipt for one job.
@@ -76,6 +89,8 @@ type JobControl struct {
 	// Ran is how long the job had run when the cancel landed.
 	Ran    time.Duration
 	Reason string
+	// Revision numbers an accepted correction within its job.
+	Revision int
 }
 
 // WorkReceipt says what a control was accepted for and what has been
@@ -138,6 +153,8 @@ const unknownTask = "unknown background task"
 func (a *Agency) ControlWork(actor WorkActor, req WorkRequest) WorkReceipt {
 	receipt := WorkReceipt{Actor: actor, Request: req}
 	switch {
+	case req.Action == WorkSteer:
+		a.steerJob(&receipt)
 	case req.Action != WorkCancel:
 		receipt.Rejected = fmt.Sprintf("unsupported work action %q", req.Action)
 	case !req.All && req.JobID == "":
@@ -212,6 +229,9 @@ func (a *Agency) cancelOne(id string) JobControl {
 	if !a.jobInConversation(id) {
 		return JobControl{ID: id, Outcome: ControlUnknown}
 	}
+	// Before the table ends the job: its done callback would otherwise
+	// record the cancel's corrections as merely stopped.
+	a.endSteer(id, true, "")
 	before, ok := a.jobs.Cancel(id)
 	if !ok {
 		return JobControl{ID: id, Outcome: ControlUnknown}
@@ -226,6 +246,8 @@ func (a *Agency) cancelAll(receipt *WorkReceipt) {
 	for _, info := range a.jobs.Status() {
 		if !a.jobInConversation(info.ID) {
 			outside[info.ID] = true
+		} else if info.State == job.StateQueued || info.State == job.StateRunning {
+			a.endSteer(info.ID, true, "")
 		}
 	}
 	for _, before := range a.jobs.CancelAll(func(id string) bool { return outside[id] }) {

@@ -22,6 +22,8 @@ type WorkerInfo struct {
 	Tools                              []workfold.Call
 	Thread                             []brain.Turn
 	PersonaID, PersonaName             string
+	// Correction is how the job's newest correction stands, if it has one.
+	Correction string
 }
 
 // abortedState is how an aborted table job shows: stopping until its worker
@@ -124,6 +126,7 @@ func (p *Pipeline) Workers() []WorkerInfo {
 		if item.State == job.StateAborted {
 			info.State, info.Termination = abortedState(item)
 		}
+		info.Correction = a.steerFor(item.ID).label()
 		a.mu.Lock()
 		info.Thread = copyWorkerThread(a.workerThreads[item.ID])
 		origin := a.workerOrigins[item.ID]
@@ -167,6 +170,7 @@ func (p *Pipeline) Workers() []WorkerInfo {
 		if info.State != "stopping" {
 			info.State = string(item.State)
 		}
+		info.Correction = a.steerFor(info.ID).label()
 		if item.Model == "" && item.Origin == "managed" {
 			info.Model = item.Config["profile"]
 		}

@@ -106,6 +106,7 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onJobFailed)
 	events.Subscribe(bus, u.onJobAborted)
 	events.Subscribe(bus, u.onJobExited)
+	events.Subscribe(bus, u.onJobCorrection)
 	events.Subscribe(bus, u.onVoiceGateStripped)
 	events.Subscribe(bus, u.onWorkStateChanged)
 	events.Subscribe(bus, u.onRouteDecided)
@@ -549,6 +550,18 @@ func (u *UI) onJobAborted(e events.JobAborted) {
 	line := fmt.Sprintf("■ %s %s after %s", e.ID, how, e.Elapsed.Round(time.Second))
 	if e.Stopping {
 		line += " · stopping"
+	}
+	u.dimLine(line)
+}
+
+func (u *UI) onJobCorrection(e events.JobCorrection) {
+	state := strings.ReplaceAll(e.State, "_", " ")
+	if e.Brief && e.State == "pending" {
+		state = "added to brief"
+	}
+	line := fmt.Sprintf("✎ %s correction %s", e.ID, state)
+	if e.Reason != "" {
+		line += ": " + e.Reason
 	}
 	u.dimLine(line)
 }

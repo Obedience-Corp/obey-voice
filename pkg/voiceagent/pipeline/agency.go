@@ -58,6 +58,10 @@ type Agency struct {
 	// history may take only the ones the chat already shows, so the saved
 	// thread follows the order the user saw and heard.
 	heldReplies map[string]workerReply
+	// workerThreadRevs is the revision of each saved thread checkpoint.
+	workerThreadRevs map[string]uint64 // guarded by mu
+	// steers are the spawned jobs a correction can reach.
+	steers map[string]*jobSteer // guarded by mu
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction
