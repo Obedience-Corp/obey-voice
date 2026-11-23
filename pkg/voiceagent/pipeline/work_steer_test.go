@@ -1353,3 +1353,23 @@ func TestFailedCorrectedRunIsTheReason(t *testing.T) {
 		t.Fatalf("delivered %+v", finished)
 	}
 }
+
+// 4. A reply whose picture could not be attached is saved as the worker's
+// record shows it after import, as before, not as the raw reference.
+func TestSavedThreadShowsTheImportedReply(t *testing.T) {
+	h := newSteerJobHarness(t, func(n int, req api.ChatRequest) (api.ChatResponse, int) {
+		return textReply("![chart](missing-chart.png)"), 0
+	})
+	ctx := context.WithValue(t.Context(), imageDeliveryKey{}, true)
+	if _, err := h.directSteerRun(ctx, "Send a chart of the notes.", brain.NewWorkerBudget(brain.BudgetLimits{MaxRequests: 10})); err == nil {
+		t.Fatal("a missing picture did not fail the job")
+	}
+	h.a.mu.Lock()
+	thread := copyWorkerThread(h.a.workerThreads["job-1"])
+	h.a.mu.Unlock()
+	for _, turn := range thread {
+		if turn.Role == "assistant" && strings.Contains(turn.Content, "![") {
+			t.Fatalf("saved thread holds the raw reference: %q", turn.Content)
+		}
+	}
+}

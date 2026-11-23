@@ -108,6 +108,7 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		// Versioned checkpoints replace the hook snapshots, which a history a
 		// failed request rolled back could overwrite.
 		opts.OnCheckpoint = func() { steer.saveCheckpoint(worker) }
+		r.checkpoint = opts.OnCheckpoint
 		return r.steered(control, opts)
 	}
 }
@@ -127,6 +128,8 @@ type workerRun struct {
 	workDir          string
 	warn             func(string)
 	think            func(input string) (string, error)
+	// checkpoint saves the worker's thread, for a job that takes corrections.
+	checkpoint func()
 	// forced is why the answer being finished was forced, if it was.
 	forced brain.ForcedAnswer
 }
@@ -310,6 +313,10 @@ func (r *workerRun) finish(reply string) finished {
 	var media []chatmedia.Ref
 	finalize := func(result string) (string, error) {
 		cleaned, attached, err := finalizeProviderReply(worker, result, r.workDir, r.warn)
+		// The import rewrote the worker's record of the reply; save it as such.
+		if cleaned != result && r.checkpoint != nil {
+			r.checkpoint()
+		}
 		if len(attached) > 0 {
 			media = attached
 			return cleaned, nil
