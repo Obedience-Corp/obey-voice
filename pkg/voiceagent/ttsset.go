@@ -30,6 +30,7 @@ type TTSSet struct {
 	// Displayed wherever FallbackWarning is: talk start and Settings reload.
 	VoiceNotice error
 	cleanups    []func()
+	pipeline    *pipeline.Pipeline
 }
 
 func NewTTSSet(cfg *config.Config) (*TTSSet, error) {
@@ -113,6 +114,13 @@ func (s *TTSSet) Close() {
 	if s == nil {
 		return
 	}
+	s.closeWithPipeline(s.pipeline)
+}
+
+func (s *TTSSet) closeWithPipeline(p *pipeline.Pipeline) {
+	if p != nil {
+		p.DrainBackchannel(s.Primary)
+	}
 	for i := len(s.cleanups) - 1; i >= 0; i-- {
 		s.cleanups[i]()
 	}
@@ -169,8 +177,8 @@ func (m *LiveTTSManager) ensureDone() {
 
 // Adopt tracks a set already installed on the pipeline so a later Install
 // can retire it. The caller must not Close the set; the manager owns it.
-func (m *LiveTTSManager) Adopt(set *TTSSet) bool {
-	if m == nil || set == nil {
+func (m *LiveTTSManager) Adopt(p *pipeline.Pipeline, set *TTSSet) bool {
+	if m == nil || p == nil || set == nil {
 		return set == nil
 	}
 	m.mu.Lock()
@@ -179,8 +187,13 @@ func (m *LiveTTSManager) Adopt(set *TTSSet) bool {
 		return false
 	}
 	m.ensureDone()
-	m.sets = append(m.sets, set)
+	m.adoptLocked(p, set)
 	return true
+}
+
+func (m *LiveTTSManager) adoptLocked(p *pipeline.Pipeline, set *TTSSet) {
+	set.pipeline = p
+	m.sets = append(m.sets, set)
 }
 
 func (m *LiveTTSManager) Install(p *pipeline.Pipeline, set *TTSSet) bool {
@@ -261,7 +274,8 @@ func (m *LiveTTSManager) swapLocked(p *pipeline.Pipeline, set *TTSSet) ([]*TTSSe
 			retired = append(retired, previous)
 		}
 	}
-	m.sets = []*TTSSet{set}
+	m.sets = nil
+	m.adoptLocked(p, set)
 	m.retiring = append(m.retiring, retired...)
 	p.ReplaceTTS(set.Primary, set.Fallback)
 	done := m.done

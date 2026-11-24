@@ -3,11 +3,14 @@ package brain
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ollama/ollama/api"
 
@@ -455,5 +458,27 @@ func TestListedWorkerFactIDsAreTheOnesRendered(t *testing.T) {
 	listed, prompt = ListedWorkerFactIDs(long), WorkerFactsPrompt(nil, long)
 	if strings.Count(prompt, "\njob=") != len(listed) {
 		t.Fatalf("byte ceiling: rendered %d, listed %d", strings.Count(prompt, "\njob="), len(listed))
+	}
+}
+
+// The ids a control may name are the ids the block shows, wherever the byte
+// ceiling cuts and however many rows give way to the footer.
+func TestListedWorkerFactIDsFollowTheCeilingAndFooter(t *testing.T) {
+	shown := regexp.MustCompile(`\njob="([^"]+)"`)
+	for _, same := range []int{0, sameOutputShown} {
+		for backslashes := 140; backslashes <= 200; backslashes++ {
+			facts := make([]WorkerFact, workerFactLimit+1)
+			for i := range facts {
+				facts[i] = WorkerFact{ID: fmt.Sprintf("job-%d", i+1), Tier: "legacy", State: "running", Own: true, Running: 2 * time.Minute,
+					Task: strings.Repeat(`"`, 160), Progress: strings.Repeat(`\`, backslashes), SameOutput: same}
+			}
+			var rendered []string
+			for _, m := range shown.FindAllStringSubmatch(WorkerFactsPrompt(nil, facts), -1) {
+				rendered = append(rendered, m[1])
+			}
+			if listed := ListedWorkerFactIDs(facts); strings.Join(listed, ",") != strings.Join(rendered, ",") {
+				t.Fatalf("same=%d backslashes=%d: listed %v, rendered %v", same, backslashes, listed, rendered)
+			}
+		}
 	}
 }

@@ -115,6 +115,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	routeRetried := false
 	continuations := 0
 	rounds := newToolRounds(o.cfg, opts)
+	same := newSameOutput(rounds.worker, opts.OnSameOutput)
 	for i := 0; rounds.more(i); i++ {
 		corrected := ctl != nil && ctl.waiting()
 		if corrected {
@@ -326,6 +327,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			}
 			if len(results) > 0 {
 				rounds.observe(response.ToolCalls[:len(results)], results)
+				same.observe(ctx, response.ToolCalls[:len(results)], results)
 			}
 			o.ensureContextBudget(skillCtx)
 			continue

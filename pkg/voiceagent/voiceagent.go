@@ -313,13 +313,13 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 				return nil, nil, fmt.Errorf("init TTS: %w", err)
 			}
 			if opts.LiveTTS != nil {
-				if !opts.LiveTTS.Adopt(ttsSet) {
+				if !opts.LiveTTS.Adopt(p, ttsSet) {
 					ttsSet.Close()
 					cleanup()
 					return nil, nil, fmt.Errorf("init TTS: conversation is shutting down")
 				}
 			} else {
-				cleanups = append(cleanups, ttsSet.Close)
+				cleanups = append(cleanups, func() { ttsSet.closeWithPipeline(p) })
 			}
 			p.ReplaceTTS(ttsSet.Primary, ttsSet.Fallback)
 			if ttsSet.VoiceNotice != nil {
@@ -331,8 +331,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		}
 	}
 
-	// Backchannel, if enabled: synthesizes its phrase pool once, here, so a turn
-	// never pays for it. Off by default; see pipeline/backchannel.go.
+	// Prepare the initial backchannel clips before the first turn.
 	if cfg.BackchannelEnabled && !opts.Silent && p.HasTTS() {
 		stage("Synthesizing backchannel phrases")
 		p.EnableBackchannel(ctx)

@@ -821,11 +821,8 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 		return fail(fmt.Errorf("init TTS: %w", err))
 	}
 	liveTTS := &voiceagent.LiveTTSManager{}
-	if !liveTTS.Adopt(ttsSet) {
-		ttsSet.Close()
-		return fail(fmt.Errorf("init TTS: conversation is shutting down"))
-	}
-	cleanups = append(cleanups, liveTTS.Close)
+	closeVoice := ttsSet.Close
+	cleanups = append(cleanups, func() { closeVoice() })
 	if ttsSet.FallbackWarning != nil {
 		fmt.Fprintf(serveDiagOut, "warning: %v\n", ttsSet.FallbackWarning)
 	}
@@ -893,6 +890,10 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 	// before serve's overrides in dependency terms, and reverse-order teardown
 	// must still hold across the two stacks.
 	cleanups = append([]func(){baseCleanup}, cleanups...)
+	if !liveTTS.Adopt(agent.Pipeline, ttsSet) {
+		return fail(fmt.Errorf("init TTS: conversation is shutting down"))
+	}
+	closeVoice = liveTTS.Close
 
 	return agent.Pipeline, fanout, ingress, liveTTS, cleanup, nil
 }

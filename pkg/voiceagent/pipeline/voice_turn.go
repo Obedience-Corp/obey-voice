@@ -55,15 +55,18 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		p.Player.Stop()
 	}
 
+	var speech speechPriority
+	defer speech.release()
 	var text string
 	var err error
 	if isContinuation {
+		speech.hold(p)
 		text = continuation.admission.Request
 	} else {
 		metrics.captureBound = true
 		metrics.capturePolicy = p.Native
 		turn.to(TurnListening)
-		text, err = p.transcribeTurn(ctx, metrics, turn)
+		text, err = p.transcribeTurn(ctx, metrics, turn, &speech)
 	}
 	// An EndUtterance that arrived after listening stopped was meant for this
 	// turn; dropping it keeps it from cutting the next one short.
@@ -327,6 +330,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		p.recoverTurn(ctx, turn, metrics, fullResponse, err)
 		return original, nil
 	}
+	speech.release()
 	p.finishOrdinaryCompletion(metrics, fullResponse, interrupted)
 
 	// On a barge-in the user is already speaking their next turn into the mic;
@@ -362,7 +366,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	return original, nil
 }
 
-func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, turn *turnConductor) (text string, err error) {
+func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, turn *turnConductor, reply *speechPriority) (text string, err error) {
 	endTrace := p.startTraceBoundary(ctx, "stt")
 	defer func() {
 		status := "unknown"
@@ -388,7 +392,12 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 		return "", fmt.Errorf("STT: %w", err)
 	}
 	yielded := false
-	defer func() { p.finishCaptureSession(session, generation, yielded) }()
+	defer func() {
+		if reply != nil && err == nil && (text != "" || metrics.input != nil) {
+			reply.hold(p)
+		}
+		p.finishCaptureSession(session, generation, yielded)
+	}()
 
 	for {
 		select {

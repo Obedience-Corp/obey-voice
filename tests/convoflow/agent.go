@@ -240,7 +240,7 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 	r.cleanup = cleanup
 	if r.tts != nil {
 		r.voices = &voiceagent.LiveTTSManager{RetireDelay: -1}
-		if !r.voices.Adopt(r.tts) {
+		if !r.voices.Adopt(agent.Pipeline, r.tts) {
 			r.close()
 			return nil, fmt.Errorf("persona TTS manager is closed")
 		}

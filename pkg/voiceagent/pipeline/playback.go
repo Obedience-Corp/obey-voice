@@ -108,8 +108,8 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 			// inflate the rolling p50 and open the filler gate on turns that are
 			// actually fast. Text turns never play filler, so their missing
 			// sample costs nothing.
-			if p.backchannel != nil && !metrics.sttFinal.IsZero() {
-				p.backchannel.observe(metrics.firstAudioReady.Sub(metrics.sttFinal))
+			if !metrics.sttFinal.IsZero() {
+				p.observeBackchannel(metrics.sttFinal, metrics.firstAudioReady)
 			}
 		}
 		if metrics.playbackStart.IsZero() {

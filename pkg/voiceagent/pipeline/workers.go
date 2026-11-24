@@ -27,6 +27,9 @@ type WorkerInfo struct {
 	// Report is how a report asked of the job stands, and Checkpoint what the
 	// job had done when it was asked.
 	Report, Checkpoint string
+	// SameOutput is how many tool rounds in a row a running job's tools have
+	// returned the same output, while that is worth showing.
+	SameOutput int
 }
 
 // abortedState is how an aborted table job shows: stopping until its worker
@@ -135,9 +138,13 @@ func (p *Pipeline) Workers() []WorkerInfo {
 		info.Thread = copyWorkerThread(a.workerThreads[item.ID])
 		origin := a.workerOrigins[item.ID]
 		info.PersonaID, info.PersonaName = origin.Envelope.PersonaID, origin.Envelope.DisplayName
+		same := a.sameOutputLocked(item.ID)
 		a.mu.Unlock()
 		if origin.Scope.Valid() && (origin.Scope != p.ConversationScope() || p.ConversationRetired()) {
 			continue
+		}
+		if item.State == job.StateRunning {
+			info.SameOutput = same
 		}
 		byID[item.ID] = info
 	}
@@ -170,6 +177,7 @@ func (p *Pipeline) Workers() []WorkerInfo {
 		info.Thread = copyWorkerThread(a.workerThreads[info.ID])
 		origin := a.workerOrigins[info.ID]
 		info.PersonaID, info.PersonaName = origin.Envelope.PersonaID, origin.Envelope.DisplayName
+		same := a.sameOutputLocked(info.ID)
 		a.mu.Unlock()
 		if info.State != "stopping" {
 			info.State = string(item.State)
@@ -193,6 +201,10 @@ func (p *Pipeline) Workers() []WorkerInfo {
 			if info.Termination == "" || info.Termination == "unknown" {
 				info.Termination = termination
 			}
+		}
+		info.SameOutput = 0
+		if info.State == string(work.JobRunning) {
+			info.SameOutput = same
 		}
 		byID[info.ID] = info
 	}

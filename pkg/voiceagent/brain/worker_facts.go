@@ -2,6 +2,7 @@ package brain
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -23,62 +24,97 @@ const (
 
 // WorkerFactsPrompt renders the host's record of background jobs for a live
 // turn. A job the model is not told about is one it will deny, so a described
-// job carries its task, how long it has run, what it has done and who started
-// it, behind a lead-in that says what the list is. A list of identifiers
-// alone has nothing for the lead-in to explain and goes without it. Unfinished
-// jobs past the limit are counted, so none is silently left out. Provider and
+// job carries its task, how long it has run, what it has done, who started it
+// and whether its tools keep returning the same output, behind a lead-in that
+// says what the list is. A list of identifiers alone has nothing for the
+// lead-in to explain and goes without it. Unfinished jobs past the limit or
+// the byte ceiling are counted, so none is silently left out. Provider and
 // model names and pricing are deliberately excluded.
 func WorkerFactsPrompt(cfg *config.Config, facts []WorkerFact) string {
-	r := renderWorkerFacts(facts)
-	if r.lines.Len() == 0 {
+	rows, footer := listWorkerFacts(facts)
+	if len(rows) == 0 {
 		return ""
 	}
-	if !r.described {
-		return workerFactsOpen + r.lines.String() + workerFactsClose
+	var lines strings.Builder
+	for _, row := range rows {
+		lines.WriteString(row.text)
 	}
-	if r.unlisted > 0 {
-		fmt.Fprintf(&r.lines, "\nunfinished jobs not listed: %d", r.unlisted)
+	if !describedFacts(rows) {
+		return workerFactsOpen + lines.String() + workerFactsClose
 	}
-	return "\n" + systemPrompt(cfg, "active-work", nil) + workerFactsOpen + r.lines.String() + workerFactsClose
+	lines.WriteString(footer)
+	leadIn := "\n" + systemPrompt(cfg, "active-work", nil)
+	if slices.ContainsFunc(rows, func(r factRow) bool { return r.same }) {
+		leadIn += "\n" + systemPrompt(cfg, "active-work-same-output", nil)
+	}
+	return leadIn + workerFactsOpen + lines.String() + workerFactsClose
 }
 
 // ListedWorkerFactIDs are the jobs WorkerFactsPrompt names for facts, in the
-// order it names them: the ones within its limit, with a valid record, that
-// fit its size.
+// order it names them. A job past the limit, with an invalid record, cut at
+// the size ceiling or given way to the footer is counted there, not named.
 func ListedWorkerFactIDs(facts []WorkerFact) []string {
-	return renderWorkerFacts(facts).listed
-}
-
-type workerFactsRender struct {
-	lines     strings.Builder
-	listed    []string
-	described bool
-	unlisted  int
-}
-
-func renderWorkerFacts(facts []WorkerFact) *workerFactsRender {
-	r := &workerFactsRender{}
-	if len(facts) > workerFactLimit {
-		for _, fact := range facts[workerFactLimit:] {
-			if state := strings.TrimSpace(fact.State); state == "running" || state == "queued" {
-				r.unlisted++
-			}
-		}
-		facts = facts[:workerFactLimit]
+	rows, _ := listWorkerFacts(facts)
+	ids := make([]string, len(rows))
+	for i, row := range rows {
+		ids[i] = row.id
 	}
-	for _, fact := range facts {
+	return ids
+}
+
+type factRow struct {
+	id, text                    string
+	unfinished, described, same bool
+}
+
+func describedFacts(rows []factRow) bool {
+	return slices.ContainsFunc(rows, func(r factRow) bool { return r.described })
+}
+
+// listWorkerFacts chooses the rows WorkerFactsPrompt renders and the footer
+// that counts the rest.
+func listWorkerFacts(facts []WorkerFact) ([]factRow, string) {
+	var rows []factRow
+	size := len(workerFactsOpen) + len(workerFactsClose)
+	unlisted, cut := 0, false
+	for i, fact := range facts {
+		state := strings.TrimSpace(fact.State)
+		unfinished := state == "running" || state == "queued"
+		if i >= workerFactLimit || cut {
+			if unfinished {
+				unlisted++
+			}
+			continue
+		}
 		line := workerFactLine(fact)
 		if line == "" {
 			continue
 		}
-		if len(workerFactsOpen)+r.lines.Len()+len(line)+len(workerFactsClose) > workerFactsBytes {
-			break
+		if size+len(line) > workerFactsBytes {
+			cut = true
+			if unfinished {
+				unlisted++
+			}
+			continue
 		}
-		r.lines.WriteString(line)
-		r.listed = append(r.listed, strings.TrimSpace(fact.ID))
-		r.described = r.described || oneLine(fact.Task) != ""
+		rows = append(rows, factRow{id: strings.TrimSpace(fact.ID), text: line, unfinished: unfinished, described: oneLine(fact.Task) != "", same: strings.Contains(line, ` output="`)})
+		size += len(line)
 	}
-	return r
+	footer := func() string {
+		if unlisted == 0 || !describedFacts(rows) {
+			return ""
+		}
+		return fmt.Sprintf("\nunfinished jobs not listed: %d", unlisted)
+	}
+	// The footer must fit too; rows give way to it from the end.
+	for len(rows) > 0 && size+len(footer()) > workerFactsBytes {
+		last := rows[len(rows)-1]
+		rows, size = rows[:len(rows)-1], size-len(last.text)
+		if last.unfinished {
+			unlisted++
+		}
+	}
+	return rows, footer()
 }
 
 func workerFactLine(fact WorkerFact) string {
@@ -103,6 +139,9 @@ func workerFactLine(fact WorkerFact) string {
 	}
 	if progress := oneLine(fact.Progress); progress != "" {
 		fmt.Fprintf(&b, " progress=%q", continuity.Clip(progress, workerFactProgressBytes))
+	}
+	if note := SameOutputNote(fact.SameOutput); state == "running" && note != "" {
+		fmt.Fprintf(&b, " output=%q", note)
 	}
 	return b.String()
 }

@@ -290,6 +290,9 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		speakable = speakableFromResponse(p.gateForSpeech(response, metrics), responseMentionName(ctx))
 	}
 	if speakable != "" {
+		var speech speechPriority
+		speech.hold(p)
+		defer speech.release()
 		speechDone := metrics.beginSpeech()
 		defer speechDone()
 		turn.to(TurnSpeaking)
@@ -418,6 +421,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		}
 		p.handlePlaybackLifecycle(speakable, usedFallback, observation, playback, metrics)
 		speechDone()
+		speech.release()
 	}
 
 	p.completeAgentResponse(ctx, response, metrics, false)

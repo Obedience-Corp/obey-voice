@@ -16,6 +16,8 @@ import (
 )
 
 func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.CancelFunc, stream *brain.Stream, allowBargeIn bool, metrics *turnMetrics, turn *turnConductor, repair *promiseRepairState) (response string, wasInterrupted bool, streamErr error) {
+	var speech speechPriority
+	defer speech.release()
 	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -336,6 +338,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// noteAdmission stamps what the turn's first admitted speech is measured
 	// from, for either way a segment joins the held group.
 	noteAdmission := func() time.Time {
+		speech.hold(p)
 		routed = true
 		turn.to(TurnSpeaking)
 		now := time.Now()

@@ -58,6 +58,7 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	a.pipeline.endMovedJob(id, state, err)
 	a.mu.Lock()
 	releaseVoice := a.workerOrigins[id].releaseVoice
+	a.endSameOutputLocked(id)
 	a.mu.Unlock()
 	if releaseVoice != nil {
 		defer releaseVoice()

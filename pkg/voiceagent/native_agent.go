@@ -56,7 +56,7 @@ func (n *NativeCandidate) NewAgent(ctx context.Context, opts Options, authorize 
 	if err != nil {
 		return nil, nil, err
 	}
-	if opts.LiveTTS != nil && !opts.LiveTTS.Adopt(n.Voice) {
+	if opts.LiveTTS != nil && !opts.LiveTTS.Adopt(agent.Pipeline, n.Voice) {
 		cleanup()
 		return nil, nil, errors.New("native voice manager is shutting down")
 	}

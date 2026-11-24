@@ -195,12 +195,14 @@ type Pipeline struct {
 	// speechAdviceMu protects the bounded provider-configuration comparison
 	// windows used by speech diagnostics. It is separate from turn metrics so
 	// advice can survive turn completion without a lifetime-wide once flag.
-	speechAdviceMu sync.Mutex
-	speechAdvice   map[string]*speechAdviceWindow
-	// backchannel is nil unless config.BackchannelEnabled; see backchannel.go.
-	backchannel       *backchannel
-	backchannelMu     sync.Mutex
-	backchannelCancel context.CancelFunc
+	speechAdviceMu      sync.Mutex
+	speechAdvice        map[string]*speechAdviceWindow
+	backchannelLifetime context.Context // protected by ttsMu; nil until enabled
+	backchannelMu       sync.Mutex      // protects the bank, playback and speech priority
+	prioritySpeakers    int
+	speechIdle          chan struct{}
+	backchannel         *backchannel
+	backchannelCancel   context.CancelFunc
 	// vocals plays [moan]/[gasp]/[laugh] as sounds instead of reading the tag.
 	vocals *vocalBank
 	OnTurn func() // called after each completed turn for session auto-save
@@ -342,6 +344,10 @@ func (p *Pipeline) currentSpeakerID() string {
 func (p *Pipeline) SetOutputMuted(muted bool) {
 	p.outputMuted.Store(muted)
 	if muted {
+		p.backchannelMu.Lock()
+		p.stopBackchannelLocked()
+		p.wakeBackchannelBuildLocked()
+		p.backchannelMu.Unlock()
 		if p.EndDiscussion != nil {
 			p.EndDiscussion("muted")
 		}
@@ -368,7 +374,11 @@ func (p *Pipeline) ReplaceTTS(primary, fallback tts.Provider) {
 	p.inputBindingRevision.Add(1)
 	p.TTS = primary
 	p.TTSFallback = fallback
+	build := p.prepareBackchannelLocked()
 	p.ttsMu.Unlock()
+	if build != nil {
+		go build()
+	}
 	p.RecoverCompletionOutput()
 }
 
