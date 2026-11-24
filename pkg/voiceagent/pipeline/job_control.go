@@ -187,14 +187,32 @@ func (a *Agency) decideJobControl(ctx context.Context, metrics *turnMetrics, con
 	if !a.personaOwns(frozen.persona, req.JobID) {
 		return refuse(refusedNotOwn, notOwnLine, "")
 	}
+	named := a.namedJob(frozen, req.JobID)
 	receipt := a.ControlWork(WorkActor{Kind: WorkActorPersona, Persona: frozen.persona}, WorkRequest{Action: WorkAction(req.Action), JobID: req.JobID, Instruction: req.Instruction})
 	if req.Action == brain.JobControlCancel {
 		receipt = a.awaitExits(ctx, receipt)
 		metrics.routedNote = a.cancelCheckpoint(receipt)
 	}
 	out.Receipt = &receipt
-	out.Line = a.controlLine(frozen, receipt)
+	out.Line = a.controlLine(frozen, receipt, named)
 	return out
+}
+
+// namedJob is how a line names job id when the turn's list held more than one
+// of the persona's own jobs, so the user hears which one was acted on; empty
+// otherwise.
+func (a *Agency) namedJob(frozen *controlTurn, id string) string {
+	own := 0
+	for _, listed := range frozen.listed {
+		if a.personaOwns(frozen.persona, listed) {
+			own++
+		}
+	}
+	if own < 2 {
+		return ""
+	}
+	task, _ := a.jobInfo(id)
+	return "the job for " + spokenTaskLabel(task)
 }
 
 // controlTurnLive spends the turn's grant: it holds only while the turn that
@@ -326,7 +344,11 @@ func (a *Agency) whichJobLine(frozen *controlTurn) string {
 }
 
 // controlLine is what the host says of a persona's control, from its receipt.
-func (a *Agency) controlLine(frozen *controlTurn, r WorkReceipt) string {
+// named, when set, is the job the line is about.
+func (a *Agency) controlLine(frozen *controlTurn, r WorkReceipt, named string) string {
+	if named != "" {
+		return a.namedControlLine(frozen, r, named)
+	}
 	if r.Rejected != "" || len(r.Jobs) != 1 {
 		return controlFailedLine
 	}
@@ -366,6 +388,74 @@ func (a *Agency) controlLine(frozen *controlTurn, r WorkReceipt) string {
 		return "I couldn't do that: " + item.Reason + "."
 	}
 	return controlFailedLine
+}
+
+// namedControlLine is controlLine naming job, "the job for <task>".
+func (a *Agency) namedControlLine(frozen *controlTurn, r WorkReceipt, job string) string {
+	subject := strings.ToUpper(job[:1]) + job[1:]
+	if r.Rejected != "" || len(r.Jobs) != 1 {
+		return "I couldn't do that to " + job + "."
+	}
+	item := r.Jobs[0]
+	switch item.Outcome {
+	case ControlFinished:
+		return subject + " had already finished."
+	case ControlUnknown:
+		return a.whichJobLine(frozen)
+	}
+	switch r.Request.Action {
+	case WorkCancel:
+		switch {
+		case item.Queued:
+			return "Dropped the queued " + strings.TrimPrefix(job, "the ") + "."
+		case item.Outcome == ControlStopping && item.Ran < time.Second:
+			return "Cancelled " + job + "; the worker is still stopping."
+		case item.Outcome == ControlStopping:
+			return "Cancelled " + job + " after " + spokenDuration(item.Ran) + "; the worker is still stopping."
+		case item.Outcome == ControlStopped && item.Ran < time.Second:
+			return "Stopped " + job + "."
+		case item.Outcome == ControlStopped:
+			return "Stopped " + job + " after " + spokenDuration(item.Ran) + "."
+		}
+	case WorkReport:
+		return namedReportLine(item, job, subject)
+	case WorkSteer:
+		switch item.Outcome {
+		case ControlAccepted:
+			return "Sent that to " + job + "; it reads it at its next step."
+		case ControlBriefed:
+			return "Added that to the brief of " + job + "; it reads it when it starts."
+		case ControlRejected:
+			return "I couldn't pass that on to " + job + ": " + item.Reason + "."
+		}
+	}
+	if item.Outcome == ControlRejected && item.Reason != "" {
+		return "I couldn't do that to " + job + ": " + item.Reason + "."
+	}
+	return "I couldn't do that to " + job + "."
+}
+
+// namedReportLine is reportLine naming job.
+func namedReportLine(item JobControl, job, subject string) string {
+	switch {
+	case item.Outcome == ControlAccepted && item.Checkpoint == noActivity:
+		return "I asked " + job + " to report, and it's writing up what it has; it has recorded no tool activity yet."
+	case item.Outcome == ControlAccepted:
+		return "I asked " + job + " to report, and it's writing up what it has; so far: " + spokenActivity(item.Checkpoint) + "."
+	case item.Reason == reportNoInput && item.Checkpoint != "" && item.Checkpoint != noActivity:
+		return subject + " so far: " + spokenActivity(item.Checkpoint) + "; it can't be asked to stop, so the work continues."
+	case item.Reason == reportNoInput:
+		return subject + " has recorded no tool activity yet, and it can't be asked to stop, so the work continues."
+	case item.Reason == reportStarting:
+		return subject + " is just starting, so there's nothing to report yet."
+	case item.Reason == reportNotStarted:
+		return subject + " hasn't started yet, so there's nothing to report."
+	case item.Reason == reportFinishing:
+		return subject + " is already finishing its answer."
+	case item.Reason != "":
+		return "I couldn't do that to " + job + ": " + item.Reason + "."
+	}
+	return "I couldn't do that to " + job + "."
 }
 
 // reportLine says what a report found. A report the persona asked for may not

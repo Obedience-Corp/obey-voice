@@ -549,6 +549,18 @@ first:
 | none of its jobs running | `I have no job running.` |
 | incomplete or malformed call, or a steer without an instruction | `I couldn't do that.` |
 
+When the turn's list held more than one of the persona's own jobs, the line
+for a control that was applied names the job it acted on, by the same short
+form of its request the status readout uses, so you can tell which one it
+was: `Stopped the job for Download the release archive for the 4.2 build after
+7 seconds.`, `Cancelled the job for … after 7 seconds; the worker is still
+stopping.`, `Dropped the queued job for ….`, `I asked the job for … to report,
+and it's writing up what it has; so far: …`, `The job for … hasn't started
+yet, so there's nothing to report.`, `Sent that to the job for …; it reads it
+at its next step.`, `Added that to the brief of the job for …; it reads it
+when it starts.`, `The job for … had already finished.` With one of its own
+jobs listed the lines are as in the table. A refusal never names a job.
+
 A worker is never offered the tool; one that calls `job_control` anyway gets
 the ordinary unknown-tool result and its other calls run as usual.
 

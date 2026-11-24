@@ -506,14 +506,14 @@ func TestPersonaCorrectsItsOwnJob(t *testing.T) {
 		t.Fatalf("second job is %s", h.state(queued))
 	}
 	r := h.turn(true, "Use notes-final.txt instead.", replies(batch(controlCall("steer", running, "instruction", "Use notes-final.txt instead of notes.txt."))))
-	r.settled(t, 1, "", steerSentLine)
+	r.settled(t, 1, "", "Sent that to the job for Summarize the quarterly notes; it reads it at its next step.")
 	r.ranWork(t, WorkSteer)
 	if got := h.a.steerFor(running).control.Corrections(); len(got) != 1 || got[0].Text != "Use notes-final.txt instead of notes.txt." {
 		t.Fatalf("corrections = %+v", got)
 	}
 
 	r = h.turn(true, "For the download, grab the arm64 archive.", replies(batch(controlCall("steer", queued, "instruction", "Get the arm64 archive."))))
-	r.settled(t, 1, "", steerBriefedLine)
+	r.settled(t, 1, "", "Added that to the brief of the job for Download the release archive; it reads it when it starts.")
 	if got := h.a.steerFor(queued).control.Corrections(); len(got) != 1 || !got[0].Brief {
 		t.Fatalf("queued corrections = %+v", got)
 	}
@@ -527,9 +527,9 @@ func TestPersonaControlsAQueuedJob(t *testing.T) {
 	running := h.spawn("Summarize the quarterly notes")
 	queued := h.spawn("Download the release archive")
 	r := h.turn(true, "What has the download got?", replies(batch(controlCall("report", queued))))
-	r.settled(t, 1, "", reportQueuedLine)
+	r.settled(t, 1, "", "The job for Download the release archive hasn't started yet, so there's nothing to report.")
 	r = h.turn(true, "Cancel the download.", replies(batch(controlCall("cancel", queued))))
-	r.settled(t, 1, "", "Dropped 1 queued job.")
+	r.settled(t, 1, "", "Dropped the queued job for Download the release archive.")
 	if h.state(queued) != job.StateAborted || h.state(running) != job.StateRunning {
 		t.Fatalf("states: running=%s queued=%s", h.state(running), h.state(queued))
 	}
@@ -598,7 +598,7 @@ func TestPersonaControlAsksWhichWhenItCannotTell(t *testing.T) {
 	}
 	// Identical calls are one.
 	r := h.turn(true, "Cancel the queued download.", replies(batch(controlCall("cancel", second), controlCall("cancel", second))))
-	r.settled(t, 1, "", "Dropped 1 queued job.")
+	r.settled(t, 1, "", "Dropped the queued job for Download the release archive.")
 	if h.state(second) != job.StateAborted || h.state(first) != job.StateRunning {
 		t.Fatalf("states: %s %s", h.state(first), h.state(second))
 	}
@@ -644,7 +644,7 @@ func TestPersonaControlCannotReachAJobThePromptDidNotName(t *testing.T) {
 		t.Fatalf("outcome = %+v, state = %s", r.outcomes, h.state(ids[8]))
 	}
 	r = h.turn(true, "Cancel the first audit.", replies(batch(controlCall("cancel", ids[0]))))
-	r.settled(t, 1, "", "Stopped.")
+	r.settled(t, 1, "", "Stopped the job for Audit the config.")
 }
 
 func TestPersonaControlOfAJobThatEndedSinceTheList(t *testing.T) {
@@ -1244,4 +1244,80 @@ func TestControlReplyIsNotSavedIntoAClearedConversation(t *testing.T) {
 	if len(r.outcomes) != 1 || r.outcomes[0].Receipt == nil || h.state(id) != job.StateAborted {
 		t.Fatalf("outcomes = %+v, job = %s", r.outcomes, h.state(id))
 	}
+}
+
+// With more than one of its own jobs listed, the host's line names the job it
+// acted on, and only that job changes.
+func TestControlLinesNameTheJobAmongSeveral(t *testing.T) {
+	const first, second = "Download the release archive for the 4.2 build", "Download the release archive for the 4.3 build"
+	for _, tc := range []struct {
+		name, utterance string
+		call            func(running, queued string) api.ToolCall
+		line            string
+		changed         func(h *personaControlHarness, running, queued string) bool
+	}{
+		{"cancel running", "Cancel the 4.2 download.", func(r, _ string) api.ToolCall { return controlCall("cancel", r) },
+			"Stopped the job for " + first + ".",
+			func(h *personaControlHarness, r, q string) bool {
+				return h.state(r) == job.StateAborted && h.state(q) != job.StateAborted
+			}},
+		{"cancel queued", "Cancel the 4.3 download.", func(_, q string) api.ToolCall { return controlCall("cancel", q) },
+			"Dropped the queued job for " + second + ".",
+			func(h *personaControlHarness, r, q string) bool {
+				return h.state(q) == job.StateAborted && h.state(r) == job.StateRunning
+			}},
+		{"report", "What has the 4.2 download got?", func(r, _ string) api.ToolCall { return controlCall("report", r) },
+			"I asked the job for " + first + " to report, and it's writing up what it has; so far: listed 1 folder.",
+			func(h *personaControlHarness, r, q string) bool {
+				_, reported := h.a.steerFor(r).control.Reported()
+				_, other := h.a.steerFor(q).control.Reported()
+				return reported && !other
+			}},
+		{"report queued", "What has the 4.3 download got?", func(_, q string) api.ToolCall { return controlCall("report", q) },
+			"The job for " + second + " hasn't started yet, so there's nothing to report.",
+			func(h *personaControlHarness, r, q string) bool { return h.state(q) == job.StateQueued }},
+		{"steer", "For the 4.2 build, use the mirror.", func(r, _ string) api.ToolCall { return controlCall("steer", r, "instruction", "Use the mirror.") },
+			"Sent that to the job for " + first + "; it reads it at its next step.",
+			func(h *personaControlHarness, r, q string) bool {
+				return len(h.a.steerFor(r).control.Corrections()) == 1 && len(h.a.steerFor(q).control.Corrections()) == 0
+			}},
+		{"steer queued", "For the 4.3 build, use the mirror.", func(_, q string) api.ToolCall { return controlCall("steer", q, "instruction", "Use the mirror.") },
+			"Added that to the brief of the job for " + second + "; it reads it when it starts.",
+			func(h *personaControlHarness, r, q string) bool {
+				return len(h.a.steerFor(q).control.Corrections()) == 1 && len(h.a.steerFor(r).control.Corrections()) == 0
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newPersonaControlHarness(t)
+			running, queued := h.spawn(first), h.spawn(second)
+			r := h.turn(true, tc.utterance, replies(batch(tc.call(running, queued))))
+			r.settled(t, 1, "", tc.line)
+			if !tc.changed(h, running, queued) {
+				t.Fatalf("states: %s %s", h.state(running), h.state(queued))
+			}
+		})
+	}
+}
+
+// A job of another persona's in the list does not make the persona's own
+// line name its job; nor does a refusal name one.
+func TestControlLinesStayPlainWithOneOwnJob(t *testing.T) {
+	h := newPersonaControlHarness(t)
+	own := h.spawn("Summarize the quarterly notes")
+	other := h.spawnAs("sage", "Render the demo video")
+	r := h.turn(true, "Cancel the video render.", replies(batch(controlCall("cancel", other))))
+	r.settled(t, 1, "", notOwnLine)
+	r = h.turn(true, "Cancel the summary.", replies(batch(controlCall("cancel", own))))
+	r.settled(t, 1, "", "Stopped.")
+}
+
+func TestSlowExitLineNamesTheJobAmongSeveral(t *testing.T) {
+	h := newPersonaControlHarness(t)
+	h.worker.stubborn = true
+	h.a.ReplaceWorker(h.worker, h.cfg.Clone(), nil)
+	h.a.cancelExitWait = 20 * time.Millisecond
+	running := h.spawn("Summarize the quarterly notes")
+	h.spawn("Draft the changelog")
+	r := h.turn(true, "Kill the summary job.", replies(batch(controlCall("cancel", running))))
+	r.settled(t, 1, "", "Cancelled the job for Summarize the quarterly notes; the worker is still stopping.")
 }
