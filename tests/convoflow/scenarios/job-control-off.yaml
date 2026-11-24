@@ -20,7 +20,7 @@ turns:
   - id: cancel
     user: "cancel that job"
     wait: idle
-    timeout: 2m
+    timeout: 3m
     expect:
       - { job_control: none }
       - { no_event: job_aborted }

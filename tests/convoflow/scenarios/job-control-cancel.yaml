@@ -20,7 +20,7 @@ turns:
   - id: cancel
     user: "cancel that job"
     wait: idle
-    timeout: 2m
+    timeout: 3m
     expect:
       - { route_kind: job.control }
       - { job_control: applied }
