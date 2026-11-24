@@ -143,7 +143,7 @@ obey-voice audiobook create book.epub --out-dir out/book --audio-format mp3 --re
 obey-voice render article.md --out out/article.wav
 ```
 
-Text, Markdown, HTML, and article URLs work with `render` too. Digital PDFs require Poppler's `pdftotext`. Batch narration uses TTS without a microphone or a conversation brain. For voice selection, section pauses, Calibre setup, and the prompt-controlled narration pipeline, see [Narration and audiobooks](docs/narration.md).
+Text, Markdown, HTML, and article URLs work with `render` too. Digital PDFs require Poppler's `pdftotext`. Batch narration uses TTS without a microphone or a conversation brain. For supported languages and a working CLI example, see [Choose an audiobook narrator](docs/narration.md#choose-an-audiobook-narrator). For section pauses, Calibre setup, and the prompt-controlled narration pipeline, see [Narration and audiobooks](docs/narration.md).
 
 ## Meeting notes
 
