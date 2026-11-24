@@ -214,14 +214,16 @@ func (o *OllamaBrain) spokenBeforeControl(output *ollama.Round) string {
 	return strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, output.EmittedText()))
 }
 
-// DecodesJobControl reports whether a provider's live turn can offer the
-// job_control tool and return its call for the host to settle: the Ollama
-// provider, and any provider that embeds it.
+// DecodesJobControl reports whether a provider's live turn offers the
+// job_control tool and returns its call for the host to settle: the Ollama
+// provider, or one that embeds it, whose configuration turns job control on.
+// It is the one answer to whether job control is on for the persona the
+// provider answers as.
 func DecodesJobControl(p Provider) bool {
 	decoder, ok := p.(interface{ DecodesJobControl() bool })
 	return ok && decoder.DecodesJobControl()
 }
 
-// DecodesJobControl marks the Ollama provider as one whose stream loop
-// intercepts a job_control call.
-func (o *OllamaBrain) DecodesJobControl() bool { return true }
+// DecodesJobControl reports that this provider's configuration turns job
+// control on.
+func (o *OllamaBrain) DecodesJobControl() bool { return o.catchesJobControl() }

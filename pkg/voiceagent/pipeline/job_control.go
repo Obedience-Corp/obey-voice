@@ -30,9 +30,9 @@ type controlTurn struct {
 }
 
 // freezeControlTurn records a live turn's authority before its model request.
-// A turn is granted control only when the responding persona's configuration
-// turns job control on and it answers a person on the direct router with
-// tools, on Ollama. listed is computed from the same facts and by the same
+// A turn is granted control only when the provider answering it has job
+// control on, the same setting that offered the tool, and it answers a person
+// on the direct router with tools. listed is computed from the same facts and by the same
 // pass that render them into the prompt.
 // command is the user's request with a recognized address taken off.
 func (p *Pipeline) freezeControlTurn(ctx context.Context, metrics *turnMetrics, opts brain.StreamOptions, command, original string) {
@@ -54,8 +54,7 @@ func (p *Pipeline) freezeControlTurn(ctx context.Context, metrics *turnMetrics, 
 	if id := metrics.response.PersonaID; ok && id != "" && personaKey(id) != persona {
 		ok = false
 	}
-	ollama := brain.DecodesJobControl(p.Brain)
-	if ok && ollama && opts.JobControl && opts.ToolsEnabled && opts.RouterToolsPolicy == brain.RouterToolsDirect && cfg != nil && cfg.VoiceJobControl {
+	if ok && brain.DecodesJobControl(p.Brain) && opts.JobControl && opts.ToolsEnabled && opts.RouterToolsPolicy == brain.RouterToolsDirect {
 		frozen.token = p.controlTurns.Add(1)
 		frozen.persona = persona
 		frozen.listed = brain.ListedWorkerFactIDs(opts.WorkerFacts)

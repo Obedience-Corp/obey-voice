@@ -1111,6 +1111,13 @@ func TestStaleControlWritesNothingAfterAClear(t *testing.T) {
 
 func TestFreezeGrantsOnlyAnEligibleTurn(t *testing.T) {
 	h := newPersonaControlHarness(t)
+	offCfg := h.cfg.Clone()
+	offCfg.VoiceJobControl = false
+	off, err := brain.NewOllama(offCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = off.Close() })
 	live := brain.StreamOptions{JobControl: true, ToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsDirect}
 	for name, tc := range map[string]struct {
 		cfg   func(*config.Config)
@@ -1119,7 +1126,7 @@ func TestFreezeGrantsOnlyAnEligibleTurn(t *testing.T) {
 		want  bool
 	}{
 		"eligible":         {func(*config.Config) {}, func(*brain.StreamOptions) {}, nil, true},
-		"option off":       {func(c *config.Config) { c.VoiceJobControl = false }, func(*brain.StreamOptions) {}, nil, false},
+		"option off":       {func(*config.Config) {}, func(*brain.StreamOptions) {}, off, false},
 		"route only":       {func(*config.Config) {}, func(o *brain.StreamOptions) { o.RouterToolsPolicy = brain.RouterToolsRouteOnly }, nil, false},
 		"tools off":        {func(*config.Config) {}, func(o *brain.StreamOptions) { o.ToolsEnabled = false }, nil, false},
 		"not a live turn":  {func(*config.Config) {}, func(o *brain.StreamOptions) { o.JobControl = false }, nil, false},
@@ -1320,4 +1327,35 @@ func TestSlowExitLineNamesTheJobAmongSeveral(t *testing.T) {
 	h.spawn("Draft the changelog")
 	r := h.turn(true, "Kill the summary job.", replies(batch(controlCall("cancel", running))))
 	r.settled(t, 1, "", "Cancelled the job for Summarize the quarterly notes; the worker is still stopping.")
+}
+
+// Whether job control is on for a turn is the answering provider's own
+// setting, the one that put the tool in its request; the host's copy of the
+// persona's configuration does not overrule it either way.
+func TestGrantFollowsTheAnsweringProvidersSetting(t *testing.T) {
+	for name, tc := range map[string]struct{ provider, agency, want bool }{
+		"provider on, host copy off": {true, false, true},
+		"provider off, host copy on": {false, true, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newPersonaControlHarness(t)
+			cfg := h.cfg.Clone()
+			cfg.VoiceJobControl = tc.provider
+			live, err := brain.NewOllama(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = live.Close() })
+			h.p.Brain = live
+			host := h.cfg.Clone()
+			host.VoiceJobControl = tc.agency
+			h.a.ReplaceWorker(h.worker, host, nil)
+			metrics := newTurnMetrics()
+			opts := brain.StreamOptions{JobControl: true, ToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsDirect}
+			h.p.freezeControlTurn(h.p.enterForeground(context.Background()), metrics, opts, "Cancel it.", "Cancel it.")
+			if got := metrics.controlTurn.token != 0; got != tc.want {
+				t.Fatalf("granted = %t", got)
+			}
+		})
+	}
 }

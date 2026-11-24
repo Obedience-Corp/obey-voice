@@ -671,8 +671,11 @@ type embeddedOllamaProvider struct{ *OllamaBrain }
 // A host's wrapper that embeds the Ollama provider still counts as one that
 // can be granted job control; the check asks the provider, not its type.
 func TestProviderEmbeddingOllamaDecodesJobControl(t *testing.T) {
-	if !DecodesJobControl(embeddedOllamaProvider{&OllamaBrain{}}) {
+	if !DecodesJobControl(embeddedOllamaProvider{&OllamaBrain{cfg: &config.Config{VoiceJobControl: true}}}) {
 		t.Fatal("a provider embedding the Ollama provider was not recognised")
+	}
+	if DecodesJobControl(embeddedOllamaProvider{&OllamaBrain{cfg: &config.Config{}}}) {
+		t.Fatal("a provider with job control off decodes it")
 	}
 	if DecodesJobControl(nil) {
 		t.Fatal("no provider decodes job control")
