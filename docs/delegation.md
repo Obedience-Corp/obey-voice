@@ -537,9 +537,9 @@ first:
 
 The report line says the persona asked, since a persona may ask for a report
 you did not. A cancel's host note is saved as for a spoken "cancel". The
-controls are the same ones `/work cancel`, `/work report` and `/work tell` make,
-recorded with the actor `persona`; their events and `/workers` rows are the
-same. The exact cancel phrases keep their own path and never reach the model.
+controls are the ones `/work cancel`, `/work report` and `/work tell` make,
+with the same events and `/workers` rows. The exact cancel phrases keep their
+own path and never reach the model.
 
 #### Measuring a model
 
@@ -547,8 +547,10 @@ same. The exact cancel phrases keep their own path and never reach the model.
 real feature against a local Ollama model: the conversational provider on the
 direct router with job control on, a real pipeline, agency and job table, and
 fixture jobs with no model behind them, owned by the speaking persona or by
-another one as each case says. Speech goes to a spy and is never played; the
-persona's direct tools do run, in a temporary work directory. It is skipped
+another one as each case says. Speech goes to a spy and is never played. The
+persona's direct tools do run: a search goes out, and `run_command` runs the
+shell command the model chooses, starting in a temporary work directory that
+nothing fences it to. A job it starts is another fixture job. It is skipped
 unless asked for:
 
 ```sh

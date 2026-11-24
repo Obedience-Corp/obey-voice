@@ -72,24 +72,27 @@ func (fixtureJobWorker) LoadHistory([]brain.Turn) {}
 // by a fake Ollama that scripts its replies from the human's words only, with
 // a real agency, job table and pipeline. Speech goes to a fake engine.
 type personaControlHarness struct {
-	t       *testing.T
-	p       *Pipeline
-	a       *Agency
-	live    *brain.OllamaBrain
-	cfg     *config.Config
-	tts     *progressiveFakeTTS
-	release chan struct{}
+	t        *testing.T
+	p        *Pipeline
+	a        *Agency
+	live     *brain.OllamaBrain
+	cfg      *config.Config
+	tts      *progressiveFakeTTS
+	release  chan struct{}
 	worker   fixtureJobWorker
 	jobTool  chan string
 	finished chan string
 	// toolsSeen counts each job's tool calls, read by the test goroutine only.
 	toolsSeen map[string]int
 
-	mu       sync.Mutex
-	chats    int
-	tools    [][]string
-	script   func(human string) []api.ChatResponse
-	before   func()
+	mu     sync.Mutex
+	chats  int
+	tools  [][]string
+	script func(human string) []api.ChatResponse
+	before func()
+	// midway runs after the first line of a reply is sent.
+	midway   func()
+	stopped  chan struct{}
 	notices  []string
 	outcomes []controlOutcome
 	live0    int
@@ -126,10 +129,13 @@ func newPersonaControlHarness(t *testing.T, opts ...harnessOption) *personaContr
 	}
 	t.Cleanup(func() { _ = live.Close() })
 	h.live = live
-	player := newFakePlayer(time.Millisecond)
-	t.Cleanup(func() { _ = player.Close() })
+	inner := newFakePlayer(time.Millisecond)
+	t.Cleanup(func() { _ = inner.Close() })
+	h.stopped = make(chan struct{}, 16)
+	player := &signalingPlayer{fakePlayer: inner, stopped: h.stopped}
 	bus := events.NewBus()
-	h.p = &Pipeline{Brain: live, TTS: h.tts, Player: player, Events: bus, VoiceToolsEnabled: true, RouterToolsPolicy: brain.NormalizeRouterToolsPolicy(h.cfg.VoiceRouterTools)}
+	h.p = &Pipeline{Brain: live, TTS: h.tts, Player: player, Events: bus, VoiceToolsEnabled: true, RouterToolsPolicy: brain.NormalizeRouterToolsPolicy(h.cfg.VoiceRouterTools),
+		VoiceFailedRouteRepair: true}
 	jobs := job.NewTable(context.Background(), job.WithMaxConcurrent(1))
 	t.Cleanup(jobs.Close)
 	h.a = NewAgency(h.p, jobs, h.worker, h.cfg.Clone(), nil)
@@ -183,8 +189,8 @@ func (h *personaControlHarness) serve(w http.ResponseWriter, r *http.Request) {
 		names = append(names, tool.Function.Name)
 	}
 	h.tools = append(h.tools, names)
-	script, before := h.script, h.before
-	h.before = nil
+	script, before, midway := h.script, h.before, h.midway
+	h.before, h.midway = nil, nil
 	h.mu.Unlock()
 	if before != nil {
 		before()
@@ -197,9 +203,30 @@ func (h *personaControlHarness) serve(w http.ResponseWriter, r *http.Request) {
 		reply = []api.ChatResponse{{Message: api.Message{Role: "assistant", Content: "Okay."}, Done: true, DoneReason: "stop"}}
 	}
 	enc := json.NewEncoder(w)
-	for _, line := range reply {
+	flusher, _ := w.(http.Flusher)
+	for i, line := range reply {
 		_ = enc.Encode(line)
+		if flusher != nil {
+			flusher.Flush()
+		}
+		if i == 0 && midway != nil {
+			midway()
+		}
 	}
+}
+
+// signalingPlayer says when the turn stops playback.
+type signalingPlayer struct {
+	*fakePlayer
+	stopped chan struct{}
+}
+
+func (p *signalingPlayer) Stop() {
+	select {
+	case p.stopped <- struct{}{}:
+	default:
+	}
+	p.fakePlayer.Stop()
 }
 
 // humanLine is what the person said in a request: the first line of its
@@ -800,5 +827,50 @@ func TestControlWorkPersonaActorReachesOnlyItsOwnJobs(t *testing.T) {
 	}
 	if r := h.a.ControlWork(WorkActor{Kind: WorkActorCommand}, WorkRequest{Action: WorkCancel, JobID: own}); r.Err() != nil || h.state(own) != job.StateAborted {
 		t.Fatalf("the command still reaches it: %+v", r)
+	}
+}
+
+// A spoken promise of tool work before the call trips the failed-route
+// repair as it streams; the control wins and nothing is handed to a worker.
+// The repair stopped that sentence's speech, so the host speaks it before its
+// own line.
+func TestPersonaControlAfterAPromiseShapedPreamble(t *testing.T) {
+	const promise = "I'll use the tool to cancel it."
+	for _, voice := range []bool{true, false} {
+		t.Run(map[bool]string{true: "voice", false: "text"}[voice], func(t *testing.T) {
+			h := newPersonaControlHarness(t)
+			id := h.spawn("Summarize the quarterly notes")
+			round := []api.ChatResponse{
+				{Message: api.Message{Role: "assistant", Content: promise + " "}},
+				{Message: api.Message{Role: "assistant", ToolCalls: []api.ToolCall{controlCall("cancel", id)}}, Done: true, DoneReason: "stop"},
+			}
+			if voice {
+				// The repair has stopped speech before the call arrives.
+				for len(h.stopped) > 0 {
+					<-h.stopped
+				}
+				h.midway = func() {
+					select {
+					case <-h.stopped:
+					case <-time.After(3 * time.Second):
+						t.Error("the repair never stopped speech")
+					}
+				}
+			}
+			r := h.turn(voice, "Cancel the summary.", replies(round))
+			r.settled(t, 1, promise, "Stopped.")
+			if h.state(id) != job.StateAborted {
+				t.Fatalf("job is %s", h.state(id))
+			}
+			var saved string
+			for _, turn := range r.added {
+				if turn.Role == "assistant" {
+					saved = turn.Content
+				}
+			}
+			if saved != promise+" Stopped." {
+				t.Fatalf("saved reply = %q", saved)
+			}
+		})
 	}
 }

@@ -757,7 +757,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			}
 			p.emitResponse(metrics, events.ThinkingComplete{Elapsed: metrics.elapsed(metrics.modelComplete)})
 			if result.JobControl != nil {
-				metrics.jobControl, metrics.controlSpoken = result.JobControl, true
+				// A spoken promise of tool work may have tripped the failed-route
+				// repair, which stopped that speech; the host speaks it then.
+				metrics.jobControl, metrics.controlSpoken = result.JobControl, repair == nil || !repair.spawn
 			}
 			if repair != nil && result.Route != "" {
 				metrics.route.Tier, metrics.route.ReasonCode = result.RouteTier, result.RouteReasonCode

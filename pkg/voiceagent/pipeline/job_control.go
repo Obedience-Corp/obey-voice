@@ -35,7 +35,11 @@ func (p *Pipeline) freezeControlTurn(metrics *turnMetrics, opts brain.StreamOpti
 		return
 	}
 	frozen := &controlTurn{request: request, original: original, authority: opts.JobControl}
-	if persona, ok := p.livePersona(); ok && opts.JobControl {
+	persona, ok := p.livePersona()
+	if id := metrics.response.PersonaID; ok && id != "" && personaKey(id) != persona {
+		ok = false
+	}
+	if ok && opts.JobControl {
 		frozen.token = p.controlTurns.Add(1)
 		frozen.persona = persona
 		frozen.scope = p.ConversationScope()
