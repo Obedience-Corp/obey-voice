@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -87,7 +88,7 @@ func TestLiveTTSManagerRetiresPreviousSet(t *testing.T) {
 
 	var closed atomic.Bool
 	first := &TTSSet{cleanups: []func(){func() { closed.Store(true) }}}
-	if !m.Adopt(first) {
+	if !m.Adopt(p, first) {
 		t.Fatal("Adopt initial set")
 	}
 	if !m.Install(p, &TTSSet{}) {
@@ -105,7 +106,7 @@ func TestLiveTTSManagerRetiresAfterDelay(t *testing.T) {
 
 	var closed atomic.Bool
 	first := &TTSSet{cleanups: []func(){func() { closed.Store(true) }}}
-	if !m.Adopt(first) {
+	if !m.Adopt(p, first) {
 		t.Fatal("Adopt initial set")
 	}
 	if !m.Install(p, &TTSSet{}) {
@@ -129,7 +130,7 @@ func TestLiveTTSManagerCloseAbortsRetire(t *testing.T) {
 
 	var closed atomic.Bool
 	first := &TTSSet{cleanups: []func(){func() { closed.Store(true) }}}
-	if !m.Adopt(first) {
+	if !m.Adopt(p, first) {
 		t.Fatal("Adopt initial set")
 	}
 	if !m.Install(p, &TTSSet{}) {
@@ -151,7 +152,7 @@ func TestLiveTTSManagerReplaceAndCloseIgnoresDrain(t *testing.T) {
 
 	var closed atomic.Bool
 	first := &TTSSet{cleanups: []func(){func() { closed.Store(true) }}}
-	if !m.Adopt(first) {
+	if !m.Adopt(p, first) {
 		t.Fatal("Adopt initial set")
 	}
 	if !m.ReplaceAndClose(p, &TTSSet{}) {
@@ -176,7 +177,7 @@ func TestLiveTTSManagerWaitsForWorkerVoiceAndQueuedSpeech(t *testing.T) {
 	m := &LiveTTSManager{RetireDelay: -1}
 	defer m.Close()
 	closed := make(chan struct{})
-	m.Adopt(&TTSSet{Primary: old, cleanups: []func(){func() { close(closed) }}})
+	m.Adopt(p, &TTSSet{Primary: old, cleanups: []func(){func() { close(closed) }}})
 	releaseWorker := p.RetainTTS(old, nil)
 	if !m.ReplaceAndClose(p, &TTSSet{Primary: next}) {
 		t.Fatal("replace voice")
@@ -206,7 +207,7 @@ func TestLiveTTSManagerShutdownClosesRetainedWorkerVoice(t *testing.T) {
 	p := &pipeline.Pipeline{TTS: old}
 	m := &LiveTTSManager{RetireDelay: -1}
 	closed := make(chan struct{})
-	m.Adopt(&TTSSet{Primary: old, cleanups: []func(){func() { close(closed) }}})
+	m.Adopt(p, &TTSSet{Primary: old, cleanups: []func(){func() { close(closed) }}})
 	release := p.RetainTTS(old, nil)
 	defer release()
 	m.ReplaceAndClose(p, &TTSSet{Primary: &retainedTestTTS{name: "Samantha"}})
@@ -294,5 +295,57 @@ func TestLiveTTSManagerSameSetRemainsUsable(t *testing.T) {
 	m.Close()
 	if closed.Load() != 1 {
 		t.Fatal("voice not closed exactly once on shutdown")
+	}
+}
+
+type pendingManagerVoice struct {
+	transactionTTS
+	ctx    context.Context
+	stream *audio.PCMStream
+}
+
+func (v *pendingManagerVoice) Synthesize(ctx context.Context, _ string) (*audio.PCMStream, error) {
+	v.ctx = ctx
+	v.stream = audio.NewPCMStream(ctx)
+	return v.stream, nil
+}
+
+func TestLiveTTSManagerShutdownDrainsBackchannel(t *testing.T) {
+	for _, path := range []string{"adopt", "install"} {
+		t.Run(path, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				m := &LiveTTSManager{}
+				p := &pipeline.Pipeline{}
+				voice := &pendingManagerVoice{}
+				closed := false
+				set := &TTSSet{Primary: voice, cleanups: []func(){func() { closed = true }}}
+				if path == "adopt" {
+					p.ReplaceTTS(voice, nil)
+					if !m.Adopt(p, set) {
+						t.Fatal("adoption failed")
+					}
+					go p.EnableBackchannel(t.Context())
+				} else {
+					p.EnableBackchannel(t.Context())
+					if !m.Install(p, set) {
+						t.Fatal("install failed")
+					}
+				}
+				synctest.Wait()
+				if voice.stream == nil {
+					t.Fatal("expected pending clip synthesis")
+				}
+				go m.Close()
+				synctest.Wait()
+				if closed || voice.ctx.Err() != context.Canceled {
+					t.Fatal("shutdown must cancel the clip and wait for the producer before provider cleanup")
+				}
+				voice.stream.CloseWithError(context.Canceled)
+				synctest.Wait()
+				if !closed {
+					t.Fatal("provider cleanup did not run after the producer finished")
+				}
+			})
+		})
 	}
 }

@@ -129,7 +129,11 @@ and detail evidence, not canonical session files or retained checkpoints.
 that job's results and tool evidence; `/work all` clears the selection. Escape
 clears the detail first, then returns to Chat. The composer draft is preserved.
 `/workers` remains the execution manager, including its background-work toggle
-and confirmed Stop all action.
+and confirmed Stop all action. A running task whose tools have returned the
+same output three or more rounds in a row shows `same output for N rounds` in
+the list and in its detail header; it can be normal while a job waits for
+something, and nothing is stopped because of it (see
+[delegation](delegation.md)).
 
 Open a task in `/workers` to read its conversation: the request and worker
 replies use the same bubbles as Chat, with tools in execution order. Press `d`

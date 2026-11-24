@@ -260,7 +260,7 @@ func TestTraceFinalizedInputPrecedesCleanupEvenWhenCancelled(t *testing.T) {
 			ctx, cancel := context.WithCancel(events.WithTrace(context.Background(), metrics.trace))
 			defer cancel()
 			done := make(chan error, 1)
-			go func() { _, err := p.transcribeTurn(ctx, metrics, turn); done <- err }()
+			go func() { _, err := p.transcribeTurn(ctx, metrics, turn, nil); done <- err }()
 			<-provider.entered
 			if cancelDuringClose {
 				cancel()

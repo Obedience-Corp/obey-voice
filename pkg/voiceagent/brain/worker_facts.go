@@ -2,6 +2,7 @@ package brain
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -23,44 +24,76 @@ const (
 
 // WorkerFactsPrompt renders the host's record of background jobs for a live
 // turn. A job the model is not told about is one it will deny, so a described
-// job carries its task, how long it has run, what it has done and who started
-// it, behind a lead-in that says what the list is. A list of identifiers
-// alone has nothing for the lead-in to explain and goes without it. Unfinished
-// jobs past the limit are counted, so none is silently left out. Provider and
+// job carries its task, how long it has run, what it has done, who started it
+// and whether its tools keep returning the same output, behind a lead-in that
+// says what the list is. A list of identifiers alone has nothing for the
+// lead-in to explain and goes without it. Unfinished jobs past the limit or
+// the byte ceiling are counted, so none is silently left out. Provider and
 // model names and pricing are deliberately excluded.
 func WorkerFactsPrompt(cfg *config.Config, facts []WorkerFact) string {
-	unlisted := 0
-	if len(facts) > workerFactLimit {
-		for _, fact := range facts[workerFactLimit:] {
-			if state := strings.TrimSpace(fact.State); state == "running" || state == "queued" {
+	type factRow struct {
+		text                        string
+		unfinished, described, same bool
+	}
+	var rows []factRow
+	size := len(workerFactsOpen) + len(workerFactsClose)
+	unlisted, cut := 0, false
+	for i, fact := range facts {
+		state := strings.TrimSpace(fact.State)
+		unfinished := state == "running" || state == "queued"
+		if i >= workerFactLimit || cut {
+			if unfinished {
 				unlisted++
 			}
+			continue
 		}
-		facts = facts[:workerFactLimit]
-	}
-	var lines strings.Builder
-	described := false
-	for _, fact := range facts {
 		line := workerFactLine(fact)
 		if line == "" {
 			continue
 		}
-		if len(workerFactsOpen)+lines.Len()+len(line)+len(workerFactsClose) > workerFactsBytes {
-			break
+		if size+len(line) > workerFactsBytes {
+			cut = true
+			if unfinished {
+				unlisted++
+			}
+			continue
 		}
-		lines.WriteString(line)
-		described = described || oneLine(fact.Task) != ""
+		rows = append(rows, factRow{text: line, unfinished: unfinished, described: oneLine(fact.Task) != "", same: strings.Contains(line, ` output="`)})
+		size += len(line)
 	}
-	if lines.Len() == 0 {
+	described := func() bool {
+		return slices.ContainsFunc(rows, func(r factRow) bool { return r.described })
+	}
+	footer := func() string {
+		if unlisted == 0 || !described() {
+			return ""
+		}
+		return fmt.Sprintf("\nunfinished jobs not listed: %d", unlisted)
+	}
+	// The footer must fit too; rows give way to it from the end.
+	for len(rows) > 0 && size+len(footer()) > workerFactsBytes {
+		last := rows[len(rows)-1]
+		rows, size = rows[:len(rows)-1], size-len(last.text)
+		if last.unfinished {
+			unlisted++
+		}
+	}
+	if len(rows) == 0 {
 		return ""
 	}
-	if !described {
+	var lines strings.Builder
+	for _, row := range rows {
+		lines.WriteString(row.text)
+	}
+	if !described() {
 		return workerFactsOpen + lines.String() + workerFactsClose
 	}
-	if unlisted > 0 {
-		fmt.Fprintf(&lines, "\nunfinished jobs not listed: %d", unlisted)
+	lines.WriteString(footer())
+	leadIn := "\n" + systemPrompt(cfg, "active-work", nil)
+	if slices.ContainsFunc(rows, func(r factRow) bool { return r.same }) {
+		leadIn += "\n" + systemPrompt(cfg, "active-work-same-output", nil)
 	}
-	return "\n" + systemPrompt(cfg, "active-work", nil) + workerFactsOpen + lines.String() + workerFactsClose
+	return leadIn + workerFactsOpen + lines.String() + workerFactsClose
 }
 
 func workerFactLine(fact WorkerFact) string {
@@ -85,6 +118,9 @@ func workerFactLine(fact WorkerFact) string {
 	}
 	if progress := oneLine(fact.Progress); progress != "" {
 		fmt.Fprintf(&b, " progress=%q", continuity.Clip(progress, workerFactProgressBytes))
+	}
+	if note := SameOutputNote(fact.SameOutput); state == "running" && note != "" {
+		fmt.Fprintf(&b, " output=%q", note)
 	}
 	return b.String()
 }
