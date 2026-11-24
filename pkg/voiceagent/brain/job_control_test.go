@@ -665,3 +665,16 @@ func TestJobControlIsNotCompletedByACompatibilityRetry(t *testing.T) {
 		t.Fatalf("requests = %d, result = %+v, control = %+v", len(sent()), turn.result, got)
 	}
 }
+
+type embeddedOllamaProvider struct{ *OllamaBrain }
+
+// A host's wrapper that embeds the Ollama provider still counts as one that
+// can be granted job control; the check asks the provider, not its type.
+func TestProviderEmbeddingOllamaDecodesJobControl(t *testing.T) {
+	if !DecodesJobControl(embeddedOllamaProvider{&OllamaBrain{}}) {
+		t.Fatal("a provider embedding the Ollama provider was not recognised")
+	}
+	if DecodesJobControl(nil) {
+		t.Fatal("no provider decodes job control")
+	}
+}

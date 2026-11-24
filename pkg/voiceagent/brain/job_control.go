@@ -213,3 +213,15 @@ func offersTool(tools api.Tools, name string) bool {
 func (o *OllamaBrain) spokenBeforeControl(output *ollama.Round) string {
 	return strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, output.EmittedText()))
 }
+
+// DecodesJobControl reports whether a provider's live turn can offer the
+// job_control tool and return its call for the host to settle: the Ollama
+// provider, and any provider that embeds it.
+func DecodesJobControl(p Provider) bool {
+	decoder, ok := p.(interface{ DecodesJobControl() bool })
+	return ok && decoder.DecodesJobControl()
+}
+
+// DecodesJobControl marks the Ollama provider as one whose stream loop
+// intercepts a job_control call.
+func (o *OllamaBrain) DecodesJobControl() bool { return true }

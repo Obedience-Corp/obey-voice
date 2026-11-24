@@ -54,7 +54,7 @@ func (p *Pipeline) freezeControlTurn(ctx context.Context, metrics *turnMetrics, 
 	if id := metrics.response.PersonaID; ok && id != "" && personaKey(id) != persona {
 		ok = false
 	}
-	_, ollama := p.Brain.(*brain.OllamaBrain)
+	ollama := brain.DecodesJobControl(p.Brain)
 	if ok && ollama && opts.JobControl && opts.ToolsEnabled && opts.RouterToolsPolicy == brain.RouterToolsDirect && cfg != nil && cfg.VoiceJobControl {
 		frozen.token = p.controlTurns.Add(1)
 		frozen.persona = persona
