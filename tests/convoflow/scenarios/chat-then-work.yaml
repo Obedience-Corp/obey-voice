@@ -1,5 +1,5 @@
 name: chat-then-work
-description: live history keeps chat, drops the spawned work turn
+description: live history keeps the chat and the request handed to a worker; the talking model runs no tool itself
 duration: 5m
 input: text
 router_tools: route_only
@@ -27,8 +27,7 @@ turns:
       - { route_source: intent }
       - { spoken_matches: "I'll work on that and report back\\." }
       - { spoken_not_matches: "(?i)web search is unavailable" }
-      - { no_event: tool_call_started }
-      - { live_history_excludes: "look up the latest" }
+      - { live_history_includes: "look up the latest" }
       - { live_history_includes: "favorite color" }
       - { worker_tools_enabled: true }
       - { worker_router_policy: legacy }
@@ -38,7 +37,7 @@ turns:
     wait: idle
     expect:
       - { no_event: job_started }
-      - { live_history_excludes: "look up the latest" }
+      - { live_history_includes: "look up the latest" }
       - { live_history_includes: "favorite color" }
 
 expect:

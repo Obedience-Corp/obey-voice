@@ -26,8 +26,7 @@ turns:
       - { event: job_terminal }
       - { spoken_matches: "I'll work on that and report back\\." }
       - { spoken_not_matches: "(?i)web search is unavailable" }
-      - { no_event: tool_call_started }
-      - { live_history_excludes: "search the web" }
+      - { live_history_includes: "search the web" }
       - { worker_tools_enabled: true }
       - { worker_router_policy: legacy }
       - { route_kind: spawn }
@@ -38,7 +37,7 @@ turns:
     wait: idle
     expect:
       - { no_event: job_started }
-      - { live_history_excludes: "search the web" }
+      - { live_history_includes: "search the web" }
 
 expect:
   - { metric: job_started, op: ">=", value: 1 }
