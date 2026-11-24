@@ -1,0 +1,11 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: active-work-same-output
+  kind: system
+  system_prompt: >-
+    [A job with output="same output for N rounds" got the same result from its
+    tools that many rounds in a row, which can be normal while it waits for
+    something to change.]
+metadata:
+  version: 1
+  description: Explains the same-output note in the host's list of background jobs; sent only while a listed job carries it.

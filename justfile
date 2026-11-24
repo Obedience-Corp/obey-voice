@@ -159,6 +159,19 @@ demo-workers-stopping: build
     just _optimize-demo-gif demos/workers-stopping.gif
     ls -lh demos/workers-stopping.gif demos/frames/workers-stopping.png demos/frames/workers-stopped.png demos/frames/workers-stopped-detail.png
 
+# Workers manager: a job whose tools keep returning the same output (fixture, no model).
+demo-workers-same-output: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    go test -c -o bin/demo-terminal.test ./cmd/obey-voice/cmd
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/workers-same-output.tape
+    just _optimize-demo-gif demos/workers-same-output.gif
+    ls -lh demos/workers-same-output.gif demos/frames/workers-same-output.png demos/frames/workers-same-output-detail.png
+
 # Browse sessions: view a saved conversation read-only, then delete one.
 # Fixture sessions in a disposable install; nothing is opened or spoken.
 demo-sessions-browse: build
