@@ -1,0 +1,34 @@
+name: job-control-cancel
+description: on the direct router with job control on, "cancel that job" reaches the persona, whose job_control call the host applies once to the job it handed off; one host line, no new job
+duration: 6m
+input: text
+router_tools: legacy
+brain: { job_control: true }
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: hand-off
+    user: "Work on this in the background: write ten small numbered files, one at a time, each with one short sentence, then list the directory and read each file back."
+    wait: worker_tool
+    timeout: 3m
+    expect:
+      - { event: job_started }
+      - { route_kind: spawn }
+      - { no_event: job_terminal }
+
+  - id: cancel
+    user: "cancel that job"
+    wait: idle
+    timeout: 3m
+    expect:
+      - { route_kind: job.control }
+      - { job_control: applied }
+      - { abort_reason: cancelled }
+      - { no_event: job_started }
+      - { spoken_once: "(?i)\\bstopped\\b|\\bcancelled\\b" }
+
+expect:
+  - { metric: job_started, op: "==", value: 1 }
+  - { metric: job_aborted, op: "==", value: 1 }
+  - { metric: job_finished, op: "==", value: 0 }

@@ -234,7 +234,7 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 		return admitted, wrapIdentityRefusalFailure(ctx, "route_exact_control", err)
 	}
 	s.setGroupParticipants(participants)
-	admitted.Request = exact.Address.Remainder
+	admitted.Request, admitted.Command = exact.Address.Remainder, exact.Address.Command
 	if exact.Address.Bare {
 		admitted.LocalReply = selected.DisplayName + " here."
 	} else if greeting {

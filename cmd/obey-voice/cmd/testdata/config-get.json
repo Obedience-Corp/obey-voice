@@ -690,6 +690,10 @@
       "value": 1,
       "source": "default"
     },
+    "voice_job_control": {
+      "value": false,
+      "source": "default"
+    },
     "voice_router_tools": {
       "value": "direct",
       "source": "default"

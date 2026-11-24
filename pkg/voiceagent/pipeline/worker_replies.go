@@ -35,6 +35,9 @@ type workerOrigin struct {
 	// noImage marks a result without the image its task asked for, which a
 	// correction may have dropped.
 	noImage bool
+	// cleared marks a job whose conversation was cleared in a host without a
+	// conversation identity; no persona controls it any more.
+	cleared bool
 }
 type workerReply struct {
 	Attachments []chatmedia.Ref

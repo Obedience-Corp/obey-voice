@@ -49,6 +49,10 @@ type StreamOptions struct {
 	// BackgroundWorker lets an ordinary live Ollama turn hand its original
 	// request to the host before performing side effects.
 	BackgroundWorker bool
+	// JobControl says the host can authorize a job control from this turn: a
+	// live turn answering a person. An Ollama brain whose configuration turns
+	// voice_job_control on then offers the job_control tool on a direct turn.
+	JobControl bool
 	// WorkerFacts are the host's record of existing jobs, supplied so a reply
 	// can speak about them truthfully. They contain no provider data.
 	WorkerFacts []WorkerFact
@@ -186,6 +190,10 @@ type StreamResult struct {
 	// RouteTier and RouteReasonCode carry the route tool's bounded metadata.
 	RouteTier       config.WorkerTierName
 	RouteReasonCode string
+	// JobControl is set, with Route JobControlRoute, when the turn ended at a
+	// job_control call: the decoded request, or why it was refused. Nothing
+	// in that batch ran.
+	JobControl *JobControl
 }
 
 // WorkerTierAvailability is the only worker policy exposed to the live

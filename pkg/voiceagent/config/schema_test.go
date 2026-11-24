@@ -271,7 +271,7 @@ func TestPersonaOverridableMatchesApplyRoutingTable(t *testing.T) {
 		"active_persona", "agent_name", "audio8_voice", "brain_provider", "claude_model", "codex_model", "cursor_model", "grok_model",
 		"muse_spark_model", "obey_model", "ollama_model", "openai_speech_voice", "persona", "qwen_tts_model_tier", "qwen_tts_voice",
 		"tts_provider", "tts_voice",
-		"voice_router_tools", "voice_worker_model", "voice_worker_ollama_host", "voice_worker_provider",
+		"voice_job_control", "voice_router_tools", "voice_worker_model", "voice_worker_ollama_host", "voice_worker_provider",
 	}
 	var got []string
 	for _, spec := range Schema() {

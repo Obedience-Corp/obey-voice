@@ -129,7 +129,10 @@ func (p *Pipeline) ClearConversation() error {
 		// Work-disabled sessions still need an epoch fence for clear/restore.
 		next := work.WorkScope{SessionID: scope.SessionID, RuntimeEpoch: newWorkID(), ConversationEpoch: newWorkID()}
 		p.adoptConversationScope(next)
+	} else if p.Agency != nil {
+		p.Agency.forgetOrigins()
 	}
+	p.revokeJobControl()
 	if p.Brain != nil {
 		p.reclaimMovedBrain()
 		if _, fenced := p.Brain.(brain.RequestAbandoner); fenced {

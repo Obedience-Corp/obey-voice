@@ -24,8 +24,11 @@ type Identity struct {
 type Address struct {
 	PersonaID string
 	Remainder string
-	Reason    string
-	Bare      bool
+	// Command is the transcript with the recognized address taken off, when
+	// Remainder keeps the whole transcript for the model.
+	Command string
+	Reason  string
+	Bare    bool
 	// Invited are the further personas an agent response @mentioned after
 	// PersonaID, in mention order and without repeats.
 	Invited []string

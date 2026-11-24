@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
@@ -72,6 +73,15 @@ type turnMetrics struct {
 	// routedNote is saved with the routed reply as its host note, for the
 	// model only; it is never spoken or shown.
 	routedNote string
+	// controlTurn is what a live turn froze for a job_control call, and
+	// jobControl is the call or refusal its model request ended at.
+	controlTurn *controlTurn
+	jobControl  *brain.JobControl
+	// controlSpoken marks a control's preamble already spoken as it streamed.
+	controlSpoken bool
+	// recognized is the recognizer's text of this voice input when a
+	// corrector changed it.
+	recognized string
 	// bargeInMu guards bargeIn and speech cancellation shared by the turn and
 	// the TUI's out-of-band keystroke stop.
 	bargeInMu sync.Mutex

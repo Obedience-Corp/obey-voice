@@ -88,6 +88,11 @@ func (o *OllamaBrain) chatJSONRoute(ctx context.Context, original *api.ChatReque
 	}); err != nil {
 		return fmt.Errorf("json route: %w", err)
 	}
+	// A job_control call is never offered here; it is passed on so the turn
+	// refuses it instead of reading it as a malformed route.
+	if callsTool(response.Message.ToolCalls, jobControlToolName) {
+		return fn(response)
+	}
 	args, decodeErr := decodeRouteRecovery(response, route.Parameters)
 	if decodeErr != nil {
 		decodeErr = fmt.Errorf("%w %s", decodeErr, routeDecisionDiagnostics(response))

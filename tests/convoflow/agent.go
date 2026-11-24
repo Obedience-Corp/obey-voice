@@ -34,6 +34,7 @@ type runProfile struct {
 	Input          string `yaml:"input" json:"input"`
 	RouterTools    string `yaml:"router_tools" json:"router_tools"`
 	ToolsEnabled   bool   `yaml:"voice_tools_enabled" json:"voice_tools_enabled"`
+	JobControl     bool   `yaml:"voice_job_control" json:"voice_job_control"`
 	TTSProvider    string `yaml:"tts_provider" json:"tts_provider"`
 	TTSVoice       string `yaml:"tts_voice,omitempty" json:"tts_voice,omitempty"`
 	WorkDir        string `yaml:"work_dir" json:"work_dir"`
@@ -73,6 +74,7 @@ func resolveConfig(base *config.Config, scn *Scenario, k knobs, runDir string) (
 	if strings.EqualFold(scn.RouterTools, string(brain.RouterToolsLegacy)) {
 		local.VoiceRouterTools = string(brain.RouterToolsLegacy)
 	}
+	local.VoiceJobControl = scn.Brain.JobControl
 
 	workDir := filepath.Join(runDir, "work")
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
@@ -95,6 +97,7 @@ func resolveConfig(base *config.Config, scn *Scenario, k knobs, runDir string) (
 		Input:          scn.Input,
 		RouterTools:    local.VoiceRouterTools,
 		ToolsEnabled:   local.VoiceToolsEnabled,
+		JobControl:     local.VoiceJobControl,
 		TTSProvider:    local.TTSProvider,
 		TTSVoice:       local.TTSVoice,
 		WorkDir:        workDir,

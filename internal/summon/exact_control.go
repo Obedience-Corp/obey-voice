@@ -39,7 +39,7 @@ func (r *Roster) ResolveForegroundControl(text string) ExactControl {
 		return matched
 	}
 	if address.PersonaID != "" && address.Reason == ReasonVocative {
-		address.Remainder = text
+		address.Command, address.Remainder = address.Remainder, text
 		return ExactControl{Kind: ExactControlValid, Address: address}
 	}
 	return matched

@@ -437,3 +437,13 @@ func TestBareNameSwitchAcknowledgementDoesNotImportForeignCompaction(t *testing.
 		t.Fatalf("saved=%+v", saved)
 	}
 }
+
+// An addressed request reaches the model whole and carries the command
+// without its address for the host's own checks.
+func TestAddressedRequestCarriesItsCommand(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "samantha"))
+	admitted, err := f.selector.Route(t.Context(), "Hello Santa, stop.", false)
+	if err != nil || admitted.Envelope.PersonaID != "santa" || admitted.Request != "Hello Santa, stop." || admitted.Command != "stop." {
+		t.Fatalf("admitted = %+v, err = %v", admitted, err)
+	}
+}

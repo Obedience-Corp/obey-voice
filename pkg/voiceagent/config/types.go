@@ -318,6 +318,11 @@ type Config struct {
 	// single_call select worker routing. Older configurations may spell direct
 	// as legacy. A persona's brain.router overrides it.
 	VoiceRouterTools string `mapstructure:"voice_router_tools"`
+	// VoiceJobControl offers the speaking Ollama persona the job_control tool
+	// on its direct live turns, so it can cancel, ask a report of, or correct
+	// one of its own background jobs. Off by default. A persona's
+	// brain.job_control overrides it.
+	VoiceJobControl bool `mapstructure:"voice_job_control"`
 	// VoiceWorkNarration is how much a background worker narrates itself:
 	// status_only (default) speaks only when asked, milestones speaks one short
 	// line each time the worker moves from one kind of work to another.

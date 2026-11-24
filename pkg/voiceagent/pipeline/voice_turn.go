@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 // RunTurn executes one conversational turn with streaming TTS.
 // Returns the user's input text, or empty string if no speech was detected.
 func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
+	ctx = p.enterForeground(ctx)
 	p.incActiveTurn()
 	defer p.decActiveTurn()
 	if p.BeforeCapture != nil {
@@ -249,6 +251,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		RouteJSON:         p.liveRouteJSON(),
 		BackgroundWorker:  p.liveRouterToolsPolicy() == brain.RouterToolsDirect && p.backgroundWorkerAvailable(),
+		JobControl:        !nativeConversation && !isContinuation && admission.Discussion == nil && p.Agency != nil,
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
 		OnToolEnd:         p.toolEndHook(ctx),
 		OnUsage:           p.usageHook(),
@@ -263,6 +266,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	if ordinary != nil {
 		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)
 	}
+	p.freezeControlTurn(ctx, metrics, streamOpts, cmp.Or(admission.Command, text), original)
 
 	metrics.modelRequest = time.Now()
 	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)
@@ -440,6 +444,9 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 			case stt.KindFinalTranscript:
 				metrics.sttFinal = time.Now()
 				metrics.acousticName = te.AcousticName
+				if fin, ok := event.(stt.FinalTranscript); ok {
+					metrics.recognized = fin.Recognized
+				}
 				return te.Text, nil
 			case stt.KindYieldedForCompletion:
 				if event, ok := event.(stt.YieldedForCompletion); ok {

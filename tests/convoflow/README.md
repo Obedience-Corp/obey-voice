@@ -21,6 +21,8 @@ just convoflow run work-stream-cancel                 # "kill it" aborts the run
 just convoflow run work-stream-tell                   # after the worker's first tool call, a typed correction (op work_tell) is included by the running job, which finishes with the corrected file
 just convoflow run work-stream-report                 # after the worker's first tool call, a typed report (op work_report) makes the job answer without tools: finished, cut short "report requested", and spoken
 just convoflow run work-stream-boundary               # a worker told to leave the campaign is refused by its tools (boundary_refusals >= 1)
+just convoflow run job-control-cancel                 # direct router, job control on: the persona hands work off, then "cancel that job" is its job_control call, applied once (route job.control, job_aborted cancelled, one host line, no new job)
+just convoflow run job-control-off                    # the same two turns with job control off: "cancel that job" reaches the persona, which cannot end a job; no settlement and no job_aborted in that turn
 just convoflow run search-web-intent -worker-provider=grok   # comparison, not the gate
 ```
 
@@ -76,6 +78,15 @@ turn fails unless the report is accepted. `cut_short: <reason>` wants a
 start after its `job_report`. `wait: report_spoken` ends once the reported
 job's result was delivered spoken (`job_result_delivered` with `Spoken`) and
 playback is idle.
+
+`brain: { job_control: true }` sets the run's `voice_job_control`, whatever the
+operator's config says (omitted, it is off); it needs `router_tools: legacy`,
+the direct router. `job_control: applied` (or `refused`, optionally with
+`:<outcome or reason>` such as `applied:stopped` or `refused:bare_stop`) wants
+the host's settlement of a persona's `job_control` call in the turn, published
+as a `route.decided` event of kind `job.control`; `job_control: none` wants no
+settlement. `abort_reason: cancelled` wants a `job_aborted` with that reason,
+and `spoken_once: <regex>` exactly one match in what the turn spoke.
 
 Two no-model paths exist, neither is the gate:
 

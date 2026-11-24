@@ -15,6 +15,8 @@ import (
 // ThinkFull sends input and waits for the complete response.
 func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOptions) (answer string, resultErr error) {
 	o.turnStarted.Store(true)
+	// Only the stream loop ends a turn at a job_control call.
+	opts.JobControl = false
 	if opts.TransientHistory {
 		ctx = context.WithValue(ctx, disableOutageRetryKey{}, true)
 	} else {

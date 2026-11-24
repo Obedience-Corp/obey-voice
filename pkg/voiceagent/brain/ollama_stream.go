@@ -108,6 +108,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 		rounds := newToolRounds(o.cfg, opts)
 		workerAvailable := opts.canHandOff()
+		// With job control on, a job_control call ends the turn wherever it
+		// appears; the host decides what it does.
+		catchControl := o.catchesJobControl()
+		endAt := ""
+		if catchControl {
+			endAt = jobControlToolName
+		}
 		inspectedLocally := false
 		for i := 0; rounds.more(i); i++ {
 			finalAnswer, finalInstruction := rounds.final(ctx, i)
@@ -117,6 +124,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				tools = sess.tools()
 				if handoff {
 					tools = withBackgroundWork(tools)
+				}
+				if imageRepair != "" || routeRetried {
+					tools = withoutJobControl(tools)
 				}
 			}
 
@@ -211,6 +221,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				PreviousReply: prior,
 				Discussion:    opts.Discussion,
 				Hold:          checkImageResult || finalAnswer,
+				EndAtTool:     endAt,
 			})
 			receive := output.Receiver(o.estimateTokens(skillCtx), responseLimit.observe, o.emitContinuityBudget)
 			chat := o.chat
@@ -224,6 +235,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				requestCtx, cancelRequest = rounds.answerContext(ctx)
 			}
 			requestCtx = withModelRequestPurpose(requestCtx, single.purpose(roundPurpose(routing, continuation != "")))
+			offered := false
+			requestCtx = withOfferProbe(requestCtx, &offered)
 			roundStarted := time.Now()
 			err := chat(requestCtx, req, receive)
 			cancelRequest()
@@ -232,6 +245,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			err = output.FlushFilters(err)
 			chatText, err := single.settle(output, o.cfg.AgentName, err)
 			toolCalls = output.ToolCalls
+			controlCalled := callsTool(toolCalls, jobControlToolName)
 			missingRoute := err == nil && routing && len(toolCalls) == 0 && !chatText
 			var invalidImage error
 			if checkImageResult && err == nil && len(toolCalls) == 0 && !single.deciding {
@@ -266,7 +280,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				continue
 			}
-			if err == nil && output.Repeated() {
+			if err == nil && output.Repeated() && !controlCalled {
 				if opts.Discussion != nil {
 					done <- StreamResult{Err: fmt.Errorf("group reply repeated a prior answer"), Recovered: true}
 					return
@@ -290,6 +304,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				repetitionAllowed = true
 			}
 			err = output.FinishSpeech(err)
+			if err != nil && ctx.Err() == nil && controlCalled {
+				control := JobControl{Refusal: JobControlIncomplete, Spoken: o.spokenBeforeControl(output)}
+				done <- StreamResult{Err: fmt.Errorf("ollama stream: %w", err), Recovered: true, Route: JobControlRoute, JobControl: &control}
+				return
+			}
 			if err != nil {
 				if finalAnswer {
 					if cut := rounds.cutOff(ctx, requestCtx, output.HeldText()); cut != nil {
@@ -310,6 +329,15 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 			if opts.Discussion != nil && len(toolCalls) > 0 {
 				done <- StreamResult{Err: fmt.Errorf("tools are disabled for group discussion"), Recovered: true}
+				return
+			}
+			// A batch with a job_control call runs nothing: not the control,
+			// not its siblings, not a hand-off, and no retry is asked for. The
+			// turn ends at the call, refused unless this very request offered it.
+			if controlCalled {
+				complete := output.Usage.Complete && output.Usage.DoneReason != "length"
+				control := decodeJobControl(toolCalls, offered, complete, o.spokenBeforeControl(output))
+				done <- StreamResult{Route: JobControlRoute, JobControl: &control}
 				return
 			}
 			if !opts.ToolsEnabled && len(toolCalls) > 0 {

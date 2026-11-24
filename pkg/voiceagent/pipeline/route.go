@@ -23,6 +23,9 @@ const (
 	RouteNarrateStop   RouteKind = "narrate.stop"
 	RouteJobAbort      RouteKind = "job.abort"
 	RouteJobStatus     RouteKind = "job.status"
+	// RouteJobControl is a live turn that ended at the persona's job_control
+	// call; the call itself travels in the turn's metrics.
+	RouteJobControl RouteKind = "job.control"
 )
 
 // RouteContext supplies mode guards for Layer 1 phrase routing.
@@ -291,7 +294,7 @@ func routeKindSkipsBrain(kind RouteKind) bool {
 	switch kind {
 	case RouteSpawn, RouteNarrate,
 		RouteNarratePause, RouteNarrateResume, RouteNarrateSkip, RouteNarrateStop,
-		RouteJobAbort, RouteJobStatus:
+		RouteJobAbort, RouteJobStatus, RouteJobControl:
 		return true
 	default:
 		return false
@@ -379,6 +382,8 @@ func routeKindFromBrain(route string) RouteKind {
 		return RouteSpawn
 	case "narrate":
 		return RouteNarrate
+	case brain.JobControlRoute:
+		return RouteJobControl
 	default:
 		return RouteChat
 	}

@@ -72,7 +72,7 @@ func TestWithCorrectionRewritesFinalTranscriptsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := collect(t, s)
-	want := []Event{PartialTranscript{Text: "veronika"}, InputLevel{Level: 0.5}, FinalTranscript{Text: "TELL VERONIKA", AcousticName: "Obey"}, Timeout{}}
+	want := []Event{PartialTranscript{Text: "veronika"}, InputLevel{Level: 0.5}, FinalTranscript{Text: "TELL VERONIKA", AcousticName: "Obey", Recognized: "tell veronika"}, Timeout{}}
 	if len(got) != len(want) {
 		t.Fatalf("events = %v, want %v", got, want)
 	}
@@ -167,5 +167,23 @@ func TestWithCorrectionNilArguments(t *testing.T) {
 	}
 	if got := WithCorrection(nil, funcCorrector(upper), nil); got != nil {
 		t.Fatal("nil provider should stay nil")
+	}
+}
+
+// A stacked correction keeps what the recognizer heard, not what the inner
+// correction made of it.
+func TestStackedCorrectionsKeepTheRecognizedText(t *testing.T) {
+	inner := &fakeSession{events: make(chan Event, 2)}
+	inner.events <- FinalTranscript{Text: "stop"}
+	inner.Close()
+	first := WithCorrection(&fakeProvider{session: inner}, funcCorrector(func(context.Context, string) (string, error) { return "stop the download", nil }), nil)
+	second := WithCorrection(first, funcCorrector(func(context.Context, string) (string, error) { return "cancel the download", nil }), nil)
+	s, err := second.Start(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := collect(t, s)
+	if len(got) != 1 || got[0] != (FinalTranscript{Text: "cancel the download", Recognized: "stop"}) {
+		t.Fatalf("events = %#v", got)
 	}
 }

@@ -17,6 +17,15 @@ pick a larger, costlier model.
 example `router: single_call` to have an Ollama persona answer chat in one
 request. Empty inherits the app setting.
 
+`brain.job_control` sets this persona's
+[`voice_job_control`](configuration.md#persona-job-control-voice_job_control):
+`job_control: true` lets an Ollama persona on the direct router cancel, ask a
+report of, or correct one of its own background jobs when you ask, and `false`
+keeps it from doing so whatever the app setting says. Left out, it inherits the
+app setting, which is off. See
+[A persona controlling its own jobs](delegation.md#a-persona-controlling-its-own-jobs)
+for what the host checks and says.
+
 Profiles also accept an optional `audio` section for native audio implementation
 work. Existing profiles omit it and keep Standard behavior. Native activation
 is currently unavailable: a saved native draft is rejected before selection or

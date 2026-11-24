@@ -64,6 +64,7 @@ func (o *OllamaBrain) turnToolSession(opts StreamOptions) *toolSession {
 	if o.offersViewImage(opts) {
 		s.viewImage = o.viewImage
 	}
+	s.jobControl = o.offersJobControl(opts)
 	return s
 }
 
@@ -171,9 +172,11 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 		}
 		var input, output int
 		delivered := false
+		deliveredControl := false
 		completed := false
 		var callbackErr error
 		answered := false
+		noteOffered(ctx, req.Tools)
 		err := o.clientChat(ctx, req, func(resp api.ChatResponse) error {
 			if !answered {
 				answered = true
@@ -184,6 +187,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 				input, output = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
 			}
 			delivered = delivered || resp.Message.Content != "" || resp.Message.Thinking != "" || len(resp.Message.ToolCalls) > 0 || resp.Done
+			deliveredControl = deliveredControl || callsTool(resp.Message.ToolCalls, jobControlToolName)
 			callbackErr = fn(resp)
 			return callbackErr
 		})
@@ -233,6 +237,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			}
 			parseRetried, retrying = true, true
 			repaired := *req
+			repaired.Tools = withoutJobControl(req.Tools)
 			repaired.Messages = append(append([]api.Message(nil), req.Messages...), api.Message{Role: "user", Content: toolParseRetryInstruction})
 			if budgetErr := o.messagesBudgetError(repaired.Messages, repaired.Tools); budgetErr != nil {
 				return budgetErr
@@ -244,8 +249,9 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			parseRetryPending = true
 			continue
 		}
-		rejectedTools := err != nil && req.Tools != nil && modelRejectedTools(err)
-		rejectedThink := err != nil && thinkEnabled(req.Think) && modelRejectedThink(err)
+		// A retry cannot finish a job_control call the failed attempt sent.
+		rejectedTools := err != nil && req.Tools != nil && modelRejectedTools(err) && !deliveredControl
+		rejectedThink := err != nil && thinkEnabled(req.Think) && modelRejectedThink(err) && !deliveredControl
 		if !rejectedTools && !rejectedThink {
 			budget.RecordUsage(input, output)
 			if limitErr := budget.Err(); limitErr != nil {

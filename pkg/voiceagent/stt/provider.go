@@ -95,6 +95,8 @@ type FinalTranscript struct {
 	// AcousticName is independent keyword evidence from this utterance only.
 	AcousticName string
 	Text         string
+	// Recognized is the recognizer's own text when a corrector changed it.
+	Recognized string
 }
 
 func (e FinalTranscript) sttEvent() string { return "final_transcript" }

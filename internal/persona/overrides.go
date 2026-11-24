@@ -60,6 +60,18 @@ var personaRoutes = []struct {
 		func(c *config.Config, v string) { c.QwenTTSModelTier = v }},
 }
 
+// personaSwitches are the on/off keys Apply may overwrite. A switch cannot
+// hold the probe value, so each is probed from both of its values: Apply
+// writes it when either one does not survive.
+var personaSwitches = []struct {
+	key   string
+	read  func(*config.Config) bool
+	write func(*config.Config, bool)
+}{
+	{"voice_job_control", func(c *config.Config) bool { return c.VoiceJobControl },
+		func(c *config.Config, v bool) { c.VoiceJobControl = v }},
+}
+
 // routingKeys are the two keys Apply reads back while routing the others: the
 // model key depends on the effective brain provider and the voice key on the
 // effective TTS provider. They are probed in a second pass so the first pass
@@ -91,6 +103,17 @@ func OverriddenKeys(cfg *config.Config, p *Profile) []string {
 			out = append(out, route.key)
 		}
 	}
+	for _, sw := range personaSwitches {
+		for _, value := range []bool{false, true} {
+			probe := *cfg
+			sw.write(&probe, value)
+			Apply(&probe, p)
+			if sw.read(&probe) != value {
+				out = append(out, sw.key)
+				break
+			}
+		}
+	}
 	if p.Brain.WorkerTiers.HasOverrides() && cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
 		out = append(out, "brain.worker_tiers")
 	}
@@ -120,9 +143,12 @@ func probeWrites(cfg *config.Config, p *Profile, selected func(string) bool) map
 // OverridableKeys returns every key a persona could override, in routing-table
 // order. It is the universe the schema's persona_overridable flag describes.
 func OverridableKeys() []string {
-	out := make([]string, 0, len(personaRoutes))
+	out := make([]string, 0, len(personaRoutes)+len(personaSwitches))
 	for _, route := range personaRoutes {
 		out = append(out, route.key)
+	}
+	for _, sw := range personaSwitches {
+		out = append(out, sw.key)
 	}
 	return out
 }
