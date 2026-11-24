@@ -301,7 +301,7 @@ func TestOnlyWorkTellIsKeptFromImagePaths(t *testing.T) {
 // 6. A call a correction kept from running is not shown as the later call
 // that ran with the same provider id.
 func TestWorkerThreadLeavesSkippedCallsUnmatched(t *testing.T) {
-	item := pipeline.WorkerInfo{ID: "job-1", Task: "read the notes", Thread: []brain.Turn{
+	item := pipeline.WorkerInfo{ID: "job-1", Task: "read the notes", Correction: "correction included", Thread: []brain.Turn{
 		{Role: "user", Content: "read the notes"},
 		{Role: "assistant", ToolCalls: []brain.TurnToolCall{{ID: "c", Name: "read_file", Arguments: `{"path":"a.txt"}`}}},
 		{Role: "tool", ToolCallID: "c", ToolName: "read_file", Content: brain.ToolNotRunCorrection},

@@ -42,6 +42,9 @@ const (
 	// WorkSteer gives a job a correction, which it reads at its next model
 	// request or tool call, or in its brief if it has not started.
 	WorkSteer WorkAction = "steer"
+	// WorkReport asks a running job what it has done so far, and to stop
+	// using tools and answer with it.
+	WorkReport WorkAction = "report"
 )
 
 // WorkRequest names the action and the job, or every job with All.
@@ -71,7 +74,7 @@ const (
 	// ControlRejected: the actor may not control this job, or the owner refused.
 	ControlRejected ControlOutcome = "rejected"
 	// ControlAccepted: a correction waits for the running worker's next
-	// model request or tool call.
+	// model request or tool call, or the running worker reports.
 	ControlAccepted ControlOutcome = "accepted"
 	// ControlBriefed: the job had not started; the correction was added to
 	// the brief its worker will read.
@@ -84,13 +87,16 @@ type JobControl struct {
 	Outcome ControlOutcome
 	// Managed marks a task owned by an Obey-managed delegation runtime.
 	Managed bool
-	// Queued means the cancel found the job waiting to start.
+	// Queued means the control found the job waiting to start.
 	Queued bool
 	// Ran is how long the job had run when the cancel landed.
 	Ran    time.Duration
 	Reason string
 	// Revision numbers an accepted correction within its job.
 	Revision int
+	// Checkpoint is what a running job had done when a report was asked of
+	// it: its folded activity, or noActivity.
+	Checkpoint string
 }
 
 // WorkReceipt says what a control was accepted for and what has been
@@ -155,6 +161,8 @@ func (a *Agency) ControlWork(actor WorkActor, req WorkRequest) WorkReceipt {
 	switch {
 	case req.Action == WorkSteer:
 		a.steerJob(&receipt)
+	case req.Action == WorkReport:
+		a.reportJob(&receipt)
 	case req.Action != WorkCancel:
 		receipt.Rejected = fmt.Sprintf("unsupported work action %q", req.Action)
 	case !req.All && req.JobID == "":

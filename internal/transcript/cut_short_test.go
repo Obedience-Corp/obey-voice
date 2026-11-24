@@ -30,3 +30,14 @@ func TestCorrectionRecordsKeepTheirIdentity(t *testing.T) {
 		t.Fatalf("records = %+v, %+v", first, second)
 	}
 }
+
+func TestReportRecordsKeepTheCheckpoint(t *testing.T) {
+	answered, ok := encodeEvent(events.JobReport{ID: "job-1", Checkpoint: "read 2 files", Answer: true})
+	only, _ := encodeEvent(events.JobReport{ID: "job-2", Checkpoint: "ran 3 commands"})
+	if !ok || answered.JobID != "job-1" || answered.Text != "read 2 files" || answered.State != "report_requested" || answered.Kind != "" || only.Kind != "checkpoint_only" {
+		t.Fatalf("records = %+v, %+v", answered, only)
+	}
+	if !recordedEventTypes["job_report"] {
+		t.Fatal("job_report is not recorded")
+	}
+}

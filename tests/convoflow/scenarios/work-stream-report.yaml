@@ -1,0 +1,39 @@
+name: work-stream-report
+description: a job asked for its report from the keyboard after its first tool call stops using tools and hands over what it did, finished and cut short with "report requested"; no model decides whether the report is accepted
+duration: 9m
+input: text
+router_tools: route_only
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: spawn
+    user: "in the work directory, write five small text files one at a time: one.txt, two.txt, three.txt, four.txt and five.txt, each holding its own number as a word; then list the directory"
+    wait: worker_tool
+    timeout: 3m
+    expect:
+      - { event: job_queued }
+      - { event: job_started }
+      - { route_kind: spawn }
+      - { no_event: job_terminal }
+
+  - id: report
+    op: work_report
+    wait: job_terminal
+    timeout: 4m
+    expect:
+      - { event: job_report }
+      - { cut_short: report requested }
+      - { no_event: job_queued }
+      - { tools_stop_after_report: true }
+
+  - id: answer
+    wait: report_spoken
+    timeout: 2m
+
+expect:
+  - { metric: job_started, op: "==", value: 1 }
+  - { metric: job_finished, op: "==", value: 1 }
+  - { metric: job_aborted, op: "==", value: 0 }
+  - { metric: job_failed, op: "==", value: 0 }
+  - { metric: crackle_failing_wavs, op: "==", value: 0 }

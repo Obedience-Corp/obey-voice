@@ -43,7 +43,7 @@ func workerThreadEntries(item pipeline.WorkerInfo) []workerThreadEntry {
 	if !hasRequest && item.Task != "" {
 		entries = append(entries, workerThreadEntry{role: "user", text: item.Task})
 	}
-	skipped := skippedWorkerCalls(item.Thread)
+	skipped := skippedWorkerCalls(item)
 	for i, turn := range item.Thread {
 		switch turn.Role {
 		case "user", "assistant":
@@ -52,7 +52,7 @@ func workerThreadEntries(item pipeline.WorkerInfo) []workerThreadEntry {
 			}
 			for k, call := range turn.ToolCalls {
 				tool := &workerThreadTool{call: workfold.Call{ID: call.ID, Name: call.Name, Status: "unknown"}, arguments: call.Arguments, order: -1}
-				// A call a correction kept from running fired no events.
+				// A call a correction or a report kept from running fired no events.
 				if !skipped[[2]int{i, k}] {
 					matchWorkerCall(tool, item.Tools, used)
 				}
@@ -111,8 +111,14 @@ func workerThreadEntries(item pipeline.WorkerInfo) []workerThreadEntry {
 }
 
 // skippedWorkerCalls pairs each assistant turn's calls with the results that
-// follow it, by id or in order, and marks those a correction kept from running.
-func skippedWorkerCalls(thread []brain.Turn) map[[2]int]bool {
+// follow it, by id or in order, and marks those a correction or a report kept
+// from running. A marker counts only for a job that accepted a correction or
+// a report: in any other job it is what a tool returned.
+func skippedWorkerCalls(item pipeline.WorkerInfo) map[[2]int]bool {
+	thread := item.Thread
+	notRun := func(content string) bool {
+		return item.Correction != "" && content == brain.ToolNotRunCorrection || item.Report != "" && content == brain.ToolNotRunReport
+	}
 	skipped := map[[2]int]bool{}
 	for i, turn := range thread {
 		paired := make([]bool, len(turn.ToolCalls))
@@ -123,7 +129,7 @@ func skippedWorkerCalls(thread []brain.Turn) map[[2]int]bool {
 					continue
 				}
 				paired[k] = true
-				if result.Content == brain.ToolNotRunCorrection {
+				if notRun(result.Content) {
 					skipped[[2]int{i, k}] = true
 				}
 				break

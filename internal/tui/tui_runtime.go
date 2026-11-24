@@ -202,8 +202,11 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 	var runner turnRunner = msg.rt.Pipeline
 	if demoWorkCueEnabled() {
 		workers = demoWorkers(msg.rt.Pipeline).Workers
-		if demoWorkCueVariant() == demoWorkCueTell {
+		switch demoWorkCueVariant() {
+		case demoWorkCueTell:
 			runner = demoTellRunner{Pipeline: msg.rt.Pipeline, bus: msg.rt.Bus}
+		case demoWorkCueReport:
+			runner = demoReportRunner{Pipeline: msg.rt.Pipeline, bus: msg.rt.Bus}
 		}
 	}
 	cmd := a.conversation.startConversation(conversationDeps{

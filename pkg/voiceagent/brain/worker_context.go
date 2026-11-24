@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -77,6 +78,10 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 	if o.cfg == nil || !o.cfg.IsWorker || o.audioResolver != nil || o.cfg.ContinuitySoftLimitRatio <= 0 || o.effectiveNumCtx() <= 0 {
 		return nil
 	}
+	// A reporting job's answer is sized by its own request's check.
+	if requestObsolete(ctx) {
+		return nil
+	}
 	limit := int(float64(o.effectiveNumCtx()) * min(o.cfg.ContinuitySoftLimitRatio, 0.9))
 	beforeTokens := estimateMessageTokens(o.buildMessages(skillCtx), tools)
 	if beforeTokens <= limit {
@@ -146,7 +151,7 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 		return nil
 	})
 	if err != nil {
-		if reserve && ctx.Err() == nil && ollamaOutage(err) != nil {
+		if reserve && ctx.Err() == nil && ollamaOutage(err) != nil || errors.Is(err, errRequestObsolete) || ctx.Err() == nil && requestObsolete(ctx) {
 			// The answer keeps its request; its own size check decides.
 			return nil
 		}
@@ -157,6 +162,9 @@ func (o *OllamaBrain) prepareWorkerContext(ctx context.Context, skillCtx string,
 	}
 	summary = strings.TrimSpace(summary)
 	if !complete || reason == "length" || summary == "" {
+		if requestObsolete(ctx) {
+			return nil
+		}
 		return fmt.Errorf("compact worker context: summary incomplete")
 	}
 	// Prefer keeping the newest complete tool exchange verbatim, where it sits.

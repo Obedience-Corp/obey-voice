@@ -91,6 +91,8 @@ func TraceOf(event Event) *TraceContext {
 		return e.Trace
 	case JobCorrection:
 		return e.Trace
+	case JobReport:
+		return e.Trace
 	case JobFailed:
 		return e.Trace
 	case JobFinished:
@@ -190,6 +192,9 @@ func AttributeTrace(event Event, trace TraceContext) Event {
 		e.Trace = &trace
 		return e
 	case JobCorrection:
+		e.Trace = &trace
+		return e
+	case JobReport:
 		e.Trace = &trace
 		return e
 	case JobFailed:
@@ -309,6 +314,8 @@ func SourceWorkScope(event Event) (runtime, session, epoch string, ok bool) {
 		scope = e.Scope
 	case JobCorrection:
 		scope = e.Scope
+	case JobReport:
+		scope = e.Scope
 	case JobResultDelivered:
 		scope = e.Scope
 	case WorkStateChanged:
@@ -353,6 +360,8 @@ func SourceJobID(event Event) string {
 	case JobExited:
 		return e.ID
 	case JobCorrection:
+		return e.ID
+	case JobReport:
 		return e.ID
 	case WorkerUsageRecorded:
 		return e.JobID

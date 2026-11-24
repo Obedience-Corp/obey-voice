@@ -31,6 +31,8 @@ type jobView struct {
 	terminal bool
 	tool     string // the tool the worker is on, until the fold has a row
 	tier     string
+	// reporting: the job was asked to report and is writing its answer.
+	reporting bool
 	// sameOutput is the job's run of tool rounds with the same output.
 	sameOutput int
 }
@@ -236,6 +238,33 @@ func (m *conversationModel) jobCorrection(e events.JobCorrection) {
 	}
 	m.renderJobItem(e.ID, suffix)
 }
+
+// jobReport marks a running job's row as reporting while its worker writes
+// its answer. The command printed the checkpoint; the activity feed keeps it.
+func (m *conversationModel) jobReport(e events.JobReport) {
+	if !m.acceptWorkScope(e.Scope) {
+		return
+	}
+	detail := e.ID + " report requested · done so far: " + e.Checkpoint
+	if !e.Answer {
+		detail += " · the work continues"
+	}
+	m.appendActivity("job", detail, 0)
+	v, ok := m.jobs[e.ID]
+	// A report accepted as the job ended may arrive after its row was sealed.
+	if !e.Answer || !ok || v.terminal {
+		return
+	}
+	v.reporting = true
+	m.renderJobItem(e.ID, workingSuffix)
+}
+
+// workingSuffix ends a running job's row; a job asked to report shows
+// reportingSuffix instead.
+const (
+	workingSuffix   = " · working"
+	reportingSuffix = " · reporting"
+)
 
 // sealedJobRow is what an ended job's row was written from, so a correction's
 // later disposition can rewrite it.
@@ -501,6 +530,9 @@ func (m conversationModel) workerShortcutID() string {
 func (m *conversationModel) renderJobItem(id, suffix string) {
 	if id == "" {
 		return
+	}
+	if v := m.jobs[id]; v != nil && v.reporting && suffix == workingSuffix {
+		suffix = reportingSuffix
 	}
 	if job := m.jobs[id]; job != nil && job.running && !job.terminal {
 		if note := brain.SameOutputNote(job.sameOutput); note != "" {

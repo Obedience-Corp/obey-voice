@@ -816,6 +816,22 @@ type JobCorrection struct {
 
 func (e JobCorrection) eventType() string { return "job_correction" }
 
+// JobReport reports that a running job was asked for its report. Checkpoint
+// is what it had done by then: its folded activity, or "no tool activity
+// recorded yet". Answer says whether its worker will stop using tools and
+// answer; when false the worker cannot be asked and the work continues. How
+// the job ends is told by its terminal event.
+type JobReport struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
+	Scope      work.WorkScope
+	ID         string
+	Checkpoint string
+	Answer     bool
+}
+
+func (e JobReport) eventType() string { return "job_report" }
+
 // Abort reasons carried by JobAborted.Reason.
 const (
 	AbortCancelled = "cancelled"

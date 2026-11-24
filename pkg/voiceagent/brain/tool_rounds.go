@@ -18,6 +18,8 @@ const toolTimeAnswerInstruction = "The time budget for this job is nearly used. 
 
 const toolRepeatAnswerInstruction = "The same tool calls kept returning the same results without progress. No more tools are available. Answer now using the results already collected. State what was completed, what remains, and the concrete blocker that stopped progress. Do not claim unfinished work succeeded, promise to answer later, or describe tool-loop reasoning."
 
+const toolReportAnswerInstruction = "The user asked for a report on this job. No more tools are available. Stop here and say what is done, what is not, and where anything you made is. Do not claim unfinished work succeeded, promise to answer later, or describe tool-loop reasoning."
+
 const (
 	maxRepeatedToolRounds = 3
 	repeatWindowRounds    = 12
@@ -27,6 +29,7 @@ const (
 	stopRoundLimit = "tool round limit reached"
 	stopTime       = "worker time budget nearly used"
 	stopRepeat     = "worker repeated the same tool call"
+	stopReport     = "a report was requested"
 )
 
 // workerTimeReserve is how much of a deadline a worker keeps for its final
@@ -74,15 +77,21 @@ type toolRounds struct {
 	forced ForcedAnswer
 	recent []string
 	stale  int
+	// reporting reports a job asked to stop using tools and answer.
+	reporting func() bool
 }
 
 func newToolRounds(cfg *config.Config, opts StreamOptions) *toolRounds {
-	return &toolRounds{
+	r := &toolRounds{
 		worker: (cfg != nil && cfg.IsWorker) || opts.workerBudget() != nil,
 		stop:   stopRoundLimit,
 		start:  time.Now(),
 		budget: opts.workerBudget(),
 	}
+	if opts.Control != nil {
+		r.reporting = opts.Control.reporting
+	}
+	return r
 }
 
 // more reports whether round i may run. Workers are not bounded by count.
@@ -92,17 +101,20 @@ func (r *toolRounds) more(i int) bool {
 
 // final reports whether round i is the tools-free answer round, and the
 // instruction to append to it. Once a round is final, later rounds stay final.
+// A limit due at the same round as a report is the reason given.
 func (r *toolRounds) final(ctx context.Context, i int) (bool, string) {
 	if r.instruction != "" {
 		return true, r.instruction
 	}
-	if !r.worker {
-		if i >= maxToolIterations {
-			return true, toolLimitAnswerInstruction
-		}
-		return false, ""
+	if !r.worker && i >= maxToolIterations {
+		return true, toolLimitAnswerInstruction
 	}
-	r.instruction = r.limitInstruction(ctx, i)
+	if r.worker {
+		r.instruction = r.limitInstruction(ctx, i)
+	}
+	if r.instruction == "" && r.reporting != nil && r.reporting() {
+		r.instruction, r.stop, r.forced = toolReportAnswerInstruction, stopReport, ForcedByReport
+	}
 	return r.instruction != "", r.instruction
 }
 
@@ -132,7 +144,7 @@ func (r *toolRounds) limitAnswer() bool {
 
 // redirect starts the repeat guard over when the user corrects the job, and
 // lifts a final round the guard imposed: the repeated calls belonged to the
-// task as it was. A time or request limit is never lifted.
+// task as it was. A time or request limit, or a report, is never lifted.
 func (r *toolRounds) redirect() {
 	if r.forced != "" && r.forced != ForcedByRepeat {
 		return
@@ -183,7 +195,8 @@ func (r *toolRounds) observe(calls []api.ToolCall, results []string) {
 		r.recent = r.recent[1:]
 	}
 	stuck := r.stale >= maxRepeatedToolRounds-1 && count(r.recent, sig) >= maxRepeatedToolRounds
-	if r.instruction == "" && stuck {
+	// A report accepted while the round ran is the reason the job answers.
+	if r.instruction == "" && stuck && (r.reporting == nil || !r.reporting()) {
 		r.instruction, r.stop, r.forced = toolRepeatAnswerInstruction, stopRepeat, ForcedByRepeat
 	}
 }

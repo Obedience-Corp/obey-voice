@@ -116,6 +116,8 @@ func eventName(e events.Event) string {
 		return "job_terminal"
 	case events.JobCorrection:
 		return "job_correction"
+	case events.JobReport:
+		return "job_report"
 	case events.ToolCallStarted:
 		return "tool_call_started"
 	case events.ResponseReady:
@@ -217,6 +219,24 @@ func (r *recorder) waitFor(ctx context.Context, kind waitKind, playing func() bo
 	}
 }
 
+// reportSpoken reports that the job asked for the newest report had its
+// result delivered spoken.
+func (r *recorder) reportSpoken() bool {
+	id := ""
+	log := r.snapshot()
+	for _, te := range log {
+		if e, ok := te.event.(events.JobReport); ok {
+			id = e.ID
+		}
+	}
+	for _, te := range log {
+		if e, ok := te.event.(events.JobResultDelivered); ok && id != "" && e.ID == id && e.Spoken && strings.TrimSpace(e.Summary) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // waitWorkerTool returns once a tool call carrying a job id has finished
 // after mark, and fails if a job ends first.
 func (r *recorder) waitWorkerTool(ctx context.Context, mark int) error {
@@ -244,6 +264,8 @@ func (r *recorder) waitSatisfied(kind waitKind, playing func() bool) bool {
 	switch kind {
 	case waitIdle:
 		return idle
+	case waitReportSpoken:
+		return idle && r.reportSpoken()
 	case waitJobStarted:
 		return idle && r.hasEvent("job_started")
 	case waitJobTerminal:

@@ -37,6 +37,18 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		}
 	case ex.WorkFile != "":
 		return checkWorkFile(st.workDir, ex.WorkFile, ex.WorkFileContains)
+	case ex.CutShort != "":
+		if !hasCutShort(st.events, rec, ex.CutShort) {
+			return fmt.Errorf("want a job_finished with an answer, cut short: %s", ex.CutShort)
+		}
+	case ex.ToolsStopAfterReport != nil:
+		late := toolsAfterReport(st.events, rec)
+		if late < 0 {
+			return fmt.Errorf("want a job_report")
+		}
+		if (late == 0) != *ex.ToolsStopAfterReport {
+			return fmt.Errorf("tool calls started after the report: %d", late)
+		}
 	case ex.Event != "":
 		if !hasNamedEvent(st.events, rec, ex.Event) {
 			return fmt.Errorf("want event %q", ex.Event)
@@ -459,6 +471,42 @@ func hasCorrection(turnLog []timedEvent, rec *recorder, state string) bool {
 		}
 	}
 	return false
+}
+
+func hasCutShort(turnLog []timedEvent, rec *recorder, reason string) bool {
+	src := turnLog
+	if src == nil && rec != nil {
+		src = rec.snapshot()
+	}
+	for _, te := range src {
+		if f, ok := te.event.(events.JobFinished); ok && f.CutShort && f.CutShortReason == reason && strings.TrimSpace(f.Summary) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// toolsAfterReport counts the tool calls of the first reported job that
+// started after its job_report event, or -1 when there is no report.
+func toolsAfterReport(turnLog []timedEvent, rec *recorder) int {
+	src := turnLog
+	if src == nil && rec != nil {
+		src = rec.snapshot()
+	}
+	id, late := "", -1
+	for _, te := range src {
+		switch e := te.event.(type) {
+		case events.JobReport:
+			if id == "" {
+				id, late = e.ID, 0
+			}
+		case events.ToolCallStarted:
+			if id != "" && e.JobID == id {
+				late++
+			}
+		}
+	}
+	return late
 }
 
 // checkWorkFile finds name at any depth under dir; a worker may write into a

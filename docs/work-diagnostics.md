@@ -142,8 +142,12 @@ details are hidden; an unreported outcome is never treated as success.
 Home/End jump to the start/latest activity. Scrolling up pauses following;
 returning to the bottom resumes it. `s` stops the selected task, `e` returns to
 Chat with `/work tell JOB_ID ` in the composer (a draft already there is kept,
-and the command is shown instead), `x` requests Stop all (confirm
-with `y`), `t` toggles new workers, and Escape returns to the list.
+and the command is shown instead), `r` asks the selected task for its report
+and shows its checkpoint, `x` requests Stop all (confirm
+with `y`), `t` toggles new workers, and Escape returns to the list. A task
+whose report was accepted shows `reporting` while its worker writes the answer,
+and its detail keeps `Report requested · done so far: …` after it ends; a
+worker that cannot be asked gives its checkpoint only in the message.
 Messages appear as the provider's cached history updates at tool boundaries and
 completion; this view does not add token streaming or a worker message composer.
 A correction is written in the conversation's composer as a `/work tell`
@@ -166,6 +170,11 @@ Below 20 columns or 6 rows the terminal asks to resize.
   a queued job's brief, or refused with the reason; the job's row and `/workers`
   then show `correction included` or why it could not apply. Only the
   in-process Ollama worker takes a correction while it runs. See
+  [Delegation](delegation.md).
+- `/work report JOB_ID` prints what a running job has done so far and asks its
+  worker to stop using tools and answer with it; the answer arrives cut short
+  with "report requested". A queued job is left queued, and a worker that
+  cannot be asked gives the checkpoint only and keeps working. See
   [Delegation](delegation.md).
 - `/work dismiss JOB_ID` removes the pending delivery obligation. It does not
   cancel execution. A completed, already communicated result has no pending

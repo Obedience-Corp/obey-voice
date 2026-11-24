@@ -19,6 +19,7 @@ just convoflow live-router                            # soft live-brain spawn
 just convoflow run work-stream-gate                   # worker tool calls carry job ids; queued → started → terminal
 just convoflow run work-stream-cancel                 # "kill it" aborts the running job; "Stopped after …" spoken once
 just convoflow run work-stream-tell                   # after the worker's first tool call, a typed correction (op work_tell) is included by the running job, which finishes with the corrected file
+just convoflow run work-stream-report                 # after the worker's first tool call, a typed report (op work_report) makes the job answer without tools: finished, cut short "report requested", and spoken
 just convoflow run work-stream-boundary               # a worker told to leave the campaign is refused by its tools (boundary_refusals >= 1)
 just convoflow run search-web-intent -worker-provider=grok   # comparison, not the gate
 ```
@@ -67,7 +68,14 @@ the keyboard's `/work tell` does; the turn fails unless the correction is
 accepted. `correction: <state>` wants a `job_correction` event in that state
 during the turn (`pending` once taken, `included` once a model request carried
 it). `work_file: <name>` wants that file at any depth under the run's `work/`,
-holding `work_file_contains` when set.
+holding `work_file_contains` when set. `op: work_report` asks the newest
+running job for its report the way the keyboard's `/work report` does; the
+turn fails unless the report is accepted. `cut_short: <reason>` wants a
+`job_finished` with an answer, cut short with that reason, during the turn.
+`tools_stop_after_report: true` wants no tool call of the reported job to
+start after its `job_report`. `wait: report_spoken` ends once the reported
+job's result was delivered spoken (`job_result_delivered` with `Spoken`) and
+playback is idle.
 
 Two no-model paths exist, neither is the gate:
 

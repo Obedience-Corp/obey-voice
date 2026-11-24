@@ -136,8 +136,8 @@ func (p *recordingPlayer) play(drainCtx context.Context, cancel context.CancelFu
 
 	rate, err := stream.WaitReady(drainCtx)
 	if err != nil {
+		// No audio ever came: started stays open, so the segment is not heard.
 		drainDiscard(stream)
-		close(started)
 		result = audio.PlaybackResult{Err: err}
 		return
 	}

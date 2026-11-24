@@ -219,7 +219,8 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 			}
 			done.preempted = true
 		}
-		sealed, limit := control.Seal(brain.WorkerLimitDue(r.ctx, r.budget, start))
+		empty := done.err == nil && !answered(reply, done)
+		sealed, limit := control.SealReply(brain.WorkerLimitDue(r.ctx, r.budget, start), empty)
 		if sealed {
 			// A failed replacement does not displace the last finished answer.
 			if done.err != nil && held != nil {
@@ -231,7 +232,7 @@ func (r *workerRun) steered(control *brain.WorkerControl, opts brain.StreamOptio
 			}
 			return r.deliver(done)
 		}
-		if done.err == nil {
+		if done.err == nil && !(empty && r.steer.reporting()) {
 			held, heldForced, heldTurn = &done, r.forced, len(r.worker.History())-1
 		}
 		r.forced = ""
@@ -304,13 +305,16 @@ func failedCorrectionReason(err error, budget *brain.WorkerBudget) brain.ForcedA
 
 // finish imports the reply's images and, when an image the task required is
 // missing, asks the worker once more. A job that took a correction is never
-// repaired: its answer is delivered, marked when it has no image. Starting the
-// repair closes the job to corrections; one already accepted is taken instead.
+// repaired: its answer is delivered, marked when it has no image. A job asked
+// to report requires no image and is not repaired either. Starting the repair
+// closes the job to corrections and reports; one already accepted is taken
+// instead.
 func (r *workerRun) finish(reply string) finished {
 	ctx, worker := r.ctx, r.worker
 	asked, _ := ctx.Value(imageDeliveryKey{}).(bool)
 	corrected := r.steer.corrected()
-	required := asked && !corrected
+	reporting := r.steer.reporting()
+	required := asked && !corrected && !reporting
 	var media []chatmedia.Ref
 	finalize := func(result string) (string, error) {
 		cleaned, attached, err := finalizeProviderReply(worker, result, r.workDir, r.warn)
@@ -340,7 +344,7 @@ func (r *workerRun) finish(reply string) finished {
 	attachmentErr := workerImageFailure(importErr, reply)
 	remaining, limited := r.budget.RemainingRequests()
 	// An opaque paid dispatch has a single admission and no per-request budget.
-	if corrected || !r.tools || !r.allowImageRepair || (limited && remaining == 0) || (r.budget == nil && !servedLocally(ctx, r.cfg, worker)) {
+	if corrected || reporting || !r.tools || !r.allowImageRepair || (limited && remaining == 0) || (r.budget == nil && !servedLocally(ctx, r.cfg, worker)) {
 		return finished{text: cleaned, err: attachmentErr}
 	}
 	input, promptErr := prompts.RenderSystem(config.PromptsDirFrom(r.cfg), "worker-image-repair", map[string]string{
@@ -354,9 +358,10 @@ func (r *workerRun) finish(reply string) finished {
 	}
 	if !r.steer.beginRepair() {
 		// The correction waiting is taken instead; the answer's words stay as
-		// the fallback should its run fail.
+		// the fallback should its run fail. Words a report let through are
+		// not marked as missing their image.
 		if chatmedia.ReplyProse(reply) != "" {
-			return finished{text: cleaned, noImage: asked}
+			return finished{text: cleaned, noImage: asked && r.steer.corrected()}
 		}
 		return finished{text: cleaned, err: attachmentErr, preempted: true}
 	}

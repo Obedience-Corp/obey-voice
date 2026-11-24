@@ -306,6 +306,16 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		if err := teller.tellWork(turnCtx, turn.User); err != nil {
 			return err
 		}
+	} else if turn.Op == "work_report" {
+		reporter, ok := e.runner.(interface {
+			reportWork(context.Context) error
+		})
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support work reports", turn.ID)
+		}
+		if err := reporter.reportWork(turnCtx); err != nil {
+			return err
+		}
 	} else if turn.Op == "run_background" {
 		bg, ok := e.runner.(backgroundRunner)
 		if !ok {

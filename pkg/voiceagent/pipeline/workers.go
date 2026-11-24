@@ -24,6 +24,9 @@ type WorkerInfo struct {
 	PersonaID, PersonaName             string
 	// Correction is how the job's newest correction stands, if it has one.
 	Correction string
+	// Report is how a report asked of the job stands, and Checkpoint what the
+	// job had done when it was asked.
+	Report, Checkpoint string
 	// SameOutput is how many tool rounds in a row a running job's tools have
 	// returned the same output, while that is worth showing.
 	SameOutput int
@@ -130,6 +133,7 @@ func (p *Pipeline) Workers() []WorkerInfo {
 			info.State, info.Termination = abortedState(item)
 		}
 		info.Correction = a.steerFor(item.ID).label()
+		info.Report, info.Checkpoint = a.reportView(item.ID, item.State)
 		a.mu.Lock()
 		info.Thread = copyWorkerThread(a.workerThreads[item.ID])
 		origin := a.workerOrigins[item.ID]
@@ -179,6 +183,7 @@ func (p *Pipeline) Workers() []WorkerInfo {
 			info.State = string(item.State)
 		}
 		info.Correction = a.steerFor(info.ID).label()
+		info.Report, info.Checkpoint = a.reportView(info.ID, table[info.ID].State)
 		if item.Model == "" && item.Origin == "managed" {
 			info.Model = item.Config["profile"]
 		}

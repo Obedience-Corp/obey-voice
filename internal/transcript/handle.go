@@ -77,6 +77,7 @@ func (w *Writer) AttachAll(bus *events.Bus) func() {
 		events.SubscribeDetachable(bus, func(e events.JobFailed) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.JobAborted) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.JobCorrection) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobReport) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.Error) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.Info) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.SpeechDiagnostic) { w.Handle(e) }),
@@ -124,6 +125,7 @@ var recordedEventTypes = map[string]bool{
 	"job_failed":               true,
 	"job_aborted":              true,
 	"job_correction":           true,
+	"job_report":               true,
 	"error":                    true,
 	"info":                     true,
 	"speech_diagnostic":        true,
@@ -225,6 +227,13 @@ func encodeEvent(e events.Event) (record, bool) {
 			kind = "brief"
 		}
 		return record{Type: "job", JobID: x.ID, Name: x.ID, ID: fmt.Sprintf("%s#%d", x.ID, x.Revision), Kind: kind, Text: x.Text, State: "correction_" + x.State, Reason: x.Reason}, true
+	case events.JobReport:
+		// kind marks a worker that cannot be asked and keeps working.
+		kind := ""
+		if !x.Answer {
+			kind = "checkpoint_only"
+		}
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Kind: kind, Text: x.Checkpoint, State: "report_requested"}, true
 	case events.Error:
 		return record{Type: "error", Stage: x.Stage, Message: x.Message}, true
 	case events.Info:

@@ -46,8 +46,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	if opts.Discussion == nil && !opts.AgentContinuation {
 		if continuing {
 			skillCtx = ctl.skillCtx
-		} else {
-			skillCtx = o.routeSkillContext(o.skillRouteContext(ctx, ctl), input, opts.OnToolStart, opts.OnToolEnd)
+		} else if ctl == nil || !ctl.reporting() {
+			start, end := skillHooks(ctl, opts.OnToolStart, opts.OnToolEnd)
+			skillCtx = o.routeSkillContext(o.skillRouteContext(ctx, ctl), input, start, end)
 		}
 	} else {
 
@@ -127,7 +128,12 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			tools = sess.tools()
 		}
 
-		if err := o.prepareWorkerContext(ctx, skillCtx, tools, opts); err != nil {
+		compactCtx := ctx
+		if ctl != nil {
+			// A reporting job's next request is its answer, not a summary.
+			compactCtx = withRequestControl(ctx, requestControl{obsolete: ctl.reporting})
+		}
+		if err := o.prepareWorkerContext(compactCtx, skillCtx, tools, opts); err != nil {
 			return "", err
 		}
 		if ctl != nil && !finalAnswer {
@@ -208,11 +214,13 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		requestCtx = withModelRequestPurpose(requestCtx, purpose)
 		if ctl != nil {
 			// A correction cannot change the answer round a limit imposed; it
-			// lifts one the repeat guard imposed.
+			// lifts one the repeat guard imposed. A report turns a request for
+			// more tools, not yet sent, into the answer round.
 			limitAnswer := finalAnswer && rounds.limitAnswer()
+			toolRound := !finalAnswer
 			requestCtx = withRequestControl(requestCtx, requestControl{
 				answered: ctl.answered,
-				obsolete: func() bool { return !limitAnswer && ctl.waiting() },
+				obsolete: func() bool { return !limitAnswer && (ctl.waiting() || toolRound && ctl.reporting()) },
 			})
 		}
 		response, responseComplete, err := o.chatFullWithContinuation(requestCtx, req, opts, responseLimit, &continuations, chat)
@@ -291,16 +299,17 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 			results := make([]string, 0, len(response.ToolCalls))
 			for k, tc := range response.ToolCalls {
-				if ctl != nil && ctl.waiting() {
+				// The thread shows the call running, as it shows its result next.
+				// The control's answer below is what commits the call to run.
+				checkpoint(opts)
+				if note := ctl.notRun(); note != "" {
 					// Every call still gets a result, so the exchange stays paired.
 					for _, skipped := range response.ToolCalls[k:] {
-						o.appendProjectedToolResult(skipped, ToolNotRunCorrection, opts.Identity)
+						o.appendProjectedToolResult(skipped, note, opts.Identity)
 					}
 					checkpoint(opts)
 					break
 				}
-				// The thread shows the call running, as it shows its result next.
-				checkpoint(opts)
 				result := sess.execute(ctx, o.workDir, tc)
 				results = append(results, result)
 				if sess.limitErr != nil {
@@ -329,6 +338,11 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		text := cleanForVoice(stripHistoricalAssistantMarkers(raw))
 		if finalAnswer && (!responseComplete || !hasSpeakableContent(text)) {
 			return "", rounds.stopErr("model returned no final answer")
+		}
+		if !finalAnswer && ctl != nil && ctl.reporting() && !hasSpeakableContent(text) {
+			// Nothing to deliver from a request sent before the report: the
+			// report round answers instead.
+			continue
 		}
 		if opts.Discussion != nil && !hasSpeakableContent(text) {
 			return "", fmt.Errorf("group reply was empty")
@@ -389,13 +403,32 @@ func (o *OllamaBrain) takeCorrections(ctl *WorkerControl, finalAnswer bool, opts
 	checkpoint(opts)
 }
 
-// skillRouteContext lets a waiting correction abandon a skill confirmation
-// request before it is sent: the input it would confirm is already stale.
+// skillRouteContext lets a waiting correction or a report abandon a skill
+// confirmation request before it is sent: the input it would confirm is
+// already stale, or the job only answers now.
 func (o *OllamaBrain) skillRouteContext(ctx context.Context, ctl *WorkerControl) context.Context {
 	if ctl == nil {
 		return ctx
 	}
-	return withRequestControl(ctx, requestControl{obsolete: ctl.waiting})
+	return withRequestControl(ctx, requestControl{obsolete: func() bool { return ctl.waiting() || ctl.reporting() }})
+}
+
+// skillHooks are the hooks skill routing publishes an activation through: one
+// a report accepted during the routing publishes nothing.
+func skillHooks(ctl *WorkerControl, start func(ToolCall), end func(ToolResult)) (func(ToolCall), func(ToolResult)) {
+	if ctl == nil || (start == nil && end == nil) {
+		return start, end
+	}
+	quiet := false
+	return func(call ToolCall) {
+			if quiet = ctl.reporting(); !quiet && start != nil {
+				start(call)
+			}
+		}, func(result ToolResult) {
+			if !quiet && end != nil {
+				end(result)
+			}
+		}
 }
 
 func checkpoint(opts StreamOptions) {

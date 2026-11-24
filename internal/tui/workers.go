@@ -159,6 +159,8 @@ func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
 			m.stopSelected()
 		case "e":
 			return m, m.tellSelected()
+		case "r":
+			m.reportSelected()
 		case "d":
 			if m.detailID != "" {
 				m.expandTools = !m.expandTools
@@ -308,6 +310,21 @@ func (m *workersModel) tellSelected() tea.Cmd {
 	return nil
 }
 
+// reportSelected asks the selected task for its report and shows what it had
+// done.
+func (m *workersModel) reportSelected() {
+	id := m.detailID
+	if id == "" && m.cursor >= 2 && m.cursor-2 < len(m.items) {
+		id = m.items[m.cursor-2].ID
+	}
+	if id == "" {
+		m.message = "Select a task to report."
+		return
+	}
+	m.message, _ = reportNotice(m.controller, id)
+	m.refresh()
+}
+
 func workerProvider(item pipeline.WorkerInfo) string {
 	provider := item.Provider
 	if provider == "" {
@@ -401,6 +418,9 @@ func (m workersModel) View() string {
 			if item.Correction != "" {
 				detail += " · " + item.Correction
 			}
+			if item.Report != "" {
+				detail += " · " + item.Report
+			}
 			if summary := workerCurrentActivity(item); summary != "" {
 				detail += " · " + summary
 			}
@@ -426,7 +446,7 @@ func (m workersModel) View() string {
 		message = "Stop all running and queued tasks? y confirm · any other key cancels"
 	}
 	lines = append(lines, "", statusStyle.Render("  "+safeWorkerText(message)))
-	help := "  ↑/↓ select · enter open · s stop task · e correct · x stop all · t toggle · esc back"
+	help := "  ↑/↓ select · enter open · s stop task · e correct · r report · x stop all · t toggle · esc back"
 	if m.detailID != "" {
 		scroll, controls := workerDetailHelp(w, m.expandTools)
 		lines = append(lines, dimStyle.Render(scroll))
