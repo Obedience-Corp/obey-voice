@@ -87,6 +87,7 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		steer := jobSteerFrom(ctx)
 		brief, control := steer.begin(ctx, brief, worker)
 		opts.Control = control
+		opts.OnSameOutput = func(rounds int) { a.noteSameOutput(id, rounds) }
 		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief, Attachments: refs}})
 		r := workerRun{a: a, ctx: ctx, id: id, brief: brief, worker: worker, cfg: cfg, budget: budget, steer: steer,
 			tools: tools, allowImageRepair: allowImageRepair, workDir: config.WorkDirFrom(cfg)}
@@ -359,6 +360,7 @@ func (r *workerRun) finish(reply string) finished {
 		}
 		return finished{text: cleaned, err: attachmentErr, preempted: true}
 	}
+	r.a.noteSameOutput(r.id, 0)
 	retryReply, err := r.think(input)
 	if errors.Is(err, brain.ErrWorkerBudgetExceeded) {
 		return finished{text: cleaned, err: attachmentErr}

@@ -57,6 +57,9 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 	if p.OutputMuted() || p.Player == nil || !p.ttsReady() {
 		return
 	}
+	var speech speechPriority
+	speech.hold(p)
+	defer speech.release()
 	turn.to(TurnSpeaking)
 	if metrics.firstSegment.IsZero() {
 		metrics.firstSegment = time.Now()
@@ -117,6 +120,9 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 	if sentence == "" || !p.canSpeak(primary) {
 		return nil
 	}
+	var speech speechPriority
+	speech.hold(p)
+	defer speech.release()
 	if turn != nil {
 		turn.to(TurnSpeaking)
 	}

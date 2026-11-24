@@ -31,6 +31,8 @@ type jobView struct {
 	terminal bool
 	tool     string // the tool the worker is on, until the fold has a row
 	tier     string
+	// sameOutput is the job's run of tool rounds with the same output.
+	sameOutput int
 }
 
 // jobCorrectionView is the newest correction a job's row shows.
@@ -500,7 +502,28 @@ func (m *conversationModel) renderJobItem(id, suffix string) {
 	if id == "" {
 		return
 	}
+	if job := m.jobs[id]; job != nil && job.running && !job.terminal {
+		if note := brain.SameOutputNote(job.sameOutput); note != "" {
+			suffix += " · " + note
+		}
+	}
 	m.renderJobItemLabel(id, m.jobLabel(id), suffix)
+}
+
+// jobSameOutput rewrites a running job's row when its run of identical tool
+// output changes. A sealed row never carries it.
+func (m *conversationModel) jobSameOutput(e events.WorkerSameOutput) {
+	if !m.acceptWorkScope(e.Scope) {
+		return
+	}
+	job, ok := m.jobs[e.JobID]
+	if !ok || job.terminal || job.sameOutput == e.Rounds {
+		return
+	}
+	job.sameOutput = e.Rounds
+	if job.running {
+		m.renderJobItem(e.JobID, " · working")
+	}
 }
 
 func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {

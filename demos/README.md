@@ -195,6 +195,24 @@ Still frames: `demos/frames/work-tell-running.png`,
 `demos/frames/work-tell-accepted.png`, `demos/frames/work-tell-included.png`,
 `demos/frames/work-tell-done.png`
 
+## workers-same-output.gif — a task whose tools keep returning the same output
+
+1. **Launcher → Workers**, one running task whose line reads
+   `same output for N rounds`, with N rising once a second
+2. **Enter** opens it: the reworded `ls` commands, and the same line in the
+   detail header
+
+`OBEY_VOICE_DEMO_WORKERS=same_output` shows a scripted fixture job with no
+model or job table behind it: one more `run_command` round each second, all
+returning the same listing. The job is not stopped. The fixture has fourteen
+commands, so its count stops at 14 while its elapsed time keeps rising.
+
+```bash
+just demo-workers-same-output
+```
+
+Still frames: `demos/frames/workers-same-output.png`, `demos/frames/workers-same-output-detail.png`
+
 ## work-cue.gif — background work during conversation
 
 The real conversation TUI shows an animated **Working** cue beside the

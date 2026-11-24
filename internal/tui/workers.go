@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -394,6 +395,9 @@ func (m workersModel) View() string {
 		for _, item := range m.items {
 			labels = append(labels, item.Task+" · "+item.State)
 			detail := workerProvider(item) + " · " + roundSeconds(item.Elapsed)
+			if note := brain.SameOutputNote(item.SameOutput); note != "" {
+				detail += " · " + note
+			}
 			if item.Correction != "" {
 				detail += " · " + item.Correction
 			}

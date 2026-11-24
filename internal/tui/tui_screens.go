@@ -203,6 +203,8 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		}
 		if demoStoppingEnabled() {
 			controller = demoStoppingWorkers()
+		} else if demoSameOutputEnabled() {
+			controller = demoSameOutput()
 		} else if demoWorkersEnabled() || demoWorkCueEnabled() {
 			controller = demoWorkers(controller)
 		}

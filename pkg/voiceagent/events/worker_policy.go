@@ -19,6 +19,17 @@ type WorkerUsageRecorded struct {
 
 func (WorkerUsageRecorded) eventType() string { return "worker.usage" }
 
+// WorkerSameOutput reports how many tool rounds in a row a running job's tools
+// have returned the same output; Rounds is 0 once that run ends. It is for
+// display and is not recorded.
+type WorkerSameOutput struct {
+	Scope  work.WorkScope `json:"scope"`
+	JobID  string         `json:"job_id"`
+	Rounds int            `json:"rounds"`
+}
+
+func (WorkerSameOutput) eventType() string { return "worker.same_output" }
+
 type WorkerLimitReached struct {
 	Trace *TraceContext `json:"trace,omitempty"`
 

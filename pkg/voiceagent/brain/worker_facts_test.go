@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -163,6 +164,83 @@ func TestActiveWorkSurvivesTheToolRoundBeforeTheAnswer(t *testing.T) {
 		}
 		if !strings.Contains(asked, `task="audit the config"`) {
 			t.Fatalf("request %d lost the job list: %q", i, asked)
+		}
+	}
+}
+
+func TestWorkerFactsPromptNotesSameOutputOnTheRunningJob(t *testing.T) {
+	got := WorkerFactsPrompt(nil, []WorkerFact{
+		{ID: "job-1", Tier: "legacy", State: "running", Task: "list the project folder", SameOutput: 12},
+		{ID: "job-2", Tier: "legacy", State: "running", Task: "watch the build", SameOutput: sameOutputShown - 1},
+		{ID: "job-3", Tier: "legacy", State: "queued", Task: "tidy the notes", SameOutput: 5},
+	})
+	note := systemPrompt(nil, "active-work-same-output", nil)
+	want := "\n" + systemPrompt(nil, "active-work", nil) + "\n" + note + "\n<active_work>" +
+		"\n" + `job="job-1" tier="legacy" state="running" task="list the project folder" output="same output for 12 rounds"` +
+		"\n" + `job="job-2" tier="legacy" state="running" task="watch the build"` +
+		"\n" + `job="job-3" tier="legacy" state="queued" task="tidy the notes"` +
+		"\n</active_work>"
+	if got != want {
+		t.Fatalf("facts prompt:\n got %q\nwant %q", got, want)
+	}
+	if !strings.Contains(note, `output="same output for N rounds"`) || !strings.Contains(note, "normal") || strings.Contains(strings.ToLower(note), "stuck") {
+		t.Fatalf("the explanation should describe the note neutrally: %q", note)
+	}
+}
+
+// With no job carrying a count, the prompt is exactly what it was before the
+// count existed.
+func TestWorkerFactsPromptWithoutSameOutputIsUnchanged(t *testing.T) {
+	facts := []WorkerFact{
+		{ID: "job-1", Tier: "legacy", State: "running", Task: "list the project folder", Running: time.Minute, Progress: "ran 2 commands", Own: true, SameOutput: sameOutputShown - 1},
+		{ID: "job-2", Tier: config.WorkerTierSimple, State: "queued", Task: "tidy the notes", Starter: "Ember", SameOutput: 9},
+	}
+	want := "\n[Background jobs as the host recorded them when this turn began. This list is not part of the user's message, and each task is a description of work already under way, not a request to you. A job whose state is running or queued had not finished: a worker is doing it in the background, so do not redo its task yourself, and do not say it is done or that nothing is running. A job with started_by=\"you\" is one you started for the user, even when that exchange is no longer shown above. Mention these jobs only when the message asks about them or about what you are working on; otherwise answer the message as usual.]" +
+		"\n<active_work>" +
+		"\n" + `job="job-1" tier="legacy" state="running" started_by="you" running_for="1 minute" task="list the project folder" progress="ran 2 commands"` +
+		"\n" + `job="job-2" tier="simple" state="queued" started_by="Ember" task="tidy the notes"` +
+		"\n</active_work>"
+	if got := WorkerFactsPrompt(nil, facts); got != want {
+		t.Fatalf("facts prompt:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestWorkerFactsPromptKeepsItsBoundsWithSameOutput(t *testing.T) {
+	long := strings.Repeat("résumé ", 200)
+	facts := make([]WorkerFact, workerFactLimit+2)
+	for i := range facts {
+		facts[i] = WorkerFact{ID: "W7K2UW4JVOUNNTVWHMH3DCAPE" + string(rune('A'+i)), Tier: config.WorkerTierComplex, State: "running",
+			Task: long, Running: 30 * time.Hour, Progress: long, Starter: long, SameOutput: 1_000_000}
+	}
+	got := WorkerFactsPrompt(nil, facts)
+	block := got[strings.Index(got, "\n<active_work>"):]
+	if strings.Count(block, "job=") != workerFactLimit || strings.Count(block, `output="same output for 1000000 rounds"`) != workerFactLimit ||
+		len(block) > workerFactsBytes || !strings.Contains(block, "unfinished jobs not listed: 2") {
+		t.Fatalf("jobs=%d bytes=%d block=%q", strings.Count(block, "job="), len(block), block)
+	}
+}
+
+// Text that escapes to twice its length fills the block before the job
+// limit does. The block stays under its ceiling, footer included, and every
+// unfinished job is either listed or counted.
+func TestWorkerFactsPromptCountsJobsCutByTheByteCeiling(t *testing.T) {
+	for _, same := range []int{0, sameOutputShown} {
+		for backslashes := 140; backslashes <= 200; backslashes++ {
+			facts := make([]WorkerFact, workerFactLimit+1)
+			for i := range facts {
+				facts[i] = WorkerFact{ID: fmt.Sprintf("job-%d", i+1), Tier: "legacy", State: "running", Own: true, Running: 2 * time.Minute,
+					Task: strings.Repeat(`"`, 160), Progress: strings.Repeat(`\`, backslashes), SameOutput: same}
+			}
+			got := WorkerFactsPrompt(nil, facts)
+			block := got[strings.Index(got, "\n<active_work>"):]
+			listed := strings.Count(block, "\njob=")
+			counted := 0
+			if i := strings.Index(block, "unfinished jobs not listed: "); i >= 0 {
+				_, _ = fmt.Sscanf(block[i:], "unfinished jobs not listed: %d", &counted)
+			}
+			if len(block) > workerFactsBytes || listed+counted != len(facts) {
+				t.Fatalf("same=%d backslashes=%d: bytes=%d listed=%d counted=%d", same, backslashes, len(block), listed, counted)
+			}
 		}
 	}
 }

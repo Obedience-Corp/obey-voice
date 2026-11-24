@@ -83,6 +83,7 @@ func (b *eventBridge) attach(bus *events.Bus) {
 	// Tool call visibility for Ollama (and any future tool-using brain).
 	forward[events.ToolCallStarted](b, bus)
 	forward[events.ToolCallFinished](b, bus)
+	forward[events.WorkerSameOutput](b, bus)
 	// Background job lifecycle drives the footer chip; without these the
 	// chip never appears.
 	forward[events.JobQueued](b, bus)
@@ -108,7 +109,7 @@ func isDurableBridgeMsg(msg tea.Msg) bool {
 	switch be.event.(type) {
 	case events.UserInput, events.InputTranscriptUpdated, events.ReplyImagesReady, events.ResponseReady, events.PersonaSelection, events.ConversationCleared, events.Error,
 		events.ContinuityBudget, events.CompactionProgress,
-		events.ToolCallStarted, events.ToolCallFinished,
+		events.ToolCallStarted, events.ToolCallFinished, events.WorkerSameOutput,
 		events.JobQueued, events.JobStarted, events.JobFinished, events.JobResultDelivered, events.JobFailed, events.JobAborted, events.JobExited, events.JobCorrection:
 		return true
 	default:

@@ -379,7 +379,9 @@ job whose worker has not returned yet shows `· killed after 6m5s · stopping…
 until it does. Below that
 summary, individual tools show their commands or targets, observed status,
 output previews and errors. These details remain after completion. The `/workers`
-manager shows each task's provider/model, elapsed time, activity and output.
+manager shows each task's provider/model, elapsed time, activity and output,
+and `same output for N rounds` while a running job's tools keep returning the
+same output (see below).
 Without the TUI each row prints once as `[job-1]
 read 3 files`, when its kind gives way or the job ends. "What's happening"
 answers `Still working on {task}. So far: read 3 files · ran 1 command.` The
@@ -395,8 +397,9 @@ job, not the persona's model, and a long job outlives the six to twelve turns
 the model is sent, so the conversation itself stops showing that the job exists.
 Each request that answers a person carries a short list beside your message:
 every running or queued job with its state, how long it has run, the request it
-was started for (up to 160 bytes), its three newest activity rows, and whether
-the answering persona or another one started it. Up to eight jobs are listed,
+was started for (up to 160 bytes), its three newest activity rows, whether
+the answering persona or another one started it, and, while its tools keep
+returning the same output, for how many rounds. Up to eight jobs are listed,
 the answering persona's own first, and any others are counted. The list is
 taken once, when the turn begins, and is never saved to the conversation. Result notifications, peer replies and group
 discussions do not carry it. The sentence that introduces the list is the
@@ -464,6 +467,24 @@ answer as an unfinished reply with that reason, so the persona later knows the
 job did not finish and why. In the `voice_work_enabled` inbox the result is
 `partial` with the limitation "cut short: …". If the worker writes no answer in
 that round, the job fails with the reason, as before.
+
+That guard compares each call together with its result, and a `run_command`
+result repeats the command, so a worker that rewords a command (`ls`, `ls -1`,
+`ls | cat`) gets past it even when the output never changes. Nothing stops a job
+for that; the same output for many rounds is also what a job polling something
+that has not changed yet looks like. Instead an Ollama worker counts its tool
+rounds in a row whose tools returned the same output: the tool names and what
+each returned, without the arguments and without the command `run_command`
+echoes, in any call order. A round in which the tools all print nothing counts
+as the same output too. From three such rounds, the job's row in the chat,
+its line in `/workers` and its header in the job's detail view add `same output
+for 12 rounds`. A persona on Ollama answering you is told the same on that
+job (`output="same output for 12 rounds"`), with one sentence explaining it,
+the `system/active-work-same-output.yaml` prompt, sent only while a listed job
+carries it. A job left running by a cleared conversation is still listed
+without its count. Different output clears it, and so does the end of the job.
+It is never saved to the conversation, and it has no say in when the repeat
+guard or any limit steps in.
 
 Each job is a conversation of its own. The worker starts with no history and
 no CLI session from the job before it, and two jobs running at once never

@@ -68,6 +68,8 @@ type Agency struct {
 	// heldMedia are the images of an answer delivered in place of a failed
 	// correction's run, kept apart from that job's saved thread.
 	heldMedia map[string][]chatmedia.Ref // guarded by mu
+	// sameOutputs holds each job's run of tool rounds with the same output.
+	sameOutputs map[string]sameOutputRun // guarded by mu
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction

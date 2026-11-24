@@ -317,6 +317,8 @@ func SourceWorkScope(event Event) (runtime, session, epoch string, ok bool) {
 		scope = e.Scope
 	case WorkerUsageRecorded:
 		scope = e.Scope
+	case WorkerSameOutput:
+		scope = e.Scope
 	case WorkerLimitReached:
 		scope = e.Scope
 	case WorkerChargeState:
@@ -353,6 +355,8 @@ func SourceJobID(event Event) string {
 	case JobCorrection:
 		return e.ID
 	case WorkerUsageRecorded:
+		return e.JobID
+	case WorkerSameOutput:
 		return e.JobID
 	case WorkerLimitReached:
 		return e.JobID
