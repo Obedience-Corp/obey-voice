@@ -1,8 +1,12 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,8 +16,11 @@ import (
 
 	"github.com/ollama/ollama/api"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/internal/searchendpoint"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
 func toolReply(name string, args map[string]any) api.ChatResponse {
@@ -107,6 +114,74 @@ func TestWorkerToolActivityCountsEachOutcome(t *testing.T) {
 			}
 			if got != tc.http {
 				t.Fatalf("http status = %d, want %d", got, tc.http)
+			}
+		})
+	}
+}
+
+// view_image is offered only to a persona answering live, whose tool calls
+// carry no job id, so no job's activity ever holds one. Attributed to a job
+// through the same hooks, its outcome folds as succeeded or failed.
+func TestViewImageActivityCountsItsOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		vision   bool
+		activity string
+	}{
+		{name: "attached", vision: true, activity: "read 1 file (1 succeeded)"},
+		{name: "model cannot view", vision: false, activity: "read 1 file (1 failed)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config.SetConfigDirForTest(t, t.TempDir())
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/tags":
+					_, _ = w.Write([]byte(`{"models":[{"name":"fixture"}]}`))
+					return
+				case "/api/show":
+					capabilities := []string{"completion", "tools"}
+					if tc.vision {
+						capabilities = append(capabilities, "vision")
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": capabilities})
+					return
+				}
+				var req api.ChatRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Error(err)
+					return
+				}
+				reply := toolReply("view_image", map[string]any{"path": "shot.png"})
+				if req.Messages[len(req.Messages)-1].Role == "tool" {
+					reply = textReply("A grey rectangle.")
+				}
+				_ = json.NewEncoder(w).Encode(reply)
+			}))
+			t.Cleanup(server.Close)
+			dir := t.TempDir()
+			var buf bytes.Buffer
+			if err := png.Encode(&buf, image.NewGray(image.Rect(0, 0, 24, 16))); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "shot.png"), buf.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			live, err := brain.NewOllama(&config.Config{OllamaHost: server.URL, OllamaModel: "fixture", WorkDir: dir, PromptsDir: filepath.Join(dir, "prompts"), VoiceToolsEnabled: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = live.Close() })
+			p := &Pipeline{Events: events.NewBus()}
+			fold := workfold.New()
+			events.Subscribe(p.Events, func(e events.ToolCallStarted) { fold.Add(e) })
+			events.Subscribe(p.Events, func(e events.ToolCallFinished) { fold.Finish(e) })
+			onStart, onEnd := p.jobToolHooks("job-view")
+			opts := brain.StreamOptions{ToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsDirect, OnToolStart: onStart, OnToolEnd: onEnd}
+			if _, err := live.ThinkFull(t.Context(), "Look at shot.png.", opts); err != nil {
+				t.Fatal(err)
+			}
+			if got := fold.Summary("job-view"); got != tc.activity {
+				t.Fatalf("activity = %q, want %q", got, tc.activity)
 			}
 		})
 	}

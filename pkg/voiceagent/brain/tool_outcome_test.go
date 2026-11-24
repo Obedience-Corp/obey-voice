@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/internal/searchendpoint"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/internal/toolstub"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 	"github.com/ollama/ollama/api"
 )
@@ -183,6 +185,37 @@ func TestCancelledWebSearchIsCancelled(t *testing.T) {
 	}
 	if o := h.ends[0].Outcome; o == nil || o.Status != events.ToolOutcomeCanceled || h.ends[0].Err != "error: "+strings.TrimPrefix(got, "error ") {
 		t.Fatalf("end = %+v", h.ends[0])
+	}
+}
+
+// A search answered 500 is failed even when the job is cancelled while the
+// answer arrives: only a request cut by the cancel counts as cancelled.
+func TestWebSearchAnsweredWhileCancelledIsFailed(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		cancel()
+		return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader("down")), Request: r}, nil
+	})}
+	got, end := toolWebSearchWithClient(ctx, map[string]any{"query": "q"}, client, "http://search.invalid/")
+	if got != "error searching web: HTTP 500" || end.status != events.ToolOutcomeFailed || end.httpStatus != 500 {
+		t.Fatalf("result %q, end %+v", got, end)
+	}
+}
+
+// A tool answered by a stub ran nothing, so it reports no outcome of its own.
+func TestStubbedToolsReportNoOutcome(t *testing.T) {
+	t.Parallel()
+	ctx := toolstub.With(context.Background(), func(name string, _ map[string]any) string { return "stubbed " + name })
+	for _, name := range []string{"read_file", "read_skill", "write_file", "web_search", "list_files", "fetch_url"} {
+		h := &hookRecorder{}
+		sess := h.session()
+		if got := sess.execute(ctx, t.TempDir(), toolCallFor(name, map[string]any{"path": "x"})); got != "stubbed "+name {
+			t.Fatalf("%s: result %q", name, got)
+		}
+		if h.ends[0].Outcome != nil {
+			t.Fatalf("%s: a stubbed call reported %+v", name, h.ends[0].Outcome)
+		}
 	}
 }
 

@@ -91,10 +91,10 @@ settlement. `job_control_action: cancel|report|steer` wants the turn's one
 applied settlement to have been that action, told by what it left on the job it
 named: a cancelled `job_aborted`, a `job_report`, or a `job_correction`, and
 neither of the other two. `abort_reason: cancelled` wants a `job_aborted` with
-that reason, and `spoken_once: <regex>` exactly one match in what the turn
-spoke. `turn_spoken_not_matches: <regex>` forbids the pattern in the speech
-events of the turn alone; `spoken_not_matches` reads everything spoken so far
-in the run.
+that reason, and `spoken_once: <regex>` exactly one match in everything spoken
+so far in the run, as `spoken_matches` and `spoken_not_matches` read it.
+`turn_spoken_not_matches: <regex>` forbids the pattern in the speech events of
+the turn alone.
 
 Two no-model paths exist, neither is the gate:
 

@@ -53,16 +53,22 @@ func toolWebSearch(ctx context.Context, args map[string]any) (string, toolEnd) {
 	return toolWebSearchWithClient(ctx, args, webHTTPClient(), endpoint)
 }
 
-// webFailed is the "error <reason>" text a web tool returns, and its end:
-// cancelled when the call's context was, failed otherwise. status is the HTTP
-// status received, zero when there was no response.
-func webFailed(ctx context.Context, reason string, status int) (string, toolEnd) {
+// webFailed is the "error <reason>" text a web tool returns, and its failed
+// end. status is the HTTP status received, zero when there was no response.
+func webFailed(reason string, status int) (string, toolEnd) {
 	end := toolFailed(reason)
+	end.httpStatus = status
+	return "error " + reason, end
+}
+
+// webCut is webFailed for a request or body read that returned an error,
+// which is a cancel when the call's context was cancelled.
+func webCut(ctx context.Context, reason string, status int) (string, toolEnd) {
+	text, end := webFailed(reason, status)
 	if errors.Is(ctx.Err(), context.Canceled) {
 		end.status = events.ToolOutcomeCanceled
 	}
-	end.httpStatus = status
-	return "error " + reason, end
+	return text, end
 }
 
 func webSucceeded(status int) toolEnd {
@@ -81,23 +87,23 @@ func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *h
 	form := url.Values{"q": {query}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return webFailed(ctx, fmt.Sprintf("creating web search request: %v", err), 0)
+		return webFailed(fmt.Sprintf("creating web search request: %v", err), 0)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ObeyVoice/1.0; +https://github.com/Obedience-Corp/obey-voice)")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return webFailed(ctx, fmt.Sprintf("searching web: %v", err), 0)
+		return webCut(ctx, fmt.Sprintf("searching web: %v", err), 0)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return webFailed(ctx, fmt.Sprintf("searching web: HTTP %d", resp.StatusCode), resp.StatusCode)
+		return webFailed(fmt.Sprintf("searching web: HTTP %d", resp.StatusCode), resp.StatusCode)
 	}
 
 	doc, err := html.Parse(io.LimitReader(resp.Body, maxWebBodyBytes))
 	if err != nil {
-		return webFailed(ctx, fmt.Sprintf("parsing web search results: %v", err), resp.StatusCode)
+		return webCut(ctx, fmt.Sprintf("parsing web search results: %v", err), resp.StatusCode)
 	}
 	results := parseDuckDuckGoResults(doc, 5)
 	if len(results) == 0 {
@@ -148,21 +154,21 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return webFailed(ctx, fmt.Sprintf("creating fetch request: %v", err), 0)
+		return webFailed(fmt.Sprintf("creating fetch request: %v", err), 0)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ObeyVoice/1.0; +https://github.com/Obedience-Corp/obey-voice)")
 	resp, err := client.Do(req)
 	if err != nil {
-		return webFailed(ctx, fmt.Sprintf("fetching URL: %v", err), 0)
+		return webCut(ctx, fmt.Sprintf("fetching URL: %v", err), 0)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return webFailed(ctx, fmt.Sprintf("fetching URL: HTTP %d", resp.StatusCode), resp.StatusCode)
+		return webFailed(fmt.Sprintf("fetching URL: HTTP %d", resp.StatusCode), resp.StatusCode)
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWebBodyBytes))
 	if err != nil {
-		return webFailed(ctx, fmt.Sprintf("reading URL: %v", err), resp.StatusCode)
+		return webCut(ctx, fmt.Sprintf("reading URL: %v", err), resp.StatusCode)
 	}
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	content := string(data)
@@ -170,7 +176,7 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 	if strings.Contains(contentType, "html") || strings.Contains(strings.ToLower(content), "<html") {
 		doc, parseErr := html.Parse(strings.NewReader(content))
 		if parseErr != nil {
-			return webFailed(ctx, fmt.Sprintf("parsing fetched page: %v", parseErr), resp.StatusCode)
+			return webFailed(fmt.Sprintf("parsing fetched page: %v", parseErr), resp.StatusCode)
 		}
 		title = nodeText(findElement(doc, "title"))
 		content = readableText(doc)
