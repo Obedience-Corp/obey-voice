@@ -1,6 +1,7 @@
 package transcript
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -75,6 +76,7 @@ func (w *Writer) AttachAll(bus *events.Bus) func() {
 		events.SubscribeDetachable(bus, func(e events.JobResultDelivered) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.JobFailed) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.JobAborted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobCorrection) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.Error) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.Info) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.SpeechDiagnostic) { w.Handle(e) }),
@@ -121,6 +123,7 @@ var recordedEventTypes = map[string]bool{
 	"job_result_delivered":     true,
 	"job_failed":               true,
 	"job_aborted":              true,
+	"job_correction":           true,
 	"error":                    true,
 	"info":                     true,
 	"speech_diagnostic":        true,
@@ -213,6 +216,15 @@ func encodeEvent(e events.Event) (record, bool) {
 		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "failed", Message: x.Err, IsError: true, ElapsedS: x.Elapsed.Seconds()}, true
 	case events.JobAborted:
 		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "aborted", Reason: x.Reason, ElapsedS: x.Elapsed.Seconds()}, true
+	case events.JobCorrection:
+		// The record's id names the correction, job and revision, so two
+		// corrections with the same text stay apart; kind marks one given
+		// while the job was queued.
+		kind := ""
+		if x.Brief {
+			kind = "brief"
+		}
+		return record{Type: "job", JobID: x.ID, Name: x.ID, ID: fmt.Sprintf("%s#%d", x.ID, x.Revision), Kind: kind, Text: x.Text, State: "correction_" + x.State, Reason: x.Reason}, true
 	case events.Error:
 		return record{Type: "error", Stage: x.Stage, Message: x.Message}, true
 	case events.Info:

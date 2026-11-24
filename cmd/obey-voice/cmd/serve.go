@@ -282,6 +282,7 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 	}
 	defer cleanup()
 	display.SetWorkSnapshot(p.WorkSnapshot)
+	display.SetConversationScope(p.ConversationScope)
 
 	ref := &sessionRef{sess: session.New(cfg.BrainProvider, serveModelName(cfg))}
 	defer func() { state.sessionID = ref.id() }()

@@ -262,11 +262,24 @@ func (o *OllamaBrain) compactionMessages(skillCtx string) []api.Message {
 		{Role: "assistant", ToolCalls: []api.ToolCall{{ID: "continuity-recall", Function: api.ToolCallFunction{Name: "recall_context", Arguments: api.NewToolCallFunctionArguments()}}}},
 		{Role: "tool", ToolName: "recall_context", ToolCallID: "continuity-recall", Content: notes},
 	}
-	// Insert immediately before the summarize instruction (the last user).
+	// Insert immediately before the newest user message, the summarize
+	// instruction or a worker's task or correction, where no tool call is
+	// waiting for its result. A worker's last message is often a tool result.
 	end := len(messages) - 1
+	for end > 0 && messages[end].Role != "user" {
+		end--
+	}
+	if end < 1 {
+		// No user message: before the last one, as always, unless that
+		// would come between a call and its result.
+		end = len(messages) - 1
+		if messages[end].Role == "tool" {
+			return messages
+		}
+	}
 	result := append([]api.Message(nil), messages[:end]...)
 	result = append(result, recalled...)
-	result = append(result, messages[end])
+	result = append(result, messages[end:]...)
 	if o.messagesBudgetError(result, nil) != nil {
 		return messages
 	}

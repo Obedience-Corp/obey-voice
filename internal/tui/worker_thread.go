@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,9 @@ type workerThreadEntry struct {
 	attachments []chatmedia.Ref
 	at          time.Time
 	tool        *workerThreadTool
+	// replaced marks a worker answer a correction replaced; it was not
+	// delivered.
+	replaced bool
 }
 
 type workerThreadTool struct {
@@ -39,15 +43,19 @@ func workerThreadEntries(item pipeline.WorkerInfo) []workerThreadEntry {
 	if !hasRequest && item.Task != "" {
 		entries = append(entries, workerThreadEntry{role: "user", text: item.Task})
 	}
-	for _, turn := range item.Thread {
+	skipped := skippedWorkerCalls(item.Thread)
+	for i, turn := range item.Thread {
 		switch turn.Role {
 		case "user", "assistant":
 			if strings.TrimSpace(turn.Content) != "" || len(turn.Attachments) > 0 {
-				entries = append(entries, workerThreadEntry{role: turn.Role, text: turn.Content, at: turn.At, attachments: turn.Attachments})
+				entries = append(entries, workerThreadEntry{role: turn.Role, text: turn.Content, at: turn.At, attachments: turn.Attachments, replaced: turn.Disposition == brain.DispositionSuperseded})
 			}
-			for _, call := range turn.ToolCalls {
+			for k, call := range turn.ToolCalls {
 				tool := &workerThreadTool{call: workfold.Call{ID: call.ID, Name: call.Name, Status: "unknown"}, arguments: call.Arguments, order: -1}
-				matchWorkerCall(tool, item.Tools, used)
+				// A call a correction kept from running fired no events.
+				if !skipped[[2]int{i, k}] {
+					matchWorkerCall(tool, item.Tools, used)
+				}
 				entries = append(entries, workerThreadEntry{tool: tool, at: turn.At})
 			}
 		case "tool":
@@ -102,13 +110,36 @@ func workerThreadEntries(item pipeline.WorkerInfo) []workerThreadEntry {
 	return entries
 }
 
+// skippedWorkerCalls pairs each assistant turn's calls with the results that
+// follow it, by id or in order, and marks those a correction kept from running.
+func skippedWorkerCalls(thread []brain.Turn) map[[2]int]bool {
+	skipped := map[[2]int]bool{}
+	for i, turn := range thread {
+		paired := make([]bool, len(turn.ToolCalls))
+		for j := i + 1; j < len(thread) && thread[j].Role == "tool" && len(turn.ToolCalls) > 0; j++ {
+			result := thread[j]
+			for k, call := range turn.ToolCalls {
+				if paired[k] || call.ID != "" && result.ToolCallID != "" && call.ID != result.ToolCallID {
+					continue
+				}
+				paired[k] = true
+				if result.Content == brain.ToolNotRunCorrection {
+					skipped[[2]int{i, k}] = true
+				}
+				break
+			}
+		}
+	}
+	return skipped
+}
+
 func matchWorkerCall(tool *workerThreadTool, calls []workfold.Call, used []bool) {
 	for i, call := range calls {
 		if used[i] {
 			continue
 		}
 		if tool.call.ID != "" && call.ID != "" {
-			if tool.call.ID != call.ID {
+			if tool.call.ID != call.ID && (!sameProviderCall(tool.call.ID, call.ID) || tool.call.Name != call.Name) {
 				continue
 			}
 		} else if tool.call.Name == "" || tool.call.Name != call.Name {
@@ -117,6 +148,21 @@ func matchWorkerCall(tool *workerThreadTool, calls []workfold.Call, used []bool)
 		tool.call, tool.order, used[i] = call, i, true
 		return
 	}
+}
+
+// sameProviderCall reports whether an observed call is the history call id:
+// the id itself, or, when a later run reused the provider's id, the id with
+// the occurrence suffix the hooks gave it (c, c#2, c#3).
+func sameProviderCall(history, observed string) bool {
+	if history == observed {
+		return true
+	}
+	n, ok := strings.CutPrefix(observed, history+"#")
+	if !ok || n == "" {
+		return false
+	}
+	_, err := strconv.Atoi(n)
+	return err == nil
 }
 
 func findWorkerTool(entries []workerThreadEntry, turn brain.Turn) *workerThreadTool {
@@ -128,7 +174,7 @@ func findWorkerTool(entries []workerThreadEntry, turn brain.Turn) *workerThreadT
 			continue
 		}
 		if turn.ToolCallID != "" && tool.call.ID != "" {
-			if turn.ToolCallID == tool.call.ID {
+			if sameProviderCall(turn.ToolCallID, tool.call.ID) && (turn.ToolName == "" || turn.ToolName == tool.call.Name) {
 				return tool
 			}
 		} else if turn.ToolName != "" && turn.ToolName == tool.call.Name {

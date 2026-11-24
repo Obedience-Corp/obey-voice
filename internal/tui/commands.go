@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -71,7 +73,7 @@ var slashCommands = []slashCommand{
 	{id: commandSettings, name: "/settings", usage: "/settings", description: "Open TUI settings"},
 	{id: commandParticipation, name: "/participation", usage: "/participation [off|invited|open] [all|id,id]", description: "Show or change agent participation and conversation members"},
 	{id: commandPersonas, name: "/personas", usage: "/personas", description: "Browse, select, create, or edit personas"},
-	{id: commandWork, name: "/work", usage: "/work [job|all|cancel job|dismiss job|speak job|replay job|logs]", description: "Inspect work and control result delivery"},
+	{id: commandWork, name: "/work", usage: workUsage, description: "Inspect work, correct or cancel a job, and control result delivery"},
 	{id: commandWorkers, name: "/workers", usage: "/workers", description: "View background tasks, stop work, or turn workers on/off"},
 	{id: commandVoice, name: "/voice", usage: "/voice", description: "Return to voice mode after fallback", aliases: []string{"/v"}},
 	{id: commandSpeakers, name: "/speakers", usage: "/speakers [on|off|status|name|names]", description: "Live speaker labels, renames, and status"},
@@ -114,6 +116,30 @@ func parseSlashCommand(value string) (slashCommand, []string, bool, bool) {
 	}
 	command, found := commandForToken(strings.ToLower(fields[0]))
 	return command, fields[1:], found, true
+}
+
+// slashRemainder is a command line after its first n words, as typed. Words
+// are split as strings.Fields splits them, so the remainder starts where the
+// parsed arguments say it does.
+func slashRemainder(value string, n int) string {
+	rest := strings.TrimSpace(value)
+	for range n {
+		i := strings.IndexFunc(rest, unicode.IsSpace)
+		if i < 0 {
+			return ""
+		}
+		rest = strings.TrimLeftFunc(rest[i:], unicode.IsSpace)
+	}
+	return strings.TrimSpace(rest)
+}
+
+// imagePaths is the image paths typed or pasted text names. Only a /work tell
+// line is kept from it: its correction may end in a file name.
+func imagePaths(text string) ([]string, bool) {
+	if fields := strings.Fields(text); len(fields) >= 2 && fields[0] == "/work" && fields[1] == "tell" {
+		return nil, false
+	}
+	return chatmedia.Paths(text)
 }
 
 func matchingSlashCommands(value string) []slashCommand {

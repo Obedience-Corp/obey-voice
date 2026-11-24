@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +20,10 @@ var ErrDisabled = errors.New("background workers are off; enable them in /worker
 
 // errAborted is the error a job ends with when Abort stopped it.
 var errAborted = errors.New("aborted")
+
+// ErrCancelled is the error a job ends with when Cancel or CancelAll stopped
+// it: a user's cancel, as opposed to the host's own abort. It reads the same.
+var ErrCancelled = fmt.Errorf("%w", errAborted)
 
 // State is a job lifecycle phase.
 type State string
@@ -78,6 +83,15 @@ type Spec struct {
 	// OnAccepted publishes caller metadata after enqueue succeeds, before
 	// queued/start callbacks or execution. It runs outside the table lock.
 	OnAccepted func(id string)
+	// Register runs under the table lock once the job's id is chosen, before
+	// any caller can see the job, so state keyed by the id exists for every
+	// later status, cancel or done callback. It must not call the table.
+	Register func(id string)
+	// OnEnding runs under the table lock when the job's end is decided: when
+	// it is marked terminal, or when a stop is recorded to apply after its
+	// start announcement. err is the cause. It runs once and must not call
+	// the table or block.
+	OnEnding func(state State, err error)
 	// Immediate is for work already under way: it starts at once, past the
 	// concurrency and queue limits, and holds a running slot like any job.
 	Immediate bool
@@ -184,6 +198,8 @@ type entry struct {
 	// terminal one, and the run function is never invoked.
 	startAnnounced bool
 	stopErr        error
+	// endingNoted is set once OnEnding has run.
+	endingNoted bool
 	// launched is set once the job has a goroutine; invoked once its run
 	// function is called; returned once nothing of the job runs any more.
 	// exited is closed at that point.
@@ -282,20 +298,19 @@ func (t *Table) OnStart(cb StartCallback) {
 // Start enqueues work. A spawn beyond the concurrency limit queues in order
 // behind the running ones (Q2). parent is ignored for cancellation — jobs use
 // context.WithoutCancel(lifetime).
-func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
-	_ = parent
+// admit enters a job under the table lock. The lock is released by a defer,
+// so a Register callback that panics cannot leave it held.
+func (t *Table) admit(spec Spec) (string, *entry, QueuedCallback, error) {
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.closed {
-		t.mu.Unlock()
-		return "", fmt.Errorf("job table closed")
+		return "", nil, nil, fmt.Errorf("job table closed")
 	}
 	if t.disabled {
-		t.mu.Unlock()
-		return "", ErrDisabled
+		return "", nil, nil, ErrDisabled
 	}
 	if !spec.Immediate && t.maxQueued > 0 && len(t.running)+t.completing >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
-		t.mu.Unlock()
-		return "", errors.New("worker queue limit reached")
+		return "", nil, nil, errors.New("worker queue limit reached")
 	}
 	id := spec.ID
 	if id == "" {
@@ -307,8 +322,10 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 			}
 		}
 	} else if _, exists := t.jobs[id]; exists {
-		t.mu.Unlock()
-		return "", fmt.Errorf("job %q already exists", id)
+		return "", nil, nil, fmt.Errorf("job %q already exists", id)
+	}
+	if spec.Register != nil {
+		spec.Register(id)
 	}
 	budgetEnd := new(atomic.Int64)
 	base := context.WithValue(WithID(context.WithoutCancel(t.lifetime), id), budgetEndKey{}, budgetEnd)
@@ -329,8 +346,15 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	} else {
 		t.queue = append(t.queue, id)
 	}
-	onQueued := t.onQueued
-	t.mu.Unlock()
+	return id, e, t.onQueued, nil
+}
+
+func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
+	_ = parent
+	id, e, onQueued, err := t.admit(spec)
+	if err != nil {
+		return "", err
+	}
 
 	// Outside the lock: the callback publishes to the bus, and a subscriber may
 	// legitimately ask the table for status.
@@ -365,7 +389,7 @@ func (t *Table) Abort(id string) {
 // cancel landed: queued or running means this cancel ended it, any other
 // state means it had already ended. ok is false for an unknown id.
 func (t *Table) Cancel(id string) (before Info, ok bool) {
-	return t.stop(id, errAborted)
+	return t.stop(id, ErrCancelled)
 }
 
 // Stop ends a queued or running job as Abort does, with reason as its error.
@@ -422,7 +446,7 @@ func (t *Table) CheckAdmission() error {
 
 // AbortAll ends every queued and running job as one act; see CancelAll.
 func (t *Table) AbortAll() {
-	t.CancelAll(nil)
+	t.cancelAll(nil, errAborted)
 }
 
 // CancelAll ends every queued and running job that skip does not exclude,
@@ -430,6 +454,10 @@ func (t *Table) AbortAll() {
 // cancellations. skip runs under the table lock and must not call the table.
 // It returns the jobs it ended, as they were when the cancel landed.
 func (t *Table) CancelAll(skip func(id string) bool) []Info {
+	return t.cancelAll(skip, ErrCancelled)
+}
+
+func (t *Table) cancelAll(skip func(id string) bool, cause error) []Info {
 	t.mu.Lock()
 	var ended []Info
 	var endings []ending
@@ -441,11 +469,12 @@ func (t *Table) CancelAll(skip func(id string) bool) []Info {
 		ended = append(ended, e.info)
 		if e.info.State == StateRunning && !e.startAnnounced {
 			if e.stopErr == nil {
-				e.stopErr = errAborted
+				e.stopErr = cause
+				t.notifyEndingLocked(e, StateAborted, cause)
 			}
 			continue
 		}
-		if x, ok := t.endLocked(id, StateAborted, "", errAborted, true); ok {
+		if x, ok := t.endLocked(id, StateAborted, "", cause, true); ok {
 			endings = append(endings, x)
 		}
 	}
@@ -503,6 +532,7 @@ func (t *Table) stop(id string, err error) (Info, bool) {
 		// returned. The first stop to land is the one that counts.
 		if e.stopErr == nil {
 			e.stopErr = err
+			t.notifyEndingLocked(e, StateAborted, err)
 		}
 		t.mu.Unlock()
 		return before, true
@@ -557,7 +587,24 @@ func (t *Table) endLocked(id string, state State, result string, err error, earl
 		e.info.Stopping = true
 	}
 	done := t.finishLocked(id, state, result, err)
+	t.notifyEndingLocked(e, state, err)
 	return ending{id: id, state: state, result: result, err: err, cancel: e.cancel, done: done, heldSlot: heldSlot}, true
+}
+
+// notifyEndingLocked runs the job's OnEnding once, with the cause that won.
+// A panic in it is contained: the transition it is part of must still finish
+// and release the lock.
+func (t *Table) notifyEndingLocked(e *entry, state State, err error) {
+	if e.endingNoted || e.spec.OnEnding == nil {
+		return
+	}
+	e.endingNoted = true
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("obey-voice: job %s ending hook panicked: %v", e.info.ID, r)
+		}
+	}()
+	e.spec.OnEnding(state, err)
 }
 
 func (t *Table) finishEnding(x ending) {
@@ -600,6 +647,8 @@ func (t *Table) markReturnedLocked(e *entry) {
 		return
 	}
 	e.returned = true
+	// Nothing runs it again; let go of what it holds, such as its worker.
+	e.spec.Run = nil
 	close(e.exited)
 }
 

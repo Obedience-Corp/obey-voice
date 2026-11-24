@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -113,6 +114,8 @@ func eventName(e events.Event) string {
 		return "job_started"
 	case events.JobFinished, events.JobFailed, events.JobAborted:
 		return "job_terminal"
+	case events.JobCorrection:
+		return "job_correction"
 	case events.ToolCallStarted:
 		return "tool_call_started"
 	case events.ResponseReady:
@@ -205,6 +208,28 @@ func (r *recorder) waitFor(ctx context.Context, kind waitKind, playing func() bo
 	for {
 		if r.waitSatisfied(kind, playing) {
 			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tick.C:
+		}
+	}
+}
+
+// waitWorkerTool returns once a tool call carrying a job id has finished
+// after mark, and fails if a job ends first.
+func (r *recorder) waitWorkerTool(ctx context.Context, mark int) error {
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		for _, te := range r.snapshot()[mark:] {
+			if done, ok := te.event.(events.ToolCallFinished); ok && done.JobID != "" {
+				return nil
+			}
+			if jobTerminal(te.event) {
+				return errors.New("the job ended before any worker tool call finished")
+			}
 		}
 		select {
 		case <-ctx.Done():

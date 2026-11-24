@@ -22,6 +22,18 @@ func validateProviderImages(ctx context.Context, provider brain.Provider, refs [
 	}
 	return validator.ValidateImages(ctx, refs)
 }
+
+// keepReplyMedia records the images job id delivers, instead of those of the
+// last reply in its saved thread.
+func (a *Agency) keepReplyMedia(id string, refs []chatmedia.Ref) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.heldMedia == nil {
+		a.heldMedia = make(map[string][]chatmedia.Ref)
+	}
+	a.heldMedia[id] = append([]chatmedia.Ref{}, refs...)
+}
+
 func finalizeProviderReply(provider brain.Provider, text, workDir string, warn func(string)) (string, []chatmedia.Ref, error) {
 	if !strings.Contains(text, "![") {
 		return text, nil, nil
@@ -128,6 +140,9 @@ func (p *Pipeline) replyMediaEvent(metrics *turnMetrics, event events.Event) eve
 func (a *Agency) workerReplyMedia(id string) []chatmedia.Ref {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if refs, ok := a.heldMedia[id]; ok {
+		return append([]chatmedia.Ref(nil), refs...)
+	}
 	turns := a.workerThreads[id]
 	for i := len(turns) - 1; i >= 0; i-- {
 		if turns[i].Role == "assistant" || turns[i].Role == "samantha" {

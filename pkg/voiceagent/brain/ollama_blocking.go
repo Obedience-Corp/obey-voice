@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -36,9 +37,18 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	if opts.Discussion != nil {
 		priorGroupReply = o.previousReplyForRepetition(opts)
 	}
+	ctl := opts.Control
+	// A worker continued after a correction has no new input of its own: the
+	// corrections are taken from the control below, and it keeps the skills
+	// its job already loaded rather than routing again.
+	continuing := ctl != nil && input == ""
 	skillCtx := ""
 	if opts.Discussion == nil && !opts.AgentContinuation {
-		skillCtx = o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
+		if continuing {
+			skillCtx = ctl.skillCtx
+		} else {
+			skillCtx = o.routeSkillContext(o.skillRouteContext(ctx, ctl), input, opts.OnToolStart, opts.OnToolEnd)
+		}
 	} else {
 
 		opts.ToolsEnabled = false
@@ -56,6 +66,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			o.history = restore
 			o.canonical = restoreCanonical
 			o.working = restoreWorking
+			if ctl != nil {
+				ctl.restore()
+			}
 		}
 	}()
 	if opts.TransientHistory {
@@ -65,7 +78,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			o.working = restoreWorking
 		}()
 	}
-	if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
+	if continuing {
+		o.supersedeLastAnswer()
+	}
+	if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil && !continuing {
 		if err := o.appendUserInput(input, opts); err != nil {
 			return "", err
 		}
@@ -82,6 +98,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	o.maybeEmitContinuityBudget(skillCtx)
 
 	sess := o.turnToolSession(opts)
+	if ctl != nil {
+		sess.callSeq, sess.hookIDs = ctl.toolIDs()
+		defer func() { ctl.skillCtx = skillCtx }()
+	}
 
 	hadThinking := false
 	hadTools := false
@@ -94,7 +114,14 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	rounds := newToolRounds(o.cfg, opts)
 	same := newSameOutput(rounds.worker, opts.OnSameOutput)
 	for i := 0; rounds.more(i); i++ {
+		corrected := ctl != nil && ctl.waiting()
+		if corrected {
+			rounds.redirect()
+		}
 		finalAnswer, finalInstruction := rounds.final(ctx, i)
+		if corrected {
+			o.takeCorrections(ctl, finalAnswer, opts)
+		}
 		var tools api.Tools
 		if opts.ToolsEnabled && !routedChat && !finalAnswer {
 			tools = sess.tools()
@@ -102,6 +129,16 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 		if err := o.prepareWorkerContext(ctx, skillCtx, tools, opts); err != nil {
 			return "", err
+		}
+		if ctl != nil && !finalAnswer {
+			// Compaction is a model request of its own: a correction may have
+			// arrived during it, and it may have spent the last request.
+			if ctl.waiting() {
+				continue
+			}
+			if finalAnswer, finalInstruction = rounds.final(ctx, i); finalAnswer {
+				tools = nil
+			}
 		}
 		if err := o.contextBudgetError(skillCtx, tools); err != nil {
 			o.history = restore
@@ -169,8 +206,20 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			purpose = PurposeCompaction
 		}
 		requestCtx = withModelRequestPurpose(requestCtx, purpose)
+		if ctl != nil {
+			// A correction cannot change the answer round a limit imposed; it
+			// lifts one the repeat guard imposed.
+			limitAnswer := finalAnswer && rounds.limitAnswer()
+			requestCtx = withRequestControl(requestCtx, requestControl{
+				answered: ctl.answered,
+				obsolete: func() bool { return !limitAnswer && ctl.waiting() },
+			})
+		}
 		response, responseComplete, err := o.chatFullWithContinuation(requestCtx, req, opts, responseLimit, &continuations, chat)
 		cancelRequest()
+		if errors.Is(err, errRequestObsolete) {
+			continue
+		}
 		if err != nil {
 			o.history = restore
 			o.canonical = restoreCanonical
@@ -241,7 +290,17 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			}, opts.Identity)
 
 			results := make([]string, 0, len(response.ToolCalls))
-			for _, tc := range response.ToolCalls {
+			for k, tc := range response.ToolCalls {
+				if ctl != nil && ctl.waiting() {
+					// Every call still gets a result, so the exchange stays paired.
+					for _, skipped := range response.ToolCalls[k:] {
+						o.appendProjectedToolResult(skipped, ToolNotRunCorrection, opts.Identity)
+					}
+					checkpoint(opts)
+					break
+				}
+				// The thread shows the call running, as it shows its result next.
+				checkpoint(opts)
 				result := sess.execute(ctx, o.workDir, tc)
 				results = append(results, result)
 				if sess.limitErr != nil {
@@ -253,9 +312,12 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 					skillCtx += "\n" + result
 				}
 				o.appendProjectedToolResult(tc, result, opts.Identity)
+				checkpoint(opts)
 			}
-			rounds.observe(response.ToolCalls, results)
-			same.observe(ctx, response.ToolCalls, results)
+			if len(results) > 0 {
+				rounds.observe(response.ToolCalls[:len(results)], results)
+				same.observe(ctx, response.ToolCalls[:len(results)], results)
+			}
 			o.ensureContextBudget(skillCtx)
 			continue
 		}
@@ -286,22 +348,75 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				return "", err
 			}
 		}
+		var forced ForcedAnswer
+		if finalAnswer {
+			forced = rounds.forced
+		}
+		// A correction that arrived while this answer was written is weighed
+		// by the job's runner, which may continue the job instead.
 		o.appendMessage(api.Message{Role: "assistant", Content: recorded}, opts.Identity)
+		checkpoint(opts)
 		if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil && !opts.TransientHistory {
 			o.ackDelegationResults(req.Messages)
 		} else if opts.Background && !opts.TransientHistory {
 			o.markBackgroundDelivered(req.Messages)
 		}
 		// A transient request's history is rolled back; trimming it would
-		// archive turns that are about to return.
-		if !opts.TransientHistory {
+		// archive turns that are about to return. A worker that may still be
+		// continued keeps its task and corrections; compaction bounds it.
+		if !opts.TransientHistory && ctl == nil {
 			o.trimHistory()
 		}
-		if finalAnswer && rounds.forced != "" && opts.OnForcedAnswer != nil {
-			opts.OnForcedAnswer(rounds.forced)
+		if forced != "" && opts.OnForcedAnswer != nil {
+			opts.OnForcedAnswer(forced)
 		}
 		return text, nil
 	}
 
 	return "", fmt.Errorf("tool round limit reached without a final answer")
+}
+
+// takeCorrections appends the control's waiting corrections to history as
+// user turns, in order. In an answer round a limit imposed, they cannot apply.
+func (o *OllamaBrain) takeCorrections(ctl *WorkerControl, finalAnswer bool, opts StreamOptions) {
+	if finalAnswer {
+		ctl.limitReached()
+		return
+	}
+	for _, text := range ctl.take() {
+		o.appendMessage(api.Message{Role: "user", Content: text}, nil)
+	}
+	checkpoint(opts)
+}
+
+// skillRouteContext lets a waiting correction abandon a skill confirmation
+// request before it is sent: the input it would confirm is already stale.
+func (o *OllamaBrain) skillRouteContext(ctx context.Context, ctl *WorkerControl) context.Context {
+	if ctl == nil {
+		return ctx
+	}
+	return withRequestControl(ctx, requestControl{obsolete: ctl.waiting})
+}
+
+func checkpoint(opts StreamOptions) {
+	if opts.OnCheckpoint != nil {
+		opts.OnCheckpoint()
+	}
+}
+
+// supersedeLastAnswer marks the answer the worker returned last as replaced
+// by a correction, so neither the model nor the saved thread takes it for a
+// delivered reply.
+func (o *OllamaBrain) supersedeLastAnswer() {
+	last := len(o.canonical) - 1
+	if last < 0 || o.canonical[last].Role != "assistant" || len(o.canonical[last].ToolCalls) > 0 {
+		return
+	}
+	o.canonical[last].Disposition = DispositionSuperseded
+	if w := len(o.working) - 1; w >= 0 && o.working[w].Role == "assistant" {
+		o.working[w].Disposition = DispositionSuperseded
+	}
+	if h := len(o.history) - 1; h >= 0 && o.history[h].Role == "assistant" {
+		o.history[h] = o.projectTurn(o.canonical[last], o.canonical, last, false)
+	}
 }

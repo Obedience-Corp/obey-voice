@@ -22,6 +22,8 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool, prev
 			blocks = append(blocks, renderWorkerTool(entry.tool, width, expanded))
 		case entry.role == "user":
 			blocks = append(blocks, renderUserBubble("Request", ansi.Wrap(safeWorkerText(entry.text), max(1, width-userBubbleStyle.GetHorizontalFrameSize()), "")))
+		case entry.role == "assistant" && entry.replaced:
+			blocks = append(blocks, renderAgentTurnAtWidth("Worker · replaced by a correction, not delivered", safeWorkerText(entry.text), max(1, width-agentBubbleStyle.GetHorizontalFrameSize())))
 		case entry.role == "assistant":
 			blocks = append(blocks, renderAgentTurnAtWidth("Worker", safeWorkerText(entry.text), max(1, width-agentBubbleStyle.GetHorizontalFrameSize())))
 			hasReply = true
@@ -128,6 +130,9 @@ func workerDetailMeta(item pipeline.WorkerInfo) string {
 	}
 	if note := brain.SameOutputNote(item.SameOutput); note != "" {
 		meta += metaStyle.Render(" · " + note)
+	}
+	if item.Correction != "" {
+		meta += dimStyle.Render(" · " + compactWorkerText(item.Correction))
 	}
 	return meta
 }

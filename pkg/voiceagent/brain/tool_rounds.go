@@ -107,17 +107,37 @@ func (r *toolRounds) final(ctx context.Context, i int) (bool, string) {
 }
 
 func (r *toolRounds) limitInstruction(ctx context.Context, i int) string {
-	deadline, timed := WorkerDeadline(ctx)
-	if timed && time.Until(deadline) <= workerTimeReserve(deadline.Sub(r.start)) {
+	switch r.limitReached(ctx) {
+	case ForcedByTime:
 		r.stop, r.forced = stopTime, ForcedByTime
 		return toolTimeAnswerInstruction
-	}
-	left, counted := r.budget.RemainingRequests()
-	if counted && left <= 1 {
+	case ForcedByRequests:
 		r.forced = ForcedByRequests
 		return toolLimitAnswerInstruction
 	}
 	return ""
+}
+
+// limitReached reports a time or request limit that forces the next round to
+// be the answer round, without changing any state.
+func (r *toolRounds) limitReached(ctx context.Context) ForcedAnswer {
+	return WorkerLimitDue(ctx, r.budget, r.start)
+}
+
+// limitAnswer reports a final round a time or request limit imposed, which a
+// correction cannot change.
+func (r *toolRounds) limitAnswer() bool {
+	return r.forced == ForcedByTime || r.forced == ForcedByRequests
+}
+
+// redirect starts the repeat guard over when the user corrects the job, and
+// lifts a final round the guard imposed: the repeated calls belonged to the
+// task as it was. A time or request limit is never lifted.
+func (r *toolRounds) redirect() {
+	if r.forced != "" && r.forced != ForcedByRepeat {
+		return
+	}
+	r.instruction, r.forced, r.stop, r.recent, r.stale = "", "", stopRoundLimit, nil, 0
 }
 
 // stopErr describes a final round that produced no usable answer.

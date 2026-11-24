@@ -50,6 +50,11 @@ func (a *Agency) onJobStarted(id, task string) {
 }
 
 func (a *Agency) onJobDone(id string, state job.State, result string, err error) {
+	// A cancel reports its corrections after it has taken its receipt.
+	if s := a.steerFor(id); s != nil && !errors.Is(err, job.ErrCancelled) {
+		s.decide(state, err)
+		s.flush()
+	}
 	a.pipeline.endMovedJob(id, state, err)
 	a.mu.Lock()
 	releaseVoice := a.workerOrigins[id].releaseVoice
@@ -96,6 +101,12 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 			a.mu.Unlock()
 			if reason != "" {
 				status, limitations = work.OutcomePartial, "cut short: "+reason
+			}
+			a.mu.Lock()
+			noImage := a.workerOrigins[id].noImage
+			a.mu.Unlock()
+			if noImage {
+				limitations = strings.TrimPrefix(limitations+"; no image attached", "; ")
 			}
 		case job.StateFailed:
 			status, text = work.OutcomeFailed, errorText(err, result)

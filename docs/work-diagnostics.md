@@ -140,10 +140,14 @@ replies use the same bubbles as Chat, with tools in execution order. Press `d`
 to show or hide tool arguments and results. Tool failures remain visible when
 details are hidden; an unreported outcome is never treated as success.
 Home/End jump to the start/latest activity. Scrolling up pauses following;
-returning to the bottom resumes it. `s` stops the selected task, `x` requests
-Stop all (confirm with `y`), `t` toggles new workers, and Escape returns to the list.
+returning to the bottom resumes it. `s` stops the selected task, `e` returns to
+Chat with `/work tell JOB_ID ` in the composer (a draft already there is kept,
+and the command is shown instead), `x` requests Stop all (confirm
+with `y`), `t` toggles new workers, and Escape returns to the list.
 Messages appear as the provider's cached history updates at tool boundaries and
 completion; this view does not add token streaming or a worker message composer.
+A correction is written in the conversation's composer as a `/work tell`
+command.
 
 The reserved Work strip stays above the composer while execution or delivery is
 outstanding. `updates` counts uncommunicated results and `new` counts result
@@ -157,6 +161,12 @@ Below 20 columns or 6 rows the terminal asks to resize.
   in `/workers` until its worker returns, then as `aborted` with termination
   `confirmed (worker returned)`. `/work cancel all` cancels every job in the
   conversation as one act, so no queued job starts in between.
+- `/work tell JOB_ID TEXT` sends TEXT, as typed, to a running job as a
+  correction. It reports at once whether the correction was accepted, added to
+  a queued job's brief, or refused with the reason; the job's row and `/workers`
+  then show `correction included` or why it could not apply. Only the
+  in-process Ollama worker takes a correction while it runs. See
+  [Delegation](delegation.md).
 - `/work dismiss JOB_ID` removes the pending delivery obligation. It does not
   cancel execution. A completed, already communicated result has no pending
   obligation to dismiss.

@@ -146,6 +146,9 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 	outageRetried := false
 	parseRetried := false
 	parseRetryPending := false
+	// retrying marks an attempt charged as a retry, refunded with its request
+	// if a correction makes the attempt stale before it is sent.
+	retrying := false
 	for {
 		if err := discussion.ReserveRequest(ctx); err != nil {
 			return err
@@ -160,11 +163,22 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			o.emitInfo(events.Info{Message: "Ollama returned malformed tool-call syntax; retrying this generation once. No output or tool calls were delivered from the failed attempt."})
 			parseRetryPending = false
 		}
+		// The last moment before sending, after any backoff, policy check and
+		// notice.
+		if requestObsolete(ctx) {
+			budget.abandonRequest(retrying)
+			return errRequestObsolete
+		}
 		var input, output int
 		delivered := false
 		completed := false
 		var callbackErr error
+		answered := false
 		err := o.clientChat(ctx, req, func(resp api.ChatResponse) error {
+			if !answered {
+				answered = true
+				requestAnswered(ctx)
+			}
 			if resp.Done {
 				completed = true
 				input, output = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
@@ -180,11 +194,14 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 					o.reportProviderState(ctx, "unavailable")
 					return limitErr
 				}
+				if requestObsolete(ctx) {
+					return errRequestObsolete
+				}
 				if retryErr := budget.AcquireRetry(ctx); retryErr != nil {
 					o.reportProviderState(ctx, "unavailable")
 					return retryErr
 				}
-				outageRetried = true
+				outageRetried, retrying = true, true
 				o.reportProviderState(ctx, "retrying")
 				if waitErr := waitOutageRetry(ctx); waitErr != nil {
 					return waitErr
@@ -208,10 +225,13 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			if limitErr := budget.Err(); limitErr != nil {
 				return limitErr
 			}
+			if requestObsolete(ctx) {
+				return errRequestObsolete
+			}
 			if retryErr := budget.AcquireRetry(ctx); retryErr != nil {
 				return retryErr
 			}
-			parseRetried = true
+			parseRetried, retrying = true, true
 			repaired := *req
 			repaired.Messages = append(append([]api.Message(nil), req.Messages...), api.Message{Role: "user", Content: toolParseRetryInstruction})
 			if budgetErr := o.messagesBudgetError(repaired.Messages, repaired.Tools); budgetErr != nil {
@@ -243,9 +263,13 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 				}
 			}
 		}
+		if requestObsolete(ctx) {
+			return errRequestObsolete
+		}
 		if err := budget.AcquireRetry(ctx); err != nil {
 			return err
 		}
+		retrying = true
 		if rejectedTools {
 			fmt.Fprintf(os.Stderr, "obey-voice: ollama model %q rejected tools (%v); continuing without tool calling — file read/write will not run\n", o.model, err)
 			req.Tools = nil

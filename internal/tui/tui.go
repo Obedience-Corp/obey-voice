@@ -198,6 +198,10 @@ type switchScreenMsg screen
 // exactly one; an empty ID opens the list for the user to choose.
 type openWorkerMsg struct{ jobID string }
 
+// tellWorkerMsg returns from the worker manager to the conversation with a
+// correction to jobID started in the composer.
+type tellWorkerMsg struct{ jobID string }
+
 // settingsDoneMsg returns from settings to the screen that opened it.
 type settingsDoneMsg struct{}
 
@@ -312,6 +316,11 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a = a.onWindowSize(msg)
 	case switchScreenMsg:
 		return a.onSwitchScreen(msg)
+	case tellWorkerMsg:
+		model, cmd := a.onSwitchScreen(switchScreenMsg(screenConversation))
+		app := model.(App)
+		app.conversation.prefillCommand("/work tell " + msg.jobID + " ")
+		return app, cmd
 	case openWorkerMsg:
 		model, cmd := a.onSwitchScreen(switchScreenMsg(screenWorkers))
 		app := model.(App)

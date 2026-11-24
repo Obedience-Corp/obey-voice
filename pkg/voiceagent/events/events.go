@@ -730,6 +730,9 @@ type JobFinished struct {
 	// answer early; any other reason is reported separately as an Error event.
 	CutShort       bool   `json:"cut_short,omitempty"`
 	CutShortReason string `json:"cut_short_reason,omitempty"`
+	// NoImage means the task asked for an image, a correction followed, and
+	// the answer came back without one.
+	NoImage bool `json:"no_image,omitempty"`
 }
 
 func (e JobFinished) eventType() string { return "job_finished" }
@@ -793,6 +796,25 @@ type JobExited struct {
 }
 
 func (e JobExited) eventType() string { return "job_exited" }
+
+// JobCorrection reports a correction to a job: once when it is accepted, and
+// again each time its disposition changes. State is "pending", "included"
+// (a request carrying it was answered), "briefed" (in the brief of a worker
+// that cannot report more), "not_applied" (Reason says why) or "superseded".
+// Brief marks a correction given before the job started.
+type JobCorrection struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
+	Scope    work.WorkScope
+	ID       string
+	Revision int
+	Text     string
+	State    string
+	Reason   string
+	Brief    bool
+}
+
+func (e JobCorrection) eventType() string { return "job_correction" }
 
 // Abort reasons carried by JobAborted.Reason.
 const (

@@ -157,6 +157,8 @@ func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
 			m.requestStopAll()
 		case "s":
 			m.stopSelected()
+		case "e":
+			return m, m.tellSelected()
 		case "d":
 			if m.detailID != "" {
 				m.expandTools = !m.expandTools
@@ -281,6 +283,31 @@ func (m *workersModel) stopSelected() {
 	m.message = "Select a task to stop."
 }
 
+// tellSelected returns to the conversation with /work tell typed for the
+// selected task, so the correction is written in the one composer.
+func (m *workersModel) tellSelected() tea.Cmd {
+	id := m.detailID
+	if id == "" && m.cursor >= 2 && m.cursor-2 < len(m.items) {
+		id = m.items[m.cursor-2].ID
+	}
+	for _, item := range m.items {
+		if item.ID != id {
+			continue
+		}
+		if !item.Active() {
+			m.message = "This task has already ended."
+			return nil
+		}
+		if m.returnScreen != screenConversation {
+			m.message = "Open a conversation to correct a task: /work tell " + id + " text"
+			return nil
+		}
+		return func() tea.Msg { return tellWorkerMsg{jobID: id} }
+	}
+	m.message = "Select a task to correct."
+	return nil
+}
+
 func workerProvider(item pipeline.WorkerInfo) string {
 	provider := item.Provider
 	if provider == "" {
@@ -371,6 +398,9 @@ func (m workersModel) View() string {
 			if note := brain.SameOutputNote(item.SameOutput); note != "" {
 				detail += " · " + note
 			}
+			if item.Correction != "" {
+				detail += " · " + item.Correction
+			}
 			if summary := workerCurrentActivity(item); summary != "" {
 				detail += " · " + summary
 			}
@@ -396,7 +426,7 @@ func (m workersModel) View() string {
 		message = "Stop all running and queued tasks? y confirm · any other key cancels"
 	}
 	lines = append(lines, "", statusStyle.Render("  "+safeWorkerText(message)))
-	help := "  ↑/↓ select · enter open · s stop task · x stop all · t toggle · esc back"
+	help := "  ↑/↓ select · enter open · s stop task · e correct · x stop all · t toggle · esc back"
 	if m.detailID != "" {
 		scroll, controls := workerDetailHelp(w, m.expandTools)
 		lines = append(lines, dimStyle.Render(scroll))

@@ -32,6 +32,9 @@ type workerOrigin struct {
 	// unspoken marks a result shown and saved but not spoken, as a live reply
 	// stops speaking at its output limit.
 	unspoken bool
+	// noImage marks a result without the image its task asked for, which a
+	// correction may have dropped.
+	noImage bool
 }
 type workerReply struct {
 	Attachments []chatmedia.Ref
@@ -219,6 +222,38 @@ func (a *Agency) saveWorkerThread(id string, turns []brain.Turn) {
 	}
 	a.workerThreads[id] = copyWorkerThread(turns)
 }
+
+// saveWorkerThreadAt saves a checkpoint unless a newer one is already saved,
+// so a late snapshot cannot replace newer evidence.
+func (a *Agency) saveWorkerThreadAt(id string, turns []brain.Turn, revision uint64) {
+	if id == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if revision < a.workerThreadRevs[id] {
+		return
+	}
+	if a.workerThreadRevs == nil {
+		a.workerThreadRevs = make(map[string]uint64)
+	}
+	if a.workerThreads == nil {
+		a.workerThreads = make(map[string][]brain.Turn)
+	}
+	a.workerThreadRevs[id] = revision
+	a.workerThreads[id] = copyWorkerThread(turns)
+}
+
+// unmarkDeliveredAnswer clears the replaced mark from turn in job id's saved
+// thread: that answer is being delivered after all. The turns after it stay.
+func (a *Agency) unmarkDeliveredAnswer(id string, turn int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if turns := a.workerThreads[id]; turn >= 0 && turn < len(turns) && turns[turn].Disposition == brain.DispositionSuperseded {
+		turns[turn].Disposition = ""
+	}
+}
+
 func copyWorkerThread(turns []brain.Turn) []brain.Turn {
 	copy := append([]brain.Turn(nil), turns...)
 	for i := range copy {

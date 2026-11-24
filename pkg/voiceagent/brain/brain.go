@@ -956,6 +956,9 @@ func normalizePromptHistory(turns []Turn) []Turn {
 // line is never at the mercy of whatever the cleaning rules become.
 const fallbackResponse = "Hmm, I lost my train of thought for a second. What were you saying?"
 
+// IsFallbackReply reports the line a provider gives for an empty reply.
+func IsFallbackReply(text string) bool { return text == fallbackResponse }
+
 // Vocal fillers fall into two tiers.
 //
 // voicedFillers reach TTS untouched. Deleting them threw away the beat of

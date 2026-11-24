@@ -312,6 +312,65 @@ reopened session. A persona on Ollama or Codex reads it after her cancel line
 and can answer from it when asked later what that job got through; other
 providers do not read it yet. It is never saved as the job's answer.
 
+A running job can be corrected from the keyboard with `/work tell JOB_ID
+TEXT`: "use the other file" reaches that job instead of becoming chat or a
+second job. The rest of the line is the correction, as typed. The job keeps its
+id, its place and its limits; a correction adds no time, requests or spend. On
+the in-process Ollama worker serving a model on this machine (a legacy worker,
+a tiered local Ollama worker, or an Ollama persona's own job) the worker reads
+it before its next model request or tool call. A request already built is
+rebuilt with the correction if it has not been sent yet, including a resend
+after a brief outage. A tool call the worker has not started is not run and is
+answered `not run: a correction arrived`; a call already running finishes
+first. The correction is then the next user turn in the worker's conversation,
+after the results, and the worker continues from it. An answer written before
+the correction arrived, or while its pictures were being attached, is kept
+aside: the worker's saved conversation marks it replaced, and the job goes on
+from the correction. If no request is left for that, or the corrected run
+fails, including when its pictures cannot be attached, the kept answer is
+delivered cut short instead, so a correction never turns an answer into a
+failure. Several corrections apply in the order given.
+A job still queued gets the correction in the brief it starts with, labelled
+`Correction from the user:`. A correction is refused, with the reason, for a
+CLI or hosted worker, a paid worker, an Ollama worker on another machine or
+behind a cloud alias, an Obey-managed delegation and a reply moved to the
+background; nothing about the job changes. When whether the worker runs on
+this machine cannot be checked, the refusal says so. Such a worker still reads
+a correction given while the job is queued, in its brief. A correction reaches
+a job only from the conversation that started it: after a clear, the old
+job's id is unknown to `/work tell`, though `/work cancel` still reaches it. Corrections come only
+from the keyboard for now; no spoken phrase or persona tool makes one.
+
+`/work tell` reports at once whether the correction was accepted, added to a
+queued job's brief, or refused. What happens to it afterwards is shown on the
+job's row and in `/workers`, for the newest correction: `correction included`
+once a request carrying it was answered by the model server (which does not
+mean the worker obeyed it), `correction added to brief` for a worker that took
+it in its brief and cannot report more, `correction could not apply: limit
+reached` when a time or request limit left no request for it, in which case
+the answer the worker already had is delivered cut short with that limit as
+the reason, `correction superseded by cancel` when a cancel came first, and
+`correction could not apply: the job failed` or `: the job was stopped` when
+the job ended otherwise. When the corrected run fails, the answer delivered in
+its place is cut short with the reason "the corrected run failed". A correction
+to a job that has already answered is refused as already finished. Each change
+is a `job_correction` event with the job id, revision, text and state, and the
+session transcript records the revision and whether it went into a brief. A
+correction lifts a stop by the repeat guard, so the redirected job gets its
+tools back, but never a time or request limit. A job that takes a correction
+is never given an image repair: if its task asked for a picture and its answer
+has none, the answer is delivered ending `(No image attached.)`, and its row
+says `no image attached`. A job that took no correction is repaired as before,
+and while that repair runs a correction is refused: "the job is finishing". A
+correction that arrives just as the repair would start is taken instead of the
+repair. When a corrected run answers nothing, the answer the worker already
+had is delivered cut short, as when the run fails. When the worker's context fills, the task and
+every later instruction are kept as written and the tool exchanges between
+them are summarized, in notes that say how many of those instructions they
+come after. A worker keeps its last model request for its answer: with one
+left it does not summarize, and with two left a summary the server is too busy
+to answer is not resent.
+
 Those events are folded for display: consecutive calls of one kind become a
 row, a kind change opens the next. The TUI keeps one transcript entry per job
 and rewrites its summary in place — `⚙ job-1 · read 3 files · ran 1 command`,
@@ -347,8 +406,10 @@ discussions do not carry it. The sentence that introduces the list is the
 `system/active-work.yaml` prompt. A persona on a hosted backend is not sent the
 list; ask it "what's happening" or open `/workers`.
 
-In the TUI, `/workers` provides **Stop task** (`s`), **Stop all** (`x`, then
-`y`), and **Allow background workers** (`t`). The permission is global, not
+In the TUI, `/workers` provides **Stop task** (`s`), **Correct task** (`e`,
+which returns to the conversation with `/work tell JOB_ID ` typed for you, or,
+when you had started a message there, keeps it and shows the command),
+**Stop all** (`x`, then `y`), and **Allow background workers** (`t`). The permission is global, not
 persona-specific, and is saved as `voice_workers_disabled` (default `false`).
 Turning workers off rejects new spawned and managed jobs but lets already
 admitted running and queued work finish. Stop all cancels those existing jobs

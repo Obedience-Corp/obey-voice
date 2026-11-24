@@ -31,6 +31,14 @@ type StreamOptions struct {
 	// OnForcedAnswer reports that the returned answer was written in a
 	// tools-free round the host imposed, and why. Ollama workers only.
 	OnForcedAnswer func(ForcedAnswer)
+	// Control carries corrections to a running worker job. Ollama workers
+	// read it before each model request and each tool call. With it set, an
+	// empty input adds no turn: the job continues from its corrections.
+	Control *WorkerControl
+	// OnCheckpoint reports, on the worker's goroutine, that history holds a
+	// complete step: a tool batch with all its results, corrections just
+	// added, or the answer. Ollama workers with a Control only.
+	OnCheckpoint func()
 	// OnSameOutput reports how many consecutive tool rounds returned the same
 	// output, each time the run grows past what is worth showing, and 0 once
 	// when a shown run ends. It is observational only. Ollama workers only.

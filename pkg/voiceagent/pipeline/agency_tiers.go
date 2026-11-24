@@ -182,6 +182,8 @@ func (a *Agency) plannedWorkerRun(brief string, cfg *config.Config, plan *config
 		if plan.Assignment.Billing != config.WorkerBillingLocal {
 			return a.paidWorkerRun(ctx, brief, worker, cfg, plan, requestID)
 		}
+		// Admission checked the local endpoint and the model's metadata.
+		jobSteerFrom(ctx).localWorker()
 		return a.workerRunWithBudget(brief, worker, cfg, budget, true)(ctx)
 	}
 }

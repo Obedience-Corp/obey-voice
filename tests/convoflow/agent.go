@@ -16,6 +16,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -285,6 +286,37 @@ func (r *liveRunner) close() {
 // runBackground runs the host-owned delivery turn on the serialized engine
 // host. The worker itself has already run asynchronously; this call only
 // claims a durable terminal result after flushing the current checkpoint.
+// tellWork sends text to the newest running job as the keyboard's /work tell
+// does: no model decides whether it is accepted.
+func (r *liveRunner) tellWork(_ context.Context, text string) error {
+	if r.agent == nil || r.agent.Pipeline == nil {
+		return fmt.Errorf("work tell: agent is not configured")
+	}
+	return tellNewestJob(r.agent.Pipeline.Workers(), r.agent.Pipeline.TellWork, text)
+}
+
+func tellNewestJob(workers []pipeline.WorkerInfo, tell func(id, text string) pipeline.WorkReceipt, text string) error {
+	var newest *pipeline.WorkerInfo
+	for i, w := range workers {
+		if w.State == "running" && (newest == nil || w.Started.After(newest.Started)) {
+			newest = &workers[i]
+		}
+	}
+	if newest == nil {
+		return fmt.Errorf("work tell: no running job")
+	}
+	receipt := tell(newest.ID, text)
+	if err := receipt.Err(); err != nil {
+		return fmt.Errorf("work tell %s: %w", newest.ID, err)
+	}
+	for _, j := range receipt.Jobs {
+		if j.Outcome != pipeline.ControlAccepted {
+			return fmt.Errorf("work tell %s: %s %s", newest.ID, j.Outcome, j.Reason)
+		}
+	}
+	return nil
+}
+
 func (r *liveRunner) runBackground(ctx context.Context) error {
 	if r.agent == nil || r.agent.Pipeline == nil {
 		return fmt.Errorf("background work: agent is not configured")

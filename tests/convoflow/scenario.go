@@ -17,6 +17,9 @@ const (
 	waitJobStarted  waitKind = "job_started"
 	waitJobTerminal waitKind = "job_terminal"
 	waitWorkDurable waitKind = "work_durable"
+	// waitWorkerTool ends when a worker's first tool call of the turn has
+	// finished; the job ending first fails the turn.
+	waitWorkerTool waitKind = "worker_tool"
 )
 
 // Scenario is one scripted conversation. Unknown YAML keys are load errors.
@@ -124,6 +127,14 @@ type Expectation struct {
 	WorkPersisted                *bool  `yaml:"work_persisted"`
 	WorkRunningAtSelection       *bool  `yaml:"work_running_at_selection"`
 	WorkCompletedBeforeSelection *bool  `yaml:"work_completed_before_selection"`
+	// Correction wants a job_correction event in this state: pending (taken
+	// by the running worker), included, briefed, not_applied, superseded,
+	// refused or rejected.
+	Correction string `yaml:"correction"`
+	// WorkFile wants a file of this name anywhere under the run's work
+	// directory, holding WorkFileContains when that is set.
+	WorkFile         string `yaml:"work_file"`
+	WorkFileContains string `yaml:"work_file_contains"`
 }
 
 type duration struct{ time.Duration }
@@ -224,7 +235,7 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 		if t.StimulusCompleteWithin != nil && (t.StimulusCompleteWithin.Duration <= 0 || t.Op != "acoustic_interrupt") {
 			return nil, fmt.Errorf("load %s: turn %q: stimulus_complete_within requires acoustic_interrupt and a positive duration", name, t.ID)
 		}
-		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" && t.Op != "start_latency_worker" && t.Op != "stop_latency_worker" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion" && t.Op != "acoustic_completion_mute" && t.Op != "acoustic_completion_speech" && t.Op != "acoustic_response" && t.Op != "acoustic_mute" && t.Op != "acoustic_failure" {
+		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" && t.Op != "start_latency_worker" && t.Op != "stop_latency_worker" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion" && t.Op != "acoustic_completion_mute" && t.Op != "acoustic_completion_speech" && t.Op != "acoustic_response" && t.Op != "acoustic_mute" && t.Op != "acoustic_failure" && t.Op != "work_tell" {
 			return nil, fmt.Errorf("load %s: turn %q: unknown op %q", name, t.ID, t.Op)
 		}
 		if t.Op == "acoustic_interrupt" && (!scn.Capture.Microphone || t.WAV == "" || t.InterruptWAV == "" || t.ExpectedTranscript == "") {
@@ -248,6 +259,14 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 		if t.Op == "start_latency_worker" && (scn.LatencyCondition != "worker" || strings.TrimSpace(t.User) == "") {
 			return nil, fmt.Errorf("load %s: start_latency_worker requires worker condition and explicit task", name)
 		}
+		if t.Op == "work_tell" && strings.TrimSpace(t.User) == "" {
+			return nil, fmt.Errorf("load %s: turn %q: work_tell needs the correction as user", name, t.ID)
+		}
+		for _, ex := range t.Expect {
+			if ex.WorkFileContains != "" && ex.WorkFile == "" {
+				return nil, fmt.Errorf("load %s: turn %q: work_file_contains needs work_file", name, t.ID)
+			}
+		}
 		if t.ExpectError != "" && t.Op != "select_persona" {
 			return nil, fmt.Errorf("load %s: turn %q: expect_error requires op select_persona", name, t.ID)
 		}
@@ -255,7 +274,7 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 			t.Wait = waitIdle
 		}
 		switch t.Wait {
-		case waitIdle, waitJobStarted, waitJobTerminal, waitWorkDurable:
+		case waitIdle, waitJobStarted, waitJobTerminal, waitWorkDurable, waitWorkerTool:
 		default:
 			return nil, fmt.Errorf("load %s: turn %q: unknown wait %q", name, t.ID, t.Wait)
 		}

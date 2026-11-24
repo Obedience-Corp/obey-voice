@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -58,6 +59,15 @@ type Agency struct {
 	// history may take only the ones the chat already shows, so the saved
 	// thread follows the order the user saw and heard.
 	heldReplies map[string]workerReply
+	// workerThreadRevs is the revision of each saved thread checkpoint.
+	workerThreadRevs map[string]uint64 // guarded by mu
+	// steers are the spawned jobs a correction can reach. Registration runs
+	// under the job table's lock, so it has a mutex of its own.
+	steersMu sync.Mutex
+	steers   map[string]*jobSteer
+	// heldMedia are the images of an answer delivered in place of a failed
+	// correction's run, kept apart from that job's saved thread.
+	heldMedia map[string][]chatmedia.Ref // guarded by mu
 	// sameOutputs holds each job's run of tool rounds with the same output.
 	sameOutputs map[string]sameOutputRun // guarded by mu
 }

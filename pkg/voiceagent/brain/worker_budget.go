@@ -135,6 +135,23 @@ func (b *WorkerBudget) rejectedRequest() {
 	b.mu.Unlock()
 }
 
+// abandonRequest returns a request acquired for an attempt that was never
+// sent, and the retry it was charged as.
+func (b *WorkerBudget) abandonRequest(retry bool) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.requestInFlight = false
+	if b.requests > 0 {
+		b.requests--
+	}
+	if retry && b.retries > 0 {
+		b.retries--
+	}
+}
+
 // RemainingRequests reports how many provider requests are left. ok is false
 // when requests are unlimited.
 func (b *WorkerBudget) RemainingRequests() (remaining int, ok bool) {

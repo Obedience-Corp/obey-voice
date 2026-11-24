@@ -39,7 +39,7 @@ func (a *Agency) queueResult(id, task, result string, refs []chatmedia.Ref, elap
 		primary = origin.Voices.primary
 	}
 	finishedEnvelope, deliveredEnvelope := origin.Envelope, origin.Envelope
-	finished := events.JobFinished{ID: id, Task: task, Summary: result, Attachments: refs, Elapsed: elapsed, Envelope: &finishedEnvelope, Scope: origin.Scope, CutShort: origin.incomplete != nil, CutShortReason: brain.ForcedAnswerReason(origin.incomplete)}
+	finished := events.JobFinished{ID: id, Task: task, Summary: result, Attachments: refs, Elapsed: elapsed, Envelope: &finishedEnvelope, Scope: origin.Scope, CutShort: origin.incomplete != nil, CutShortReason: brain.ForcedAnswerReason(origin.incomplete), NoImage: origin.noImage}
 	if origin.continued && strings.TrimSpace(result) == "" && len(refs) == 0 {
 		// The part of the reply given before it moved was all of it.
 		return finished

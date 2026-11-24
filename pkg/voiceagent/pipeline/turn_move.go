@@ -556,6 +556,16 @@ func (a *Agency) noteIncomplete(id string, reason error, unspoken bool) {
 	a.workerOrigins[id] = origin
 }
 
+// noteNoImage records that job id's answer came back without the image its
+// task asked for, after a correction.
+func (a *Agency) noteNoImage(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	origin := a.workerOrigins[id]
+	origin.noImage = true
+	a.workerOrigins[id] = origin
+}
+
 // noteForcedAnswer records that job id's answer was written in a final round
 // the host imposed. The first reason stands.
 func (a *Agency) noteForcedAnswer(id string, reason brain.ForcedAnswer) {

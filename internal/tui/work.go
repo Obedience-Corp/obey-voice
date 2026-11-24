@@ -8,6 +8,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
@@ -32,6 +33,12 @@ type jobView struct {
 	tier     string
 	// sameOutput is the job's run of tool rounds with the same output.
 	sameOutput int
+}
+
+// jobCorrectionView is the newest correction a job's row shows.
+type jobCorrectionView struct {
+	revision int
+	label    string
 }
 
 func (m *conversationModel) canonicalJob(v work.JobView) {
@@ -112,6 +119,9 @@ func (m *conversationModel) jobFinished(e events.JobFinished) {
 			suffix += ": " + e.CutShortReason
 		}
 	}
+	if e.NoImage {
+		suffix += " · no image attached"
+	}
 	m.jobEnded(e.ID, "finished", suffix, e.Elapsed)
 	// Image results are readable immediately, even behind another speaker.
 	// Text-only results join the thread in spoken order.
@@ -188,6 +198,73 @@ func (m *conversationModel) jobExited(e events.JobExited) {
 		return
 	}
 	m.items[idx].sys = strings.Replace(m.items[idx].sys, stoppingMark, "", 1)
+	if row, ok := m.sealedRows[e.ID]; ok {
+		row.suffix = strings.Replace(row.suffix, stoppingMark, "", 1)
+		m.sealedRows[e.ID] = row
+	}
+	m.refreshContent()
+}
+
+// jobCorrection shows where the job's newest correction stands on its row.
+// Acceptance was reported by the command; a later disposition is a notice.
+func (m *conversationModel) jobCorrection(e events.JobCorrection) {
+	if !m.acceptWorkScope(e.Scope) {
+		return
+	}
+	label := pipeline.CorrectionLabel(brain.Correction{State: brain.CorrectionState(e.State), Reason: e.Reason, Brief: e.Brief})
+	if label == "" {
+		return
+	}
+	m.appendActivity("job", fmt.Sprintf("%s correction %d: %s", e.ID, e.Revision, label), 0)
+	// The row shows the newest correction; a disposition of an older one is
+	// in the activity feed only.
+	if shown, ok := m.jobCorrections[e.ID]; ok && shown.revision > e.Revision {
+		return
+	}
+	if m.jobCorrections == nil {
+		m.jobCorrections = make(map[string]jobCorrectionView)
+	}
+	m.jobCorrections[e.ID] = jobCorrectionView{revision: e.Revision, label: label}
+	v, ok := m.jobs[e.ID]
+	if !ok || v.terminal {
+		m.refreshEndedJobRow(e.ID)
+		return
+	}
+	suffix := " · queued"
+	if v.running {
+		suffix = " · working"
+	}
+	m.renderJobItem(e.ID, suffix)
+}
+
+// sealedJobRow is what an ended job's row was written from, so a correction's
+// later disposition can rewrite it.
+type sealedJobRow struct {
+	label, suffix, origin, persona string
+}
+
+// refreshEndedJobRow rewrites an ended job's row, or its result row in the
+// work inbox, with the job's newest correction.
+func (m *conversationModel) refreshEndedJobRow(id string) {
+	if resultID, ok := m.workResultJobs[id]; ok {
+		if idx, ok := m.workResultItems[resultID]; ok && idx < len(m.items) {
+			for _, rows := range [][]work.ResultView{m.workDisplay.snapshot.Pending, m.workDisplay.snapshot.Communicated} {
+				for _, r := range rows {
+					if r.Outcome.ResultID == resultID {
+						m.items[idx].sys = m.renderWorkResult(r)
+						m.refreshContent()
+						return
+					}
+				}
+			}
+		}
+	}
+	row, ok := m.sealedRows[id]
+	idx, sealed := m.completedJobItems[id]
+	if !ok || !sealed || idx >= len(m.items) {
+		return
+	}
+	m.items[idx].sys = m.jobLine(id, row.label, row.suffix, row.origin, row.persona)
 	m.refreshContent()
 }
 
@@ -210,6 +287,12 @@ func (m *conversationModel) jobEnded(id, detail, suffix string, elapsed time.Dur
 		label = m.jobLabel(id)
 	}
 	if !m.hasCanonicalJob(id) {
+		if job := m.jobs[id]; job != nil {
+			if m.sealedRows == nil {
+				m.sealedRows = make(map[string]sealedJobRow)
+			}
+			m.sealedRows[id] = sealedJobRow{label: label, suffix: suffix, origin: job.origin, persona: job.persona}
+		}
 		m.renderJobItemLabel(id, label, suffix)
 		if idx, ok := m.jobItems[id]; ok {
 			if m.completedJobItems == nil {
@@ -219,6 +302,7 @@ func (m *conversationModel) jobEnded(id, detail, suffix string, elapsed time.Dur
 			if len(m.completedJobItems) > 256 {
 				for old := range m.completedJobItems {
 					delete(m.completedJobItems, old)
+					delete(m.sealedRows, old)
 					break
 				}
 			}
@@ -446,15 +530,11 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	if id == "" {
 		return
 	}
-	origin := ""
-	if job := m.jobs[id]; job != nil && job.origin != "" {
-		origin = " [" + job.origin + "]"
+	var origin, persona string
+	if job := m.jobs[id]; job != nil {
+		origin, persona = job.origin, job.persona
 	}
-	if job := m.jobs[id]; job != nil && job.persona != "" {
-		label = job.persona + " · " + label
-	}
-	line := dimStyle.Render("  ⚙ " + id + origin + " · " + label + suffix)
-	line += m.renderJobToolDetails(id)
+	line := m.jobLine(id, label, suffix, origin, persona)
 	idx, ok := m.jobItems[id]
 	if !ok || idx >= len(m.items) {
 		if m.jobItems == nil {
@@ -467,6 +547,21 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	m.items[idx] = chatItem{kind: chatItemSys, sys: line}
 	m.refreshContent()
 	m.applyFollow()
+}
+
+// jobLine is a job's row: its id, origin, persona, label, newest correction
+// and suffix, then its tool details.
+func (m *conversationModel) jobLine(id, label, suffix, origin, persona string) string {
+	if origin != "" {
+		origin = " [" + origin + "]"
+	}
+	if persona != "" {
+		label = persona + " · " + label
+	}
+	if c := m.jobCorrections[id]; c.label != "" {
+		label += " · " + c.label
+	}
+	return dimStyle.Render("  ⚙ "+id+origin+" · "+label+suffix) + m.renderJobToolDetails(id)
 }
 
 // renderJobToolDetails uses the already-redacted event projection. Keep the

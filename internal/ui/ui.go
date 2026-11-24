@@ -32,6 +32,15 @@ type UI struct {
 	allowWorkScopeChange bool
 	authorityMu          sync.Mutex
 	authoritativeWork    func() work.Snapshot
+	conversationScope    func() work.WorkScope
+}
+
+// SetConversationScope binds the display to the host's current conversation,
+// which a correction event names whether or not the work inbox is on.
+func (u *UI) SetConversationScope(get func() work.WorkScope) {
+	u.authorityMu.Lock()
+	u.conversationScope = get
+	u.authorityMu.Unlock()
 }
 
 // SetWorkSnapshot binds the display to the host's current work authority.
@@ -106,6 +115,7 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onJobFailed)
 	events.Subscribe(bus, u.onJobAborted)
 	events.Subscribe(bus, u.onJobExited)
+	events.Subscribe(bus, u.onJobCorrection)
 	events.Subscribe(bus, u.onVoiceGateStripped)
 	events.Subscribe(bus, u.onWorkStateChanged)
 	events.Subscribe(bus, u.onRouteDecided)
@@ -549,6 +559,27 @@ func (u *UI) onJobAborted(e events.JobAborted) {
 	line := fmt.Sprintf("■ %s %s after %s", e.ID, how, e.Elapsed.Round(time.Second))
 	if e.Stopping {
 		line += " · stopping"
+	}
+	u.dimLine(line)
+}
+
+func (u *UI) onJobCorrection(e events.JobCorrection) {
+	u.authorityMu.Lock()
+	current := u.conversationScope
+	u.authorityMu.Unlock()
+	if e.Scope.Valid() && (current == nil || current() != e.Scope) {
+		return
+	}
+	state := strings.ReplaceAll(e.State, "_", " ")
+	if e.State == "briefed" {
+		state = "added to brief"
+	}
+	if e.Brief && e.State == "pending" {
+		state = "added to brief"
+	}
+	line := fmt.Sprintf("✎ %s correction %s", e.ID, state)
+	if e.Reason != "" {
+		line += ": " + e.Reason
 	}
 	u.dimLine(line)
 }

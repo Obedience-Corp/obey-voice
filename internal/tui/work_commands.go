@@ -9,6 +9,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/workjournal"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -17,7 +18,18 @@ type workResultController interface {
 	WorkResultAction(work.WorkScope, string, string) error
 }
 
+type workTeller interface {
+	TellWork(id, instruction string) pipeline.WorkReceipt
+}
+
 func (m *conversationModel) runWorkCommand(args []string) tea.Cmd {
+	if len(args) > 0 && args[0] == "tell" {
+		id, text := "", ""
+		if len(args) > 1 {
+			id, text = args[1], strings.Join(args[2:], " ")
+		}
+		return m.runWorkTell(id, text)
+	}
 	m.recoverWorkNow()
 	if len(args) == 0 || (len(args) == 1 && args[0] == "all") {
 		m.workActivity, m.activityFocused, m.workFilter = true, true, ""
@@ -51,7 +63,7 @@ func (m *conversationModel) runWorkCommand(args []string) tea.Cmd {
 		return nil
 	}
 	if len(args) != 2 {
-		m.commandError("usage: /work [job|all|cancel job|dismiss job|speak job|replay job|logs]")
+		m.commandError("usage: " + workUsage)
 		return nil
 	}
 	action, id := args[0], args[1]
@@ -79,7 +91,7 @@ func (m *conversationModel) runWorkCommand(args []string) tea.Cmd {
 		}
 		err = controller.WorkResultAction(m.workScope, id, action)
 	default:
-		m.commandError("Unknown work action; use cancel, dismiss, speak or replay")
+		m.commandError("Unknown work action; use cancel, tell, dismiss, speak or replay")
 		return nil
 	}
 	if err != nil {
@@ -98,6 +110,44 @@ func (m *conversationModel) runWorkCommand(args []string) tea.Cmd {
 	m.refreshActivity()
 	if action == "speak" || action == "replay" {
 		return m.reconcileBackground()
+	}
+	return nil
+}
+
+const workUsage = "/work [job|all|cancel job|tell job text|dismiss job|speak job|replay job|logs]"
+
+// runWorkTell sends a correction to one job and reports the receipt at once.
+// When the correction reaches the worker, its row says so.
+func (m *conversationModel) runWorkTell(id, text string) tea.Cmd {
+	if id == "" || strings.TrimSpace(text) == "" {
+		m.commandError("usage: /work tell job text")
+		return nil
+	}
+	teller, ok := m.deps.runner.(workTeller)
+	if !ok {
+		m.commandError("Corrections are unavailable")
+		return nil
+	}
+	receipt := teller.TellWork(id, text)
+	if receipt.Rejected != "" {
+		m.commandError("Correction not sent: " + receipt.Rejected)
+		return nil
+	}
+	if len(receipt.Jobs) != 1 {
+		m.commandError("Correction not sent")
+		return nil
+	}
+	switch item := receipt.Jobs[0]; item.Outcome {
+	case pipeline.ControlAccepted:
+		m.commandNotice("Correction sent to " + id + "; the worker reads it at its next model request or tool call.")
+	case pipeline.ControlBriefed:
+		m.commandNotice(id + " has not started; the correction was added to its brief.")
+	case pipeline.ControlFinished:
+		m.commandError(id + " has already finished; the correction was not sent.")
+	case pipeline.ControlUnknown:
+		m.commandError("No running job " + id)
+	default:
+		m.commandError("Correction not sent to " + id + ": " + item.Reason)
 	}
 	return nil
 }
@@ -178,7 +228,7 @@ func (m conversationModel) renderWorkActivity() string {
 			}
 		}
 	}
-	out.WriteString("\n/work cancel ID · /work dismiss ID · /work speak ID · /work replay ID\n/work logs · Esc clears detail, then returns to Chat")
+	out.WriteString("\n/work cancel ID · /work tell ID text · /work dismiss ID · /work speak ID · /work replay ID\n/work logs · Esc clears detail, then returns to Chat")
 	if m.journalIncomplete {
 		out.WriteString("\nDiagnostic history incomplete; canonical results remain available.")
 	}

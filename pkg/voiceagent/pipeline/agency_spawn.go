@@ -60,20 +60,33 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	jobID := ""
 	var key work.JobKey
 	admission := w.admission()
+	// Corrections can reach the job from the moment anyone can name it.
+	admitted := a.pipeline.ConversationScope()
+	if _, scope := a.workAuthority(); scope.Valid() {
+		admitted = scope
+	}
+	steer := a.newJobSteer(admitted)
 	if c, scope := a.workAuthority(); c != nil {
 		jobID = newWorkID()
+		a.registerSteer(jobID, steer)
+		a.workMu.Lock()
+		a.jobScopes[jobID] = scope
+		a.workMu.Unlock()
 		var err error
 		key, err = c.Register(scope, work.Admission{JobID: jobID, Task: task, Origin: "agency", Provider: providerName(jobCfg), Model: modelName(jobCfg), Config: admission})
 		if err != nil {
+			a.workMu.Lock()
+			delete(a.jobScopes, jobID)
+			a.workMu.Unlock()
+			a.unregisterSteer(jobID, steer)
 			a.emitRouteDecision(d, "rejected", "", err.Error())
 			a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 			return
 		}
-		a.workMu.Lock()
-		a.jobScopes[jobID] = scope
-		a.workMu.Unlock()
 	}
 	run, runtimeBudget := a.spawnRun(ctx, metrics, d.Transcript, task, history, a.pipeline.Brain, w)
+	spawned := run
+	run = func(jobCtx context.Context) (string, error) { return spawned(withJobSteer(jobCtx, steer)) }
 	origin := workerOrigin{Scope: a.pipeline.ConversationScope(), Trace: events.TraceFromContext(ctx), admission: admission}
 	if metrics != nil {
 		origin.Envelope = metrics.response
@@ -82,9 +95,15 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	origin.Envelope.ResponseID = newWorkID()
 	origin.Voices.primary, origin.Voices.fallback = a.pipeline.responseTTS(ctx)
 	origin.releaseVoice = a.pipeline.RetainTTS(origin.Voices.primary, origin.Voices.fallback)
+	var register func(string)
+	if jobID == "" {
+		register = func(id string) { a.registerSteer(id, steer) }
+	}
 	acceptedID, err := a.jobs.Start(ctx, job.Spec{
 		RuntimeBudget: runtimeBudget,
 		ID:            jobID,
+		Register:      register,
+		OnEnding:      steer.decide,
 		OnAccepted: func(id string) {
 			a.mu.Lock()
 			a.workerOrigins[id] = origin
@@ -101,6 +120,9 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	})
 	if err != nil {
 		origin.releaseVoice()
+		if jobID != "" {
+			a.unregisterSteer(jobID, steer)
+		}
 		a.emitRouteDecision(d, "rejected", jobID, err.Error())
 		if c, _ := a.workAuthority(); c != nil && key.JobID != "" {
 			_, _ = c.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeFailed, Text: truncateJobTask(err.Error()), Termination: "known"})
