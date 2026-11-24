@@ -20,12 +20,21 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
 
-// fixtureJobWorker is a background job with no model behind it: it lists a
-// folder once, takes corrections, and returns only when its job is cancelled
-// or it is released. A stubborn one ignores the cancel until released.
+// fixtureJobWorker is a background job with no model behind it: it reports
+// its activity (one folder listing unless activity says otherwise), takes
+// corrections, and returns only when its job is cancelled or it is released.
+// A stubborn one ignores the cancel until released.
 type fixtureJobWorker struct {
 	release  <-chan struct{}
 	stubborn bool
+	activity func(brief string) []brain.ToolCall
+}
+
+func (w fixtureJobWorker) calls(brief string) []brain.ToolCall {
+	if w.activity != nil {
+		return w.activity(brief)
+	}
+	return []brain.ToolCall{{ID: "call_1", Name: "list_files", Kind: brain.KindListDir, Summary: "."}}
 }
 
 func (fixtureJobWorker) ReadsWorkerControl() bool { return true }
@@ -34,13 +43,14 @@ func (w fixtureJobWorker) ThinkStream(ctx context.Context, input string, opts br
 	return (&fakeBrain{chunks: []string{"done"}}).ThinkStream(ctx, input, opts)
 }
 
-func (w fixtureJobWorker) ThinkFull(ctx context.Context, _ string, opts brain.StreamOptions) (string, error) {
-	call := brain.ToolCall{ID: "call_1", Name: "list_files", Kind: brain.KindListDir, Summary: "."}
-	if opts.OnToolStart != nil {
-		opts.OnToolStart(call)
-	}
-	if opts.OnToolEnd != nil {
-		opts.OnToolEnd(brain.ToolResult{ToolCall: call, Preview: "notes.txt"})
+func (w fixtureJobWorker) ThinkFull(ctx context.Context, brief string, opts brain.StreamOptions) (string, error) {
+	for _, call := range w.calls(brief) {
+		if opts.OnToolStart != nil {
+			opts.OnToolStart(call)
+		}
+		if opts.OnToolEnd != nil {
+			opts.OnToolEnd(brain.ToolResult{ToolCall: call, Preview: "ok"})
+		}
 	}
 	if w.stubborn {
 		<-w.release
@@ -72,6 +82,8 @@ type personaControlHarness struct {
 	worker   fixtureJobWorker
 	jobTool  chan string
 	finished chan string
+	// toolsSeen counts each job's tool calls, read by the test goroutine only.
+	toolsSeen map[string]int
 
 	mu       sync.Mutex
 	chats    int
@@ -88,7 +100,7 @@ type harnessOption func(*config.Config)
 func newPersonaControlHarness(t *testing.T, opts ...harnessOption) *personaControlHarness {
 	t.Helper()
 	config.SetConfigDirForTest(t, t.TempDir())
-	h := &personaControlHarness{t: t, tts: &progressiveFakeTTS{}, release: make(chan struct{}), jobTool: make(chan string, 32), finished: make(chan string, 32)}
+	h := &personaControlHarness{t: t, tts: &progressiveFakeTTS{}, release: make(chan struct{}), jobTool: make(chan string, 256), finished: make(chan string, 64), toolsSeen: map[string]int{}}
 	t.Cleanup(func() {
 		select {
 		case <-h.release:
@@ -208,8 +220,12 @@ func humanLine(req api.ChatRequest, n int) string {
 }
 
 // spawnAs starts a fixture job as persona and returns its id once it is
-// running or queued.
+// queued, or running with all its activity reported.
 func (h *personaControlHarness) spawnAs(persona, task string) string {
+	return h.spawnNamed(persona, "", task)
+}
+
+func (h *personaControlHarness) spawnNamed(persona, display, task string) string {
 	h.t.Helper()
 	cfg := h.cfg.Clone()
 	cfg.ActivePersona = persona
@@ -220,11 +236,12 @@ func (h *personaControlHarness) spawnAs(persona, task string) string {
 		before[info.ID] = true
 	}
 	metrics := newTurnMetrics()
+	metrics.response.DisplayName = display
 	h.a.HandleRoute(context.Background(), h.p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteSpawn, Transcript: task, Source: "test"})
 	for _, info := range h.a.jobs.Status() {
 		if !before[info.ID] {
 			if info.State == job.StateRunning {
-				h.awaitJobTool(info.ID)
+				h.awaitJobTools(info.ID, len(h.worker.calls(task)))
 			}
 			return info.ID
 		}
@@ -235,16 +252,14 @@ func (h *personaControlHarness) spawnAs(persona, task string) string {
 
 func (h *personaControlHarness) spawn(task string) string { return h.spawnAs("robin", task) }
 
-func (h *personaControlHarness) awaitJobTool(id string) {
+func (h *personaControlHarness) awaitJobTools(id string, n int) {
 	h.t.Helper()
-	for {
+	for h.toolsSeen[id] < n {
 		select {
 		case got := <-h.jobTool:
-			if got == id {
-				return
-			}
+			h.toolsSeen[got]++
 		case <-time.After(3 * time.Second):
-			h.t.Fatalf("job %s never reported a tool", id)
+			h.t.Fatalf("job %s reported %d of %d tools", id, h.toolsSeen[id], n)
 		}
 	}
 }

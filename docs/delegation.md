@@ -474,7 +474,7 @@ other file instead" (a correction). It is off by default. Small local models
 have been measured misusing it: one turned a bare "Stop." into a cancel every
 time, a smaller one cancelled another persona's job and started second jobs,
 and another said "Done, cancelled" without calling anything. Try it with your
-model before relying on it.
+model before relying on it (see [Measuring a model](#measuring-a-model)).
 
 The tool, `job_control(action, job_id, instruction)`, is offered only on a
 live turn that answers you, on the direct router: never to a worker, a result
@@ -540,6 +540,34 @@ you did not. A cancel's host note is saved as for a spoken "cancel". The
 controls are the same ones `/work cancel`, `/work report` and `/work tell` make,
 recorded with the actor `persona`; their events and `/workers` rows are the
 same. The exact cancel phrases keep their own path and never reach the model.
+
+#### Measuring a model
+
+`TestJobControlCorpus` runs a fixed corpus through full spoken turns of the
+real feature against a local Ollama model: the conversational provider on the
+direct router with job control on, a real pipeline, agency and job table, and
+fixture jobs with no model behind them, owned by the speaking persona or by
+another one as each case says. Speech goes to a spy and is never played; the
+persona's direct tools do run, in a temporary work directory. It is skipped
+unless asked for:
+
+```sh
+OBEY_VOICE_JOB_CONTROL_CORPUS=1 \
+OBEY_VOICE_JOB_CONTROL_MODEL=<model> \
+OBEY_VOICE_JOB_CONTROL_OUT=/tmp/job-control.jsonl \
+go test ./pkg/voiceagent/pipeline/ -run TestJobControlCorpus -count=1 -timeout 0 -v
+```
+
+`OLLAMA_HOST` picks the server, `OBEY_VOICE_JOB_CONTROL_REPS` the repetitions
+(3 by default) and `OBEY_VOICE_JOB_CONTROL_CASES` a comma-separated subset of
+case ids. Each repetition is one JSON line: the model's calls, the host's
+decision and refusal, the receipt, what actually changed in the job table,
+every line spoken in order, jobs started and timings. A rerun resumes past the
+lines already written. `<out>.summary.json` scores every line against five
+criteria, where a change is a real change to a job, not a call: no wrong job
+changed, no unrequested cancel or correction, no call with an empty list, no
+job started for a control request, and the right change on at least two thirds
+of clear requests.
 
 In the TUI, `/workers` provides **Stop task** (`s`), **Correct task** (`e`,
 which returns to the conversation with `/work tell JOB_ID ` typed for you, or,
