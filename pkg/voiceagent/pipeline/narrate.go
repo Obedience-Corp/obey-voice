@@ -384,13 +384,15 @@ func (n *Narrator) playLoop(ctx context.Context, cancel context.CancelFunc) {
 		}
 	}()
 
+	var speech speechPriority
+	defer speech.release()
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		n.waitForTurnGap(ctx)
+		n.waitForTurnGap(ctx, &speech)
 
-		if n.waitIfPaused(ctx) {
+		if n.waitIfPaused(ctx, &speech) {
 			return
 		}
 
@@ -401,6 +403,7 @@ func (n *Narrator) playLoop(ctx context.Context, cancel context.CancelFunc) {
 
 		switch span.Kind {
 		case render.SpanSilence:
+			speech.release()
 			if !n.waitSilence(ctx, span.Duration) {
 				return
 			}
@@ -416,6 +419,7 @@ func (n *Narrator) playLoop(ctx context.Context, cancel context.CancelFunc) {
 				n.advanceSpan(unitIdx, spanIdx, len(unit.spans))
 				continue
 			}
+			speech.hold(n.pipeline)
 			err := n.pipeline.speakStandalone(ctx, nil, nil, cleaned)
 			if ctx.Err() != nil {
 				return
@@ -430,8 +434,9 @@ func (n *Narrator) playLoop(ctx context.Context, cancel context.CancelFunc) {
 	}
 }
 
-func (n *Narrator) waitForTurnGap(ctx context.Context) {
+func (n *Narrator) waitForTurnGap(ctx context.Context, speech *speechPriority) {
 	for n.pipeline.activeTurns.Load() > 0 {
+		speech.release()
 		select {
 		case <-ctx.Done():
 			return
@@ -440,7 +445,7 @@ func (n *Narrator) waitForTurnGap(ctx context.Context) {
 	}
 }
 
-func (n *Narrator) waitIfPaused(ctx context.Context) bool {
+func (n *Narrator) waitIfPaused(ctx context.Context, speech *speechPriority) bool {
 	for {
 		n.mu.Lock()
 		paused := n.paused
@@ -449,6 +454,7 @@ func (n *Narrator) waitIfPaused(ctx context.Context) bool {
 		if !paused {
 			return false
 		}
+		speech.release()
 		select {
 		case <-ctx.Done():
 			return true
