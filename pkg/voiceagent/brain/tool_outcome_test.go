@@ -300,6 +300,16 @@ func TestFailedToolReasonsAreRedactedAndBounded(t *testing.T) {
 	if o := h.ends[0].Outcome; o == nil || utf8.RuneCountInString(o.Reason) > 240 || !strings.HasPrefix(h.ends[0].Err, "error: creating directory: mkdir ") {
 		t.Fatalf("end = %+v", h.ends[0])
 	}
+
+	// A quoted secret that spans lines is redacted whole, not cut in half.
+	h = &hookRecorder{}
+	got = h.session().execute(context.Background(), t.TempDir(), toolCallFor("read_file", map[string]any{"path": "password=\"first second\nthird\""}))
+	if !strings.Contains(got, "first second\nthird") {
+		t.Fatalf("result = %q, want the model to read the error as main returned it", got)
+	}
+	if o := h.ends[0].Outcome; o == nil || o.Status != events.ToolOutcomeFailed || strings.Contains(o.Reason, "second") || strings.Contains(h.ends[0].Err, "second") || !strings.Contains(o.Reason, "[redacted]") {
+		t.Fatalf("end = %+v, outcome %+v", h.ends[0], h.ends[0].Outcome)
+	}
 }
 
 type cancelledBody struct{ cancel func() }

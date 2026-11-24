@@ -208,9 +208,18 @@ func TestWorkerToolUnknownCountsJobFinishesWithoutAnOutcome(t *testing.T) {
 	rec.add(events.ToolCallFinished{ID: "c3", JobID: "job-1", Name: "web_search"})
 	rec.add(events.ToolCallFinished{ID: "c4", JobID: "job-1", Name: "fetch_url", Err: "error: boom"})
 	rec.add(events.ToolCallFinished{ID: "c5", Name: "list_files"})
-	m := collectMetrics(rec)
-	if m.WorkerToolUnknown != 1 {
+	if m := collectMetrics(rec); m.WorkerToolUnknown != 1 {
 		t.Fatalf("worker_tool_unknown = %d, want 1", m.WorkerToolUnknown)
+	}
+	// A start with no finish, or one whose finish names another job, counts.
+	rec.add(events.ToolCallStarted{ID: "c6", JobID: "job-1", Name: "read_file"})
+	rec.add(events.ToolCallStarted{ID: "c7", JobID: "job-1", Name: "read_file"})
+	rec.add(events.ToolCallFinished{ID: "c7", JobID: "job-2", Name: "read_file", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}})
+	rec.add(events.ToolCallStarted{ID: "c8", JobID: "job-1", Name: "read_file"})
+	rec.add(events.ToolCallFinished{ID: "c8", JobID: "job-1", Name: "read_file", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}})
+	m := collectMetrics(rec)
+	if m.WorkerToolUnknown != 3 {
+		t.Fatalf("worker_tool_unknown = %d, want 3", m.WorkerToolUnknown)
 	}
 	if err := evalRunExpect(Expectation{Metric: "worker_tool_unknown", Op: "==", Value: 0}, rec, m); err == nil {
 		t.Fatal("one unknown passed worker_tool_unknown == 0")

@@ -333,14 +333,15 @@ func failWith(reason string) (string, toolEnd) { return "error: " + reason, tool
 // redacted reason so the hooks' "error: reason" is the leading error line of
 // the text.
 func (e toolEnd) outcome(call api.ToolCall, result string) *events.ToolOutcome {
-	reason := strings.TrimSpace(e.reason)
+	// Redact before cutting to one line: a quoted secret can span lines.
+	reason := strings.TrimSpace(redactToolText(e.reason, 0))
 	if i := strings.IndexByte(reason, '\n'); i >= 0 {
 		reason = strings.TrimSpace(reason[:i])
 	}
 	shown := strings.TrimSpace(redactToolText(result, 0))
 	out := &events.ToolOutcome{
 		Status:        e.status,
-		Reason:        redactToolText(reason, 240),
+		Reason:        skills.TruncateRunes(reason, 240),
 		InputSummary:  redactToolText(toolArgSummary(call), 80),
 		OutputPreview: toolResultPreview(result),
 		OutputBytes:   int64(len(result)),

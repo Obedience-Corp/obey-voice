@@ -326,6 +326,7 @@ func collectMetrics(rec *recorder) runMetrics {
 		return m
 	}
 	canonicalStates := make(map[work.JobKey]map[work.JobState]bool)
+	unfinished := make(map[string]bool)
 	for _, te := range rec.snapshot() {
 		switch e := te.event.(type) {
 		case events.WorkStateChanged:
@@ -365,6 +366,7 @@ func collectMetrics(rec *recorder) runMetrics {
 			switch {
 			case e.JobID != "":
 				m.WorkerToolCalls++
+				unfinished[e.JobID+"\x00"+e.ID] = true
 			case e.Name == "route":
 				m.LiveRouterHit++
 			default:
@@ -377,8 +379,11 @@ func collectMetrics(rec *recorder) runMetrics {
 			if e.JobID != "" && e.OutcomeStatus() == events.ToolOutcomeUnknown {
 				m.WorkerToolUnknown++
 			}
+			delete(unfinished, e.JobID+"\x00"+e.ID)
 		}
 	}
+	// A worker tool that started and never reported an end is unknown too.
+	m.WorkerToolUnknown += len(unfinished)
 	if m.LiveRouterHit == 0 && m.JobStarted == 0 {
 		m.LiveRouterMiss = 1
 	}
