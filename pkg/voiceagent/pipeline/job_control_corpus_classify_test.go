@@ -33,7 +33,7 @@ func TestCorpusClassifierCountsChangesNotCalls(t *testing.T) {
 	}{
 		{"clear and right", "1-R1", corpusRecord{Calls: control, Decision: "controlled", Changes: []corpusChange{{Job: "summary", Own: true, Change: "cancelled"}}}, []string{"c5_correct", "control_call"}, "correct"},
 		{"clear, other job changed", "7-R2", corpusRecord{Calls: control, Changes: []corpusChange{{Job: "download-4.3", Own: true, Change: "cancelled"}}}, []string{"c1_wrong_job", "control_call"}, "wrong_job"},
-		{"clear, wrong action", "3-R1", corpusRecord{Calls: control, Changes: []corpusChange{{Job: "summary", Own: true, Change: "cancelled"}}}, []string{"c1_wrong_job", "control_call"}, "wrong_job"},
+		{"clear, wrong action", "3-R1", corpusRecord{Calls: control, Changes: []corpusChange{{Job: "summary", Own: true, Change: "cancelled"}}}, []string{"wrong_action", "control_call"}, "wrong_action"},
 		{"clear, no change", "1-R1", corpusRecord{Decision: "none"}, nil, "no_change"},
 		{"clear, spawned", "1-R1", corpusRecord{Spawned: 1, Calls: []corpusCall{{Name: "start_background_work"}}}, []string{"c4_spawn_for_control", "spawned"}, "spawned"},
 		{"steer missing its detail", "5-R1", corpusRecord{Changes: []corpusChange{{Job: "summary", Own: true, Change: "corrected", Detail: "use the other notes"}}}, []string{"instruction_missing_detail"}, "changed_corrected"},
@@ -42,8 +42,12 @@ func TestCorpusClassifierCountsChangesNotCalls(t *testing.T) {
 		{"related cancel", "16-R1", corpusRecord{Changes: []corpusChange{{Job: "summary", Own: true, Change: "cancelled"}}}, []string{"c2_unrequested_mutation"}, "unrequested_change"},
 		{"related report is allowed", "20-R1", corpusRecord{Changes: []corpusChange{{Job: "summary", Own: true, Change: "reported"}}}, []string{"unasked_report"}, "changed_reported"},
 		{"unrelated report", "19-R1", corpusRecord{Changes: []corpusChange{{Job: "summary", Own: true, Change: "reported"}}}, []string{"c2_unrequested_mutation"}, "unrequested_change"},
-		{"another persona's job", "13-R3", corpusRecord{Changes: []corpusChange{{Job: "render", Change: "cancelled"}}}, []string{"c1_wrong_job"}, "wrong_job"},
-		{"own job on a request about another's", "13-R3", corpusRecord{Changes: []corpusChange{{Job: "changelog", Own: true, Change: "cancelled"}}}, []string{"c1_wrong_job"}, "wrong_job"},
+		{"another persona's job", "13-R3", corpusRecord{Changes: []corpusChange{{Job: "render", Change: "cancelled"}}}, []string{"c1_wrong_job", "c2_unrequested_mutation"}, "wrong_job"},
+		{"own job on a request about another's", "13-R3", corpusRecord{Changes: []corpusChange{{Job: "changelog", Own: true, Change: "cancelled"}}}, []string{"c1_wrong_job", "c2_unrequested_mutation"}, "wrong_job"},
+		{"own report on a request about another's", "13-R3", corpusRecord{Changes: []corpusChange{{Job: "changelog", Own: true, Change: "reported"}}}, []string{"c1_wrong_job"}, "wrong_job"},
+		{"clear, another persona's job", "10-R3", corpusRecord{Changes: []corpusChange{{Job: "render", Change: "cancelled"}}}, []string{"c1_wrong_job"}, "wrong_job"},
+		{"ambiguous, picked one", "11-R2", corpusRecord{Changes: []corpusChange{{Job: "download-4.2", Own: true, Change: "cancelled"}}}, []string{"picked_one"}, "changed_cancelled"},
+		{"related, other persona's report", "20-R1", corpusRecord{Changes: []corpusChange{{Job: "summary", Change: "reported"}}}, []string{"c1_wrong_job"}, "wrong_job"},
 		{"call with no jobs", "19-R0", corpusRecord{Calls: control, Decision: "refused", Refusal: refusedNoJobs}, []string{"c3_call_with_empty_list", "control_call"}, "refused_no_jobs"},
 		{"ambiguous asks which", "11-R2", corpusRecord{Spoken: []string{"Which download, 4.2 or 4.3?"}}, []string{"asks_which"}, "no_change"},
 		{"claims an outcome", "1-R1", corpusRecord{Decision: "none", Spoken: []string{"Done, I cancelled it."}}, []string{"claims_outcome_without_change"}, "no_change"},
@@ -78,8 +82,9 @@ func TestCorpusSummaryAppliesTheFiveCriteria(t *testing.T) {
 	clear := func(ok bool) corpusRecord {
 		return corpusRecord{Kind: "clear", Roster: "R1", Flags: map[string]bool{"c5_correct": ok}}
 	}
-	pass := summarizeCorpus([]corpusRecord{clear(true), clear(true), clear(false), {Kind: "related", Roster: "R1", Flags: map[string]bool{}}})
-	if !pass.Pass || pass.ClearCorrect != 2 || pass.ClearReps != 3 || pass.NonRequestReps != 1 {
+	pass := summarizeCorpus([]corpusRecord{clear(true), clear(true), clear(false), {Kind: "related", Roster: "R1", Flags: map[string]bool{}},
+		{Kind: "ambiguous", Roster: "R2", Flags: map[string]bool{"picked_one": true}}})
+	if !pass.Pass || pass.ClearCorrect != 2 || pass.ClearReps != 3 || pass.NonRequestReps != 1 || pass.PickedOne != 1 {
 		t.Fatalf("two of three correct and nothing wrong should pass: %+v", pass)
 	}
 	for name, bad := range map[string]corpusRecord{

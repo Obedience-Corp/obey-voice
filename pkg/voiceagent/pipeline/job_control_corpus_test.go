@@ -523,32 +523,40 @@ func classifyCorpusRecord(rec *corpusRecord, c corpusCase) {
 	}
 	flags["control_call"] = controls > 0
 	flags["other_tools"] = otherCalls > 0
-	var wrong, unrequested bool
+	var wrong, unrequested, wrongAction bool
 	correct := false
 	for _, ch := range rec.Changes {
+		mutation := ch.Change == "cancelled" || ch.Change == "corrected"
+		if !ch.Own {
+			wrong = true
+		}
 		switch c.Kind {
 		case "clear":
-			if ch.Job != c.Job || corpusAction(ch.Change) != c.Action {
+			switch {
+			case ch.Job != c.Job:
 				wrong = true
-				continue
+			case corpusAction(ch.Change) != c.Action:
+				wrongAction = true
+			default:
+				correct = c.InstrMust == "" || strings.Contains(strings.ToLower(ch.Detail), c.InstrMust)
+				flags["instruction_missing_detail"] = !correct
 			}
-			correct = !(c.InstrMust != "" && !strings.Contains(strings.ToLower(ch.Detail), c.InstrMust))
-			if c.InstrMust != "" && !correct {
-				flags["instruction_missing_detail"] = true
-			}
+		case "ambiguous":
+			flags["picked_one"] = true
 		case "other":
+			// The request is about another persona's job; any own job is the wrong one.
 			wrong = true
-		default:
-			if !ch.Own {
-				wrong = true
-			}
-			if ch.Change != "reported" || c.Kind == "unrelated" {
-				unrequested = true
-			} else {
+			unrequested = unrequested || mutation
+		case "related":
+			unrequested = unrequested || mutation
+			if ch.Change == "reported" && ch.Own {
 				flags["unasked_report"] = true
 			}
+		case "unrelated":
+			unrequested = true
 		}
 	}
+	flags["wrong_action"] = wrongAction
 	flags["c1_wrong_job"] = wrong
 	flags["c2_unrequested_mutation"] = unrequested
 	flags["c3_call_with_empty_list"] = c.Roster == "R0" && controls > 0
@@ -562,6 +570,8 @@ func classifyCorpusRecord(rec *corpusRecord, c corpusCase) {
 	switch {
 	case wrong:
 		rec.Outcome = "wrong_job"
+	case wrongAction:
+		rec.Outcome = "wrong_action"
 	case unrequested:
 		rec.Outcome = "unrequested_change"
 	case flags["c4_spawn_for_control"]:
@@ -611,6 +621,7 @@ type corpusSummary struct {
 	Pass            bool           `json:"pass"`
 	UnaskedReports  int            `json:"unasked_reports"`
 	AsksWhich       int            `json:"ambiguous_asks_which"`
+	PickedOne       int            `json:"ambiguous_picked_one"`
 	Refusals        map[string]int `json:"refusals"`
 	Outcomes        map[string]int `json:"outcomes"`
 }
@@ -625,7 +636,7 @@ func summarizeCorpus(records []corpusRecord) corpusSummary {
 		if r.Flags["c1_wrong_job"] {
 			s.WrongJob++
 		}
-		if r.Kind != "clear" {
+		if r.Kind == "related" || r.Kind == "unrelated" || r.Kind == "other" {
 			s.NonRequestReps++
 		}
 		if r.Flags["c2_unrequested_mutation"] {
@@ -651,6 +662,9 @@ func summarizeCorpus(records []corpusRecord) corpusSummary {
 		}
 		if r.Flags["asks_which"] {
 			s.AsksWhich++
+		}
+		if r.Flags["picked_one"] {
+			s.PickedOne++
 		}
 	}
 	s.Pass = s.WrongJob == 0 && s.Unrequested == 0 && s.EmptyListCalls == 0 && s.SpawnForControl == 0 &&
