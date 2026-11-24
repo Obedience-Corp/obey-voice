@@ -19,12 +19,14 @@ import (
 // its model may make: the turn's identity, the acting persona, the
 // conversation, the jobs its prompt named, and what the user said.
 type controlTurn struct {
-	// token is the turn's grant, zero when it has none.
-	token    uint64
-	persona  string
-	scope    work.WorkScope
-	listed   []string
-	bareStop bool
+	// token is the turn's grant, zero when it has none; foreground is the
+	// number the turn was entered with.
+	token      uint64
+	foreground uint64
+	persona    string
+	scope      work.WorkScope
+	listed     []string
+	bareStop   bool
 }
 
 // freezeControlTurn records a live turn's authority before its model request.
@@ -32,7 +34,8 @@ type controlTurn struct {
 // turns job control on and it answers a person on the direct router with
 // tools, on Ollama. listed is computed from the same facts and by the same
 // pass that render them into the prompt.
-func (p *Pipeline) freezeControlTurn(metrics *turnMetrics, opts brain.StreamOptions, request, original string) {
+// command is the user's request with a recognized address taken off.
+func (p *Pipeline) freezeControlTurn(ctx context.Context, metrics *turnMetrics, opts brain.StreamOptions, command, original string) {
 	if metrics == nil || p.Agency == nil {
 		return
 	}
@@ -43,7 +46,11 @@ func (p *Pipeline) freezeControlTurn(metrics *turnMetrics, opts brain.StreamOpti
 		names = append(names, cfg.AgentName)
 	}
 	frozen := &controlTurn{scope: p.ConversationScope(),
-		bareStop: bareStop(request, names) || bareStop(original, names) || bareStop(metrics.recognized, names)}
+		bareStop: bareStop(command, names) || bareStop(original, names) || bareStop(metrics.recognized, names)}
+	frozen.foreground, _ = ctx.Value(foregroundKey{}).(uint64)
+	if frozen.foreground == 0 || frozen.foreground != p.foreground.Load() {
+		ok = false
+	}
 	if id := metrics.response.PersonaID; ok && id != "" && personaKey(id) != persona {
 		ok = false
 	}
@@ -57,9 +64,16 @@ func (p *Pipeline) freezeControlTurn(metrics *turnMetrics, opts brain.StreamOpti
 	metrics.controlTurn = frozen
 }
 
-// revokeJobControl ends any turn's grant: a newer turn began or the live
-// persona binding changed.
+// revokeJobControl ends any turn's grant: the live persona binding changed.
 func (p *Pipeline) revokeJobControl() { p.liveControl.Store(0) }
+
+type foregroundKey struct{}
+
+// enterForeground numbers a foreground turn as it is entered, before anything
+// else it does, which ends the grant of every turn entered before it.
+func (p *Pipeline) enterForeground(ctx context.Context) context.Context {
+	return context.WithValue(ctx, foregroundKey{}, p.foreground.Add(1))
+}
 
 // Lines the host says, or shows, for a persona's job control.
 const (
@@ -188,7 +202,7 @@ func (a *Agency) decideJobControl(ctx context.Context, metrics *turnMetrics, con
 // persona are still the ones it froze.
 func (a *Agency) controlTurnLive(metrics *turnMetrics, frozen *controlTurn) bool {
 	p := a.pipeline
-	if frozen == nil || frozen.token == 0 || !p.liveControl.CompareAndSwap(frozen.token, 0) {
+	if frozen == nil || frozen.token == 0 || !p.liveControl.CompareAndSwap(frozen.token, 0) || frozen.foreground != p.foreground.Load() {
 		return false
 	}
 	if metrics.interrupted || metrics.speechStopped() {
@@ -201,32 +215,16 @@ func (a *Agency) controlTurnLive(metrics *turnMetrics, frozen *controlTurn) bool
 	return ok && persona == frozen.persona
 }
 
-// bareStop reports an utterance that is only "stop": case, punctuation and
-// spacing aside, and with an address to the persona by name, by @id, or with a
-// greeting before it, taken off.
+// bareStop reports an utterance that is only "stop", case, punctuation and
+// spacing aside, or "stop" followed by one of the persona's own names.
 func bareStop(utterance string, names []string) bool {
 	words := spokenWords(utterance)
-	strip := func(name []string) bool {
-		if len(name) == 0 || len(words) <= len(name) {
-			return false
-		}
-		switch {
-		case slices.Equal(words[:len(name)], name):
-			words = words[len(name):]
-		case slices.Equal(words[len(words)-len(name):], name):
-			words = words[:len(words)-len(name)]
-		default:
-			return false
-		}
-		return true
-	}
-	for changed := true; changed; {
-		changed = false
-		for _, greeting := range []string{"hey", "hi", "ok", "okay"} {
-			changed = strip([]string{greeting}) || changed
-		}
+	if len(words) > 1 {
 		for _, name := range names {
-			changed = strip(spokenWords(name)) || changed
+			if name := spokenWords(name); len(name) > 0 && len(words) == len(name)+1 && slices.Equal(words[1:], name) {
+				words = words[:1]
+				break
+			}
 		}
 	}
 	return slices.Equal(words, []string{"stop"})

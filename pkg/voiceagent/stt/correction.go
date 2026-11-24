@@ -68,7 +68,10 @@ func (s *correctedSession) run(ctx context.Context, c Corrector, logf func(strin
 			if err != nil {
 				logf("stt correction skipped: %v", err)
 			} else if out != fin.Text {
-				fin.Recognized, fin.Text = fin.Text, out
+				if fin.Recognized == "" {
+					fin.Recognized = fin.Text
+				}
+				fin.Text = out
 			}
 			ev = fin
 		}

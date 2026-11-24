@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -35,6 +36,7 @@ func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, r
 
 // RunTurnTextMode runs a turn with text input instead of mic.
 func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
+	ctx = p.enterForeground(ctx)
 	p.discardInputRetry()
 	if err := p.prepareNativeForeground(ctx); err != nil {
 		return err
@@ -51,9 +53,6 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	p.incActiveTurn()
 	defer p.decActiveTurn()
-	if !background {
-		p.revokeJobControl()
-	}
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	if !background {
@@ -216,7 +215,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	if ordinary != nil {
 		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)
 	}
-	p.freezeControlTurn(metrics, streamOpts, input, original)
+	p.freezeControlTurn(ctx, metrics, streamOpts, cmp.Or(admission.Command, input), original)
 	metrics.modelRequest = time.Now()
 	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)
 	stream, recording, err := p.startRecordedStream(brainCtx, input, streamOpts)

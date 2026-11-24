@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 // RunTurn executes one conversational turn with streaming TTS.
 // Returns the user's input text, or empty string if no speech was detected.
 func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
+	ctx = p.enterForeground(ctx)
 	p.incActiveTurn()
 	defer p.decActiveTurn()
 	if p.BeforeCapture != nil {
@@ -37,7 +39,6 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	p.incActiveTurn()
 	defer p.decActiveTurn()
-	p.revokeJobControl()
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	defer p.releaseUncommittedInput(metrics)
@@ -265,7 +266,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	if ordinary != nil {
 		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)
 	}
-	p.freezeControlTurn(metrics, streamOpts, text, original)
+	p.freezeControlTurn(ctx, metrics, streamOpts, cmp.Or(admission.Command, text), original)
 
 	metrics.modelRequest = time.Now()
 	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)

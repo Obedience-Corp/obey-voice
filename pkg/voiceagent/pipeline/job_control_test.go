@@ -433,6 +433,13 @@ func (r controlTurnResult) settled(t *testing.T, requests int, preamble, line st
 		saved != "" && (r.added[rows-1].Role != "assistant" || len(r.added[rows-1].ToolCalls) != 0 || r.added[rows-1].Content != saved) {
 		t.Fatalf("saved = %q, want the user's line, %d inspection rows and %q", got, rows-1-min(1, len(saved)), saved)
 	}
+	for k := range requests - 1 {
+		call, result := r.added[1+2*k], r.added[2+2*k]
+		if call.Role != "assistant" || len(call.ToolCalls) != 1 || result.Role != "tool" ||
+			result.ToolName != call.ToolCalls[0].Name || result.ToolCallID != call.ToolCalls[0].ID {
+			t.Fatalf("inspection round %d saved as %+v then %+v", k+1, call, result)
+		}
+	}
 	controls := 0
 	if r.outcomes[0].Receipt != nil {
 		controls = 1
@@ -823,7 +830,7 @@ func TestPersonaControlOfAJobTheListLeftOut(t *testing.T) {
 	metrics := newTurnMetrics()
 	token := h.p.controlTurns.Add(1)
 	h.p.liveControl.Store(token)
-	metrics.controlTurn = &controlTurn{token: token, persona: "robin", scope: h.p.ConversationScope(), listed: []string{own}}
+	metrics.controlTurn = &controlTurn{token: token, foreground: h.p.foreground.Load(), persona: "robin", scope: h.p.ConversationScope(), listed: []string{own}}
 	metrics.jobControl = &brain.JobControl{Request: &brain.JobControlRequest{Action: brain.JobControlCancel, JobID: hidden}}
 	out := h.a.decideJobControl(context.Background(), metrics, metrics.jobControl)
 	if out.Refusal != refusedUnlisted || out.Receipt != nil || strings.Contains(out.Line, "tax") || out.Line != "Which job do you mean? Mine is Summarize the quarterly notes." {
@@ -948,21 +955,21 @@ func TestNoGrantWithoutJobControlOn(t *testing.T) {
 // roster admission sets the turn's request as the persona runtime does: the
 // remainder of a recognized address.
 func rosterAdmission(t *testing.T) func(context.Context, string, bool) (ResponseAdmission, error) {
-	roster, err := summon.NewRoster([]summon.Identity{{ID: "robin", DisplayName: "Robin"}, {ID: "sage", DisplayName: "Sage"}})
+	roster, err := summon.NewRoster([]summon.Identity{{ID: "robin", DisplayName: "Robin Fairweather", Aliases: []string{"Bird"}}, {ID: "sage", DisplayName: "Sage"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return func(_ context.Context, text string, _ bool) (ResponseAdmission, error) {
 		admitted := ResponseAdmission{Request: text}
 		if exact := roster.ResolveForegroundControl(text); exact.Kind == summon.ExactControlValid {
-			admitted.Request = exact.Address.Remainder
+			admitted.Request, admitted.Command = exact.Address.Remainder, exact.Address.Command
 		}
 		return admitted, nil
 	}
 }
 
 func TestAddressedBareStopNeverControlsAJob(t *testing.T) {
-	for _, utterance := range []string{"Robin, stop.", "hey Robin stop", "@robin stop", "Stop…", "Stop !", "STOP!!", "Stop, Robin."} {
+	for _, utterance := range []string{"Robin, stop.", "Bird, stop.", "Robin Fairweather, stop!", "Hello Robin, stop.", "hey Robin, stop", "@robin stop", "Stop…", "Stop !", "STOP!!", "Stop, Robin."} {
 		t.Run(utterance, func(t *testing.T) {
 			h := newPersonaControlHarness(t)
 			h.p.AdmitInput = rosterAdmission(t)
@@ -973,11 +980,15 @@ func TestAddressedBareStopNeverControlsAJob(t *testing.T) {
 			}
 		})
 	}
-	h := newPersonaControlHarness(t)
-	h.p.AdmitInput = rosterAdmission(t)
-	id := h.spawn("Download the release archive")
-	r := h.turn(false, "Robin, stop the download.", replies(batch(controlCall("cancel", id))))
-	r.settled(t, 1, "", "Stopped.")
+	for _, utterance := range []string{"Robin, stop hi", "Robin, stop the 4.3 one", "stop the download"} {
+		t.Run(utterance, func(t *testing.T) {
+			h := newPersonaControlHarness(t)
+			h.p.AdmitInput = rosterAdmission(t)
+			id := h.spawn("Download the release archive")
+			r := h.turn(false, utterance, replies(batch(controlCall("cancel", id))))
+			r.settled(t, 1, "", "Stopped.")
+		})
+	}
 }
 
 type rewriteCorrector struct{ to string }
@@ -1066,7 +1077,7 @@ func TestWhichJobLineNeverClaimsNoJobWhileOneRuns(t *testing.T) {
 	metrics := newTurnMetrics()
 	token := h.p.controlTurns.Add(1)
 	h.p.liveControl.Store(token)
-	metrics.controlTurn = &controlTurn{token: token, persona: "robin", scope: h.p.ConversationScope()}
+	metrics.controlTurn = &controlTurn{token: token, foreground: h.p.foreground.Load(), persona: "robin", scope: h.p.ConversationScope()}
 	metrics.jobControl = &brain.JobControl{Request: &brain.JobControlRequest{Action: brain.JobControlCancel, JobID: "job-77"}}
 	if out := h.a.decideJobControl(context.Background(), metrics, metrics.jobControl); out.Line != cannotTellLine || out.Receipt != nil {
 		t.Fatalf("outcome = %+v", out)
@@ -1124,7 +1135,7 @@ func TestFreezeGrantsOnlyAnEligibleTurn(t *testing.T) {
 		opts := live
 		tc.opts(&opts)
 		metrics := newTurnMetrics()
-		h.p.freezeControlTurn(metrics, opts, "Cancel the summary.", "Cancel the summary.")
+		h.p.freezeControlTurn(h.p.enterForeground(context.Background()), metrics, opts, "Cancel the summary.", "Cancel the summary.")
 		if got := metrics.controlTurn.token != 0; got != tc.want {
 			t.Errorf("%s: granted = %t", name, got)
 		}
@@ -1148,5 +1159,89 @@ func TestControlAtTheBudgetLimitIsNotASpawn(t *testing.T) {
 	}
 	if len(r.spoken) == 0 || r.spoken[len(r.spoken)-1] != controlFailedLine {
 		t.Fatalf("spoken = %q", r.spoken)
+	}
+}
+
+// A turn that reaches its freeze after a newer foreground turn was entered
+// gets no grant, whether the newer turn is listening or still preparing its
+// capture.
+func TestAStaleTurnGetsNoFreshGrant(t *testing.T) {
+	for name, preparing := range map[string]bool{"next turn listening": false, "next turn preparing capture": true} {
+		t.Run(name, func(t *testing.T) {
+			h := newPersonaControlHarness(t)
+			id := h.spawn("Summarize the quarterly notes")
+			admitting, resume := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			h.p.AdmitInput = func(_ context.Context, text string, _ bool) (ResponseAdmission, error) {
+				once.Do(func() {
+					close(admitting)
+					<-resume
+				})
+				return ResponseAdmission{Request: text}, nil
+			}
+			listening := &signalingSTT{fakeSTT: fakeSTT{stall: true}, started: make(chan struct{})}
+			h.p.STT, h.p.VAD, h.p.Capture = listening, &fakeVAD{}, newFakeCapture()
+			capturing, captured := make(chan struct{}), make(chan struct{})
+			if preparing {
+				h.p.BeforeCapture = func(ctx context.Context) error {
+					close(capturing)
+					select {
+					case <-captured:
+					case <-ctx.Done():
+					}
+					return nil
+				}
+			}
+			var r controlTurnResult
+			older := make(chan struct{})
+			go func() {
+				defer close(older)
+				r = h.turn(false, "Cancel the summary.", replies(batch(controlCall("cancel", id))))
+			}()
+			<-admitting
+			next, stopNext := context.WithCancel(context.Background())
+			var wg sync.WaitGroup
+			wg.Go(func() { _, _ = h.p.RunTurn(next) })
+			if preparing {
+				<-capturing
+			} else {
+				<-listening.started
+			}
+			close(resume)
+			<-older
+			close(captured)
+			stopNext()
+			wg.Wait()
+			if len(r.outcomes) != 1 || r.outcomes[0].Refusal != refusedNotLive || r.controls != 0 || h.state(id) != job.StateRunning {
+				t.Fatalf("outcomes = %+v, ControlWork = %d, job = %s", r.outcomes, r.controls, h.state(id))
+			}
+		})
+	}
+}
+
+// A conversation cleared after the control was settled and before its reply
+// is saved gets nothing of that turn: not the user's line, not the reply.
+func TestControlReplyIsNotSavedIntoAClearedConversation(t *testing.T) {
+	h := newPersonaControlHarness(t)
+	id := h.spawn("Summarize the quarterly notes")
+	record := h.a.onJobControl
+	cleared := make(chan error, 1)
+	h.a.onJobControl = func(o controlOutcome) {
+		record(o)
+		cleared <- h.p.ClearConversation()
+	}
+	round := []api.ChatResponse{
+		{Message: api.Message{Role: "assistant", Content: "Sure."}},
+		{Message: api.Message{Role: "assistant", ToolCalls: []api.ToolCall{controlCall("cancel", id)}}, Done: true, DoneReason: "stop"},
+	}
+	r := h.turn(true, "Cancel the summary.", replies(round))
+	if err := <-cleared; err != nil {
+		t.Fatal(err)
+	}
+	if history := h.live.History(); len(history) != 0 {
+		t.Fatalf("saved into the cleared conversation: %+v", history)
+	}
+	if len(r.outcomes) != 1 || r.outcomes[0].Receipt == nil || h.state(id) != job.StateAborted {
+		t.Fatalf("outcomes = %+v, job = %s", r.outcomes, h.state(id))
 	}
 }

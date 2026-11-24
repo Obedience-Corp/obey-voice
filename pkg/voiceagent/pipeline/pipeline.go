@@ -321,9 +321,12 @@ type Pipeline struct {
 	outputMuted atomic.Bool
 
 	// controlTurns issues live turns' identities for job control, and
-	// liveControl holds the one whose grant has not been used.
+	// liveControl holds the one whose grant has not been used. foreground
+	// numbers each foreground turn as it is entered; only the newest may hold
+	// a grant.
 	controlTurns atomic.Uint64
 	liveControl  atomic.Uint64
+	foreground   atomic.Uint64
 
 	// activeMetrics points at the in-flight turn's metrics so out-of-band
 	// interrupts (keystroke barge-in via StopPlayback) can stamp BargeIn.

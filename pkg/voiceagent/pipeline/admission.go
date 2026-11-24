@@ -19,6 +19,9 @@ type ResponseAdmission struct {
 	Discussion *discussion.Directive
 	Skip       bool
 	Request    string
+	// Command is Request with a recognized address taken off, for the host's
+	// own checks; the model is sent Request. Empty when nothing was taken off.
+	Command    string
 	LocalReply string
 	Envelope   events.ResponseEnvelope
 	// AgentMentionName is a frozen roster lookup for this response's speech:

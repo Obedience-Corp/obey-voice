@@ -12,6 +12,7 @@ type inputRetryKey struct{}
 // RetryLastTurn resumes an unanswered, effect-free Ollama input under its
 // original binding. Like other turn entry points it requires serialized use.
 func (p *Pipeline) RetryLastTurn(ctx context.Context) error {
+	ctx = p.enterForeground(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}

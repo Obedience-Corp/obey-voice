@@ -151,3 +151,24 @@ func TestPathMentionsAddressNobody(t *testing.T) {
 		}
 	}
 }
+
+// A recognized leading address keeps the whole transcript for the model and
+// gives the command without it.
+func TestForegroundAddressKeepsItsCommand(t *testing.T) {
+	r, err := NewRoster([]Identity{{ID: "robin", DisplayName: "Robin Fairweather", Aliases: []string{"Bird"}}, {ID: "sage", DisplayName: "Sage"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for input, command := range map[string]string{
+		"Bird, stop.":                         "stop.",
+		"Robin, stop.":                        "stop.",
+		"Hello Robin, stop.":                  "stop.",
+		"Robin, stop hi":                      "stop hi",
+		"Robin Fairweather, stop the 4.3 one": "stop the 4.3 one",
+	} {
+		got := r.ResolveForegroundControl(input)
+		if got.Kind != ExactControlValid || got.Address.PersonaID != "robin" || got.Address.Remainder != input || got.Address.Command != command {
+			t.Errorf("%q: %+v", input, got)
+		}
+	}
+}
