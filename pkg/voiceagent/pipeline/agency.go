@@ -70,8 +70,10 @@ type Agency struct {
 	heldMedia map[string][]chatmedia.Ref // guarded by mu
 	// sameOutputs holds each job's run of tool rounds with the same output.
 	sameOutputs map[string]sameOutputRun // guarded by mu
-	// onJobControl observes each job control the host settled; tests only.
-	onJobControl func(controlOutcome)
+	// onJobControl observes each job control the host settled, and
+	// onControlWork each ControlWork call; tests only.
+	onJobControl  func(controlOutcome)
+	onControlWork func(WorkActor, WorkRequest)
 	// runningFor replaces a job's running time in the facts a turn is given;
 	// a measurement sets it, production never does.
 	runningFor func(job.Info) time.Duration

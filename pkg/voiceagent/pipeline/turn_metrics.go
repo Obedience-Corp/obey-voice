@@ -79,6 +79,9 @@ type turnMetrics struct {
 	jobControl  *brain.JobControl
 	// controlSpoken marks a control's preamble already spoken as it streamed.
 	controlSpoken bool
+	// recognized is the recognizer's text of this voice input when a
+	// corrector changed it.
+	recognized string
 	// bargeInMu guards bargeIn and speech cancellation shared by the turn and
 	// the TUI's out-of-band keystroke stop.
 	bargeInMu sync.Mutex

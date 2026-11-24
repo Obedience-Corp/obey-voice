@@ -37,6 +37,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	p.incActiveTurn()
 	defer p.decActiveTurn()
+	p.revokeJobControl()
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	defer p.releaseUncommittedInput(metrics)
@@ -442,6 +443,9 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 			case stt.KindFinalTranscript:
 				metrics.sttFinal = time.Now()
 				metrics.acousticName = te.AcousticName
+				if fin, ok := event.(stt.FinalTranscript); ok {
+					metrics.recognized = fin.Recognized
+				}
 				return te.Text, nil
 			case stt.KindYieldedForCompletion:
 				if event, ok := event.(stt.YieldedForCompletion); ok {

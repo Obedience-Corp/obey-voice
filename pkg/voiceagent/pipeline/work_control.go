@@ -163,6 +163,9 @@ const unknownTask = "unknown background task"
 // not be taken over) stay internal and do not come through here. It never
 // waits for a worker to exit.
 func (a *Agency) ControlWork(actor WorkActor, req WorkRequest) WorkReceipt {
+	if a.onControlWork != nil {
+		a.onControlWork(actor, req)
+	}
 	receipt := WorkReceipt{Actor: actor, Request: req}
 	switch {
 	case actor.Kind == WorkActorPersona:

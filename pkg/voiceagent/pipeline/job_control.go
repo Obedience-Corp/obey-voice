@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -18,36 +19,47 @@ import (
 // its model may make: the turn's identity, the acting persona, the
 // conversation, the jobs its prompt named, and what the user said.
 type controlTurn struct {
-	token     uint64
-	persona   string
-	scope     work.WorkScope
-	listed    []string
-	request   string
-	original  string
-	authority bool
+	// token is the turn's grant, zero when it has none.
+	token    uint64
+	persona  string
+	scope    work.WorkScope
+	listed   []string
+	bareStop bool
 }
 
 // freezeControlTurn records a live turn's authority before its model request.
-// listed is computed from the same facts and by the same pass that render
-// them into the prompt.
+// A turn is granted control only when the responding persona's configuration
+// turns job control on and it answers a person on the direct router with
+// tools, on Ollama. listed is computed from the same facts and by the same
+// pass that render them into the prompt.
 func (p *Pipeline) freezeControlTurn(metrics *turnMetrics, opts brain.StreamOptions, request, original string) {
 	if metrics == nil || p.Agency == nil {
 		return
 	}
-	frozen := &controlTurn{request: request, original: original, authority: opts.JobControl}
+	cfg := p.Agency.currentConfig()
 	persona, ok := p.livePersona()
+	names := []string{persona, metrics.response.DisplayName}
+	if cfg != nil {
+		names = append(names, cfg.AgentName)
+	}
+	frozen := &controlTurn{scope: p.ConversationScope(),
+		bareStop: bareStop(request, names) || bareStop(original, names) || bareStop(metrics.recognized, names)}
 	if id := metrics.response.PersonaID; ok && id != "" && personaKey(id) != persona {
 		ok = false
 	}
-	if ok && opts.JobControl {
+	_, ollama := p.Brain.(*brain.OllamaBrain)
+	if ok && ollama && opts.JobControl && opts.ToolsEnabled && opts.RouterToolsPolicy == brain.RouterToolsDirect && cfg != nil && cfg.VoiceJobControl {
 		frozen.token = p.controlTurns.Add(1)
 		frozen.persona = persona
-		frozen.scope = p.ConversationScope()
 		frozen.listed = brain.ListedWorkerFactIDs(opts.WorkerFacts)
 		p.liveControl.Store(frozen.token)
 	}
 	metrics.controlTurn = frozen
 }
+
+// revokeJobControl ends any turn's grant: a newer turn began or the live
+// persona binding changed.
+func (p *Pipeline) revokeJobControl() { p.liveControl.Store(0) }
 
 // Lines the host says, or shows, for a persona's job control.
 const (
@@ -56,6 +68,7 @@ const (
 	controlFailedLine  = "I couldn't do that."
 	notOwnLine         = "I can only do that for my own jobs."
 	nothingRunningLine = "I have no job running."
+	cannotTellLine     = "I can't tell which job you mean from my list."
 	alreadyDoneLine    = "That job had already finished."
 	steerSentLine      = "Sent; it reads it at its next step."
 	steerBriefedLine   = "Added to its brief; it reads it when it starts."
@@ -127,17 +140,22 @@ func (a *Agency) decideJobControl(ctx context.Context, metrics *turnMetrics, con
 		out.Refusal, out.Line, out.Notice = reason, line, notice
 		return out
 	}
-	if frozen != nil && (bareStop(frozen.request) || bareStop(frozen.original)) {
+	if frozen != nil && frozen.bareStop {
 		return refuse(refusedBareStop, "", bareStopNotice)
 	}
-	if !a.controlTurnLive(ctx, metrics, frozen) {
+	if ctx.Err() != nil || metrics.interrupted || metrics.speechStopped() {
 		return refuse(refusedNotLive, "", notLiveNotice)
 	}
-	if control == nil || control.Request == nil {
-		reason := brain.JobControlMalformed
-		if control != nil {
-			reason = control.Refusal
-		}
+	// A call the request did not offer, as on a turn with job control off,
+	// runs nothing whatever the turn's grant.
+	if control == nil || control.Refusal == brain.JobControlNotOffered {
+		return refuse(string(brain.JobControlNotOffered), controlFailedLine, "")
+	}
+	if !a.controlTurnLive(metrics, frozen) {
+		return refuse(refusedNotLive, "", notLiveNotice)
+	}
+	if control.Request == nil {
+		reason := control.Refusal
 		switch reason {
 		case brain.JobControlNoJob, brain.JobControlAmbiguous:
 			return refuse(string(reason), a.whichJobLine(frozen), "")
@@ -168,12 +186,12 @@ func (a *Agency) decideJobControl(ctx context.Context, metrics *turnMetrics, con
 // controlTurnLive spends the turn's grant: it holds only while the turn that
 // froze it is the live one, was not stopped, and its conversation and
 // persona are still the ones it froze.
-func (a *Agency) controlTurnLive(ctx context.Context, metrics *turnMetrics, frozen *controlTurn) bool {
+func (a *Agency) controlTurnLive(metrics *turnMetrics, frozen *controlTurn) bool {
 	p := a.pipeline
-	if frozen == nil || !frozen.authority || frozen.token == 0 || !p.liveControl.CompareAndSwap(frozen.token, 0) {
+	if frozen == nil || frozen.token == 0 || !p.liveControl.CompareAndSwap(frozen.token, 0) {
 		return false
 	}
-	if ctx.Err() != nil || metrics.interrupted || metrics.speechStopped() {
+	if metrics.interrupted || metrics.speechStopped() {
 		return false
 	}
 	if !frozen.scope.Valid() || frozen.scope != p.ConversationScope() || p.ConversationRetired() {
@@ -183,10 +201,40 @@ func (a *Agency) controlTurnLive(ctx context.Context, metrics *turnMetrics, froz
 	return ok && persona == frozen.persona
 }
 
-// bareStop reports an utterance that is only "stop", read as the phrase
-// table reads one.
-func bareStop(utterance string) bool {
-	return normalizeUtterance(utterance) == "stop"
+// bareStop reports an utterance that is only "stop": case, punctuation and
+// spacing aside, and with an address to the persona by name, by @id, or with a
+// greeting before it, taken off.
+func bareStop(utterance string, names []string) bool {
+	words := spokenWords(utterance)
+	strip := func(name []string) bool {
+		if len(name) == 0 || len(words) <= len(name) {
+			return false
+		}
+		switch {
+		case slices.Equal(words[:len(name)], name):
+			words = words[len(name):]
+		case slices.Equal(words[len(words)-len(name):], name):
+			words = words[:len(words)-len(name)]
+		default:
+			return false
+		}
+		return true
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, greeting := range []string{"hey", "hi", "ok", "okay"} {
+			changed = strip([]string{greeting}) || changed
+		}
+		for _, name := range names {
+			changed = strip(spokenWords(name)) || changed
+		}
+	}
+	return slices.Equal(words, []string{"stop"})
+}
+
+// spokenWords are the words of s in lower case, without punctuation.
+func spokenWords(s string) []string {
+	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 }
 
 // personaOwns reports whether persona started job id in the current
@@ -228,11 +276,26 @@ func (a *Agency) controllableJobs(frozen *controlTurn) []job.Info {
 	return out
 }
 
+// personaHasJobs reports any running or queued job the persona started in
+// this conversation.
+func (a *Agency) personaHasJobs(persona string) bool {
+	for _, info := range a.jobs.Status() {
+		if (info.State == job.StateRunning || info.State == job.StateQueued) && a.personaOwns(persona, info.ID) {
+			return true
+		}
+	}
+	return false
+}
+
 // whichJobLine asks which job was meant, naming only the jobs the persona
-// may control, or says it has none.
+// may control. With none of them still running it says it has no job only
+// when no job of its own is running at all, listed or not.
 func (a *Agency) whichJobLine(frozen *controlTurn) string {
 	jobs := a.controllableJobs(frozen)
 	if len(jobs) == 0 {
+		if frozen != nil && a.personaHasJobs(frozen.persona) {
+			return cannotTellLine
+		}
 		return nothingRunningLine
 	}
 	labels := make([]string, len(jobs))

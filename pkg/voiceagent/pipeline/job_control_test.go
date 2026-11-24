@@ -14,10 +14,12 @@ import (
 
 	"github.com/ollama/ollama/api"
 
+	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
 // fixtureJobWorker is a background job with no model behind it: it reports
@@ -84,6 +86,8 @@ type personaControlHarness struct {
 	finished chan string
 	// toolsSeen counts each job's tool calls, read by the test goroutine only.
 	toolsSeen map[string]int
+	// stt, when set, hears a voice turn instead of the utterance as given.
+	stt stt.Provider
 
 	mu     sync.Mutex
 	chats  int
@@ -96,6 +100,7 @@ type personaControlHarness struct {
 	notices  []string
 	outcomes []controlOutcome
 	live0    int
+	controls int
 }
 
 type harnessOption func(*config.Config)
@@ -143,6 +148,11 @@ func newPersonaControlHarness(t *testing.T, opts ...harnessOption) *personaContr
 	h.a.cancelExitWait = 500 * time.Millisecond
 	if err := h.p.BeginConversationIdentity("control-session"); err != nil {
 		t.Fatal(err)
+	}
+	h.a.onControlWork = func(WorkActor, WorkRequest) {
+		h.mu.Lock()
+		h.controls++
+		h.mu.Unlock()
 	}
 	h.a.onJobControl = func(o controlOutcome) {
 		h.mu.Lock()
@@ -304,6 +314,9 @@ type controlTurnResult struct {
 	added    []brain.Turn
 	jobs     int
 	live     int
+	// controls counts ControlWork calls in the turn.
+	controls  int
+	utterance string
 }
 
 // turn runs one spoken or typed turn whose model replies follow script.
@@ -315,12 +328,17 @@ func (h *personaControlHarness) turn(voice bool, utterance string, script func(s
 func (h *personaControlHarness) turnCtx(ctx context.Context, voice bool, utterance string, script func(string) []api.ChatResponse) controlTurnResult {
 	h.t.Helper()
 	h.mu.Lock()
-	h.chats, h.tools, h.script, h.notices, h.outcomes, h.live0 = 0, nil, script, nil, nil, 0
+	h.chats, h.tools, h.script, h.notices, h.outcomes, h.live0, h.controls = 0, nil, script, nil, nil, 0, 0
 	h.mu.Unlock()
 	spoke, history, jobs := len(h.tts.Calls()), len(h.live.History()), len(h.a.jobs.Status())
 	var err error
 	if voice {
-		h.p.STT, h.p.VAD, h.p.Capture = &fakeSTT{text: utterance}, &fakeVAD{}, newFakeCapture()
+		if h.stt != nil {
+			h.p.STT = h.stt
+		} else {
+			h.p.STT = &fakeSTT{text: utterance}
+		}
+		h.p.VAD, h.p.Capture = &fakeVAD{}, newFakeCapture()
 		_, err = h.p.RunTurn(ctx)
 	} else {
 		err = h.p.RunTurnTextMode(ctx, utterance)
@@ -331,6 +349,7 @@ func (h *personaControlHarness) turnCtx(ctx context.Context, voice bool, utteran
 		err: err, chats: h.chats, tools: h.tools, spoken: h.tts.Calls()[spoke:],
 		notices: slices.Clone(h.notices), outcomes: slices.Clone(h.outcomes),
 		added: h.live.History()[history:], jobs: len(h.a.jobs.Status()) - jobs, live: h.live0,
+		controls: h.controls, utterance: utterance,
 	}
 }
 
@@ -399,15 +418,27 @@ func (r controlTurnResult) settled(t *testing.T, requests int, preamble, line st
 	if strings.Join(r.spoken, " | ") != strings.Join(want, " | ") {
 		t.Fatalf("spoken = %q, want %q", r.spoken, want)
 	}
-	var replies []string
-	for _, turn := range r.added {
-		if turn.Role == "assistant" && len(turn.ToolCalls) == 0 {
-			replies = append(replies, turn.Content)
-		}
-	}
+	// The whole saved delta: the user's line, each earlier round's call and
+	// result, and the one reply.
 	saved := strings.TrimSpace(strings.Join(want, " "))
-	if saved == "" && len(replies) != 0 || saved != "" && (len(replies) != 1 || replies[0] != saved) {
-		t.Fatalf("saved replies = %q, want %q", replies, saved)
+	rows := 1 + 2*(requests-1)
+	if saved != "" {
+		rows++
+	}
+	var got []string
+	for _, turn := range r.added {
+		got = append(got, turn.Role+": "+turn.Content)
+	}
+	if len(r.added) != rows || r.added[0].Role != "user" || r.added[0].Content != r.utterance ||
+		saved != "" && (r.added[rows-1].Role != "assistant" || len(r.added[rows-1].ToolCalls) != 0 || r.added[rows-1].Content != saved) {
+		t.Fatalf("saved = %q, want the user's line, %d inspection rows and %q", got, rows-1-min(1, len(saved)), saved)
+	}
+	controls := 0
+	if r.outcomes[0].Receipt != nil {
+		controls = 1
+	}
+	if r.controls != controls {
+		t.Fatalf("ControlWork calls = %d, want %d", r.controls, controls)
 	}
 	return r.outcomes[0]
 }
@@ -774,9 +805,11 @@ func TestPersonaControlWhereTheToolIsNotOffered(t *testing.T) {
 	t.Run("option off", func(t *testing.T) {
 		h := newPersonaControlHarness(t, func(c *config.Config) { c.VoiceJobControl = false })
 		id := h.spawn("Summarize the quarterly notes")
-		r := h.turn(true, "Cancel the summary.", replies(batch(controlCall("cancel", id)), []api.ChatResponse{{Message: api.Message{Role: "assistant", Content: "I can't do that."}, Done: true, DoneReason: "stop"}}))
-		if r.err != nil || r.chats != 2 || len(r.outcomes) != 0 || r.jobs != 0 || h.state(id) != job.StateRunning || slices.Contains(r.tools[0], "job_control") {
-			t.Fatalf("option off: %+v job=%s", r, h.state(id))
+		r := h.turn(true, "Cancel the summary.", replies(batch(controlCall("cancel", id), toolCall("write_file", "path", "result", "content", "x"))))
+		r.settled(t, 1, "", controlFailedLine)
+		r.refused(t, string(brain.JobControlNotOffered))
+		if slices.Contains(r.tools[0], "job_control") || h.state(id) != job.StateRunning || r.live != 0 {
+			t.Fatalf("tools = %v, job = %s, live tools = %d", r.tools[0], h.state(id), r.live)
 		}
 	})
 }
@@ -790,7 +823,7 @@ func TestPersonaControlOfAJobTheListLeftOut(t *testing.T) {
 	metrics := newTurnMetrics()
 	token := h.p.controlTurns.Add(1)
 	h.p.liveControl.Store(token)
-	metrics.controlTurn = &controlTurn{token: token, persona: "robin", scope: h.p.ConversationScope(), listed: []string{own}, request: "Cancel the tax job.", authority: true}
+	metrics.controlTurn = &controlTurn{token: token, persona: "robin", scope: h.p.ConversationScope(), listed: []string{own}}
 	metrics.jobControl = &brain.JobControl{Request: &brain.JobControlRequest{Action: brain.JobControlCancel, JobID: hidden}}
 	out := h.a.decideJobControl(context.Background(), metrics, metrics.jobControl)
 	if out.Refusal != refusedUnlisted || out.Receipt != nil || strings.Contains(out.Line, "tax") || out.Line != "Which job do you mean? Mine is Summarize the quarterly notes." {
@@ -872,5 +905,248 @@ func TestPersonaControlAfterAPromiseShapedPreamble(t *testing.T) {
 				t.Fatalf("saved reply = %q", saved)
 			}
 		})
+	}
+}
+
+// controlRouteBrain is a provider that ends every turn at a decoded control,
+// as no stock provider does with job control off.
+type controlRouteBrain struct {
+	*fakeBrain
+	control brain.JobControl
+}
+
+func (b *controlRouteBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	out := make(chan string)
+	close(out)
+	done := make(chan brain.StreamResult, 1)
+	control := b.control
+	done <- brain.StreamResult{Route: brain.JobControlRoute, JobControl: &control}
+	close(done)
+	return &brain.Stream{Chunks: out, Done: done}, nil
+}
+
+// The host grants a turn control only when the responding persona has it on,
+// on the direct router with tools, on Ollama; whatever a provider returns
+// otherwise changes no job.
+func TestNoGrantWithoutJobControlOn(t *testing.T) {
+	for name, opt := range map[string]harnessOption{
+		"option off":    func(c *config.Config) { c.VoiceJobControl = false },
+		"not on Ollama": func(c *config.Config) {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newPersonaControlHarness(t, opt)
+			id := h.spawn("Summarize the quarterly notes")
+			h.p.Brain = &controlRouteBrain{fakeBrain: &fakeBrain{}, control: brain.JobControl{Request: &brain.JobControlRequest{Action: brain.JobControlCancel, JobID: id}}}
+			r := h.turn(true, "Cancel the summary.", nil)
+			if len(r.outcomes) != 1 || r.outcomes[0].Refusal != refusedNotLive || r.controls != 0 || h.state(id) != job.StateRunning {
+				t.Fatalf("outcomes = %+v, ControlWork calls = %d, job = %s", r.outcomes, r.controls, h.state(id))
+			}
+		})
+	}
+}
+
+// roster admission sets the turn's request as the persona runtime does: the
+// remainder of a recognized address.
+func rosterAdmission(t *testing.T) func(context.Context, string, bool) (ResponseAdmission, error) {
+	roster, err := summon.NewRoster([]summon.Identity{{ID: "robin", DisplayName: "Robin"}, {ID: "sage", DisplayName: "Sage"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func(_ context.Context, text string, _ bool) (ResponseAdmission, error) {
+		admitted := ResponseAdmission{Request: text}
+		if exact := roster.ResolveForegroundControl(text); exact.Kind == summon.ExactControlValid {
+			admitted.Request = exact.Address.Remainder
+		}
+		return admitted, nil
+	}
+}
+
+func TestAddressedBareStopNeverControlsAJob(t *testing.T) {
+	for _, utterance := range []string{"Robin, stop.", "hey Robin stop", "@robin stop", "Stop…", "Stop !", "STOP!!", "Stop, Robin."} {
+		t.Run(utterance, func(t *testing.T) {
+			h := newPersonaControlHarness(t)
+			h.p.AdmitInput = rosterAdmission(t)
+			id := h.spawn("Download the release archive")
+			r := h.turn(false, utterance, replies(batch(controlCall("cancel", id))))
+			if len(r.outcomes) != 1 || r.outcomes[0].Refusal != refusedBareStop || r.controls != 0 || len(r.spoken) != 0 || h.state(id) != job.StateRunning {
+				t.Fatalf("outcomes = %+v, ControlWork = %d, spoken = %q, job = %s", r.outcomes, r.controls, r.spoken, h.state(id))
+			}
+		})
+	}
+	h := newPersonaControlHarness(t)
+	h.p.AdmitInput = rosterAdmission(t)
+	id := h.spawn("Download the release archive")
+	r := h.turn(false, "Robin, stop the download.", replies(batch(controlCall("cancel", id))))
+	r.settled(t, 1, "", "Stopped.")
+}
+
+type rewriteCorrector struct{ to string }
+
+func (c rewriteCorrector) Correct(context.Context, string) (string, error) { return c.to, nil }
+
+// What the recognizer heard counts, not only what a correction made of it.
+func TestBareStopHeardBeforeCorrection(t *testing.T) {
+	h := newPersonaControlHarness(t)
+	h.stt = stt.WithCorrection(&fakeSTT{text: "stop"}, rewriteCorrector{to: "stop the download"}, nil)
+	id := h.spawn("Download the release archive")
+	r := h.turn(true, "stop the download", replies(batch(controlCall("cancel", id))))
+	if len(r.outcomes) != 1 || r.outcomes[0].Refusal != refusedBareStop || r.controls != 0 || h.state(id) != job.StateRunning {
+		t.Fatalf("outcomes = %+v, ControlWork = %d, job = %s", r.outcomes, r.controls, h.state(id))
+	}
+}
+
+// signalingSTT says when a turn starts listening, then hears nothing.
+type signalingSTT struct {
+	fakeSTT
+	started chan struct{}
+}
+
+func (s *signalingSTT) Start(ctx context.Context) (stt.Session, error) {
+	close(s.started)
+	return s.fakeSTT.Start(ctx)
+}
+
+// A newer turn, or a new persona binding, ends the older turn's grant, even
+// when the same persona is bound again.
+func TestANewerTurnOrBindingRevokesTheGrant(t *testing.T) {
+	t.Run("new turn", func(t *testing.T) {
+		h := newPersonaControlHarness(t)
+		id := h.spawn("Summarize the quarterly notes")
+		listening := &signalingSTT{fakeSTT: fakeSTT{stall: true}, started: make(chan struct{})}
+		h.p.STT, h.p.VAD, h.p.Capture = listening, &fakeVAD{}, newFakeCapture()
+		next, stopNext := context.WithCancel(context.Background())
+		var wg sync.WaitGroup
+		h.before = func() {
+			wg.Go(func() { _, _ = h.p.RunTurn(next) })
+			select {
+			case <-listening.started:
+			case <-time.After(3 * time.Second):
+				t.Error("the next turn never listened")
+			}
+		}
+		r := h.turn(false, "Cancel the summary.", replies(batch(controlCall("cancel", id))))
+		stopNext()
+		wg.Wait()
+		if len(r.outcomes) != 1 || r.outcomes[0].Refusal != refusedNotLive || r.controls != 0 || h.state(id) != job.StateRunning {
+			t.Fatalf("outcomes = %+v, ControlWork = %d, job = %s", r.outcomes, r.controls, h.state(id))
+		}
+	})
+	t.Run("same persona bound again", func(t *testing.T) {
+		h := newPersonaControlHarness(t)
+		id := h.spawn("Summarize the quarterly notes")
+		rebind := func(next brain.Provider, persona string) {
+			cfg := h.cfg.Clone()
+			cfg.ActivePersona = persona
+			prepared, err := h.p.PrepareConversationBrain(next, h.worker, cfg, nil)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			prepared.RetainPrevious()
+			if err := prepared.Commit(nil); err != nil {
+				t.Error(err)
+			}
+		}
+		h.before = func() {
+			rebind(&fakeBrain{}, "sage")
+			rebind(h.live, "robin")
+		}
+		r := h.turn(false, "Cancel the summary.", replies(batch(controlCall("cancel", id))))
+		if len(r.outcomes) != 1 || r.outcomes[0].Refusal != refusedNotLive || r.controls != 0 || h.state(id) != job.StateRunning {
+			t.Fatalf("outcomes = %+v, ControlWork = %d, job = %s", r.outcomes, r.controls, h.state(id))
+		}
+	})
+}
+
+// With none of its listed jobs running but a job of its own still running
+// elsewhere, the persona does not claim it has none.
+func TestWhichJobLineNeverClaimsNoJobWhileOneRuns(t *testing.T) {
+	h := newPersonaControlHarness(t)
+	h.spawn("Summarize the quarterly notes")
+	metrics := newTurnMetrics()
+	token := h.p.controlTurns.Add(1)
+	h.p.liveControl.Store(token)
+	metrics.controlTurn = &controlTurn{token: token, persona: "robin", scope: h.p.ConversationScope()}
+	metrics.jobControl = &brain.JobControl{Request: &brain.JobControlRequest{Action: brain.JobControlCancel, JobID: "job-77"}}
+	if out := h.a.decideJobControl(context.Background(), metrics, metrics.jobControl); out.Line != cannotTellLine || out.Receipt != nil {
+		t.Fatalf("outcome = %+v", out)
+	}
+}
+
+// A refusal settled after its conversation was cleared writes nothing into
+// the new one, not even what the persona had said.
+func TestStaleControlWritesNothingAfterAClear(t *testing.T) {
+	h := newPersonaControlHarness(t)
+	id := h.spawn("Summarize the quarterly notes")
+	h.before = func() {
+		scope := h.p.ConversationScope()
+		scope.ConversationEpoch = newWorkID()
+		h.p.adoptConversationScope(scope)
+	}
+	round := []api.ChatResponse{
+		{Message: api.Message{Role: "assistant", Content: "Sure."}},
+		{Message: api.Message{Role: "assistant", ToolCalls: []api.ToolCall{controlCall("cancel", id)}}, Done: true, DoneReason: "stop"},
+	}
+	r := h.turn(true, "Cancel the summary.", replies(round))
+	for _, turn := range r.added {
+		if turn.Role == "assistant" {
+			t.Fatalf("written after the clear: %+v", r.added)
+		}
+	}
+	if len(r.outcomes) != 1 || r.outcomes[0].Refusal != refusedNotLive || h.state(id) != job.StateRunning {
+		t.Fatalf("outcomes = %+v, job = %s", r.outcomes, h.state(id))
+	}
+}
+
+func TestFreezeGrantsOnlyAnEligibleTurn(t *testing.T) {
+	h := newPersonaControlHarness(t)
+	live := brain.StreamOptions{JobControl: true, ToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsDirect}
+	for name, tc := range map[string]struct {
+		cfg   func(*config.Config)
+		opts  func(*brain.StreamOptions)
+		brain brain.Provider
+		want  bool
+	}{
+		"eligible":         {func(*config.Config) {}, func(*brain.StreamOptions) {}, nil, true},
+		"option off":       {func(c *config.Config) { c.VoiceJobControl = false }, func(*brain.StreamOptions) {}, nil, false},
+		"route only":       {func(*config.Config) {}, func(o *brain.StreamOptions) { o.RouterToolsPolicy = brain.RouterToolsRouteOnly }, nil, false},
+		"tools off":        {func(*config.Config) {}, func(o *brain.StreamOptions) { o.ToolsEnabled = false }, nil, false},
+		"not a live turn":  {func(*config.Config) {}, func(o *brain.StreamOptions) { o.JobControl = false }, nil, false},
+		"another provider": {func(*config.Config) {}, func(*brain.StreamOptions) {}, &fakeBrain{}, false},
+	} {
+		cfg := h.cfg.Clone()
+		tc.cfg(cfg)
+		h.a.ReplaceWorker(h.worker, cfg, nil)
+		h.p.Brain = h.live
+		if tc.brain != nil {
+			h.p.Brain = tc.brain
+		}
+		opts := live
+		tc.opts(&opts)
+		metrics := newTurnMetrics()
+		h.p.freezeControlTurn(metrics, opts, "Cancel the summary.", "Cancel the summary.")
+		if got := metrics.controlTurn.token != 0; got != tc.want {
+			t.Errorf("%s: granted = %t", name, got)
+		}
+	}
+	h.p.Brain = h.live
+	h.a.ReplaceWorker(h.worker, h.cfg.Clone(), nil)
+}
+
+// A control in the delta that runs out the reply's budget is refused as
+// incomplete; the promise spoken before it does not become a spawn.
+func TestControlAtTheBudgetLimitIsNotASpawn(t *testing.T) {
+	h := newPersonaControlHarness(t, func(c *config.Config) { c.OllamaResponseTokens = 5 })
+	id := h.spawn("Summarize the quarterly notes")
+	round := []api.ChatResponse{
+		{Message: api.Message{Role: "assistant", Content: "I'll use the tool to cancel it. "}},
+		{Message: api.Message{Role: "assistant", ToolCalls: []api.ToolCall{controlCall("cancel", id)}}, Done: true, DoneReason: "length", Metrics: api.Metrics{EvalCount: 50}},
+	}
+	r := h.turn(false, "Cancel the summary.", replies(round))
+	if len(r.outcomes) != 1 || r.outcomes[0].Refusal != string(brain.JobControlIncomplete) || r.jobs != 0 || r.controls != 0 || h.state(id) != job.StateRunning {
+		t.Fatalf("outcomes = %+v, jobs = %d, job = %s", r.outcomes, r.jobs, h.state(id))
+	}
+	if len(r.spoken) == 0 || r.spoken[len(r.spoken)-1] != controlFailedLine {
+		t.Fatalf("spoken = %q", r.spoken)
 	}
 }

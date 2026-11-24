@@ -225,7 +225,12 @@ func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, 
 	}
 	metrics.routedSpeech = nil
 	response := strings.Join(replyParts, " ")
-	err := p.appendRoutedHistory(metrics, transcript, response)
+	var err error
+	// A job control settled after its conversation was cleared writes
+	// nothing into the new one.
+	if kind != RouteJobControl || metrics.controlTurn == nil || metrics.controlTurn.scope.ConversationEpoch == p.ConversationScope().ConversationEpoch {
+		err = p.appendRoutedHistory(metrics, transcript, response)
+	}
 	metrics.routedNote = ""
 	if err != nil {
 		metrics.degraded = true

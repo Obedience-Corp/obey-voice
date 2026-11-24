@@ -51,6 +51,9 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	ctx = audio.BindPlaybackContext(ctx, p.Player)
 	p.incActiveTurn()
 	defer p.decActiveTurn()
+	if !background {
+		p.revokeJobControl()
+	}
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	if !background {

@@ -170,6 +170,7 @@ func (r *PreparedBrainReplacement) publish() {
 		_ = r.coordinator.RevokeBinding(r.scope)
 	}
 	r.pipeline.Brain = r.next
+	r.pipeline.revokeJobControl()
 	r.pipeline.resetBackchannelHistory()
 	r.pipeline.applyRouterSetting(r.cfg)
 	if r.agency != nil {
