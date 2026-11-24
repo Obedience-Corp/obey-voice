@@ -63,7 +63,20 @@ func (p *Pipeline) freezeControlTurn(ctx context.Context, metrics *turnMetrics, 
 	metrics.controlTurn = frozen
 }
 
-// revokeJobControl ends any turn's grant: the live persona binding changed.
+// forgetOrigins marks every job started so far as left by a cleared
+// conversation, for a host without a conversation identity to tell the
+// conversations apart.
+func (a *Agency) forgetOrigins() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for id, origin := range a.workerOrigins {
+		origin.cleared = true
+		a.workerOrigins[id] = origin
+	}
+}
+
+// revokeJobControl ends any turn's grant: the live persona binding changed or
+// the conversation was cleared.
 func (p *Pipeline) revokeJobControl() { p.liveControl.Store(0) }
 
 type foregroundKey struct{}
@@ -248,7 +261,7 @@ func (a *Agency) controlTurnLive(metrics *turnMetrics, frozen *controlTurn) bool
 	if metrics.interrupted || metrics.speechStopped() {
 		return false
 	}
-	if !frozen.scope.Valid() || frozen.scope != p.ConversationScope() || p.ConversationRetired() {
+	if frozen.scope != p.ConversationScope() || p.ConversationRetired() {
 		return false
 	}
 	persona, ok := p.livePersona()
@@ -290,7 +303,7 @@ func (a *Agency) personaOwns(persona, id string) bool {
 		return false
 	}
 	p := a.pipeline
-	return origin.Scope.Valid() && origin.Scope == p.ConversationScope() && !p.ConversationRetired()
+	return !origin.cleared && origin.Scope == p.ConversationScope() && !p.ConversationRetired()
 }
 
 // controllableJobs are the listed jobs the acting persona may control that

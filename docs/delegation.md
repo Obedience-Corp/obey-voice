@@ -521,7 +521,9 @@ router with tools; then it checks, in order, and stops at the first failure:
 4. The job id is exactly one the turn's job list named: the list the persona was
    sent when the turn began, at most eight jobs. No other id, no close match.
 5. The job is the persona's own, by who started it, in this conversation. A job
-   whose starter is not on record is not its own.
+   whose starter is not on record is not its own, and a job started before a
+   clear is not its own after it, also in a host that keeps no conversation
+   identity, such as an embedding app.
 6. The action is one that job can take, by the same rules as `/work cancel`,
    `/work report` and `/work tell`. A clear's leftover jobs, which `/work
    cancel` still reaches, are not reachable from the tool.
