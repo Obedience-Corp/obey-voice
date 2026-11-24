@@ -134,9 +134,32 @@ func (a *Agency) handleJobControl(ctx context.Context, turn *turnConductor, metr
 			p.emit(events.Info{Message: fmt.Sprintf("job control speech failed: %v", err)})
 		}
 	}
+	a.publishSettlement(control, out)
 	if a.onJobControl != nil {
 		a.onJobControl(out)
 	}
+}
+
+// States of the job.control route decision that records a settlement.
+const (
+	controlApplied = "applied"
+	controlRefused = "refused"
+)
+
+// publishSettlement records what the host decided about a control: the job
+// it named, and the receipt's outcome or the reason it was refused.
+func (a *Agency) publishSettlement(control *brain.JobControl, out controlOutcome) {
+	state, id, message := controlRefused, "", out.Refusal
+	if control != nil && control.Request != nil {
+		id = control.Request.JobID
+	}
+	if out.Receipt != nil {
+		state, message = controlApplied, out.Receipt.Rejected
+		if len(out.Receipt.Jobs) == 1 {
+			message = string(out.Receipt.Jobs[0].Outcome)
+		}
+	}
+	a.emitRouteDecision(RouteDecision{Kind: RouteJobControl}, state, id, message)
 }
 
 func controlSpoken(c *brain.JobControl) string {

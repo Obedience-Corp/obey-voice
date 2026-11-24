@@ -574,7 +574,9 @@ did before job control existed.
 The report line says the persona asked, since a persona may ask for a report
 you did not. A cancel's host note is saved as for a spoken "cancel". The
 controls are the ones `/work cancel`, `/work report` and `/work tell` make,
-with the same events and `/workers` rows. The exact cancel phrases keep their
+with the same events and `/workers` rows. Each settlement is also published
+as a `route.decided` event of kind `job.control`: state `applied` with the job
+and its outcome, or `refused` with the reason. The exact cancel phrases keep their
 own path and never reach the model.
 
 #### Measuring a model

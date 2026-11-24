@@ -1359,3 +1359,40 @@ func TestGrantFollowsTheAnsweringProvidersSetting(t *testing.T) {
 		})
 	}
 }
+
+// Each settled control is published as a job.control route decision: applied
+// with the job and its outcome, or refused with the reason.
+func TestJobControlSettlementIsPublished(t *testing.T) {
+	h := newPersonaControlHarness(t)
+	var mu sync.Mutex
+	var settled []events.RouteDecided
+	events.Subscribe(h.p.Events, func(e events.RouteDecided) {
+		if e.Kind == string(RouteJobControl) && e.State != "handled" {
+			mu.Lock()
+			settled = append(settled, e)
+			mu.Unlock()
+		}
+	})
+	own := h.spawn("Summarize the quarterly notes")
+	other := h.spawnAs("sage", "Render the demo video")
+	h.turn(true, "Cancel the video render.", replies(batch(controlCall("cancel", other))))
+	h.turn(true, "Cancel the summary.", replies(batch(controlCall("cancel", own))))
+	mu.Lock()
+	defer mu.Unlock()
+	if len(settled) != 2 || settled[0].State != controlRefused || settled[0].Message != refusedNotOwn || settled[0].JobID != other ||
+		settled[1].State != controlApplied || settled[1].Message != string(ControlStopped) || settled[1].JobID != own {
+		t.Fatalf("settled = %+v", settled)
+	}
+}
+
+// The wording the live job-control scenarios use reaches the persona: it is
+// not one of the exact cancel phrases.
+func TestScenarioCancelWordingIsNotAPhrase(t *testing.T) {
+	ctx := RouteContext{JobActive: true, DirectTools: true}
+	if kind, _, ok := classifyTurn("cancel that job", ctx); ok {
+		t.Fatalf("classified as %s", kind)
+	}
+	if kind, _, ok := classifyTurn("cancel that", ctx); !ok || kind != RouteJobAbort {
+		t.Fatalf("the phrase itself: %s %t", kind, ok)
+	}
+}
