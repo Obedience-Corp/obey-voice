@@ -246,6 +246,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		RouteJSON:         p.liveRouteJSON(),
 		BackgroundWorker:  p.liveRouterToolsPolicy() == brain.RouterToolsDirect && p.backgroundWorkerAvailable(),
+		JobControl:        !nativeConversation && !isContinuation && admission.Discussion == nil && p.Agency != nil,
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
 		OnToolEnd:         p.toolEndHook(ctx),
 		OnUsage:           p.usageHook(),
@@ -260,6 +261,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	if ordinary != nil {
 		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)
 	}
+	p.freezeControlTurn(metrics, streamOpts, text, original)
 
 	metrics.modelRequest = time.Now()
 	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)

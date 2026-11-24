@@ -512,6 +512,10 @@
           "enum": ["", "direct", "route_only", "json_route", "single_call", "legacy"],
           "description": "This persona's voice_router_tools: how its live turns choose between answering and handing work off. single_call lets an Ollama brain answer chat in the routing request itself. Empty takes the app-level voice_router_tools."
         },
+        "job_control": {
+          "type": "boolean",
+          "description": "This persona's voice_job_control: whether its live Ollama turns on the direct router offer the job_control tool, which cancels, asks a report of, or corrects one of the persona's own background jobs. Omitted takes the app-level voice_job_control, which is off by default."
+        },
         "worker": {
           "type": "object",
           "additionalProperties": false,

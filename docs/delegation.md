@@ -338,8 +338,10 @@ background; nothing about the job changes. When whether the worker runs on
 this machine cannot be checked, the refusal says so. Such a worker still reads
 a correction given while the job is queued, in its brief. A correction reaches
 a job only from the conversation that started it: after a clear, the old
-job's id is unknown to `/work tell`, though `/work cancel` still reaches it. Corrections come only
-from the keyboard for now; no spoken phrase or persona tool makes one.
+job's id is unknown to `/work tell`, though `/work cancel` still reaches it. Corrections come
+from the keyboard, and from a persona's `job_control` tool when that is turned
+on (see [A persona controlling its own jobs](#a-persona-controlling-its-own-jobs));
+no spoken phrase makes one.
 
 `/work tell` reports at once whether the correction was accepted, added to a
 queued job's brief, or refused. What happens to it afterwards is shown on the
@@ -428,8 +430,8 @@ answer will follow, scoped to the conversation that admitted the job like
 `job_correction`; an Obey-managed delegation and a moved reply give their
 checkpoint in the receipt only. How the job ends is told by its usual terminal
 event. A
-report comes only from the keyboard for now; no spoken phrase or persona tool
-asks for one.
+report comes from the keyboard, and from a persona's `job_control` tool when
+that is turned on; no spoken phrase asks for one.
 
 Those events are folded for display: consecutive calls of one kind become a
 row, a kind change opens the next. The TUI keeps one transcript entry per job
@@ -462,6 +464,82 @@ taken once, when the turn begins, and is never saved to the conversation. Result
 discussions do not carry it. The sentence that introduces the list is the
 `system/active-work.yaml` prompt. A persona on a hosted backend is not sent the
 list; ask it "what's happening" or open `/workers`.
+
+### A persona controlling its own jobs
+
+With `voice_job_control: true`, or `job_control: true` in a persona's `brain:`
+block, a persona on Ollama can act on one of its own listed jobs when you ask:
+"cancel the summary", "that's enough, what have you got" (a report), "use the
+other file instead" (a correction). It is off by default. Small local models
+have been measured misusing it: one turned a bare "Stop." into a cancel every
+time, a smaller one cancelled another persona's job and started second jobs,
+and another said "Done, cancelled" without calling anything. Try it with your
+model before relying on it.
+
+The tool, `job_control(action, job_id, instruction)`, is offered only on a
+live turn that answers you, on the direct router: never to a worker, a result
+notification, a continuation, a group discussion, a summary, a retried input or
+a recovery round, and never under `route_only`, `json_route`, `single_call` or
+tiered routing. It sits between `view_image` and `start_background_work` in
+the tool list whether or not jobs exist, and the warm-up request carries it
+too. With the option off nothing a persona is sent changes, and a
+`job_control` call is an unknown tool. Under the route policies a stray call
+is never turned into a spawn, with the option on or off.
+
+The model only asks; Obey Voice decides. When a model response holds a
+`job_control` call, nothing in that response runs: not the control, not a
+search, write, command, picture or hand-off beside it, and it never becomes
+background work. The turn ends at the call: the model gets no tool result and
+no second request, and text it sends after the call is dropped. What it said
+before the call was spoken as usual and stays in its reply. The host then
+checks, in order, and stops at the first failure:
+
+1. What you said is not a bare "stop" ("Stop.", "stop!"), read as the cancel
+   phrases are read. A bare stop silences speech and never changes a job,
+   whatever the model called: nothing is spoken, and the chat shows `A bare
+   "stop" only silences speech; say "cancel" to end a job.` "Stop the
+   download" is not a bare stop.
+2. The turn is still the live one: not interrupted or stopped, not moved to the
+   background, the conversation not cleared and the persona not switched since
+   it began. Otherwise nothing is spoken and the chat says the control arrived
+   after its turn stopped. Each turn's permission is used once.
+3. The response was complete, offered the tool, and holds one control: two
+   identical calls count as one, two different ones are refused.
+4. The job id is exactly one the turn's job list named: the list the persona was
+   sent when the turn began, at most eight jobs. No other id, no close match.
+5. The job is the persona's own, by who started it, in this conversation. A job
+   whose starter is not on record is not its own.
+6. The action is one that job can take, by the same rules as `/work cancel`,
+   `/work report` and `/work tell`. A clear's leftover jobs, which `/work
+   cancel` still reaches, are not reachable from the tool.
+
+Then the control is applied once, and Obey Voice says one line of its own in
+the persona's voice, saved as the persona's reply after anything it said
+first:
+
+| Outcome | Line |
+|---|---|
+| cancel, worker returned | `Stopped.` / `Stopped after 40 seconds.` |
+| cancel, worker still stopping (after the same short wait as "cancel") | `Cancelled after 40 seconds; the worker is still stopping.` |
+| cancel, queued job | `Dropped 1 queued job.` |
+| report accepted | `I asked it to report, and it's writing up what it has; so far: read 3 files, ran 1 command.` |
+| report, no activity yet | `I asked it to report, and it's writing up what it has; it has recorded no tool activity yet.` |
+| report, worker that cannot be asked to stop | `So far: read 3 files; it can't be asked to stop, so the work continues.` |
+| report, queued / starting / finishing | `That job hasn't started yet, so there's nothing to report.` / `It's just starting, so there's nothing to report yet.` / `It's already finishing its answer.` |
+| correction accepted | `Sent; it reads it at its next step.` |
+| correction to a queued job | `Added to its brief; it reads it when it starts.` |
+| correction refused | `I couldn't pass that on: ` and the refusal `/work tell` gives |
+| job ended since the list | `That job had already finished.` |
+| another persona's job | `I can only do that for my own jobs.` |
+| unknown, unlisted or missing id, or two different controls | `Which job do you mean? Mine is …` naming only the persona's own listed jobs |
+| none of its jobs running | `I have no job running.` |
+| incomplete or malformed call, or a steer without an instruction | `I couldn't do that.` |
+
+The report line says the persona asked, since a persona may ask for a report
+you did not. A cancel's host note is saved as for a spoken "cancel". The
+controls are the same ones `/work cancel`, `/work report` and `/work tell` make,
+recorded with the actor `persona`; their events and `/workers` rows are the
+same. The exact cancel phrases keep their own path and never reach the model.
 
 In the TUI, `/workers` provides **Stop task** (`s`), **Correct task** (`e`,
 which returns to the conversation with `/work tell JOB_ID ` typed for you, or,

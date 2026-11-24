@@ -756,10 +756,15 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				}
 			}
 			p.emitResponse(metrics, events.ThinkingComplete{Elapsed: metrics.elapsed(metrics.modelComplete)})
+			if result.JobControl != nil {
+				metrics.jobControl, metrics.controlSpoken = result.JobControl, true
+			}
 			if repair != nil && result.Route != "" {
 				metrics.route.Tier, metrics.route.ReasonCode = result.RouteTier, result.RouteReasonCode
 				repair.applyBrainRoute(result.Route)
-				if _, _, ok := repair.routedKind(); ok && p.Player != nil {
+				// What the persona said before a job control was spoken as it
+				// streamed and finishes; the host's line follows it.
+				if kind, _, ok := repair.routedKind(); ok && kind != RouteJobControl && p.Player != nil {
 					p.Player.Stop()
 				}
 			}
@@ -1011,6 +1016,7 @@ func (p *Pipeline) collectTextStream(ctx context.Context, cancel context.CancelF
 	select {
 	case res := <-stream.Done:
 		metrics.route.Tier, metrics.route.ReasonCode = res.RouteTier, res.RouteReasonCode
+		metrics.jobControl = res.JobControl
 		if err := ctx.Err(); err != nil {
 			// The turn stopped this request, so what it read was cut short
 			// whatever the provider reports with the stop.

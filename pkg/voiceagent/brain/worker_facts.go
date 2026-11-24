@@ -29,38 +29,56 @@ const (
 // jobs past the limit are counted, so none is silently left out. Provider and
 // model names and pricing are deliberately excluded.
 func WorkerFactsPrompt(cfg *config.Config, facts []WorkerFact) string {
-	unlisted := 0
+	r := renderWorkerFacts(facts)
+	if r.lines.Len() == 0 {
+		return ""
+	}
+	if !r.described {
+		return workerFactsOpen + r.lines.String() + workerFactsClose
+	}
+	if r.unlisted > 0 {
+		fmt.Fprintf(&r.lines, "\nunfinished jobs not listed: %d", r.unlisted)
+	}
+	return "\n" + systemPrompt(cfg, "active-work", nil) + workerFactsOpen + r.lines.String() + workerFactsClose
+}
+
+// ListedWorkerFactIDs are the jobs WorkerFactsPrompt names for facts, in the
+// order it names them: the ones within its limit, with a valid record, that
+// fit its size.
+func ListedWorkerFactIDs(facts []WorkerFact) []string {
+	return renderWorkerFacts(facts).listed
+}
+
+type workerFactsRender struct {
+	lines     strings.Builder
+	listed    []string
+	described bool
+	unlisted  int
+}
+
+func renderWorkerFacts(facts []WorkerFact) *workerFactsRender {
+	r := &workerFactsRender{}
 	if len(facts) > workerFactLimit {
 		for _, fact := range facts[workerFactLimit:] {
 			if state := strings.TrimSpace(fact.State); state == "running" || state == "queued" {
-				unlisted++
+				r.unlisted++
 			}
 		}
 		facts = facts[:workerFactLimit]
 	}
-	var lines strings.Builder
-	described := false
 	for _, fact := range facts {
 		line := workerFactLine(fact)
 		if line == "" {
 			continue
 		}
-		if len(workerFactsOpen)+lines.Len()+len(line)+len(workerFactsClose) > workerFactsBytes {
+		if len(workerFactsOpen)+r.lines.Len()+len(line)+len(workerFactsClose) > workerFactsBytes {
 			break
 		}
-		lines.WriteString(line)
-		described = described || oneLine(fact.Task) != ""
+		r.lines.WriteString(line)
+		r.listed = append(r.listed, strings.TrimSpace(fact.ID))
+		r.described = r.described || oneLine(fact.Task) != ""
 	}
-	if lines.Len() == 0 {
-		return ""
-	}
-	if !described {
-		return workerFactsOpen + lines.String() + workerFactsClose
-	}
-	if unlisted > 0 {
-		fmt.Fprintf(&lines, "\nunfinished jobs not listed: %d", unlisted)
-	}
-	return "\n" + systemPrompt(cfg, "active-work", nil) + workerFactsOpen + lines.String() + workerFactsClose
+	return r
 }
 
 func workerFactLine(fact WorkerFact) string {

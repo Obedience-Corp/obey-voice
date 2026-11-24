@@ -53,6 +53,10 @@ type RoundOptions struct {
 	Input, PreviousReply string
 	Hold                 bool
 	Discussion           *discussion.Directive
+	// EndAtTool names a tool whose call ends what the round says: text that
+	// arrives after it is neither sent nor kept. Its sibling calls are still
+	// collected.
+	EndAtTool string
 }
 
 // Round retains both model text and delivered speech for history and partial failures.
@@ -70,6 +74,8 @@ type Round struct {
 	held          []string
 	ToolCalls     []api.ToolCall
 	Usage         Usage
+	// ended is set once the EndAtTool call arrived.
+	ended bool
 	// earlier is what the turn's previous rounds said; a round may restate
 	// it. What this round says itself is never a restatement.
 	earlier string
@@ -150,7 +156,7 @@ func (r *Round) receive(msg api.Message) error {
 			return err
 		}
 	}
-	if msg.Content != "" {
+	if msg.Content != "" && !r.ended {
 		r.raw.WriteString(msg.Content)
 		speakable, inner := r.split.FeedSplit(msg.Content)
 		if inner != "" && fieldThink == "" {
@@ -176,6 +182,11 @@ func (r *Round) receive(msg api.Message) error {
 	}
 	if len(msg.ToolCalls) > 0 {
 		r.ToolCalls = append(r.ToolCalls, msg.ToolCalls...)
+		for _, call := range msg.ToolCalls {
+			if r.options.EndAtTool != "" && strings.TrimSpace(call.Function.Name) == r.options.EndAtTool {
+				r.ended = true
+			}
+		}
 	}
 	return nil
 }

@@ -1904,6 +1904,20 @@
       "editable": true
     },
     {
+      "key": "voice_job_control",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "tools",
+      "title": "Persona job control",
+      "help": "Lets the speaking Ollama persona cancel, ask a report of, or correct one of its own background jobs when you ask, on the direct router. Off by default: small local models have been measured cancelling on a bare \"stop\" or another persona's job. The host checks every call.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "VOICE_JOB_CONTROL",
+      "editable": true
+    },
+    {
       "key": "voice_router_tools",
       "type": "enum",
       "default": "direct",

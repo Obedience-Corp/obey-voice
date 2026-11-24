@@ -64,6 +64,7 @@ func (o *OllamaBrain) turnToolSession(opts StreamOptions) *toolSession {
 	if o.offersViewImage(opts) {
 		s.viewImage = o.viewImage
 	}
+	s.jobControl = o.offersJobControl(opts)
 	return s
 }
 

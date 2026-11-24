@@ -14,6 +14,7 @@ func TestToolSchemasSerializeStably(t *testing.T) {
 		"live":       func() any { return liveRouterTools() },
 		"assistant":  func() any { return voiceAssistantTools(nil) },
 		"delegation": func() any { return delegationTools() },
+		"jobControl": func() any { return jobControlTool() },
 	}
 	for name, build := range builders {
 		first, err := json.Marshal(build())

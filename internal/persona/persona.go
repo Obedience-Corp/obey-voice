@@ -99,6 +99,7 @@ type CatalogIssue struct {
 //	    provider: ollama        # or claude, grok; empty = app default
 //	    model: qwen3:8b         # empty = that provider's usual default
 //	  router: single_call       # a voice_router_tools value; empty = app default
+//	  job_control: true         # voice_job_control for this persona; unset = app default
 //
 // Profiles written before this field existed have the zero value and keep
 // using the app-level brain keys until edited.
@@ -113,6 +114,9 @@ type Brain struct {
 	// Router is this persona's voice_router_tools: how its live turns choose
 	// between answering and handing work off.
 	Router string `yaml:"router,omitempty" json:"router"`
+	// JobControl is this persona's voice_job_control: whether its live turns
+	// offer the job_control tool. Unset inherits the app setting.
+	JobControl *bool `yaml:"job_control,omitempty" json:"job_control,omitempty"`
 }
 
 // Worker is the persona's async job brain. It is a peer of the live brain,
@@ -471,6 +475,9 @@ func applyBrain(cfg *config.Config, b Brain) {
 	}
 	if router := strings.ToLower(strings.TrimSpace(b.Router)); router != "" {
 		cfg.VoiceRouterTools = router
+	}
+	if b.JobControl != nil {
+		cfg.VoiceJobControl = *b.JobControl
 	}
 }
 

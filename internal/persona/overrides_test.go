@@ -149,6 +149,18 @@ func TestOverriddenKeysMatchesApply(t *testing.T) {
 			want: []string{"agent_name", "active_persona", "tts_provider", "tts_voice"},
 		},
 		{
+			name:    "job control on claims voice_job_control",
+			cfg:     appConfig,
+			profile: &Profile{ID: "ada", Brain: Brain{JobControl: new(true)}},
+			want:    []string{"active_persona", "voice_job_control"},
+		},
+		{
+			name:    "job control off equal to the config's is still an override",
+			cfg:     appConfig,
+			profile: &Profile{ID: "ada", Brain: Brain{JobControl: new(false)}},
+			want:    []string{"active_persona", "voice_job_control"},
+		},
+		{
 			name: "everything at once",
 			cfg:  appConfig,
 			profile: &Profile{

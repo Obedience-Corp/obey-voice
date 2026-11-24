@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
@@ -24,13 +25,18 @@ const (
 	WorkActorTool WorkActorKind = "tool"
 	// WorkActorHost is the host acting on its own.
 	WorkActorHost WorkActorKind = "host"
+	// WorkActorPersona is the live persona's job_control tool, for the turn
+	// that called it, on one of the persona's own jobs.
+	WorkActorPersona WorkActorKind = "persona"
 )
 
 // WorkActor is who asked. Runtime is set for a tool actor: the managed
-// runtime whose tool made the call.
+// runtime whose tool made the call. Persona is set for a persona actor: the
+// persona the turn froze.
 type WorkActor struct {
 	Kind    WorkActorKind
 	Runtime *delegation.Runtime
+	Persona string
 }
 
 // WorkAction is what a control does to a job.
@@ -159,6 +165,8 @@ const unknownTask = "unknown background task"
 func (a *Agency) ControlWork(actor WorkActor, req WorkRequest) WorkReceipt {
 	receipt := WorkReceipt{Actor: actor, Request: req}
 	switch {
+	case actor.Kind == WorkActorPersona:
+		a.personaControl(&receipt)
 	case req.Action == WorkSteer:
 		a.steerJob(&receipt)
 	case req.Action == WorkReport:
@@ -179,6 +187,41 @@ func (a *Agency) ControlWork(actor WorkActor, req WorkRequest) WorkReceipt {
 		receipt.Rejected = fmt.Sprintf("unknown actor %q", actor.Kind)
 	}
 	return receipt
+}
+
+// personaControl lets a persona's tool reach one table job of the current
+// conversation that the persona started. Unlike a command it never reaches a
+// job a clear left behind, and it never reaches a managed task.
+func (a *Agency) personaControl(receipt *WorkReceipt) {
+	req := receipt.Request
+	switch {
+	case req.All:
+		receipt.Rejected = "a persona controls one job at a time"
+		return
+	case req.JobID == "":
+		receipt.Rejected = "no job named"
+		return
+	}
+	id := req.JobID
+	if a.managedOwner(id) != nil || !a.personaOwns(receipt.Actor.Persona, id) {
+		receipt.Jobs = append(receipt.Jobs, JobControl{ID: id, Outcome: ControlUnknown})
+		return
+	}
+	switch req.Action {
+	case WorkCancel:
+		receipt.Jobs = append(receipt.Jobs, a.cancelOne(id))
+	case WorkSteer:
+		text := strings.TrimSpace(req.Instruction)
+		if text == "" {
+			receipt.Rejected = "no correction given"
+			return
+		}
+		receipt.Jobs = append(receipt.Jobs, a.steerOne(id, text))
+	case WorkReport:
+		receipt.Jobs = append(receipt.Jobs, a.reportOne(id))
+	default:
+		receipt.Rejected = fmt.Sprintf("unsupported work action %q", req.Action)
+	}
 }
 
 // toolCancel lets agent_cancel reach only its own runtime's live task.

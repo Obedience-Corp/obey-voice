@@ -68,6 +68,8 @@ type Agency struct {
 	// heldMedia are the images of an answer delivered in place of a failed
 	// correction's run, kept apart from that job's saved thread.
 	heldMedia map[string][]chatmedia.Ref // guarded by mu
+	// onJobControl observes each job control the host settled; tests only.
+	onJobControl func(controlOutcome)
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction
@@ -147,6 +149,8 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 		a.handleAbort(ctx, turn, metrics)
 	case RouteJobStatus:
 		a.speakJobStatus(ctx, turn, metrics)
+	case RouteJobControl:
+		a.handleJobControl(ctx, turn, metrics)
 	}
 	if a.pipeline.OnRoute != nil {
 		a.pipeline.OnRoute(d)

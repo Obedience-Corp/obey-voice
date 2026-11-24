@@ -57,6 +57,9 @@ type toolSession struct {
 	viewImage func(context.Context, string) (string, bool)
 	// viewed is set once a view_image call of this turn recorded a picture.
 	viewed bool
+	// jobControl offers job_control. The stream loop handles the call; it
+	// never runs here.
+	jobControl bool
 	// Optional UI hooks (from StreamOptions).
 	onStart func(ToolCall)
 	onEnd   func(ToolResult)
@@ -124,6 +127,9 @@ func (s *toolSession) tools() api.Tools {
 	tools := routerToolsForSession(s.routerPolicy, s.catalog, s.workerTiers, s.singleCall)
 	if s.viewImage != nil && s.routerPolicy != RouterToolsRouteOnly {
 		tools = append(tools, viewImageTool())
+	}
+	if s.jobControl && s.routerPolicy != RouterToolsRouteOnly {
+		tools = append(tools, jobControlTool())
 	}
 	if s.delegation != nil && !(s.routerPolicy == RouterToolsRouteOnly && s.workerTiers != nil) {
 		tools = append(tools, delegationTools()...)

@@ -214,6 +214,7 @@ func setDefaults(v *viper.Viper) {
 	// via remote_tools_enabled.
 	v.SetDefault("voice_tools_enabled", true)
 	v.SetDefault("voice_router_tools", "direct")
+	v.SetDefault("voice_job_control", false)
 	// Silence until asked: a worker that talks over the conversation is worse
 	// than one that is quiet about what it did.
 	v.SetDefault("voice_work_narration", "status_only")

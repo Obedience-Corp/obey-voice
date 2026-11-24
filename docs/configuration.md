@@ -930,6 +930,28 @@ one just read, so compare modes at the same position.
 
 When comparing the two routed modes, keep `route_only` unless routing accuracy holds on the models you use.
 
+### Persona job control (`voice_job_control`)
+
+`voice_job_control: true` offers a speaking Ollama persona on the direct router
+the `job_control` tool, with which it can cancel, ask a report of, or correct
+one of its own background jobs when you ask. It is off by default, and with it
+off nothing a persona is sent changes. Small local models have been measured
+misusing it, including cancelling a job on a bare "stop", so measure yours
+first. A persona's `brain.job_control` (`true` or `false`) wins over the app
+setting; leaving it out inherits it:
+
+```yaml
+brain:
+  provider: ollama
+  job_control: true
+```
+
+`obey-voice config set voice_job_control true` turns it on for every persona,
+and `VOICE_JOB_CONTROL` sets it from the environment. It has no
+effect under `route_only`, `json_route`, `single_call` or tiered routing, or for
+a persona on another provider. What the host checks before acting, and what it
+says, is in [A persona controlling its own jobs](delegation.md#a-persona-controlling-its-own-jobs).
+
 ## STT schema migration
 
 The preferred STT schema is `stt_provider` + `stt_mode` (e.g. `stt_provider: sherpa` with `stt_mode: streaming`). The legacy compound aliases (`sherpa-streaming`, `sherpa-offline`) still work with `stt_mode` unset and are never rewritten; combining a compound alias with a conflicting `stt_mode` is a config error.

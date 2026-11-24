@@ -108,6 +108,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 		rounds := newToolRounds(o.cfg, opts)
 		workerAvailable := opts.canHandOff()
+		// With job control on, a job_control call ends the turn wherever it
+		// appears; the host decides what it does.
+		catchControl := o.catchesJobControl()
+		endAt := ""
+		if catchControl {
+			endAt = jobControlToolName
+		}
 		inspectedLocally := false
 		for i := 0; rounds.more(i); i++ {
 			finalAnswer, finalInstruction := rounds.final(ctx, i)
@@ -211,6 +218,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				PreviousReply: prior,
 				Discussion:    opts.Discussion,
 				Hold:          checkImageResult || finalAnswer,
+				EndAtTool:     endAt,
 			})
 			receive := output.Receiver(o.estimateTokens(skillCtx), responseLimit.observe, o.emitContinuityBudget)
 			chat := o.chat
@@ -290,6 +298,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				repetitionAllowed = true
 			}
 			err = output.FinishSpeech(err)
+			if err != nil && catchControl && ctx.Err() == nil && callsTool(toolCalls, jobControlToolName) {
+				control := JobControl{Refusal: JobControlIncomplete, Spoken: o.spokenBeforeControl(output)}
+				done <- StreamResult{Err: fmt.Errorf("ollama stream: %w", err), Recovered: true, Route: JobControlRoute, JobControl: &control}
+				return
+			}
 			if err != nil {
 				if finalAnswer {
 					if cut := rounds.cutOff(ctx, requestCtx, output.HeldText()); cut != nil {
@@ -326,6 +339,14 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 			if (continuation != "" || repetitionRetry || routedChat || finalAnswer) && len(toolCalls) > 0 {
 				done <- StreamResult{Err: fmt.Errorf("response recovery returned tool calls"), Recovered: true}
+				return
+			}
+			// A batch with a job_control call runs nothing: not the control,
+			// not its siblings, not a hand-off. The turn ends at the call.
+			if catchControl && callsTool(toolCalls, jobControlToolName) {
+				complete := output.Usage.Complete && output.Usage.DoneReason != "length"
+				control := decodeJobControl(toolCalls, offersTool(tools, jobControlToolName), complete, o.spokenBeforeControl(output))
+				done <- StreamResult{Route: JobControlRoute, JobControl: &control}
 				return
 			}
 

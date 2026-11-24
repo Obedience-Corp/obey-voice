@@ -1,0 +1,347 @@
+package pipeline
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
+)
+
+// controlTurn is what a live turn froze when it began, for a job_control call
+// its model may make: the turn's identity, the acting persona, the
+// conversation, the jobs its prompt named, and what the user said.
+type controlTurn struct {
+	token     uint64
+	persona   string
+	scope     work.WorkScope
+	listed    []string
+	request   string
+	original  string
+	authority bool
+}
+
+// freezeControlTurn records a live turn's authority before its model request.
+// listed is computed from the same facts and by the same pass that render
+// them into the prompt.
+func (p *Pipeline) freezeControlTurn(metrics *turnMetrics, opts brain.StreamOptions, request, original string) {
+	if metrics == nil || p.Agency == nil {
+		return
+	}
+	frozen := &controlTurn{request: request, original: original, authority: opts.JobControl}
+	if persona, ok := p.livePersona(); ok && opts.JobControl {
+		frozen.token = p.controlTurns.Add(1)
+		frozen.persona = persona
+		frozen.scope = p.ConversationScope()
+		frozen.listed = brain.ListedWorkerFactIDs(opts.WorkerFacts)
+		p.liveControl.Store(frozen.token)
+	}
+	metrics.controlTurn = frozen
+}
+
+// Lines the host says, or shows, for a persona's job control.
+const (
+	bareStopNotice     = `A bare "stop" only silences speech; say "cancel" to end a job.`
+	notLiveNotice      = "A job control arrived after its turn stopped, so no job was changed."
+	controlFailedLine  = "I couldn't do that."
+	notOwnLine         = "I can only do that for my own jobs."
+	nothingRunningLine = "I have no job running."
+	alreadyDoneLine    = "That job had already finished."
+	steerSentLine      = "Sent; it reads it at its next step."
+	steerBriefedLine   = "Added to its brief; it reads it when it starts."
+	reportStartingLine = "It's just starting, so there's nothing to report yet."
+	reportQueuedLine   = "That job hasn't started yet, so there's nothing to report."
+	reportFinishLine   = "It's already finishing its answer."
+)
+
+// controlOutcome is what the host decided about one job control, for the
+// turn's line and for observers.
+type controlOutcome struct {
+	Control *brain.JobControl
+	// Refusal is why nothing was asked of a job; empty when ControlWork ran.
+	Refusal string
+	Receipt *WorkReceipt
+	Line    string
+	Notice  string
+}
+
+// Host refusals, after the brain's own.
+const (
+	refusedBareStop = "bare_stop"
+	refusedNotLive  = "not_live"
+	refusedNoJobs   = "no_jobs"
+	refusedUnlisted = "unlisted"
+	refusedNotOwn   = "not_own"
+)
+
+// handleJobControl settles the job_control call a live turn ended at: it
+// checks the call against what the turn froze, asks ControlWork at most once
+// with the persona as actor, and speaks one line of its own in the persona's
+// voice after whatever the persona had already said.
+func (a *Agency) handleJobControl(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
+	p := a.pipeline
+	control := metrics.jobControl
+	out := a.decideJobControl(ctx, metrics, control)
+	if spoken := strings.TrimSpace(brain.CleanForVoice(controlSpoken(control))); spoken != "" {
+		if !metrics.controlSpoken && out.Refusal != refusedBareStop && out.Refusal != refusedNotLive {
+			p.speakUnrecorded(ctx, turn, metrics, speakableFromResponse(p.gateForSpeech(spoken, metrics), responseMentionName(ctx)))
+		}
+		if metrics.routedSpeech != nil {
+			*metrics.routedSpeech = append(*metrics.routedSpeech, spoken)
+		}
+	}
+	if out.Notice != "" {
+		p.emit(events.Info{Message: out.Notice})
+	}
+	if out.Line != "" {
+		if err := p.speakStandalone(ctx, turn, metrics, out.Line); err != nil {
+			p.emit(events.Info{Message: fmt.Sprintf("job control speech failed: %v", err)})
+		}
+	}
+	if a.onJobControl != nil {
+		a.onJobControl(out)
+	}
+}
+
+func controlSpoken(c *brain.JobControl) string {
+	if c == nil {
+		return ""
+	}
+	return c.Spoken
+}
+
+func (a *Agency) decideJobControl(ctx context.Context, metrics *turnMetrics, control *brain.JobControl) controlOutcome {
+	frozen := metrics.controlTurn
+	out := controlOutcome{Control: control}
+	refuse := func(reason, line, notice string) controlOutcome {
+		out.Refusal, out.Line, out.Notice = reason, line, notice
+		return out
+	}
+	if frozen != nil && (bareStop(frozen.request) || bareStop(frozen.original)) {
+		return refuse(refusedBareStop, "", bareStopNotice)
+	}
+	if !a.controlTurnLive(ctx, metrics, frozen) {
+		return refuse(refusedNotLive, "", notLiveNotice)
+	}
+	if control == nil || control.Request == nil {
+		reason := brain.JobControlMalformed
+		if control != nil {
+			reason = control.Refusal
+		}
+		switch reason {
+		case brain.JobControlNoJob, brain.JobControlAmbiguous:
+			return refuse(string(reason), a.whichJobLine(frozen), "")
+		}
+		return refuse(string(reason), controlFailedLine, "")
+	}
+	req := control.Request
+	if !slices.Contains(frozen.listed, req.JobID) {
+		reason := refusedUnlisted
+		if len(a.controllableJobs(frozen)) == 0 {
+			reason = refusedNoJobs
+		}
+		return refuse(reason, a.whichJobLine(frozen), "")
+	}
+	if !a.personaOwns(frozen.persona, req.JobID) {
+		return refuse(refusedNotOwn, notOwnLine, "")
+	}
+	receipt := a.ControlWork(WorkActor{Kind: WorkActorPersona, Persona: frozen.persona}, WorkRequest{Action: WorkAction(req.Action), JobID: req.JobID, Instruction: req.Instruction})
+	if req.Action == brain.JobControlCancel {
+		receipt = a.awaitExits(ctx, receipt)
+		metrics.routedNote = a.cancelCheckpoint(receipt)
+	}
+	out.Receipt = &receipt
+	out.Line = a.controlLine(frozen, receipt)
+	return out
+}
+
+// controlTurnLive spends the turn's grant: it holds only while the turn that
+// froze it is the live one, was not stopped, and its conversation and
+// persona are still the ones it froze.
+func (a *Agency) controlTurnLive(ctx context.Context, metrics *turnMetrics, frozen *controlTurn) bool {
+	p := a.pipeline
+	if frozen == nil || !frozen.authority || frozen.token == 0 || !p.liveControl.CompareAndSwap(frozen.token, 0) {
+		return false
+	}
+	if ctx.Err() != nil || metrics.interrupted || metrics.speechStopped() {
+		return false
+	}
+	if !frozen.scope.Valid() || frozen.scope != p.ConversationScope() || p.ConversationRetired() {
+		return false
+	}
+	persona, ok := p.livePersona()
+	return ok && persona == frozen.persona
+}
+
+// bareStop reports an utterance that is only "stop", read as the phrase
+// table reads one.
+func bareStop(utterance string) bool {
+	return normalizeUtterance(utterance) == "stop"
+}
+
+// personaOwns reports whether persona started job id in the current
+// conversation, by the job's frozen origin. A job whose origin or starter is
+// not on record is no persona's.
+func (a *Agency) personaOwns(persona, id string) bool {
+	a.mu.Lock()
+	origin, ok := a.workerOrigins[id]
+	a.mu.Unlock()
+	if !ok || persona == "" {
+		return false
+	}
+	starter, tagged := origin.admission["persona"]
+	if !tagged || personaKey(starter) != persona {
+		return false
+	}
+	p := a.pipeline
+	return origin.Scope.Valid() && origin.Scope == p.ConversationScope() && !p.ConversationRetired()
+}
+
+// controllableJobs are the listed jobs the acting persona may control that
+// are still running or queued, as the list named them.
+func (a *Agency) controllableJobs(frozen *controlTurn) []job.Info {
+	if frozen == nil {
+		return nil
+	}
+	status := a.jobs.Status()
+	var out []job.Info
+	for _, id := range frozen.listed {
+		if !a.personaOwns(frozen.persona, id) {
+			continue
+		}
+		for _, info := range status {
+			if info.ID == id && (info.State == job.StateRunning || info.State == job.StateQueued) {
+				out = append(out, info)
+			}
+		}
+	}
+	return out
+}
+
+// whichJobLine asks which job was meant, naming only the jobs the persona
+// may control, or says it has none.
+func (a *Agency) whichJobLine(frozen *controlTurn) string {
+	jobs := a.controllableJobs(frozen)
+	if len(jobs) == 0 {
+		return nothingRunningLine
+	}
+	labels := make([]string, len(jobs))
+	counts := map[string]int{}
+	for i, info := range jobs {
+		labels[i] = spokenTaskLabel(info.Task)
+		counts[labels[i]]++
+	}
+	running := map[string]int{}
+	for i, info := range jobs {
+		if info.State == job.StateRunning {
+			running[labels[i]]++
+		}
+	}
+	for i, info := range jobs {
+		switch {
+		case counts[labels[i]] < 2:
+		case info.State == job.StateQueued:
+			labels[i] += ", the queued one"
+		case running[labels[i]] < 2:
+			labels[i] += ", the running one"
+		default:
+			labels[i] += ", the one running " + spokenDuration(info.Elapsed())
+		}
+	}
+	if len(labels) == 1 {
+		return "Which job do you mean? Mine is " + labels[0] + "."
+	}
+	return "Which job do you mean: " + strings.Join(labels[:len(labels)-1], "; ") + "; or " + labels[len(labels)-1] + "?"
+}
+
+// controlLine is what the host says of a persona's control, from its receipt.
+func (a *Agency) controlLine(frozen *controlTurn, r WorkReceipt) string {
+	if r.Rejected != "" || len(r.Jobs) != 1 {
+		return controlFailedLine
+	}
+	item := r.Jobs[0]
+	switch item.Outcome {
+	case ControlFinished:
+		return alreadyDoneLine
+	case ControlUnknown:
+		return a.whichJobLine(frozen)
+	}
+	switch r.Request.Action {
+	case WorkCancel:
+		switch item.Outcome {
+		case ControlStopped, ControlStopping:
+			if item.Queued {
+				return cancelLine(nil, 0, 1)
+			}
+			stopping := 0
+			if item.Outcome == ControlStopping {
+				stopping = 1
+			}
+			return cancelLine([]time.Duration{item.Ran}, stopping, 0)
+		}
+	case WorkReport:
+		return reportLine(item)
+	case WorkSteer:
+		switch item.Outcome {
+		case ControlAccepted:
+			return steerSentLine
+		case ControlBriefed:
+			return steerBriefedLine
+		case ControlRejected:
+			return "I couldn't pass that on: " + item.Reason + "."
+		}
+	}
+	if item.Outcome == ControlRejected && item.Reason != "" {
+		return "I couldn't do that: " + item.Reason + "."
+	}
+	return controlFailedLine
+}
+
+// reportLine says what a report found. A report the persona asked for may not
+// be one the user asked for, so the line says the persona asked.
+func reportLine(item JobControl) string {
+	switch {
+	case item.Outcome == ControlAccepted && item.Checkpoint == noActivity:
+		return "I asked it to report, and it's writing up what it has; it has recorded no tool activity yet."
+	case item.Outcome == ControlAccepted:
+		return "I asked it to report, and it's writing up what it has; so far: " + spokenActivity(item.Checkpoint) + "."
+	case item.Reason == reportNoInput && item.Checkpoint != "" && item.Checkpoint != noActivity:
+		return "So far: " + spokenActivity(item.Checkpoint) + "; it can't be asked to stop, so the work continues."
+	case item.Reason == reportNoInput:
+		return "It has recorded no tool activity yet, and it can't be asked to stop, so the work continues."
+	case item.Reason == reportStarting:
+		return reportStartingLine
+	case item.Reason == reportNotStarted:
+		return reportQueuedLine
+	case item.Reason == reportFinishing:
+		return reportFinishLine
+	case item.Reason != "":
+		return "I couldn't do that: " + item.Reason + "."
+	}
+	return controlFailedLine
+}
+
+var activityCounts = regexp.MustCompile(` \([^)]*\)`)
+
+// spokenActivity is a job's folded activity as a status line says it, without
+// the per-outcome counts the screen shows.
+func spokenActivity(summary string) string {
+	return strings.ReplaceAll(activityCounts.ReplaceAllString(summary, ""), " · ", ", ")
+}
+
+// speakUnrecorded speaks a line already recorded in the turn's reply.
+func (p *Pipeline) speakUnrecorded(ctx context.Context, turn *turnConductor, metrics *turnMetrics, sentence string) {
+	if strings.TrimSpace(sentence) == "" {
+		return
+	}
+	parts := metrics.routedSpeech
+	metrics.routedSpeech = nil
+	defer func() { metrics.routedSpeech = parts }()
+	_ = p.speakStandalone(ctx, turn, metrics, sentence)
+}

@@ -533,6 +533,12 @@ func toolKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "voice_job_control", Type: TypeBool, Default: false,
+			Group: GroupTools, Title: "Persona job control",
+			Help:               "Lets the speaking Ollama persona cancel, ask a report of, or correct one of its own background jobs when you ask, on the direct router. Off by default: small local models have been measured cancelling on a bare \"stop\" or another persona's job. The host checks every call.",
+			PersonaOverridable: true,
+		},
+		{
 			Key: "voice_work_narration", Type: TypeEnum, Default: "status_only", Enum: []string{"status_only", "milestones"},
 			Group: GroupTools, Title: "Work narration",
 			Help: "status_only stays quiet until you ask what's happening; milestones speaks a short line each time the worker moves from one kind of work to another.",
