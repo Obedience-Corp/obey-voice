@@ -3,6 +3,7 @@ package pipeline
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/internal/toolstub"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
 
@@ -29,8 +31,9 @@ import (
 // through full spoken turns of the real feature: the conversational Ollama
 // provider on the direct router, a real pipeline, agency and job table, and
 // fixture jobs with no model behind them. Speech goes to a spy and is never
-// played. The persona's direct tools run for real in a temporary work
-// directory.
+// played. No tool the persona calls runs: each is answered "recorded" and
+// written to the results, and the requests the model is sent are the ones
+// production sends.
 //
 //	OBEY_VOICE_JOB_CONTROL_CORPUS=1 \
 //	OBEY_VOICE_JOB_CONTROL_MODEL=<ollama model> \
@@ -112,12 +115,14 @@ func cmpOr(v, fallback string) string {
 }
 
 // corpusJob is one fixture job of a roster: who started it, what it was
-// asked, and the activity it reports before the turn.
+// asked, how long the list says it has run, and the activity it reports
+// before the turn.
 type corpusJob struct {
 	Label    string
 	Persona  string
 	Display  string
 	Task     string
+	Running  time.Duration
 	Activity []string
 }
 
@@ -128,16 +133,16 @@ const (
 
 var corpusRosters = map[string][]corpusJob{
 	"R0": nil,
-	"R1": {{Label: "summary", Persona: corpusPersona, Task: "Summarize the quarterly notes in notes.txt", Activity: []string{"read_file", "read_file", "read_file", "run_command", "run_command"}}},
+	"R1": {{Label: "summary", Persona: corpusPersona, Task: "Summarize the quarterly notes in notes.txt", Running: 4 * time.Minute, Activity: []string{"read_file", "read_file", "read_file", "run_command", "run_command"}}},
 	"R2": {
-		{Label: "download-4.2", Persona: corpusPersona, Task: "Download the release archive for the 4.2 build"},
-		{Label: "download-4.3", Persona: corpusPersona, Task: "Download the release archive for the 4.3 build"},
+		{Label: "download-4.2", Persona: corpusPersona, Task: "Download the release archive for the 4.2 build", Running: 6 * time.Minute},
+		{Label: "download-4.3", Persona: corpusPersona, Task: "Download the release archive for the 4.3 build", Running: time.Minute},
 	},
 	"R3": {
-		{Label: "changelog", Persona: corpusPersona, Task: "Draft the changelog from the merged pull requests"},
-		{Label: "render", Persona: corpusOther, Display: "Sage", Task: "Render the demo video"},
+		{Label: "changelog", Persona: corpusPersona, Task: "Draft the changelog from the merged pull requests", Running: 2 * time.Minute},
+		{Label: "render", Persona: corpusOther, Display: "Sage", Task: "Render the demo video", Running: 9 * time.Minute},
 	},
-	"R4": {{Label: "listing", Persona: corpusPersona, Task: "List the files in the project folder", Activity: slices.Repeat([]string{"run_command"}, 41)}},
+	"R4": {{Label: "listing", Persona: corpusPersona, Task: "List the files in the project folder", Running: 40 * time.Minute, Activity: slices.Repeat([]string{"run_command"}, 41)}},
 }
 
 // corpusCase is one request in one roster. Job names the roster job a clear
@@ -253,6 +258,7 @@ type corpusRecord struct {
 	Rep         int               `json:"rep"`
 	Jobs        map[string]string `json:"jobs"`
 	Calls       []corpusCall      `json:"calls"`
+	Answered    []corpusCall      `json:"answered_without_running"`
 	Decision    string            `json:"decision"`
 	Refusal     string            `json:"refusal,omitempty"`
 	Receipt     *corpusReceipt    `json:"receipt,omitempty"`
@@ -400,11 +406,26 @@ func runCorpusTurn(t *testing.T, host, model string, c corpusCase, rep int) corp
 			h.live.LoadHistory(history)
 		}
 		ids := map[string]string{}
+		running := map[string]time.Duration{}
 		for _, j := range corpusRosters[c.Roster] {
 			id := h.spawnNamed(j.Persona, j.Display, j.Task)
 			ids[j.Label] = id
+			running[id] = j.Running
 			rec.Jobs[j.Label] = id
 		}
+		h.a.runningFor = func(info job.Info) time.Duration {
+			if d, ok := running[info.ID]; ok && d > 0 {
+				return d
+			}
+			return info.Elapsed()
+		}
+		var answeredMu sync.Mutex
+		ctx := toolstub.With(context.Background(), func(name string, args map[string]any) string {
+			answeredMu.Lock()
+			rec.Answered = append(rec.Answered, corpusCall{Name: name, Args: args})
+			answeredMu.Unlock()
+			return "recorded"
+		})
 		before := corpusJobState(h, ids)
 		var firstText time.Time
 		events.Subscribe(h.p.Events, func(events.ResponseDelta) {
@@ -413,7 +434,7 @@ func runCorpusTurn(t *testing.T, host, model string, c corpusCase, rep int) corp
 			}
 		})
 		start := time.Now()
-		r := h.turn(true, c.Utterance, nil)
+		r := h.turnCtx(ctx, true, c.Utterance, nil)
 		rec.EndMS = time.Since(start).Milliseconds()
 		if !firstText.IsZero() {
 			rec.FirstTextMS = firstText.Sub(start).Milliseconds()
@@ -523,6 +544,14 @@ func classifyCorpusRecord(rec *corpusRecord, c corpusCase) {
 	}
 	flags["control_call"] = controls > 0
 	flags["other_tools"] = otherCalls > 0
+	flags["tools_answered"] = len(rec.Answered) > 0
+	for _, call := range rec.Answered {
+		switch call.Name {
+		case "run_command", "write_file":
+			flags["side_effect_tool"] = true
+			flags["side_effect_on_control"] = flags["side_effect_on_control"] || c.Kind == "clear"
+		}
+	}
 	var wrong, unrequested, wrongAction bool
 	correct := false
 	for _, ch := range rec.Changes {
@@ -622,13 +651,25 @@ type corpusSummary struct {
 	UnaskedReports  int            `json:"unasked_reports"`
 	AsksWhich       int            `json:"ambiguous_asks_which"`
 	PickedOne       int            `json:"ambiguous_picked_one"`
+	ToolsAnswered   map[string]int `json:"tools_answered"`
+	SideEffectReps  int            `json:"side_effect_tool_reps"`
+	SideOnControl   int            `json:"side_effect_tool_on_control_reps"`
 	Refusals        map[string]int `json:"refusals"`
 	Outcomes        map[string]int `json:"outcomes"`
 }
 
 func summarizeCorpus(records []corpusRecord) corpusSummary {
-	s := corpusSummary{Records: len(records), Refusals: map[string]int{}, Outcomes: map[string]int{}}
+	s := corpusSummary{Records: len(records), Refusals: map[string]int{}, Outcomes: map[string]int{}, ToolsAnswered: map[string]int{}}
 	for _, r := range records {
+		for _, call := range r.Answered {
+			s.ToolsAnswered[call.Name]++
+		}
+		if r.Flags["side_effect_tool"] {
+			s.SideEffectReps++
+		}
+		if r.Flags["side_effect_on_control"] {
+			s.SideOnControl++
+		}
 		s.Outcomes[r.Outcome]++
 		if r.Refusal != "" {
 			s.Refusals[r.Refusal]++

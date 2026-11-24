@@ -5,7 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ollama/ollama/api"
@@ -144,5 +147,79 @@ func TestCorpusRunnerRecordsARealControl(t *testing.T) {
 				t.Fatalf("control record: %+v", rec)
 			}
 		}
+	}
+}
+
+// No tool the model calls in the runner runs: a command that would create a
+// file, a write and a search are answered and recorded, and nothing is
+// touched. The list the model reads carries the measured running time.
+func TestCorpusRunnerRunsNoTool(t *testing.T) {
+	outside := t.TempDir()
+	created, written := filepath.Join(outside, "created.txt"), filepath.Join(outside, "written.txt")
+	var mu sync.Mutex
+	var firstUser string
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_, _ = io.WriteString(w, `{"models":[{"name":"fixture"}]}`)
+			return
+		case "/api/show":
+			_, _ = io.WriteString(w, `{"capabilities":["completion","tools"],"details":{"family":"fixture"}}`)
+			return
+		}
+		var req api.ChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+			return
+		}
+		reply := api.Message{Role: "assistant", Content: "Okay."}
+		results := 0
+		for _, m := range req.Messages {
+			if m.Role == "tool" {
+				results++
+			}
+		}
+		switch {
+		case humanLine(req, 0) == "Okay, kill that job.":
+			mu.Lock()
+			firstUser = req.Messages[len(req.Messages)-1].Content
+			mu.Unlock()
+			// A write keeps the turn in the foreground; a search in the same
+			// batch would hand it to a worker before anything ran.
+			reply = api.Message{Role: "assistant", ToolCalls: []api.ToolCall{
+				toolCall("run_command", "command", "touch "+created),
+				toolCall("write_file", "path", written, "content", "x"),
+			}}
+		case results == 2:
+			reply = api.Message{Role: "assistant", ToolCalls: []api.ToolCall{toolCall("web_search", "query", "weather")}}
+		}
+		_ = json.NewEncoder(w).Encode(api.ChatResponse{Message: reply, Done: true, DoneReason: "stop"})
+	}))
+	defer model.Close()
+	c := corpusCaseByID(t, "2-R1")
+	rec := runCorpusTurn(t, model.URL, "fixture", c, 1)
+	classifyCorpusRecord(&rec, c)
+	for _, path := range []string{created, written} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s exists: a tool ran (%v)", path, err)
+		}
+	}
+	var names []string
+	for _, call := range rec.Answered {
+		names = append(names, call.Name)
+	}
+	if strings.Join(names, ",") != "run_command,write_file,web_search" || rec.Answered[0].Args["command"] != "touch "+created {
+		t.Fatalf("answered = %+v", rec.Answered)
+	}
+	if !rec.Flags["side_effect_on_control"] || !rec.Flags["tools_answered"] || len(rec.Changes) != 0 {
+		t.Fatalf("flags = %+v changes = %+v", rec.Flags, rec.Changes)
+	}
+	if s := summarizeCorpus([]corpusRecord{rec}); s.ToolsAnswered["run_command"] != 1 || s.SideOnControl != 1 {
+		t.Fatalf("summary = %+v", s)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !strings.Contains(firstUser, `running_for="4 minutes"`) {
+		t.Fatalf("the job list does not carry the measured time: %q", firstUser)
 	}
 }

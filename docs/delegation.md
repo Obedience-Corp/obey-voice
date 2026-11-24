@@ -550,11 +550,11 @@ own path and never reach the model.
 real feature against a local Ollama model: the conversational provider on the
 direct router with job control on, a real pipeline, agency and job table, and
 fixture jobs with no model behind them, owned by the speaking persona or by
-another one as each case says. Speech goes to a spy and is never played. The
-persona's direct tools do run: a search goes out, and `run_command` runs the
-shell command the model chooses, starting in a temporary work directory that
-nothing fences it to. A job it starts is another fixture job. It is skipped
-unless asked for:
+another one as each case says, with the running times the job list gives
+them. Speech goes to a spy and is never played. No tool the persona calls
+runs: a search, a command or a write is answered `recorded` and written to the
+results, and the requests the model is sent are the ones a real turn sends. A
+job it starts is another fixture job. It is skipped unless asked for:
 
 ```sh
 OBEY_VOICE_JOB_CONTROL_CORPUS=1 \
@@ -567,7 +567,8 @@ go test ./pkg/voiceagent/pipeline/ -run TestJobControlCorpus -count=1 -timeout 0
 (3 by default) and `OBEY_VOICE_JOB_CONTROL_CASES` a comma-separated subset of
 case ids. Each repetition is one JSON line: the model's calls, the host's
 decision and refusal, the receipt, what actually changed in the job table,
-every line spoken in order, jobs started and timings. A rerun resumes past the
+the tools answered without running, every line spoken in order, jobs started
+and timings. A rerun resumes past the
 lines already written. `<out>.summary.json` scores every line against five
 criteria, where a change is a real change to a job, not a call: no wrong job
 changed, no unrequested cancel or correction, no call with an empty list, no

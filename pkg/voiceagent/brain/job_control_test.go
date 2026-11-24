@@ -2,6 +2,7 @@ package brain
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/internal/toolstub"
 )
 
 // liveControl is what the host gives a live direct turn answering a person.
@@ -480,5 +482,36 @@ func TestListedWorkerFactIDsFollowTheCeilingAndFooter(t *testing.T) {
 				t.Fatalf("same=%d backslashes=%d: listed %v, rendered %v", same, backslashes, listed, rendered)
 			}
 		}
+	}
+}
+
+// A turn whose tool calls are answered without running sends the model the
+// same request as one whose tools run.
+func TestAnsweredToolsLeaveTheRequestUnchanged(t *testing.T) {
+	turn := func(ctx context.Context) string {
+		cfg := liveRequestConfig(t)
+		cfg.VoiceJobControl = true
+		o, rec := newLiveRequestBrain(t, cfg, func(n int) api.Message {
+			if n == 1 {
+				return api.Message{Role: "assistant", ToolCalls: []api.ToolCall{named("list_files", map[string]any{"path": "."})}}
+			}
+			return api.Message{Role: "assistant", Content: "Done."}
+		})
+		opts := liveDirectOptions(goldenJobs())
+		opts.JobControl = true
+		stream, err := o.ThinkStream(ctx, "What is in the folder?", opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		drainStream(t, stream)
+		if r := <-stream.Done; r.Err != nil {
+			t.Fatal(r.Err)
+		}
+		return normalizeLiveRequest(cfg, rec.requests()[:1])[0]
+	}
+	answered := 0
+	stubbed := toolstub.With(t.Context(), func(string, map[string]any) string { answered++; return "recorded" })
+	if real, stub := turn(t.Context()), turn(stubbed); real != stub || answered != 1 {
+		t.Fatalf("answered=%d; requests differ:\nreal: %s\nstub: %s", answered, real, stub)
 	}
 }

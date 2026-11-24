@@ -246,7 +246,7 @@ func (a *Agency) activeJobFacts() []brain.WorkerFact {
 			Tier:     factTier(origin.admission),
 			State:    string(info.State),
 			Task:     info.Task,
-			Running:  info.Elapsed(),
+			Running:  a.factRunning(info),
 			Progress: recentProgress(a.work.Summary(info.ID)),
 			Own:      a.pipeline.startedByLivePersona(origin.admission),
 		}
@@ -272,6 +272,14 @@ func (a *Agency) activeJobFacts() []brain.WorkerFact {
 		}
 	})
 	return facts
+}
+
+// factRunning is how long a job has run, as its fact says it.
+func (a *Agency) factRunning(info job.Info) time.Duration {
+	if a.runningFor != nil {
+		return a.runningFor(info)
+	}
+	return info.Elapsed()
 }
 
 func factTier(admission map[string]string) config.WorkerTierName {

@@ -17,6 +17,7 @@ import (
 	"github.com/ollama/ollama/api"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/internal/toolstub"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
@@ -190,6 +191,9 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 			})
 		}
 	}()
+	if answer := toolstub.From(ctx); answer != nil {
+		return answer(name, call.Function.Arguments.ToMap())
+	}
 	if name == "agent_delegate" || name == "agent_cancel" || name == "agent_delegations" {
 		return s.executeDelegation(call)
 	}

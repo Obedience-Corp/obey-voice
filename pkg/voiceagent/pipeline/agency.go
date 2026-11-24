@@ -72,6 +72,9 @@ type Agency struct {
 	sameOutputs map[string]sameOutputRun // guarded by mu
 	// onJobControl observes each job control the host settled; tests only.
 	onJobControl func(controlOutcome)
+	// runningFor replaces a job's running time in the facts a turn is given;
+	// a measurement sets it, production never does.
+	runningFor func(job.Info) time.Duration
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction
