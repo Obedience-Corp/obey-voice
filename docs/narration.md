@@ -62,7 +62,6 @@ the current `create` command remains the direct raw-spine compatibility path.
 
 ```bash
 obey-voice audiobook create book.epub --out-dir out/book
-obey-voice audiobook create book.epub --out-dir out/book --voice Ryan --language English
 obey-voice audiobook create book.epub --out-dir out/book --audio-format m4b --resume --json
 # From Calibre library (requires calibre_enabled=true and Calibre installed):
 obey-voice config calibre_enabled true
@@ -71,6 +70,63 @@ obey-voice library search "cryptography"
 obey-voice library show 42
 obey-voice audiobook create --from-library "Crypto 101" --out-dir out/crypto
 ```
+
+### Choose an audiobook narrator
+
+Start with an EPUB or digital PDF in the language you want to hear. Obey Voice
+reads the text in that edition. Choose the speech engine and then a voice from
+that engine’s catalog.
+
+| Engine | Narration languages | When to use it |
+|--------|---------------------|----------------|
+| Qwen3-TTS | Chinese, English, French, German, Italian, Japanese, Korean, Portuguese, Russian, Spanish | Choose a preset narrator and set the book language explicitly with `--language`. The language setting is independent of the speaker’s native accent. [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) |
+| Kokoro | The built-in picker exposes 28 voices for **US and UK English**. Upstream Kokoro also has voices for **Mandarin Chinese, Japanese, Spanish, French, Hindi, Italian, and Brazilian Portuguese**. | Use built-in Kokoro for an English book, e.g. `af_heart` for US English or `bf_emma` for UK English. For a narrator in one of the other seven languages, connect a compatible Kokoro speech server through `openai-speech` and use the voice ID it serves. [Kokoro voice list](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md) · [Speech server setup](openai-speech.md) |
+| Phonon Multilingual | English, French, German, Spanish, Portuguese | Enable the multilingual pack and choose among 102 named voices, including regional choices such as Mexican and European Spanish. Its provider ID is `openai-speech`. [Phonon model card](https://huggingface.co/gradium/phonon-40m-multilingual) · [Pack setup](openai-speech.md#choose-the-full-phonon-catalog) |
+| Audio8 Preview 0.1B | Primarily Chinese and English. The publisher reports experimental evaluations for German, Spanish, French, Italian, Japanese, and Korean. | Use the installed Audio8 export with its packaged or registered reference voice. Audition a passage to check its pronunciation. [Audio8 release guide](https://github.com/Edge0-AI/Audio8_TTS/blob/master/guides/models/preview-0.1b.md) · [Reference voice setup](audio8-voices.md) |
+
+List narrators on your installation with `obey-voice voices --provider kokoro`
+(or substitute `qwen3-tts`, `openai-speech`, or `audio8`). The listing
+command inspects that provider. Rendering uses the active persona’s speech
+settings, which can override the global provider.
+
+**Example: a Japanese EPUB with Qwen3-TTS.** Create a dedicated persona once,
+then select it for this job in a subshell. Replace `book.epub` with your book
+and the sample sentence with a passage from it.
+
+```bash
+obey-voice persona create "Audiobook narrator" --no-activate
+obey-voice persona edit audiobook-narrator --tts-provider qwen3-tts --voice Ono_Anna
+
+(
+  export ACTIVE_PERSONA=audiobook-narrator
+  obey-voice models ensure --tts &&
+    printf '%s\n' 'これは日本語の朗読サンプルです。' |
+      obey-voice render --stdin --out sample.wav --voice Ono_Anna --language Japanese
+)
+```
+
+Listen to `sample.wav` to check the names and pacing. To render the book
+with the same settings, run the following command. On a second run, the manifest lets the renderer skip
+completed chapters and pick up where it left off.
+
+```bash
+ACTIVE_PERSONA=audiobook-narrator obey-voice audiobook create book.epub \
+  --out-dir out/book --voice Ono_Anna --language Japanese --resume
+```
+
+**For English with Kokoro**, use `--tts-provider kokoro --voice bf_emma`
+in the persona edit command. Use `--voice bf_emma` on both render commands,
+omit the Qwen-specific `--language` flag, and supply an English passage and book.
+
+**Copy into your agent**
+
+> Narrate [path to EPUB or digital PDF] in [language], with [accent or voice
+> preference]. Choose an engine from the table above and list its available
+> voices. Set up a dedicated audiobook persona with the chosen engine and voice,
+> and select it for these commands using ACTIVE_PERSONA. Render a paragraph
+> from the book to a WAV so I can listen to it. Once I approve, run audiobook
+> create with the same settings and --resume. Save the chapters to [output
+> directory] and report any failures.
 
 ## Calibre library (optional)
 
