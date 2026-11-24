@@ -154,11 +154,19 @@ type Expectation struct {
 	// in the turn: "applied" or "refused", optionally ":<outcome or reason>"
 	// ("applied:stopped", "refused:bare_stop"), or "none" for no settlement.
 	JobControl string `yaml:"job_control"`
+	// JobControlAction wants the turn's one applied job control to have been
+	// this action, by the event it left on the job it named: cancel (a
+	// cancelled job_aborted), report (a job_report) or steer (a
+	// job_correction), and none of the other two.
+	JobControlAction string `yaml:"job_control_action"`
 	// AbortReason wants a job_aborted event with this reason in the turn.
 	AbortReason string `yaml:"abort_reason"`
 	// SpokenOnce wants exactly one match of this pattern in what the turn
 	// spoke.
 	SpokenOnce string `yaml:"spoken_once"`
+	// TurnSpokenNotMatches forbids this pattern in what was spoken during the
+	// turn itself; spoken_not_matches reads everything spoken so far.
+	TurnSpokenNotMatches string `yaml:"turn_spoken_not_matches"`
 }
 
 type duration struct{ time.Duration }
@@ -292,6 +300,11 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 		for _, ex := range t.Expect {
 			if ex.WorkFileContains != "" && ex.WorkFile == "" {
 				return nil, fmt.Errorf("load %s: turn %q: work_file_contains needs work_file", name, t.ID)
+			}
+			switch ex.JobControlAction {
+			case "", "cancel", "report", "steer":
+			default:
+				return nil, fmt.Errorf("load %s: turn %q: job_control_action must be cancel, report or steer", name, t.ID)
 			}
 		}
 		if t.ExpectError != "" && t.Op != "select_persona" {

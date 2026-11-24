@@ -1,0 +1,43 @@
+name: job-control-report
+description: on the direct router with job control on, "have that job stop and report" reaches the persona, whose job_control report the host applies once to the job it handed off; the job uses no tool after the report and finishes cut short with its answer; one host line, no new job
+duration: 20m
+input: text
+router_tools: legacy
+brain: { job_control: true }
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: hand-off
+    user: "Work on this in the background: write ten small numbered files, one at a time, each with one short sentence, then list the directory and read each file back."
+    wait: worker_tool
+    timeout: 5m
+    expect:
+      - { event: job_started }
+      - { route_kind: spawn }
+      - { no_event: job_terminal }
+
+  - id: report
+    user: "That's enough. Have that job stop and report what it has done."
+    wait: job_terminal
+    timeout: 10m
+    expect:
+      - { route_kind: job.control }
+      - { job_control: applied:accepted }
+      - { job_control_action: report }
+      - { event: job_report }
+      - { tools_stop_after_report: true }
+      - { cut_short: report requested }
+      - { no_event: job_started }
+      - { spoken_once: "(?i)writing up what it has" }
+      - { turn_spoken_not_matches: "(?i)\\bunknown\\b" }
+
+  - id: answer
+    wait: report_spoken
+    timeout: 4m
+
+expect:
+  - { metric: job_started, op: "==", value: 1 }
+  - { metric: job_finished, op: "==", value: 1 }
+  - { metric: job_aborted, op: "==", value: 0 }
+  - { metric: job_failed, op: "==", value: 0 }

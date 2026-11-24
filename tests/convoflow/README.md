@@ -23,6 +23,8 @@ just convoflow run work-stream-report                 # after the worker's first
 just convoflow run work-stream-boundary               # a worker told to leave the campaign is refused by its tools (boundary_refusals >= 1)
 just convoflow run job-control-cancel                 # direct router, job control on: the persona hands work off, then "cancel that job" is its job_control call, applied once (route job.control, job_aborted cancelled, one host line, no new job)
 just convoflow run job-control-off                    # the same two turns with job control off: "cancel that job" reaches the persona, which cannot end a job; no settlement and no job_aborted in that turn
+just convoflow run job-control-report                 # direct router, job control on: "have that job stop and report" is the persona's job_control report, applied once; the job uses no tool after it, finishes cut short "report requested", and its answer is spoken
+just convoflow run job-control-steer                  # direct router, job control on: "tell that job to name the last file omega.txt" is the persona's job_control steer, applied once; the running job includes it and writes omega.txt
 just convoflow run search-web-intent -worker-provider=grok   # comparison, not the gate
 ```
 
@@ -85,8 +87,14 @@ the direct router. `job_control: applied` (or `refused`, optionally with
 `:<outcome or reason>` such as `applied:stopped` or `refused:bare_stop`) wants
 the host's settlement of a persona's `job_control` call in the turn, published
 as a `route.decided` event of kind `job.control`; `job_control: none` wants no
-settlement. `abort_reason: cancelled` wants a `job_aborted` with that reason,
-and `spoken_once: <regex>` exactly one match in what the turn spoke.
+settlement. `job_control_action: cancel|report|steer` wants the turn's one
+applied settlement to have been that action, told by what it left on the job it
+named: a cancelled `job_aborted`, a `job_report`, or a `job_correction`, and
+neither of the other two. `abort_reason: cancelled` wants a `job_aborted` with
+that reason, and `spoken_once: <regex>` exactly one match in what the turn
+spoke. `turn_spoken_not_matches: <regex>` forbids the pattern in the speech
+events of the turn alone; `spoken_not_matches` reads everything spoken so far
+in the run.
 
 Two no-model paths exist, neither is the gate:
 

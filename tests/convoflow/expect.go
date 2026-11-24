@@ -43,6 +43,20 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		}
 	case ex.JobControl != "":
 		return checkJobControl(st.events, rec, ex.JobControl)
+	case ex.JobControlAction != "":
+		return checkJobControlAction(st.events, rec, ex.JobControlAction)
+	case ex.TurnSpokenNotMatches != "":
+		re, err := regexp.Compile(ex.TurnSpokenNotMatches)
+		if err != nil {
+			return err
+		}
+		src := st.events
+		if src == nil && rec != nil {
+			src = rec.snapshot()
+		}
+		if spoken := spokenIn(src); re.MatchString(spoken) {
+			return fmt.Errorf("turn spoke %q, matching forbidden %s", clip(spoken, 120), ex.TurnSpokenNotMatches)
+		}
 	case ex.AbortReason != "":
 		if !hasAbortReason(st.events, rec, ex.AbortReason) {
 			return fmt.Errorf("want a job_aborted with reason %q", ex.AbortReason)
@@ -514,6 +528,66 @@ func checkJobControl(turnLog []timedEvent, rec *recorder, want string) error {
 		return fmt.Errorf("job_control = %s:%s, want %s", got.State, got.Message, want)
 	}
 	return nil
+}
+
+// checkJobControlAction wants the turn's one applied job control to be want,
+// told by what it did to the job it named.
+func checkJobControlAction(turnLog []timedEvent, rec *recorder, want string) error {
+	src := turnLog
+	if src == nil && rec != nil {
+		src = rec.snapshot()
+	}
+	var settled []events.RouteDecided
+	for _, te := range src {
+		if r, ok := te.event.(events.RouteDecided); ok && r.Kind == string(pipeline.RouteJobControl) && r.State != "handled" {
+			settled = append(settled, r)
+		}
+	}
+	if len(settled) != 1 || settled[0].State != "applied" || settled[0].JobID == "" {
+		return fmt.Errorf("job_control_action: want one applied settlement naming a job, got %+v", settled)
+	}
+	id := settled[0].JobID
+	did := map[string]bool{}
+	for _, te := range src {
+		switch e := te.event.(type) {
+		case events.JobAborted:
+			if e.ID == id && e.Reason == events.AbortCancelled {
+				did["cancel"] = true
+			}
+		case events.JobReport:
+			if e.ID == id {
+				did["report"] = true
+			}
+		case events.JobCorrection:
+			if e.ID == id {
+				did["steer"] = true
+			}
+		}
+	}
+	if !did[want] || len(did) != 1 {
+		return fmt.Errorf("job_control_action: want %s on %s, the turn shows %v", want, id, did)
+	}
+	return nil
+}
+
+// spokenIn is what the log's speech events said, one line per sentence.
+func spokenIn(log []timedEvent) string {
+	var lines []string
+	add := func(text string) {
+		text = strings.TrimSpace(text)
+		if text != "" && (len(lines) == 0 || lines[len(lines)-1] != text) {
+			lines = append(lines, text)
+		}
+	}
+	for _, te := range log {
+		switch e := te.event.(type) {
+		case events.SpeechSegmentReady:
+			add(e.Text)
+		case events.GeneratingVoice:
+			add(e.Sentence)
+		}
+	}
+	return strings.Join(lines, " ")
 }
 
 func hasAbortReason(turnLog []timedEvent, rec *recorder, reason string) bool {
