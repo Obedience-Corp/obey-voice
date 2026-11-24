@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -390,14 +392,25 @@ func TestWebToolsReportAResponseCutAtTheCap(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		body      string
+		declared  bool
 		truncated bool
 	}{
-		{"past the cap", page("--><p>later text</p></body></html>"), true},
-		{"exactly the cap", page(""), false},
-		{"short", "<html><body><p>short intro</p></body></html>", false},
+		{"past the cap, length declared", page("--><p>later text</p></body></html>"), true, true},
+		{"past the cap, length unknown", page("--><p>later text</p></body></html>"), false, true},
+		{"exactly the cap, length declared", page(""), true, false},
+		// Without a length the host cannot tell this from a longer body
+		// unless it waits for the stream, so it reports the cautious answer.
+		{"exactly the cap, length unknown", page(""), false, true},
+		{"short, length declared", "<html><body><p>short intro</p></body></html>", true, false},
+		{"short, length unknown", "<html><body><p>short intro</p></body></html>", false, false},
 	} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
+			if tc.declared {
+				w.Header().Set("Content-Length", strconv.Itoa(len(tc.body)))
+			} else {
+				w.(http.Flusher).Flush()
+			}
 			_, _ = io.WriteString(w, tc.body)
 		}))
 		t.Cleanup(server.Close)
@@ -411,6 +424,49 @@ func TestWebToolsReportAResponseCutAtTheCap(t *testing.T) {
 		_, end = toolWebSearchWithClient(context.Background(), map[string]any{"query": "q"}, server.Client(), server.URL)
 		if end.status != events.ToolOutcomeSucceeded || end.truncated != tc.truncated {
 			t.Errorf("search %s: status %s truncated %v, want succeeded and %v", tc.name, end.status, end.truncated, tc.truncated)
+		}
+	}
+}
+
+// A server that sends exactly the cap and then holds the connection open must
+// not hold the result: the tool returns what it has and says it was cut.
+func TestWebToolsReturnAtTheCapOnAStreamThatStaysOpen(t *testing.T) {
+	t.Parallel()
+	intro := "<html><head><title>T</title></head><body><p>short intro</p><!--"
+	body := intro + strings.Repeat("c", maxWebBodyBytes-len(intro))
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, body)
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(release) })
+
+	for name, call := range map[string]func() (string, toolEnd){
+		"fetch": func() (string, toolEnd) {
+			return toolFetchURLWithClient(context.Background(), map[string]any{"url": server.URL}, server.Client())
+		},
+		"search": func() (string, toolEnd) {
+			return toolWebSearchWithClient(context.Background(), map[string]any{"query": "q"}, server.Client(), server.URL)
+		},
+	} {
+		done := make(chan toolEnd, 1)
+		go func() {
+			_, end := call()
+			done <- end
+		}()
+		select {
+		case end := <-done:
+			if end.status != events.ToolOutcomeSucceeded || !end.truncated {
+				t.Errorf("%s: status %s truncated %v, want succeeded and cut", name, end.status, end.truncated)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s waited on a stream that had already delivered the cap", name)
 		}
 	}
 }

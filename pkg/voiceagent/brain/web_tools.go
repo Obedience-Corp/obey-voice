@@ -116,7 +116,7 @@ func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *h
 		return webCut(err, fmt.Sprintf("parsing web search results: %v", err), resp.StatusCode)
 	}
 	end := webSucceeded(resp.StatusCode)
-	end.truncated = limited.N <= 0 && hasMore(resp.Body)
+	end.truncated = cutAtCap(resp, limited.N <= 0)
 	results := parseDuckDuckGoResults(doc, 5)
 	if len(results) == 0 {
 		return fmt.Sprintf(`{"query":%s,"results":[],"message":"No search results found."}`, strconv.Quote(query)), end
@@ -125,11 +125,14 @@ func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *h
 	return string(out), end
 }
 
-// hasMore reports whether a body read up to the cap holds anything past it.
-func hasMore(body io.Reader) bool {
-	var next [1]byte
-	n, _ := io.ReadFull(body, next[:])
-	return n == 1
+// cutAtCap reports whether a body read up to the raw cap lost anything there.
+// A declared length settles it. Without one, reaching the cap counts as cut:
+// reading on for proof would hold a ready result on a stream that stays open.
+func cutAtCap(resp *http.Response, reachedCap bool) bool {
+	if !reachedCap {
+		return false
+	}
+	return resp.ContentLength < 0 || resp.ContentLength > maxWebBodyBytes
 }
 
 func parseDuckDuckGoResults(doc *html.Node, limit int) []webSearchResult {
@@ -189,7 +192,7 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 	if err != nil {
 		return webCut(err, fmt.Sprintf("reading URL: %v", err), resp.StatusCode)
 	}
-	capped := len(data) == maxWebBodyBytes && hasMore(resp.Body)
+	capped := cutAtCap(resp, len(data) == maxWebBodyBytes)
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	content := string(data)
 	title := ""
