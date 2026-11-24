@@ -645,3 +645,23 @@ func TestAnsweredToolsLeaveTheRequestUnchanged(t *testing.T) {
 		t.Fatalf("follow-up requests:\nreal: %s\nstub: %s", real[1], stub[1])
 	}
 }
+
+// An attempt that delivered a control and then failed is not retried for
+// compatibility: a retry cannot finish the failed attempt's call.
+func TestJobControlIsNotCompletedByACompatibilityRetry(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	o, sent := toolModel(t, true, func(w http.ResponseWriter, n int, req api.ChatRequest) {
+		if n == 1 {
+			_ = json.NewEncoder(w).Encode(api.ChatResponse{Message: api.Message{Role: "assistant", ToolCalls: []api.ToolCall{control("cancel", "job-1")}}})
+			_, _ = w.Write([]byte(`{"error":"fixture does not support thinking"}` + "\n"))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(answerResponse("Okay."))
+	})
+	o.cfg.VoiceJobControl, o.cfg.OllamaThink = true, "true"
+	turn := runRoutedTurn(t, o, "Cancel the summary.", liveControl)
+	got := turn.result.JobControl
+	if len(sent()) != 1 || turn.result.Route != JobControlRoute || got == nil || got.Refusal != JobControlIncomplete {
+		t.Fatalf("requests = %d, result = %+v, control = %+v", len(sent()), turn.result, got)
+	}
+}

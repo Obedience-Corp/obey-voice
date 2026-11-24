@@ -172,6 +172,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 		}
 		var input, output int
 		delivered := false
+		deliveredControl := false
 		completed := false
 		var callbackErr error
 		answered := false
@@ -186,6 +187,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 				input, output = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
 			}
 			delivered = delivered || resp.Message.Content != "" || resp.Message.Thinking != "" || len(resp.Message.ToolCalls) > 0 || resp.Done
+			deliveredControl = deliveredControl || callsTool(resp.Message.ToolCalls, jobControlToolName)
 			callbackErr = fn(resp)
 			return callbackErr
 		})
@@ -247,8 +249,9 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			parseRetryPending = true
 			continue
 		}
-		rejectedTools := err != nil && req.Tools != nil && modelRejectedTools(err)
-		rejectedThink := err != nil && thinkEnabled(req.Think) && modelRejectedThink(err)
+		// A retry cannot finish a job_control call the failed attempt sent.
+		rejectedTools := err != nil && req.Tools != nil && modelRejectedTools(err) && !deliveredControl
+		rejectedThink := err != nil && thinkEnabled(req.Think) && modelRejectedThink(err) && !deliveredControl
 		if !rejectedTools && !rejectedThink {
 			budget.RecordUsage(input, output)
 			if limitErr := budget.Err(); limitErr != nil {
