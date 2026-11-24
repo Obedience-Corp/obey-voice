@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -315,6 +316,8 @@ type toolEnd struct {
 	status     events.ToolOutcomeStatus
 	reason     string
 	httpStatus int
+	// truncated means the tool cut the content it returned.
+	truncated bool
 }
 
 func toolSucceeded() toolEnd { return toolEnd{status: events.ToolOutcomeSucceeded} }
@@ -326,18 +329,22 @@ func toolFailed(reason string) toolEnd {
 // failWith is the model-facing "error: reason" text and its failed end.
 func failWith(reason string) (string, toolEnd) { return "error: " + reason, toolFailed(reason) }
 
-// outcome is call's terminal outcome: result's preview, and a one-line reason
-// so the hooks' "error: reason" is the leading error line of the text.
+// outcome is call's terminal outcome: result's preview, and a one-line,
+// redacted reason so the hooks' "error: reason" is the leading error line of
+// the text.
 func (e toolEnd) outcome(call api.ToolCall, result string) *events.ToolOutcome {
 	reason := strings.TrimSpace(e.reason)
 	if i := strings.IndexByte(reason, '\n'); i >= 0 {
 		reason = strings.TrimSpace(reason[:i])
 	}
+	shown := strings.TrimSpace(redactToolText(result, 0))
 	out := &events.ToolOutcome{
 		Status:        e.status,
-		Reason:        reason,
+		Reason:        redactToolText(reason, 240),
 		InputSummary:  redactToolText(toolArgSummary(call), 80),
 		OutputPreview: toolResultPreview(result),
+		OutputBytes:   int64(len(result)),
+		Truncated:     e.truncated || strings.Contains(shown, "\n") || utf8.RuneCountInString(shown) > 240,
 	}
 	if e.httpStatus != 0 {
 		out.HTTPStatus = intPtr(e.httpStatus)
@@ -609,6 +616,9 @@ func toolReadSkill(catalog []skills.Skill, args map[string]any) (string, toolEnd
 		body := s.Body
 		if len(body) > skillBodyMaxBytes {
 			body = body[:skillBodyMaxBytes] + "\n... (truncated)"
+			end := toolSucceeded()
+			end.truncated = true
+			return fmt.Sprintf("Skill %q (directory: %s)\n\n%s", s.Name, s.Dir, body), end
 		}
 		return fmt.Sprintf("Skill %q (directory: %s)\n\n%s", s.Name, s.Dir, body), toolSucceeded()
 	}
@@ -679,7 +689,9 @@ func toolReadFileFor(workDir string, args map[string]any, viewable bool) (string
 	// Limit output to prevent context overflow.
 	const maxBytes = 32 * 1024
 	if len(data) > maxBytes {
-		return string(data[:maxBytes]) + "\n... (truncated)", toolSucceeded()
+		end := toolSucceeded()
+		end.truncated = true
+		return string(data[:maxBytes]) + "\n... (truncated)", end
 	}
 	return string(data), toolSucceeded()
 }

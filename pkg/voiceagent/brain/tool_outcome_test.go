@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -266,5 +267,104 @@ func TestViewImageReportsItsOutcome(t *testing.T) {
 				t.Fatalf("ends = %+v", ends)
 			}
 		})
+	}
+}
+
+// A failed call's reason is redacted and bounded where the transcript and the
+// net API publish it; the model still reads the text main returned.
+func TestFailedToolReasonsAreRedactedAndBounded(t *testing.T) {
+	t.Parallel()
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closed.Close()
+	h := &hookRecorder{}
+	got := h.session().execute(context.Background(), t.TempDir(), toolCallFor("fetch_url", map[string]any{"url": closed.URL + "/x?token=abc123"}))
+	if !strings.HasPrefix(got, `error fetching URL: Get "`+closed.URL+`/x?token=abc123": dial tcp `) {
+		t.Fatalf("result = %q", got)
+	}
+	end := h.ends[0]
+	if end.Outcome == nil || strings.Contains(end.Outcome.Reason, "abc123") || strings.Contains(end.Err, "abc123") || !strings.Contains(end.Err, "[redacted]") {
+		t.Fatalf("end = %+v, outcome %+v", end, end.Outcome)
+	}
+
+	dir := t.TempDir()
+	blocker := strings.Repeat("b", 240)
+	if err := os.WriteFile(filepath.Join(dir, blocker), []byte("a file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	long := filepath.Join(blocker, "x.txt")
+	h = &hookRecorder{}
+	got = h.session().execute(context.Background(), dir, toolCallFor("write_file", map[string]any{"path": long, "content": "x"}))
+	if !strings.HasPrefix(got, "error creating directory: mkdir ") || utf8.RuneCountInString(got) <= 250 {
+		t.Fatalf("result = %q, want a long directory error", got)
+	}
+	if o := h.ends[0].Outcome; o == nil || utf8.RuneCountInString(o.Reason) > 240 || !strings.HasPrefix(h.ends[0].Err, "error: creating directory: mkdir ") {
+		t.Fatalf("end = %+v", h.ends[0])
+	}
+}
+
+type cancelledBody struct{ cancel func() }
+
+func (b cancelledBody) Read([]byte) (int, error) { b.cancel(); return 0, io.ErrUnexpectedEOF }
+func (b cancelledBody) Close() error             { return nil }
+
+// A body that ends early is a failure though a cancel lands as it is read.
+func TestBodyEndingEarlyDuringACancelIsFailed(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: cancelledBody{cancel}, Request: r}, nil
+	})}
+	got, end := toolFetchURLWithClient(ctx, map[string]any{"url": "http://page.invalid/"}, client)
+	if got != "error reading URL: unexpected EOF" || end.status != events.ToolOutcomeFailed || end.httpStatus != 200 || ctx.Err() == nil {
+		t.Fatalf("result %q, end %+v, ctx %v", got, end, ctx.Err())
+	}
+}
+
+// A fetch stopped by a redirect loop keeps the status of the redirect.
+func TestRefusedRedirectKeepsItsStatus(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/again", http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+	got, end := toolFetchURLWithClient(context.Background(), map[string]any{"url": server.URL}, webHTTPClient())
+	if got != `error fetching URL: Get "/again": too many redirects` || end.status != events.ToolOutcomeFailed || end.httpStatus != http.StatusFound {
+		t.Fatalf("result %q, end %+v", got, end)
+	}
+}
+
+func TestToolOutcomesStateTheirSize(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"one.txt":  "one line",
+		"two.txt":  "two\nlines",
+		"wide.txt": strings.Repeat("w", 300),
+		"big.txt":  strings.Repeat("b", 40*1024),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		call      api.ToolCall
+		truncated bool
+	}{
+		{toolCallFor("read_file", map[string]any{"path": "one.txt"}), false},
+		{toolCallFor("read_file", map[string]any{"path": "two.txt"}), true},
+		{toolCallFor("read_file", map[string]any{"path": "wide.txt"}), true},
+		{toolCallFor("read_file", map[string]any{"path": "big.txt"}), true},
+		{toolCallFor("read_file", map[string]any{"path": "missing.txt"}), false},
+		{toolCallFor("write_file", map[string]any{"path": "out.txt", "content": "x"}), false},
+		{toolCallFor("read_skill", map[string]any{"name": "big"}), true},
+	} {
+		h := &hookRecorder{}
+		sess := h.session()
+		sess.catalog = []skills.Skill{{Name: "big", Body: strings.Repeat("s", skillBodyMaxBytes+1), Dir: "/skills/big"}}
+		got := sess.execute(context.Background(), dir, tc.call)
+		o := h.ends[0].Outcome
+		if o == nil || o.OutputBytes != int64(len(got)) || o.Truncated != tc.truncated {
+			t.Errorf("%s %v: outcome %+v, want %d bytes, truncated %t", tc.call.Function.Name, tc.call.Function.Arguments.ToMap(), o, len(got), tc.truncated)
+		}
 	}
 }

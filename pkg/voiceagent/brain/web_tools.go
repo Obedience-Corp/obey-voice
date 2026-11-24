@@ -61,14 +61,23 @@ func webFailed(reason string, status int) (string, toolEnd) {
 	return "error " + reason, end
 }
 
-// webCut is webFailed for a request or body read that returned an error,
-// which is a cancel when the call's context was cancelled.
-func webCut(ctx context.Context, reason string, status int) (string, toolEnd) {
+// webCut is webFailed for a request or body read that returned err, which
+// is a cancel when err is the call's cancellation.
+func webCut(err error, reason string, status int) (string, toolEnd) {
 	text, end := webFailed(reason, status)
-	if errors.Is(ctx.Err(), context.Canceled) {
+	if errors.Is(err, context.Canceled) {
 		end.status = events.ToolOutcomeCanceled
 	}
 	return text, end
+}
+
+// redirectStatus is the status of the response a refused redirect returned
+// with err, zero without one. Its body is already closed.
+func redirectStatus(resp *http.Response) int {
+	if resp == nil {
+		return 0
+	}
+	return resp.StatusCode
 }
 
 func webSucceeded(status int) toolEnd {
@@ -94,7 +103,7 @@ func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *h
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return webCut(ctx, fmt.Sprintf("searching web: %v", err), 0)
+		return webCut(err, fmt.Sprintf("searching web: %v", err), redirectStatus(resp))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -103,7 +112,7 @@ func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *h
 
 	doc, err := html.Parse(io.LimitReader(resp.Body, maxWebBodyBytes))
 	if err != nil {
-		return webCut(ctx, fmt.Sprintf("parsing web search results: %v", err), resp.StatusCode)
+		return webCut(err, fmt.Sprintf("parsing web search results: %v", err), resp.StatusCode)
 	}
 	results := parseDuckDuckGoResults(doc, 5)
 	if len(results) == 0 {
@@ -159,7 +168,7 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ObeyVoice/1.0; +https://github.com/Obedience-Corp/obey-voice)")
 	resp, err := client.Do(req)
 	if err != nil {
-		return webCut(ctx, fmt.Sprintf("fetching URL: %v", err), 0)
+		return webCut(err, fmt.Sprintf("fetching URL: %v", err), redirectStatus(resp))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -168,7 +177,7 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWebBodyBytes))
 	if err != nil {
-		return webCut(ctx, fmt.Sprintf("reading URL: %v", err), resp.StatusCode)
+		return webCut(err, fmt.Sprintf("reading URL: %v", err), resp.StatusCode)
 	}
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	content := string(data)
@@ -181,14 +190,17 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 		title = nodeText(findElement(doc, "title"))
 		content = readableText(doc)
 	}
-	content = truncateWebText(strings.TrimSpace(content))
+	content = strings.TrimSpace(content)
+	end := webSucceeded(resp.StatusCode)
+	end.truncated = len(content) > maxWebTextBytes
+	content = truncateWebText(content)
 	out, _ := json.Marshal(map[string]any{
 		"url":     resp.Request.URL.String(),
 		"status":  resp.StatusCode,
 		"title":   title,
 		"content": content,
 	})
-	return string(out), webSucceeded(resp.StatusCode)
+	return string(out), end
 }
 
 func hasClass(n *html.Node, class string) bool {
