@@ -110,16 +110,26 @@ func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *h
 		return webFailed(fmt.Sprintf("searching web: HTTP %d", resp.StatusCode), resp.StatusCode)
 	}
 
-	doc, err := html.Parse(io.LimitReader(resp.Body, maxWebBodyBytes))
+	limited := &io.LimitedReader{R: resp.Body, N: maxWebBodyBytes}
+	doc, err := html.Parse(limited)
 	if err != nil {
 		return webCut(err, fmt.Sprintf("parsing web search results: %v", err), resp.StatusCode)
 	}
+	end := webSucceeded(resp.StatusCode)
+	end.truncated = limited.N <= 0 && hasMore(resp.Body)
 	results := parseDuckDuckGoResults(doc, 5)
 	if len(results) == 0 {
-		return fmt.Sprintf(`{"query":%s,"results":[],"message":"No search results found."}`, strconv.Quote(query)), webSucceeded(resp.StatusCode)
+		return fmt.Sprintf(`{"query":%s,"results":[],"message":"No search results found."}`, strconv.Quote(query)), end
 	}
 	out, _ := json.Marshal(map[string]any{"query": query, "results": results})
-	return string(out), webSucceeded(resp.StatusCode)
+	return string(out), end
+}
+
+// hasMore reports whether a body read up to the cap holds anything past it.
+func hasMore(body io.Reader) bool {
+	var next [1]byte
+	n, _ := io.ReadFull(body, next[:])
+	return n == 1
 }
 
 func parseDuckDuckGoResults(doc *html.Node, limit int) []webSearchResult {
@@ -179,6 +189,7 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 	if err != nil {
 		return webCut(err, fmt.Sprintf("reading URL: %v", err), resp.StatusCode)
 	}
+	capped := len(data) == maxWebBodyBytes && hasMore(resp.Body)
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	content := string(data)
 	title := ""
@@ -192,7 +203,7 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 	}
 	content = strings.TrimSpace(content)
 	end := webSucceeded(resp.StatusCode)
-	end.truncated = len(content) > maxWebTextBytes
+	end.truncated = capped || len(content) > maxWebTextBytes
 	content = truncateWebText(content)
 	out, _ := json.Marshal(map[string]any{
 		"url":     resp.Request.URL.String(),

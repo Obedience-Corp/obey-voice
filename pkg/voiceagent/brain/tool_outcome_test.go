@@ -378,3 +378,39 @@ func TestToolOutcomesStateTheirSize(t *testing.T) {
 		}
 	}
 }
+
+// A response cut at the raw size cap says so, though the text taken from what
+// was read is short; one that ends exactly at the cap was not cut.
+func TestWebToolsReportAResponseCutAtTheCap(t *testing.T) {
+	t.Parallel()
+	intro := "<html><head><title>T</title></head><body><p>short intro</p><!--"
+	page := func(extra string) string {
+		return intro + strings.Repeat("c", maxWebBodyBytes-len(intro)) + extra
+	}
+	for _, tc := range []struct {
+		name      string
+		body      string
+		truncated bool
+	}{
+		{"past the cap", page("--><p>later text</p></body></html>"), true},
+		{"exactly the cap", page(""), false},
+		{"short", "<html><body><p>short intro</p></body></html>", false},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(w, tc.body)
+		}))
+		t.Cleanup(server.Close)
+		text, end := toolFetchURLWithClient(context.Background(), map[string]any{"url": server.URL}, server.Client())
+		if end.status != events.ToolOutcomeSucceeded || end.truncated != tc.truncated {
+			t.Errorf("fetch %s: status %s truncated %v, want succeeded and %v", tc.name, end.status, end.truncated, tc.truncated)
+		}
+		if strings.Contains(text, "later text") || !strings.Contains(text, "short intro") {
+			t.Errorf("fetch %s: text = %.120q", tc.name, text)
+		}
+		_, end = toolWebSearchWithClient(context.Background(), map[string]any{"query": "q"}, server.Client(), server.URL)
+		if end.status != events.ToolOutcomeSucceeded || end.truncated != tc.truncated {
+			t.Errorf("search %s: status %s truncated %v, want succeeded and %v", tc.name, end.status, end.truncated, tc.truncated)
+		}
+	}
+}
