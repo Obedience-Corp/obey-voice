@@ -175,6 +175,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 		completed := false
 		var callbackErr error
 		answered := false
+		noteOffered(ctx, req.Tools)
 		err := o.clientChat(ctx, req, func(resp api.ChatResponse) error {
 			if !answered {
 				answered = true
@@ -234,6 +235,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			}
 			parseRetried, retrying = true, true
 			repaired := *req
+			repaired.Tools = withoutJobControl(req.Tools)
 			repaired.Messages = append(append([]api.Message(nil), req.Messages...), api.Message{Role: "user", Content: toolParseRetryInstruction})
 			if budgetErr := o.messagesBudgetError(repaired.Messages, repaired.Tools); budgetErr != nil {
 				return budgetErr

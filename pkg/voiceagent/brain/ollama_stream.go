@@ -125,6 +125,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				if handoff {
 					tools = withBackgroundWork(tools)
 				}
+				if imageRepair != "" || routeRetried {
+					tools = withoutJobControl(tools)
+				}
 			}
 
 			// The route is chosen from what the user said, not from a skill's
@@ -232,6 +235,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				requestCtx, cancelRequest = rounds.answerContext(ctx)
 			}
 			requestCtx = withModelRequestPurpose(requestCtx, single.purpose(roundPurpose(routing, continuation != "")))
+			offered := false
+			requestCtx = withOfferProbe(requestCtx, &offered)
 			roundStarted := time.Now()
 			err := chat(requestCtx, req, receive)
 			cancelRequest()
@@ -240,6 +245,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			err = output.FlushFilters(err)
 			chatText, err := single.settle(output, o.cfg.AgentName, err)
 			toolCalls = output.ToolCalls
+			controlCalled := callsTool(toolCalls, jobControlToolName)
 			missingRoute := err == nil && routing && len(toolCalls) == 0 && !chatText
 			var invalidImage error
 			if checkImageResult && err == nil && len(toolCalls) == 0 && !single.deciding {
@@ -274,7 +280,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				continue
 			}
-			if err == nil && output.Repeated() {
+			if err == nil && output.Repeated() && !controlCalled {
 				if opts.Discussion != nil {
 					done <- StreamResult{Err: fmt.Errorf("group reply repeated a prior answer"), Recovered: true}
 					return
@@ -298,7 +304,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				repetitionAllowed = true
 			}
 			err = output.FinishSpeech(err)
-			if err != nil && catchControl && ctx.Err() == nil && callsTool(toolCalls, jobControlToolName) {
+			if err != nil && ctx.Err() == nil && controlCalled {
 				control := JobControl{Refusal: JobControlIncomplete, Spoken: o.spokenBeforeControl(output)}
 				done <- StreamResult{Err: fmt.Errorf("ollama stream: %w", err), Recovered: true, Route: JobControlRoute, JobControl: &control}
 				return
@@ -325,6 +331,15 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				done <- StreamResult{Err: fmt.Errorf("tools are disabled for group discussion"), Recovered: true}
 				return
 			}
+			// A batch with a job_control call runs nothing: not the control,
+			// not its siblings, not a hand-off, and no retry is asked for. The
+			// turn ends at the call, refused unless this very request offered it.
+			if controlCalled {
+				complete := output.Usage.Complete && output.Usage.DoneReason != "length"
+				control := decodeJobControl(toolCalls, offered, complete, o.spokenBeforeControl(output))
+				done <- StreamResult{Route: JobControlRoute, JobControl: &control}
+				return
+			}
 			if !opts.ToolsEnabled && len(toolCalls) > 0 {
 				// A tool-only response to an ordinary chat turn would otherwise
 				// end in silence. Give the model one final text-only round.
@@ -339,14 +354,6 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 			if (continuation != "" || repetitionRetry || routedChat || finalAnswer) && len(toolCalls) > 0 {
 				done <- StreamResult{Err: fmt.Errorf("response recovery returned tool calls"), Recovered: true}
-				return
-			}
-			// A batch with a job_control call runs nothing: not the control,
-			// not its siblings, not a hand-off. The turn ends at the call.
-			if catchControl && callsTool(toolCalls, jobControlToolName) {
-				complete := output.Usage.Complete && output.Usage.DoneReason != "length"
-				control := decodeJobControl(toolCalls, offersTool(tools, jobControlToolName), complete, o.spokenBeforeControl(output))
-				done <- StreamResult{Route: JobControlRoute, JobControl: &control}
 				return
 			}
 

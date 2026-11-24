@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -360,66 +361,191 @@ func TestJobControlEndsWhatTheRoundSays(t *testing.T) {
 	}
 }
 
-// Under the route policies the tool is never offered, and a stray call never
-// becomes a spawn.
-func TestJobControlUnderRouteOnly(t *testing.T) {
+// notOffered asserts the turn ended at a control its request did not offer,
+// after requests requests, with no tool run.
+func (r controlRun) notOffered(t *testing.T, requests int) {
+	t.Helper()
+	got := r.ended(t, requests)
+	if ran := ranTools(r.tools); got.Refusal != JobControlNotOffered || len(ran) != 0 {
+		t.Fatalf("control = %+v, tools run = %v", got, ran)
+	}
+}
+
+// ranTools are the tools that ran, without the route decisions reported
+// beside them.
+func ranTools(results []ToolResult) []string {
+	var names []string
+	for _, r := range results {
+		if r.Name != "route" {
+			names = append(names, r.Name)
+		}
+	}
+	return names
+}
+
+// A batch holding a job_control call on a request that did not offer it runs
+// nothing and starts nothing, on every router policy, with job control on or
+// off, and asks for nothing more.
+func TestJobControlNotOfferedRunsNothing(t *testing.T) {
 	routeOnly := liveControl
 	routeOnly.RouterToolsPolicy = RouterToolsRouteOnly
-	r := runControl(t, "Cancel the summary.", routeOnly, calls(control("cancel", "job-1")))
-	if got := r.ended(t, 1); got.Refusal != JobControlNotOffered || hasTool(r.sent[0].Tools, jobControlToolName) {
-		t.Fatalf("route_only: %+v", got)
-	}
-
-	o, sent := controlModel(t, calls(control("cancel", "job-1")), calls(named("route", map[string]any{"kind": "chat"})), says("Which one?"))
-	o.cfg.VoiceJobControl = false
-	turn := runRoutedTurn(t, o, "Cancel the summary.", routeOnly)
-	if turn.result.Route != "" || turn.result.JobControl != nil || turn.result.Err != nil || len(sent()) != 3 {
-		t.Fatalf("option off, route_only: %+v requests=%d", turn.result, len(sent()))
-	}
-	if result := toolResult(t, sent()[1], jobControlToolName); !strings.Contains(result, "error: tool \"job_control\" is not available") {
-		t.Fatalf("stray job_control result %q", result)
+	toolsOff := liveControl
+	toolsOff.ToolsEnabled = false
+	background := liveControl
+	background.Background = true
+	for name, tc := range map[string]struct {
+		on      bool
+		opts    StreamOptions
+		input   string
+		rounds  [][]api.ChatResponse
+		request int
+	}{
+		"off, direct":                {false, liveControl, "Cancel the summary.", [][]api.ChatResponse{calls(control("cancel", "job-1"), named("write_file", map[string]any{"path": "result", "content": "x"}))}, 1},
+		"off, route only with agent": {false, routeOnly, "Cancel the summary.", [][]api.ChatResponse{calls(control("cancel", "job-1"), named("agent_cancel", map[string]any{"ticket": "t-1"}))}, 1},
+		"on, route only":             {true, routeOnly, "Cancel the summary.", [][]api.ChatResponse{calls(control("cancel", "job-1"))}, 1},
+		"on, tools off":              {true, toolsOff, "Cancel the summary.", [][]api.ChatResponse{calls(control("cancel", "job-1"))}, 1},
+		"on, background":             {true, background, "", [][]api.ChatResponse{calls(control("cancel", "job-1"))}, 1},
+		"on, recovery round":         {true, routeOnly, "Cancel the summary.", [][]api.ChatResponse{calls(named("route", map[string]any{"kind": "chat"})), calls(control("cancel", "job-1"))}, 2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			o, sent := controlModel(t, tc.rounds...)
+			o.cfg.VoiceJobControl = tc.on
+			turn := runRoutedTurn(t, o, tc.input, tc.opts)
+			controlRun{routedTurn: turn, sent: sent(), o: o}.notOffered(t, tc.request)
+			if _, err := os.Stat(filepath.Join(o.workDir, "result")); !os.IsNotExist(err) {
+				t.Fatal("a sibling wrote its file")
+			}
+		})
 	}
 }
 
-// With the option off a job_control call is any unknown tool.
-func TestJobControlOffIsAnUnknownTool(t *testing.T) {
-	o, sent := controlModel(t, calls(control("cancel", "job-1")), says("I can't do that."))
-	o.cfg.VoiceJobControl = false
+// Repair and retry attempts never offer the tool; a call on what they return
+// is refused, judged by the attempt that produced it.
+func TestJobControlIsNeverOfferedOnARepairOrRetry(t *testing.T) {
+	t.Run("image repair", func(t *testing.T) {
+		r := runControl(t, "Find a PNG of a dog and show it here.", liveControl,
+			says("I’ve attached them below."), calls(control("cancel", "job-1")))
+		r.notOffered(t, 2)
+		if !hasTool(r.sent[0].Tools, jobControlToolName) || hasTool(r.sent[1].Tools, jobControlToolName) {
+			t.Fatalf("offered on the first request %t, on the repair %t", hasTool(r.sent[0].Tools, jobControlToolName), hasTool(r.sent[1].Tools, jobControlToolName))
+		}
+	})
+	for name, failure := range map[string]struct {
+		status  int
+		message string
+		tools   bool
+	}{
+		"malformed tool syntax": {http.StatusInternalServerError, "XML syntax error on line 1: unexpected EOF", true},
+		"tools rejected":        {http.StatusBadRequest, "registry.ollama.ai/library/fixture does not support tools", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			config.SetConfigDirForTest(t, t.TempDir())
+			o, sent := toolModel(t, true, func(w http.ResponseWriter, n int, req api.ChatRequest) {
+				if n == 1 {
+					w.WriteHeader(failure.status)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": failure.message})
+					return
+				}
+				_ = json.NewEncoder(w).Encode(toolResponse([]api.ToolCall{control("cancel", "job-1")}))
+			})
+			o.cfg.VoiceJobControl = true
+			turn := runRoutedTurn(t, o, "Cancel the summary.", liveControl)
+			r := controlRun{routedTurn: turn, sent: sent(), o: o}
+			r.notOffered(t, 2)
+			if !hasTool(r.sent[0].Tools, jobControlToolName) || hasTool(r.sent[1].Tools, jobControlToolName) || (len(r.sent[1].Tools) > 0) != failure.tools {
+				t.Fatalf("retry tools = %d", len(r.sent[1].Tools))
+			}
+		})
+	}
+}
+
+// A delta whose text is dropped as a restatement of an earlier round loses
+// an ordinary tool call with it, as it always has; a job_control call in such
+// a delta is kept, so the batch ends at it instead of at a sibling's spawn.
+func TestJobControlSurvivesARestatedDelta(t *testing.T) {
+	restated := func(call api.ToolCall) [][]api.ChatResponse {
+		return [][]api.ChatResponse{
+			{{Message: api.Message{Role: "assistant", Content: "Let me look.", ToolCalls: []api.ToolCall{named("list_files", map[string]any{"path": "."})}}, Done: true, DoneReason: "stop"}},
+			{
+				{Message: api.Message{Role: "assistant", Content: "Let me look.", ToolCalls: []api.ToolCall{call}}},
+				{Message: api.Message{Role: "assistant", ToolCalls: []api.ToolCall{named(backgroundWorkTool, nil)}}, Done: true, DoneReason: "stop"},
+			},
+		}
+	}
+	for _, on := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ordinary call, off", true: "ordinary call, on"}[on], func(t *testing.T) {
+			o, sent := controlModel(t, restated(named("read_file", map[string]any{"path": "notes.txt"}))...)
+			o.cfg.VoiceJobControl = on
+			turn := runRoutedTurn(t, o, "What is in the folder?", liveControl)
+			if ran := ranTools(turn.tools); turn.result.Route != "spawn" || len(sent()) != 2 || strings.Join(ran, ",") != "list_files" {
+				t.Fatalf("result %+v, tools %+v", turn.result, turn.tools)
+			}
+		})
+	}
+	t.Run("control", func(t *testing.T) {
+		r := runControl(t, "Cancel the summary.", liveControl, restated(control("cancel", "job-1"))...)
+		if got := r.ended(t, 2); got.Request == nil || got.Request.JobID != "job-1" {
+			t.Fatalf("control = %+v", got)
+		}
+	})
+}
+
+// A control in the delta that runs out the reply's budget is kept and
+// refused as incomplete, so a spoken promise before it cannot become a spawn.
+func TestJobControlInTheDeltaThatEndsTheBudget(t *testing.T) {
+	round := []api.ChatResponse{
+		{Message: api.Message{Role: "assistant", Content: "I'll use the tool to cancel it. "}},
+		{Message: api.Message{Role: "assistant", ToolCalls: []api.ToolCall{control("cancel", "job-1")}}, Done: true, DoneReason: "length", Metrics: api.Metrics{EvalCount: 50}},
+	}
+	o, sent := controlModel(t, round)
+	o.cfg.OllamaResponseTokens = 5
 	turn := runRoutedTurn(t, o, "Cancel the summary.", liveControl)
-	if turn.result.Route != "" || turn.result.JobControl != nil || len(sent()) != 2 || hasTool(sent()[0].Tools, jobControlToolName) {
-		t.Fatalf("option off: %+v requests=%d", turn.result, len(sent()))
+	got := turn.result.JobControl
+	if turn.result.Route != JobControlRoute || got == nil || got.Refusal != JobControlIncomplete || !errors.Is(turn.result.Err, ErrResponseLimit) || len(sent()) != 1 {
+		t.Fatalf("result %+v control %+v", turn.result, got)
+	}
+}
+
+// Nothing asks for another request before the control is read: not the
+// repetition check, and not the json_route adapter, which passes the call on.
+func TestJobControlAsksForNoOtherRequest(t *testing.T) {
+	t.Run("repeated answer", func(t *testing.T) {
+		o, sent := controlModel(t, []api.ChatResponse{{Message: api.Message{Role: "assistant", Content: gardenReply, ToolCalls: []api.ToolCall{control("cancel", "job-1")}}, Done: true, DoneReason: "stop"}})
+		o.cfg.ActivePersona = "robin"
+		if err := o.ImportHistory([]Turn{{Role: "user", Content: "Describe the garden."}, {Role: "assistant", Content: gardenReply, PersonaID: "robin"}}); err != nil {
+			t.Fatal(err)
+		}
+		turn := runRoutedTurn(t, o, "Please cancel the summary job for me now.", liveControl)
+		r := controlRun{routedTurn: turn, sent: sent(), o: o}
+		if got := r.ended(t, 1); got.Request == nil {
+			t.Fatalf("control = %+v", got)
+		}
+	})
+	t.Run("json route", func(t *testing.T) {
+		config.SetConfigDirForTest(t, t.TempDir())
+		o, sent := toolModel(t, true, func(w http.ResponseWriter, n int, req api.ChatRequest) {
+			_ = json.NewEncoder(w).Encode(toolResponse([]api.ToolCall{control("cancel", "job-1")}))
+		})
+		o.cfg.VoiceJobControl = true
+		opts := liveControl
+		opts.RouterToolsPolicy, opts.RouteJSON = RouterToolsRouteOnly, true
+		turn := runRoutedTurn(t, o, "Cancel the summary.", opts)
+		controlRun{routedTurn: turn, sent: sent(), o: o}.notOffered(t, 1)
+	})
+}
+
+// A worker has no job_control: a call to it beside a write is an unknown tool,
+// answered as one, and nothing of it reaches a job.
+func TestWorkerCallToJobControlIsAnUnknownTool(t *testing.T) {
+	o, sent := controlModel(t, calls(named("write_file", map[string]any{"path": "result", "content": "x"}), control("cancel", "job-1")), says("Done."))
+	o.cfg.IsWorker = true
+	answer, err := o.ThinkFull(t.Context(), "Write the result.", StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, JobControl: true})
+	if err != nil || answer != "Done." {
+		t.Fatalf("answer %q err %v", answer, err)
 	}
 	if result := toolResult(t, sent()[1], jobControlToolName); !strings.Contains(result, "unknown tool: job_control") {
-		t.Fatalf("unknown tool result %q", result)
+		t.Fatalf("job_control result %q", result)
 	}
-}
-
-// Turns that answer no person, and recovery rounds, cannot control a job.
-func TestJobControlIsRefusedOffTheLiveTurn(t *testing.T) {
-	t.Run("background", func(t *testing.T) {
-		opts := liveControl
-		opts.Background = true
-		r := runControl(t, "", opts, calls(control("cancel", "job-1")))
-		if got := r.ended(t, 1); got.Refusal != JobControlNotOffered {
-			t.Fatalf("background: %+v", got)
-		}
-	})
-	t.Run("tools off", func(t *testing.T) {
-		opts := liveControl
-		opts.ToolsEnabled = false
-		r := runControl(t, "Cancel the summary.", opts, calls(control("cancel", "job-1")), says("I can't."))
-		if r.result.JobControl != nil || len(r.sent) != 2 || len(r.sent[1].Tools) != 0 {
-			t.Fatalf("tools off: %+v requests=%d", r.result, len(r.sent))
-		}
-	})
-	t.Run("recovery", func(t *testing.T) {
-		routeOnly := liveControl
-		routeOnly.RouterToolsPolicy = RouterToolsRouteOnly
-		r := runControl(t, "Cancel the summary.", routeOnly, calls(named("route", map[string]any{"kind": "chat"})), calls(control("cancel", "job-1")))
-		if r.result.JobControl != nil || r.result.Err == nil || len(r.sent) != 2 {
-			t.Fatalf("a recovery round controlled a job: %+v requests=%d", r.result, len(r.sent))
-		}
-	})
 }
 
 func TestWorkerRequestsNeverOfferJobControl(t *testing.T) {
@@ -486,9 +612,9 @@ func TestListedWorkerFactIDsFollowTheCeilingAndFooter(t *testing.T) {
 }
 
 // A turn whose tool calls are answered without running sends the model the
-// same request as one whose tools run.
+// same first request as one whose tools run; the next one carries the answer.
 func TestAnsweredToolsLeaveTheRequestUnchanged(t *testing.T) {
-	turn := func(ctx context.Context) string {
+	turn := func(ctx context.Context) []string {
 		cfg := liveRequestConfig(t)
 		cfg.VoiceJobControl = true
 		o, rec := newLiveRequestBrain(t, cfg, func(n int) api.Message {
@@ -507,11 +633,15 @@ func TestAnsweredToolsLeaveTheRequestUnchanged(t *testing.T) {
 		if r := <-stream.Done; r.Err != nil {
 			t.Fatal(r.Err)
 		}
-		return normalizeLiveRequest(cfg, rec.requests()[:1])[0]
+		return normalizeLiveRequest(cfg, rec.requests())
 	}
 	answered := 0
 	stubbed := toolstub.With(t.Context(), func(string, map[string]any) string { answered++; return "recorded" })
-	if real, stub := turn(t.Context()), turn(stubbed); real != stub || answered != 1 {
-		t.Fatalf("answered=%d; requests differ:\nreal: %s\nstub: %s", answered, real, stub)
+	real, stub := turn(t.Context()), turn(stubbed)
+	if len(real) != 2 || len(stub) != 2 || real[0] != stub[0] || answered != 1 {
+		t.Fatalf("answered=%d; first requests differ:\nreal: %v\nstub: %v", answered, real, stub)
+	}
+	if !strings.Contains(stub[1], `"role":"tool","content":"recorded","tool_name":"list_files"`) || strings.Contains(real[1], `"content":"recorded"`) {
+		t.Fatalf("follow-up requests:\nreal: %s\nstub: %s", real[1], stub[1])
 	}
 }

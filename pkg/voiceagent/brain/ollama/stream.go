@@ -182,13 +182,21 @@ func (r *Round) receive(msg api.Message) error {
 	}
 	if len(msg.ToolCalls) > 0 {
 		r.ToolCalls = append(r.ToolCalls, msg.ToolCalls...)
-		for _, call := range msg.ToolCalls {
-			if r.options.EndAtTool != "" && strings.TrimSpace(call.Function.Name) == r.options.EndAtTool {
-				r.ended = true
-			}
-		}
 	}
 	return nil
+}
+
+// endsRound reports a delta carrying the EndAtTool call.
+func (r *Round) endsRound(msg api.Message) bool {
+	if r.options.EndAtTool == "" {
+		return false
+	}
+	for _, call := range msg.ToolCalls {
+		if strings.TrimSpace(call.Function.Name) == r.options.EndAtTool {
+			return true
+		}
+	}
+	return false
 }
 
 // FlushFilters drains each text filter and preserves the first failure.

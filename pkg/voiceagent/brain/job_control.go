@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -167,6 +168,36 @@ func decodeJobControlArgs(args map[string]any) (*JobControlRequest, JobControlRe
 		req.Instruction = ""
 	}
 	return req, ""
+}
+
+type offeredKey struct{}
+
+// withOfferProbe has each request attempt sent under ctx record in offered
+// whether it offered job_control, so a response is judged by the attempt
+// that produced it, a retry included.
+func withOfferProbe(ctx context.Context, offered *bool) context.Context {
+	return context.WithValue(ctx, offeredKey{}, offered)
+}
+
+func noteOffered(ctx context.Context, tools api.Tools) {
+	if offered, ok := ctx.Value(offeredKey{}).(*bool); ok {
+		*offered = offersTool(tools, jobControlToolName)
+	}
+}
+
+// withoutJobControl is tools for a repair or retry attempt, which never
+// offers job_control.
+func withoutJobControl(tools api.Tools) api.Tools {
+	if !offersTool(tools, jobControlToolName) {
+		return tools
+	}
+	out := make(api.Tools, 0, len(tools)-1)
+	for _, tool := range tools {
+		if tool.Function.Name != jobControlToolName {
+			out = append(out, tool)
+		}
+	}
+	return out
 }
 
 func offersTool(tools api.Tools, name string) bool {

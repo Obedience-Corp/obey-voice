@@ -17,6 +17,12 @@ func (r *Round) Receiver(promptEstimate int, observe func(api.ChatResponse) erro
 			r.Usage.InputTokens, r.Usage.OutputTokens = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
 			r.Usage.DoneReason = resp.DoneReason
 		}
+		// A delta ending the round keeps its calls even when a limit or a text
+		// filter drops the rest of it.
+		ends := r.endsRound(resp.Message)
+		if ends {
+			r.ToolCalls = append(r.ToolCalls, resp.Message.ToolCalls...)
+		}
 		if err := observe(resp); err != nil {
 			return err
 		}
@@ -28,6 +34,14 @@ func (r *Round) Receiver(promptEstimate int, observe func(api.ChatResponse) erro
 			lastBudget = estimate
 		}
 		r.Usage.Complete = r.Usage.Complete || resp.Done
-		return r.receive(resp.Message)
+		msg := resp.Message
+		if ends {
+			msg.ToolCalls = nil
+		}
+		err := r.receive(msg)
+		if ends {
+			r.ended = true
+		}
+		return err
 	}
 }
