@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 )
 
 type waitKind string
@@ -65,6 +67,10 @@ type scenarioBrain struct {
 	Provider string `yaml:"provider"`
 	Model    string `yaml:"model"`
 	Host     string `yaml:"host"`
+	// JobControl is the run's voice_job_control, whatever the operator's
+	// config says. It offers the persona job_control only on the direct
+	// router (router_tools: legacy).
+	JobControl bool `yaml:"job_control"`
 }
 
 type scenarioWorker struct {
@@ -144,6 +150,15 @@ type Expectation struct {
 	// ToolsStopAfterReport wants no tool call of the reported job to start
 	// after its job_report event.
 	ToolsStopAfterReport *bool `yaml:"tools_stop_after_report"`
+	// JobControl wants the host's settlement of a persona's job_control call
+	// in the turn: "applied" or "refused", optionally ":<outcome or reason>"
+	// ("applied:stopped", "refused:bare_stop"), or "none" for no settlement.
+	JobControl string `yaml:"job_control"`
+	// AbortReason wants a job_aborted event with this reason in the turn.
+	AbortReason string `yaml:"abort_reason"`
+	// SpokenOnce wants exactly one match of this pattern in what the turn
+	// spoke.
+	SpokenOnce string `yaml:"spoken_once"`
 }
 
 type duration struct{ time.Duration }
@@ -205,6 +220,9 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 	}
 	if scn.Input != "text" && scn.Input != "speech" {
 		return nil, fmt.Errorf("load %s: input must be text or speech", name)
+	}
+	if scn.Brain.JobControl && !strings.EqualFold(scn.RouterTools, string(brain.RouterToolsLegacy)) {
+		return nil, fmt.Errorf("load %s: brain.job_control needs router_tools: legacy, the direct router", name)
 	}
 	if scn.LatencyCondition != "" && scn.LatencyCondition != "baseline" && scn.LatencyCondition != "worker" {
 		return nil, fmt.Errorf("load %s: invalid latency_condition", name)

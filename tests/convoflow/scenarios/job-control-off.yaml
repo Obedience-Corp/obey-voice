@@ -1,0 +1,26 @@
+name: job-control-off
+description: the same two turns with job control off; "cancel that job" is not a cancel phrase, so it reaches the persona, which has no tool that ends a job; the job is not cancelled and no control is settled
+duration: 6m
+input: text
+router_tools: legacy
+brain: { job_control: false }
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: hand-off
+    user: "Work on this in the background: write ten small numbered files, one at a time, each with one short sentence, then list the directory and read each file back."
+    wait: worker_tool
+    timeout: 3m
+    expect:
+      - { event: job_started }
+      - { route_kind: spawn }
+      - { no_event: job_terminal }
+
+  - id: cancel
+    user: "cancel that job"
+    wait: idle
+    timeout: 2m
+    expect:
+      - { job_control: none }
+      - { no_event: job_aborted }

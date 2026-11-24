@@ -41,6 +41,20 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		if !hasCutShort(st.events, rec, ex.CutShort) {
 			return fmt.Errorf("want a job_finished with an answer, cut short: %s", ex.CutShort)
 		}
+	case ex.JobControl != "":
+		return checkJobControl(st.events, rec, ex.JobControl)
+	case ex.AbortReason != "":
+		if !hasAbortReason(st.events, rec, ex.AbortReason) {
+			return fmt.Errorf("want a job_aborted with reason %q", ex.AbortReason)
+		}
+	case ex.SpokenOnce != "":
+		re, err := regexp.Compile(ex.SpokenOnce)
+		if err != nil {
+			return err
+		}
+		if n := len(re.FindAllStringIndex(st.spoken, -1)); n != 1 {
+			return fmt.Errorf("spoken %q matches %s %d times, want once", clip(st.spoken, 120), ex.SpokenOnce, n)
+		}
 	case ex.ToolsStopAfterReport != nil:
 		late := toolsAfterReport(st.events, rec)
 		if late < 0 {
@@ -467,6 +481,48 @@ func hasCorrection(turnLog []timedEvent, rec *recorder, state string) bool {
 	}
 	for _, te := range src {
 		if c, ok := te.event.(events.JobCorrection); ok && c.State == state {
+			return true
+		}
+	}
+	return false
+}
+
+// checkJobControl wants the turn's job.control settlement to be want:
+// "applied" or "refused", optionally ":<outcome or reason>", or "none".
+func checkJobControl(turnLog []timedEvent, rec *recorder, want string) error {
+	src := turnLog
+	if src == nil && rec != nil {
+		src = rec.snapshot()
+	}
+	var settled []events.RouteDecided
+	for _, te := range src {
+		if r, ok := te.event.(events.RouteDecided); ok && r.Kind == string(pipeline.RouteJobControl) && r.State != "handled" {
+			settled = append(settled, r)
+		}
+	}
+	if want == "none" {
+		if len(settled) > 0 {
+			return fmt.Errorf("job_control: want no settlement, got %s %s", settled[0].State, settled[0].Message)
+		}
+		return nil
+	}
+	state, message, detailed := strings.Cut(want, ":")
+	if len(settled) != 1 {
+		return fmt.Errorf("job_control: want one settlement, got %d", len(settled))
+	}
+	if got := settled[0]; got.State != state || detailed && got.Message != message {
+		return fmt.Errorf("job_control = %s:%s, want %s", got.State, got.Message, want)
+	}
+	return nil
+}
+
+func hasAbortReason(turnLog []timedEvent, rec *recorder, reason string) bool {
+	src := turnLog
+	if src == nil && rec != nil {
+		src = rec.snapshot()
+	}
+	for _, te := range src {
+		if a, ok := te.event.(events.JobAborted); ok && a.Reason == reason {
 			return true
 		}
 	}
