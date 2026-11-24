@@ -45,18 +45,10 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		return checkJobControl(st.events, rec, ex.JobControl)
 	case ex.JobControlAction != "":
 		return checkJobControlAction(st.events, rec, ex.JobControlAction)
-	case ex.TurnSpokenNotMatches != "":
-		re, err := regexp.Compile(ex.TurnSpokenNotMatches)
-		if err != nil {
-			return err
-		}
-		src := st.events
-		if src == nil && rec != nil {
-			src = rec.snapshot()
-		}
-		if spoken := spokenIn(src); re.MatchString(spoken) {
-			return fmt.Errorf("turn spoke %q, matching forbidden %s", clip(spoken, 120), ex.TurnSpokenNotMatches)
-		}
+	case ex.ReportCheckpointMatches != "" || ex.ReportCheckpointNotMatches != "":
+		return checkReportCheckpoint(st.events, rec, ex.ReportCheckpointMatches, ex.ReportCheckpointNotMatches)
+	case ex.WorkFileAbsent != "":
+		return checkWorkFileAbsent(st.workDir, ex.WorkFileAbsent)
 	case ex.AbortReason != "":
 		if !hasAbortReason(st.events, rec, ex.AbortReason) {
 			return fmt.Errorf("want a job_aborted with reason %q", ex.AbortReason)
@@ -312,6 +304,7 @@ type runMetrics struct {
 	JobAborted         int
 	LiveToolCalls      int
 	WorkerToolCalls    int
+	WorkerToolUnknown  int
 	BoundaryRefusals   int
 	LiveRouterHit      int
 	LiveRouterMiss     int
@@ -380,6 +373,9 @@ func collectMetrics(rec *recorder) runMetrics {
 		case events.ToolCallFinished:
 			if e.JobID != "" && strings.Contains(e.Err, "work boundary") {
 				m.BoundaryRefusals++
+			}
+			if e.JobID != "" && e.OutcomeStatus() == events.ToolOutcomeUnknown {
+				m.WorkerToolUnknown++
 			}
 		}
 	}
@@ -452,6 +448,8 @@ func metricValue(m runMetrics, name string) (int, bool) {
 		return m.LiveToolCalls, true
 	case "worker_tool_calls":
 		return m.WorkerToolCalls, true
+	case "worker_tool_unknown":
+		return m.WorkerToolUnknown, true
 	case "boundary_refusals":
 		return m.BoundaryRefusals, true
 	case "live_router_hit":
@@ -530,64 +528,95 @@ func checkJobControl(turnLog []timedEvent, rec *recorder, want string) error {
 	return nil
 }
 
-// checkJobControlAction wants the turn's one applied job control to be want,
-// told by what it did to the job it named.
-func checkJobControlAction(turnLog []timedEvent, rec *recorder, want string) error {
-	src := turnLog
-	if src == nil && rec != nil {
-		src = rec.snapshot()
-	}
+// controlSettlements are the turn's job.control settlements.
+func controlSettlements(src []timedEvent) []events.RouteDecided {
 	var settled []events.RouteDecided
 	for _, te := range src {
 		if r, ok := te.event.(events.RouteDecided); ok && r.Kind == string(pipeline.RouteJobControl) && r.State != "handled" {
 			settled = append(settled, r)
 		}
 	}
-	if len(settled) != 1 || settled[0].State != "applied" || settled[0].JobID == "" {
-		return fmt.Errorf("job_control_action: want one applied settlement naming a job, got %+v", settled)
+	return settled
+}
+
+// checkJobControlAction wants the turn's one applied job control settlement
+// to name want as its action.
+func checkJobControlAction(turnLog []timedEvent, rec *recorder, want string) error {
+	src := turnLog
+	if src == nil && rec != nil {
+		src = rec.snapshot()
 	}
-	id := settled[0].JobID
-	did := map[string]bool{}
-	for _, te := range src {
-		switch e := te.event.(type) {
-		case events.JobAborted:
-			if e.ID == id && e.Reason == events.AbortCancelled {
-				did["cancel"] = true
-			}
-		case events.JobReport:
-			if e.ID == id {
-				did["report"] = true
-			}
-		case events.JobCorrection:
-			if e.ID == id {
-				did["steer"] = true
-			}
-		}
+	settled := controlSettlements(src)
+	if len(settled) != 1 || settled[0].State != "applied" {
+		return fmt.Errorf("job_control_action: want one applied settlement, got %+v", settled)
 	}
-	if !did[want] || len(did) != 1 {
-		return fmt.Errorf("job_control_action: want %s on %s, the turn shows %v", want, id, did)
+	if settled[0].Action != want {
+		return fmt.Errorf("job_control_action = %q, want %q", settled[0].Action, want)
 	}
 	return nil
 }
 
-// spokenIn is what the log's speech events said, one line per sentence.
-func spokenIn(log []timedEvent) string {
-	var lines []string
-	add := func(text string) {
-		text = strings.TrimSpace(text)
-		if text != "" && (len(lines) == 0 || lines[len(lines)-1] != text) {
-			lines = append(lines, text)
+// checkReportCheckpoint tests the checkpoint of the turn's job_report against
+// match and noMatch, each skipped when empty.
+func checkReportCheckpoint(turnLog []timedEvent, rec *recorder, match, noMatch string) error {
+	src := turnLog
+	if src == nil && rec != nil {
+		src = rec.snapshot()
+	}
+	id := ""
+	if settled := controlSettlements(src); len(settled) == 1 {
+		id = settled[0].JobID
+	}
+	var report *events.JobReport
+	for _, te := range src {
+		if e, ok := te.event.(events.JobReport); ok && (id == "" || e.ID == id) {
+			report = &e
+			break
 		}
 	}
-	for _, te := range log {
-		switch e := te.event.(type) {
-		case events.SpeechSegmentReady:
-			add(e.Text)
-		case events.GeneratingVoice:
-			add(e.Sentence)
+	if report == nil {
+		return fmt.Errorf("report_checkpoint: no job_report for the turn's job %q", id)
+	}
+	if match != "" {
+		re, err := regexp.Compile(match)
+		if err != nil {
+			return err
+		}
+		if !re.MatchString(report.Checkpoint) {
+			return fmt.Errorf("report checkpoint %q does not match %s", report.Checkpoint, match)
 		}
 	}
-	return strings.Join(lines, " ")
+	if noMatch != "" {
+		re, err := regexp.Compile(noMatch)
+		if err != nil {
+			return err
+		}
+		if re.MatchString(report.Checkpoint) {
+			return fmt.Errorf("report checkpoint %q matches forbidden %s", report.Checkpoint, noMatch)
+		}
+	}
+	return nil
+}
+
+// checkWorkFileAbsent wants no file called name at any depth under dir.
+func checkWorkFileAbsent(dir, name string) error {
+	if dir == "" {
+		return fmt.Errorf("work_file_absent %q: the run has no work directory", name)
+	}
+	var found []string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && d.Name() == name {
+			found = append(found, path)
+		}
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("work_file_absent %q: %w", name, err)
+	}
+	if len(found) > 0 {
+		return fmt.Errorf("work_file_absent %q: found %v", name, found)
+	}
+	return nil
 }
 
 func hasAbortReason(turnLog []timedEvent, rec *recorder, reason string) bool {

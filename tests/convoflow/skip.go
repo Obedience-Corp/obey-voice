@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -24,6 +25,22 @@ type knobs struct {
 	workerOllamaHost string
 	ollamaHost       string
 	gate             bool
+}
+
+// jobControlSkipReason is why a job-control scenario cannot exercise its path
+// under cfg, the operator's settings with the scenario's applied: the persona
+// is offered job_control only on a direct live router, and the scenario's
+// events are the legacy job events the work inbox replaces.
+func jobControlSkipReason(cfg *config.Config) string {
+	switch {
+	case cfg.VoiceWorkEnabled:
+		return "voice_work_enabled is on; job control scenarios need the legacy job events"
+	case cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered:
+		return "tiered workers make the live router route_only; job control scenarios need the direct router"
+	case brain.NormalizeRouterToolsPolicy(cfg.VoiceRouterTools) != brain.RouterToolsDirect:
+		return fmt.Sprintf("voice_router_tools %q is not the direct router job control scenarios need", cfg.VoiceRouterTools)
+	}
+	return ""
 }
 
 // skipError is a missing dependency, not a failed gate: exit 2.

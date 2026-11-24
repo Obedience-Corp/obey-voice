@@ -53,7 +53,7 @@ func (n *Normalizer) Record(r Record) Record {
 	case "work.delivery":
 		keys = []string{"stage", "attempt_id", "turn_id", "capture_epoch", "result_ids", "reason", "mode", "segments"}
 	case "route.decided":
-		keys = []string{"kind", "tier", "reason_code", "state", "message", "task"}
+		keys = []string{"kind", "tier", "reason_code", "action", "state", "message", "task"}
 	case "job.queued", "job.started":
 		keys = []string{"task"}
 	case "job.ended":

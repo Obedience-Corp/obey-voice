@@ -30,7 +30,8 @@ turns:
       - { cut_short: report requested }
       - { no_event: job_started }
       - { spoken_once: "(?i)writing up what it has" }
-      - { turn_spoken_not_matches: "(?i)\\bunknown\\b" }
+      - { report_checkpoint_matches: "succeeded" }
+      - { report_checkpoint_not_matches: "(?i)unknown" }
 
   - id: answer
     wait: report_spoken

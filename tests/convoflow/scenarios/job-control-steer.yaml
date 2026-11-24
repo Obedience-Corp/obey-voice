@@ -29,6 +29,7 @@ turns:
       - { no_event: job_started }
       - { event: job_terminal }
       - { work_file: omega.txt, work_file_contains: corrected }
+      - { work_file_absent: last.txt }
 
 expect:
   - { metric: job_started, op: "==", value: 1 }

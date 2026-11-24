@@ -74,7 +74,12 @@ func resolveConfig(base *config.Config, scn *Scenario, k knobs, runDir string) (
 	if strings.EqualFold(scn.RouterTools, string(brain.RouterToolsLegacy)) {
 		local.VoiceRouterTools = string(brain.RouterToolsLegacy)
 	}
-	local.VoiceJobControl = scn.Brain.JobControl
+	local.VoiceJobControl = scn.Brain.jobControl()
+	if scn.Brain.JobControl != nil {
+		if reason := jobControlSkipReason(&local); reason != "" {
+			return nil, runProfile{}, skipError{reason}
+		}
+	}
 
 	workDir := filepath.Join(runDir, "work")
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
