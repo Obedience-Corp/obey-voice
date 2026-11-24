@@ -483,29 +483,37 @@ The tool, `job_control(action, job_id, instruction)`, is offered only on a
 live turn that answers you, on the direct router: never to a worker, a result
 notification, a continuation, a group discussion, a summary, a retried input or
 a recovery round, and never under `route_only`, `json_route`, `single_call` or
-tiered routing. It sits between `view_image` and `start_background_work` in
-the tool list whether or not jobs exist, and the warm-up request carries it
-too. With the option off nothing a persona is sent changes, and a
-`job_control` call is an unknown tool. Under the route policies a stray call
-is never turned into a spawn, with the option on or off.
+tiered routing. It is not offered on a repair or retry of a request either:
+the image repair, the retry after malformed tool syntax, the retry without
+tools for a model that rejects them, or the final answer of a turn whose tools
+are off. It sits between `view_image` and `start_background_work` in the tool
+list whether or not jobs exist, and the warm-up request carries it too. With
+the option off nothing a persona is sent changes.
 
 The model only asks; Obey Voice decides. When a model response holds a
-`job_control` call, nothing in that response runs: not the control, not a
-search, write, command, picture or hand-off beside it, and it never becomes
-background work. The turn ends at the call: the model gets no tool result and
-no second request, and text it sends after the call is dropped. What it said
-before the call was spoken as usual and stays in its reply. The host then
-checks, in order, and stops at the first failure:
+`job_control` call, with the option on or off and on any router, nothing in
+that response runs: not the control, not a search, write, command, picture,
+delegation or hand-off beside it, and it never becomes background work. The
+turn ends at the call: the model gets no tool result and no other request,
+and with the option on, text it sends after the call is dropped. What it said
+before the call was spoken as usual and stays in its reply. A call on a
+request that did not offer the tool, as with the option off, is refused with
+"I couldn't do that." The host grants a turn control only when the responding
+persona has the option on and the turn answers you on Ollama on the direct
+router with tools; then it checks, in order, and stops at the first failure:
 
-1. What you said is not a bare "stop" ("Stop.", "stop!"), read as the cancel
-   phrases are read. A bare stop silences speech and never changes a job,
-   whatever the model called: nothing is spoken, and the chat shows `A bare
-   "stop" only silences speech; say "cancel" to end a job.` "Stop the
-   download" is not a bare stop.
+1. What you said is not a bare "stop": case, punctuation and spacing aside,
+   and with an address to the persona taken off ("Stop.", "STOP!!", "Stop…",
+   "Robin, stop.", "hey Robin stop", "@robin stop"). For speech, what the
+   recognizer heard counts as well as what a transcript correction made of it.
+   A bare stop silences speech and never changes a job, whatever the model
+   called: nothing is spoken, and the chat shows `A bare "stop" only silences
+   speech; say "cancel" to end a job.` "Stop the download" is not a bare stop.
 2. The turn is still the live one: not interrupted or stopped, not moved to the
-   background, the conversation not cleared and the persona not switched since
-   it began. Otherwise nothing is spoken and the chat says the control arrived
-   after its turn stopped. Each turn's permission is used once.
+   background, no newer turn begun, the conversation not cleared and the
+   persona not switched or bound again since it began. Otherwise nothing is
+   spoken, nothing is saved into a cleared conversation, and the chat says the
+   control arrived after its turn stopped. Each turn's permission is used once.
 3. The response was complete, offered the tool, and holds one control: two
    identical calls count as one, two different ones are refused.
 4. The job id is exactly one the turn's job list named: the list the persona was
@@ -535,6 +543,7 @@ first:
 | job ended since the list | `That job had already finished.` |
 | another persona's job | `I can only do that for my own jobs.` |
 | unknown, unlisted or missing id, or two different controls | `Which job do you mean? Mine is …` naming only the persona's own listed jobs |
+| none of its listed jobs running, one of its own running elsewhere | `I can't tell which job you mean from my list.` |
 | none of its jobs running | `I have no job running.` |
 | incomplete or malformed call, or a steer without an instruction | `I couldn't do that.` |
 
@@ -553,8 +562,9 @@ fixture jobs with no model behind them, owned by the speaking persona or by
 another one as each case says, with the running times the job list gives
 them. Speech goes to a spy and is never played. No tool the persona calls
 runs: a search, a command or a write is answered `recorded` and written to the
-results, and the requests the model is sent are the ones a real turn sends. A
-job it starts is another fixture job. It is skipped unless asked for:
+results. The first request of each turn is the one a real turn sends; a
+later round sees `recorded` as its tool results. A job it starts is another
+fixture job. It is skipped unless asked for:
 
 ```sh
 OBEY_VOICE_JOB_CONTROL_CORPUS=1 \

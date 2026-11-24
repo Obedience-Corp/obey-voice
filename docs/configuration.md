@@ -947,10 +947,11 @@ brain:
 ```
 
 `obey-voice config set voice_job_control true` turns it on for every persona,
-and `VOICE_JOB_CONTROL` sets it from the environment. It has no
-effect under `route_only`, `json_route`, `single_call` or tiered routing, or for
-a persona on another provider. What the host checks before acting, and what it
-says, is in [A persona controlling its own jobs](delegation.md#a-persona-controlling-its-own-jobs).
+and `VOICE_JOB_CONTROL` sets it from the environment. The tool is never
+offered under `route_only`, `json_route`, `single_call` or tiered routing, or to
+a persona on another provider; there, as with the option off, a model that
+calls `job_control` anyway gets nothing run. What the host checks before
+acting, and what it says, is in [A persona controlling its own jobs](delegation.md#a-persona-controlling-its-own-jobs).
 
 ## STT schema migration
 
