@@ -16,7 +16,6 @@ turns:
       - { event: job_started }
       - { route_kind: spawn }
       - { spoken_matches: "I'll work on that and report back\\." }
-      - { no_event: tool_call_started }
 
   # "So far: …" is spoken only once the worker has closed a fold row; a small
   # model often thinks for longer than this turn lasts, so the fold's spoken

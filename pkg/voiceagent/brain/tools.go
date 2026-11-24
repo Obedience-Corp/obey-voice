@@ -307,7 +307,7 @@ func redactToolText(text string, maxRunes int) string {
 }
 
 func failedToolOutcome(input, reason string) *events.ToolOutcome {
-	return &events.ToolOutcome{Status: events.ToolOutcomeFailed, InputSummary: redactToolText(input, 80), Reason: reason}
+	return &events.ToolOutcome{Status: events.ToolOutcomeFailed, InputSummary: redactToolText(input, 80), Reason: redactToolText(reason, 0)}
 }
 
 // toolEnd is what a tool the host runs itself observed, apart from the text

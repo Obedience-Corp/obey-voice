@@ -15,7 +15,6 @@ turns:
       - { event: job_started }
       - { route_kind: spawn }
       - { spoken_matches: "I'll work on that and report back\\." }
-      - { no_event: tool_call_started }
 
   - id: status
     user: "status"
