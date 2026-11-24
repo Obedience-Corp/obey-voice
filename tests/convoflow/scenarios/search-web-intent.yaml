@@ -24,7 +24,7 @@ turns:
     expect:
       - { event: job_started }
       - { event: job_terminal }
-      - { spoken_matches: "(?i)working on it" }
+      - { spoken_matches: "I'll work on that and report back\\." }
       - { spoken_not_matches: "(?i)web search is unavailable" }
       - { no_event: tool_call_started }
       - { live_history_excludes: "search the web" }

@@ -14,7 +14,7 @@ turns:
     expect:
       - { event: job_started }
       - { route_kind: spawn }
-      - { spoken_matches: "(?i)working on it" }
+      - { spoken_matches: "I'll work on that and report back\\." }
       - { no_event: tool_call_started }
 
   - id: status

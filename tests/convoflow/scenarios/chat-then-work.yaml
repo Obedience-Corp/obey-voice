@@ -25,7 +25,7 @@ turns:
       - { event: job_started }
       - { route_kind: spawn }
       - { route_source: intent }
-      - { spoken_matches: "(?i)working on it" }
+      - { spoken_matches: "I'll work on that and report back\\." }
       - { spoken_not_matches: "(?i)web search is unavailable" }
       - { no_event: tool_call_started }
       - { live_history_excludes: "look up the latest" }
