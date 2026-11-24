@@ -490,9 +490,9 @@ are off. It sits between `view_image` and `start_background_work` in the tool
 list whether or not jobs exist, and the warm-up request carries it too. With
 the option off nothing a persona is sent changes.
 
-The model only asks; Obey Voice decides. When a model response holds a
-`job_control` call, with the option on or off and on any router, nothing in
-that response runs: not the control, not a search, write, command, picture,
+The model only asks; Obey Voice decides. When a model response on a live
+turn holds a `job_control` call, with the option on or off and on any router,
+nothing in that response runs: not the control, not a search, write, command, picture,
 delegation or hand-off beside it, and it never becomes background work. The
 turn ends at the call: the model gets no tool result and no other request,
 and with the option on, text it sends after the call is dropped. What it said
@@ -503,9 +503,11 @@ persona has the option on and the turn answers you on Ollama on the direct
 router with tools; then it checks, in order, and stops at the first failure:
 
 1. What you said is not a bare "stop": case, punctuation and spacing aside,
-   and with an address to the persona taken off ("Stop.", "STOP!!", "Stop…",
-   "Robin, stop.", "hey Robin stop", "@robin stop"). For speech, what the
-   recognizer heard counts as well as what a transcript correction made of it.
+   with an address the persona roster recognized taken off, by name, short
+   name, alias or `@id`, greeting included ("Stop.", "STOP!!", "Stop…",
+   "Robin, stop.", "Hello Robin, stop.", "@robin stop"), or with the persona's
+   name after it ("Stop, Robin."). For speech, what the recognizer heard
+   counts as well as what any transcript correction made of it.
    A bare stop silences speech and never changes a job, whatever the model
    called: nothing is spoken, and the chat shows `A bare "stop" only silences
    speech; say "cancel" to end a job.` "Stop the download" is not a bare stop.
@@ -546,6 +548,16 @@ first:
 | none of its listed jobs running, one of its own running elsewhere | `I can't tell which job you mean from my list.` |
 | none of its jobs running | `I have no job running.` |
 | incomplete or malformed call, or a steer without an instruction | `I couldn't do that.` |
+
+A worker is never offered the tool; one that calls `job_control` anyway gets
+the ordinary unknown-tool result and its other calls run as usual.
+
+Known limits: when the failed-route repair stops speech partway through what
+the persona said before a control, Obey Voice speaks the whole of it again
+before its own line, including any part already heard. With the option off, a
+stray `job_control` call in a part of a response that a text filter or the
+reply's length limit drops is never seen, and that turn goes on exactly as it
+did before job control existed.
 
 The report line says the persona asked, since a persona may ask for a report
 you did not. A cancel's host note is saved as for a spoken "cancel". The
