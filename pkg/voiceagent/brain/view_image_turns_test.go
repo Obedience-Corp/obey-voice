@@ -14,6 +14,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/ollama/ollama/api"
 )
 
@@ -158,9 +159,9 @@ func TestViewImageOfAPictureAlreadyPosted(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := requestState(o)
-	result, _ := o.viewImage(t.Context(), "again.png")
+	result, _, end := o.viewImage(t.Context(), "again.png")
 	w := lastUserTurn(o.working)
-	if !strings.Contains(result, "already attached") || !strings.Contains(result, postedByYou) || len(o.working[w].OpenedImages) != 0 {
+	if !strings.Contains(result, "already attached") || !strings.Contains(result, postedByYou) || len(o.working[w].OpenedImages) != 0 || end.status != events.ToolOutcomeSucceeded {
 		t.Fatalf("result %q, opened %d", result, len(o.working[w].OpenedImages))
 	}
 	if after := requestState(o); !slices.Equal(after, before) {
@@ -177,8 +178,8 @@ func TestViewImageWhenTheViewsDisagree(t *testing.T) {
 	o.appendMessage(api.Message{Role: "user", Content: "Look at shot.png."}, nil)
 	o.history = append([]api.Message{{Role: "user", Content: "Earlier."}}, o.history...)
 	before := historyState(o)
-	result, _ := o.viewImage(t.Context(), "shot.png")
-	if !strings.Contains(result, "could not be attached") || strings.Contains(result, "no user message") {
+	result, _, end := o.viewImage(t.Context(), "shot.png")
+	if !strings.Contains(result, "could not be attached") || strings.Contains(result, "no user message") || end.status != events.ToolOutcomeFailed {
 		t.Fatalf("result %q", result)
 	}
 	if after := historyState(o); len(after) != len(before) || after[0] != before[0] || after[1] != before[1] || len(o.working[0].OpenedImages) != 0 {
@@ -201,7 +202,7 @@ func TestViewImageAfterAFailedCapabilityCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake.showFails.Store(false)
-	result, _ := o.viewImage(t.Context(), "shot.png")
+	result, _, _ := o.viewImage(t.Context(), "shot.png")
 	m := messageWith(t, built(o), "Look at shot.png.")
 	if !strings.Contains(result, "is now attached") || len(m.Images) != 2 || !strings.Contains(m.Content, pictureLine(chart, attached, postedByYou)) {
 		t.Fatalf("result %q; the message carries %d images: %q", result, len(m.Images), m.Content)

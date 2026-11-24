@@ -55,7 +55,7 @@ type toolSession struct {
 	boundary Boundary
 	// viewImage runs view_image for the persona answering and reports
 	// whether the picture was recorded; nil where the tool is not offered.
-	viewImage func(context.Context, string) (string, bool)
+	viewImage func(context.Context, string) (string, bool, toolEnd)
 	// viewed is set once a view_image call of this turn recorded a picture.
 	viewed bool
 	// jobControl offers job_control. The stream loop handles the call; it
@@ -198,7 +198,9 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 		return s.executeDelegation(call)
 	}
 	if name == "read_skill" {
-		return s.executeReadSkill(call)
+		text, end := toolReadSkill(s.catalog, call.Function.Arguments.ToMap())
+		observed = end.outcome(call, text)
+		return text
 	}
 	if s.routerPolicy == RouterToolsRouteOnly && name != "route" {
 		observed = failedToolOutcome(started.Summary, fmt.Sprintf("tool %q is not available on the live router", name))
@@ -214,11 +216,14 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 			observed = failedToolOutcome(started.Summary, "view_image is not available in this turn")
 			return "error: view_image is not available in this turn"
 		}
-		result, recorded := s.viewImage(ctx, toolCallArg(call, "path"))
+		text, recorded, end := s.viewImage(ctx, toolCallArg(call, "path"))
 		s.viewed = s.viewed || recorded
-		return result
+		observed = end.outcome(call, text)
+		return text
 	case "read_file":
-		return toolReadFileFor(workDir, call.Function.Arguments.ToMap(), s.viewImage != nil)
+		text, end := toolReadFileFor(workDir, call.Function.Arguments.ToMap(), s.viewImage != nil)
+		observed = end.outcome(call, text)
+		return text
 	}
 	if s.imageDelivery && name == "write_file" {
 		if err := checkImageWrite(call); err != nil {
@@ -304,26 +309,40 @@ func failedToolOutcome(input, reason string) *events.ToolOutcome {
 	return &events.ToolOutcome{Status: events.ToolOutcomeFailed, InputSummary: redactToolText(input, 80), Reason: reason}
 }
 
-func (s *toolSession) executeReadSkill(call api.ToolCall) string {
-	args := call.Function.Arguments.ToMap()
-	name, _ := args["name"].(string)
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "error: name is required"
+// toolEnd is what a tool the host runs itself observed, apart from the text
+// the model reads.
+type toolEnd struct {
+	status     events.ToolOutcomeStatus
+	reason     string
+	httpStatus int
+}
+
+func toolSucceeded() toolEnd { return toolEnd{status: events.ToolOutcomeSucceeded} }
+
+func toolFailed(reason string) toolEnd {
+	return toolEnd{status: events.ToolOutcomeFailed, reason: reason}
+}
+
+// failWith is the model-facing "error: reason" text and its failed end.
+func failWith(reason string) (string, toolEnd) { return "error: " + reason, toolFailed(reason) }
+
+// outcome is call's terminal outcome: result's preview, and a one-line reason
+// so the hooks' "error: reason" is the leading error line of the text.
+func (e toolEnd) outcome(call api.ToolCall, result string) *events.ToolOutcome {
+	reason := strings.TrimSpace(e.reason)
+	if i := strings.IndexByte(reason, '\n'); i >= 0 {
+		reason = strings.TrimSpace(reason[:i])
 	}
-	for i := range s.catalog {
-		sk := &s.catalog[i]
-		if sk.Name != name {
-			continue
-		}
-		body := sk.Body
-		if len(body) > skillBodyMaxBytes {
-			body = body[:skillBodyMaxBytes] + "\n... (truncated)"
-		}
-		msg := fmt.Sprintf("Skill %q (directory: %s)\n\n%s", sk.Name, sk.Dir, body)
-		return msg
+	out := &events.ToolOutcome{
+		Status:        e.status,
+		Reason:        reason,
+		InputSummary:  redactToolText(toolArgSummary(call), 80),
+		OutputPreview: toolResultPreview(result),
 	}
-	return fmt.Sprintf("error: unknown skill %q", name)
+	if e.httpStatus != 0 {
+		out.HTTPStatus = intPtr(e.httpStatus)
+	}
+	return out
 }
 
 // orderedProps builds a tool schema whose properties always serialize in the
@@ -546,22 +565,23 @@ func executeToolWithTimeout(ctx context.Context, workDir string, call api.ToolCa
 func executeToolWithOutcome(ctx context.Context, workDir string, call api.ToolCall, catalog []skills.Skill, commandTimeout time.Duration) (string, *events.ToolOutcome) {
 	args := call.Function.Arguments.ToMap()
 
+	var result string
+	var end toolEnd
 	switch call.Function.Name {
 	case "list_files":
-		return toolListFiles(workDir, args), nil
+		result, end = toolListFiles(workDir, args)
 	case "read_file":
-		return toolReadFile(workDir, args), nil
+		result, end = toolReadFile(workDir, args)
 	case "write_file":
-		return toolWriteFile(workDir, args), nil
+		result, end = toolWriteFile(workDir, args)
 	case "run_command":
 		return toolRunCommandWithTimeoutOutcome(ctx, workDir, args, commandTimeout)
 	case "web_search":
-		return toolWebSearch(ctx, args), nil
+		result, end = toolWebSearch(ctx, args)
 	case "fetch_url":
-		return toolFetchURL(ctx, args), nil
+		result, end = toolFetchURL(ctx, args)
 	case "read_skill":
-		// Without a session, activation is not tracked (tests / legacy).
-		return toolReadSkill(catalog, args), nil
+		result, end = toolReadSkill(catalog, args)
 	case "route":
 		result := toolRoute(args)
 		return result, &events.ToolOutcome{
@@ -572,15 +592,15 @@ func executeToolWithOutcome(ctx context.Context, workDir string, call api.ToolCa
 	default:
 		return fmt.Sprintf("unknown tool: %s", call.Function.Name), nil
 	}
+	return result, end.outcome(call, result)
 }
 
 // toolReadSkill returns the capped skill body and skill directory for scripts.
-// Does not track activation; use toolSession.execute for allow-list lifecycle.
-func toolReadSkill(catalog []skills.Skill, args map[string]any) string {
+func toolReadSkill(catalog []skills.Skill, args map[string]any) (string, toolEnd) {
 	name, _ := args["name"].(string)
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "error: name is required"
+		return failWith("name is required")
 	}
 	for _, s := range catalog {
 		if s.Name != name {
@@ -590,9 +610,9 @@ func toolReadSkill(catalog []skills.Skill, args map[string]any) string {
 		if len(body) > skillBodyMaxBytes {
 			body = body[:skillBodyMaxBytes] + "\n... (truncated)"
 		}
-		return fmt.Sprintf("Skill %q (directory: %s)\n\n%s", s.Name, s.Dir, body)
+		return fmt.Sprintf("Skill %q (directory: %s)\n\n%s", s.Name, s.Dir, body), toolSucceeded()
 	}
-	return fmt.Sprintf("error: unknown skill %q", name)
+	return failWith(fmt.Sprintf("unknown skill %q", name))
 }
 
 func toolRoute(args map[string]any) string {
@@ -612,7 +632,7 @@ func resolvePath(workDir, path string) string {
 	return filepath.Join(workDir, path)
 }
 
-func toolListFiles(workDir string, args map[string]any) string {
+func toolListFiles(workDir string, args map[string]any) (string, toolEnd) {
 	path, _ := args["path"].(string)
 	if path == "" {
 		path = "."
@@ -621,7 +641,7 @@ func toolListFiles(workDir string, args map[string]any) string {
 
 	entries, err := os.ReadDir(resolved)
 	if err != nil {
-		return fmt.Sprintf("error: %v", err)
+		return failWith(err.Error())
 	}
 
 	var names []string
@@ -632,36 +652,36 @@ func toolListFiles(workDir string, args map[string]any) string {
 		}
 		names = append(names, name)
 	}
-	return strings.Join(names, "\n")
+	return strings.Join(names, "\n"), toolSucceeded()
 }
 
-func toolReadFile(workDir string, args map[string]any) string {
+func toolReadFile(workDir string, args map[string]any) (string, toolEnd) {
 	return toolReadFileFor(workDir, args, false)
 }
 
 // toolReadFileFor reads a text file. An image file is described, not
 // returned; viewable says whether view_image can show it instead.
-func toolReadFileFor(workDir string, args map[string]any, viewable bool) string {
+func toolReadFileFor(workDir string, args map[string]any, viewable bool) (string, toolEnd) {
 	path, _ := args["path"].(string)
 	if path == "" {
-		return "error: path is required"
+		return failWith("path is required")
 	}
 	resolved := resolvePath(workDir, path)
 
 	data, err := os.ReadFile(resolved)
 	if err != nil {
-		return fmt.Sprintf("error: %v", err)
+		return failWith(err.Error())
 	}
 	if note := imageFileNote(path, data, viewable); note != "" {
-		return note
+		return note, toolSucceeded()
 	}
 
 	// Limit output to prevent context overflow.
 	const maxBytes = 32 * 1024
 	if len(data) > maxBytes {
-		return string(data[:maxBytes]) + "\n... (truncated)"
+		return string(data[:maxBytes]) + "\n... (truncated)", toolSucceeded()
 	}
-	return string(data)
+	return string(data), toolSucceeded()
 }
 
 // Keep a text placeholder from overwriting a picture on an image-delivery
@@ -677,23 +697,24 @@ func checkImageWrite(call api.ToolCall) error {
 	return nil
 }
 
-func toolWriteFile(workDir string, args map[string]any) string {
+func toolWriteFile(workDir string, args map[string]any) (string, toolEnd) {
 	path, _ := args["path"].(string)
 	content, _ := args["content"].(string)
 	if path == "" {
-		return "error: path is required"
+		return failWith("path is required")
 	}
 	resolved := resolvePath(workDir, path)
 
 	dir := filepath.Dir(resolved)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Sprintf("error creating directory: %v", err)
+		reason := fmt.Sprintf("creating directory: %v", err)
+		return "error " + reason, toolFailed(reason)
 	}
 
 	if err := os.WriteFile(resolved, []byte(content), 0o644); err != nil {
-		return fmt.Sprintf("error: %v", err)
+		return failWith(err.Error())
 	}
-	return fmt.Sprintf("wrote %d bytes to %s", len(content), path)
+	return fmt.Sprintf("wrote %d bytes to %s", len(content), path), toolSucceeded()
 }
 
 // clampCommandTimeout caps one run_command at 120s. Zero/negative fall back to

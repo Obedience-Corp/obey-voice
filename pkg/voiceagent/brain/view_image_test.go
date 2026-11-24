@@ -208,7 +208,7 @@ func TestViewImageOnANativeAudioPersona(t *testing.T) {
 	writePNG(t, filepath.Join(o.workDir, "shot.png"))
 	o.SetAudioResolver(noRecordings{})
 	o.appendMessage(api.Message{Role: "user", Content: "Look at shot.png."}, nil)
-	if result, _ := o.viewImage(t.Context(), "shot.png"); result != cannotViewImages {
+	if result, _, _ := o.viewImage(t.Context(), "shot.png"); result != cannotViewImages {
 		t.Fatalf("tool result = %q", result)
 	}
 	if len(o.canonical[0].OpenedImages) != 0 {
@@ -259,7 +259,7 @@ func TestReadFileOnAnImageSaysItIsAnImage(t *testing.T) {
 		t.Fatalf("read_file returned %q", result)
 	}
 	// Where view_image is not offered, read_file names only what the file is.
-	plain := toolReadFile(o.workDir, map[string]any{"path": "shot.png"})
+	plain, _ := toolReadFile(o.workDir, map[string]any{"path": "shot.png"})
 	if strings.Contains(plain, "view_image") || !strings.Contains(plain, "image file (image/png, ") || !strings.Contains(plain, " "+strconv.Itoa(len(data))+" bytes") {
 		t.Fatalf("read_file without view_image returned %q", plain)
 	}
@@ -335,7 +335,7 @@ func TestViewImageThatIsNotCarriedIsNotRecorded(t *testing.T) {
 	if len(o.History()[0].OpenedImages) != 0 {
 		t.Fatal("a picture that was not attached is recorded as opened")
 	}
-	if again, _ := o.viewImage(t.Context(), "shot.png"); strings.Contains(again, "already attached") {
+	if again, _, _ := o.viewImage(t.Context(), "shot.png"); strings.Contains(again, "already attached") {
 		t.Fatalf("a second try reads %q", again)
 	}
 	o.maxImageBytes = 0

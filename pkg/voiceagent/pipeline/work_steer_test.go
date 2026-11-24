@@ -67,6 +67,10 @@ type steerSetup struct {
 	// workerProvider, when set, is the configured legacy worker provider,
 	// which a tiered or own job does not run on.
 	workerProvider string
+	// jobs, when set, is the context the job table runs its jobs under.
+	jobs context.Context
+	// skillsDir, when set, turns skills on and loads them from there.
+	skillsDir string
 }
 
 func newSteerJobHarness(t *testing.T, reply func(n int, req api.ChatRequest) (api.ChatResponse, int)) *steerJobHarness {
@@ -129,6 +133,9 @@ func newSteerJobHarnessWith(t *testing.T, setup steerSetup, reply func(n int, re
 	if setup.workerProvider != "" {
 		cfg.VoiceWorkerProvider = setup.workerProvider
 	}
+	if setup.skillsDir != "" {
+		cfg.SkillsEnabled, cfg.SkillsDir = true, setup.skillsDir
+	}
 	if setup.tieredRequests > 0 {
 		w := config.DefaultVoiceWorkers()
 		w.Mode, w.Revision = config.WorkerModeTiered, 1
@@ -156,7 +163,11 @@ func newSteerJobHarnessWith(t *testing.T, setup steerSetup, reply func(n int, re
 	if setup.budget > 0 {
 		tableOpts = append(tableOpts, job.WithBudget(setup.budget))
 	}
-	h.table = job.NewTable(context.Background(), tableOpts...)
+	lifetime := setup.jobs
+	if lifetime == nil {
+		lifetime = context.Background()
+	}
+	h.table = job.NewTable(lifetime, tableOpts...)
 	t.Cleanup(h.table.Close)
 	h.a = NewAgency(h.p, h.table, worker, cfg, nil)
 	h.a.planFactory = func(context.Context, *config.Config, *config.WorkerPlan) (brain.Provider, error) { return worker, nil }

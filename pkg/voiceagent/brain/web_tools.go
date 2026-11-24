@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,9 @@ import (
 	"time"
 
 	"golang.org/x/net/html"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/internal/searchendpoint"
 )
 
 const (
@@ -41,44 +45,66 @@ func webHTTPClient() *http.Client {
 	}
 }
 
-func toolWebSearch(ctx context.Context, args map[string]any) string {
-	return toolWebSearchWithClient(ctx, args, webHTTPClient(), duckDuckGoHTMLURL)
+func toolWebSearch(ctx context.Context, args map[string]any) (string, toolEnd) {
+	endpoint := searchendpoint.From(ctx)
+	if endpoint == "" {
+		endpoint = duckDuckGoHTMLURL
+	}
+	return toolWebSearchWithClient(ctx, args, webHTTPClient(), endpoint)
 }
 
-func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *http.Client, endpoint string) string {
+// webFailed is the "error <reason>" text a web tool returns, and its end:
+// cancelled when the call's context was, failed otherwise. status is the HTTP
+// status received, zero when there was no response.
+func webFailed(ctx context.Context, reason string, status int) (string, toolEnd) {
+	end := toolFailed(reason)
+	if errors.Is(ctx.Err(), context.Canceled) {
+		end.status = events.ToolOutcomeCanceled
+	}
+	end.httpStatus = status
+	return "error " + reason, end
+}
+
+func webSucceeded(status int) toolEnd {
+	end := toolSucceeded()
+	end.httpStatus = status
+	return end
+}
+
+func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *http.Client, endpoint string) (string, toolEnd) {
 	query, _ := args["query"].(string)
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return "error: query is required"
+		return failWith("query is required")
 	}
 
 	form := url.Values{"q": {query}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return fmt.Sprintf("error creating web search request: %v", err)
+		return webFailed(ctx, fmt.Sprintf("creating web search request: %v", err), 0)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ObeyVoice/1.0; +https://github.com/Obedience-Corp/obey-voice)")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Sprintf("error searching web: %v", err)
+		return webFailed(ctx, fmt.Sprintf("searching web: %v", err), 0)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("error searching web: HTTP %d", resp.StatusCode)
+		return webFailed(ctx, fmt.Sprintf("searching web: HTTP %d", resp.StatusCode), resp.StatusCode)
 	}
 
 	doc, err := html.Parse(io.LimitReader(resp.Body, maxWebBodyBytes))
 	if err != nil {
-		return fmt.Sprintf("error parsing web search results: %v", err)
+		return webFailed(ctx, fmt.Sprintf("parsing web search results: %v", err), resp.StatusCode)
 	}
 	results := parseDuckDuckGoResults(doc, 5)
 	if len(results) == 0 {
-		return fmt.Sprintf(`{"query":%s,"results":[],"message":"No search results found."}`, strconv.Quote(query))
+		return fmt.Sprintf(`{"query":%s,"results":[],"message":"No search results found."}`, strconv.Quote(query)), webSucceeded(resp.StatusCode)
 	}
 	out, _ := json.Marshal(map[string]any{"query": query, "results": results})
-	return string(out)
+	return string(out), webSucceeded(resp.StatusCode)
 }
 
 func parseDuckDuckGoResults(doc *html.Node, limit int) []webSearchResult {
@@ -108,35 +134,35 @@ func parseDuckDuckGoResults(doc *html.Node, limit int) []webSearchResult {
 	return results
 }
 
-func toolFetchURL(ctx context.Context, args map[string]any) string {
+func toolFetchURL(ctx context.Context, args map[string]any) (string, toolEnd) {
 	return toolFetchURLWithClient(ctx, args, webHTTPClient())
 }
 
-func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *http.Client) string {
+func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *http.Client) (string, toolEnd) {
 	rawURL, _ := args["url"].(string)
 	rawURL = strings.TrimSpace(rawURL)
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return "error: url must be an absolute HTTP or HTTPS URL"
+		return failWith("url must be an absolute HTTP or HTTPS URL")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return fmt.Sprintf("error creating fetch request: %v", err)
+		return webFailed(ctx, fmt.Sprintf("creating fetch request: %v", err), 0)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ObeyVoice/1.0; +https://github.com/Obedience-Corp/obey-voice)")
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Sprintf("error fetching URL: %v", err)
+		return webFailed(ctx, fmt.Sprintf("fetching URL: %v", err), 0)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("error fetching URL: HTTP %d", resp.StatusCode)
+		return webFailed(ctx, fmt.Sprintf("fetching URL: HTTP %d", resp.StatusCode), resp.StatusCode)
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWebBodyBytes))
 	if err != nil {
-		return fmt.Sprintf("error reading URL: %v", err)
+		return webFailed(ctx, fmt.Sprintf("reading URL: %v", err), resp.StatusCode)
 	}
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	content := string(data)
@@ -144,7 +170,7 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 	if strings.Contains(contentType, "html") || strings.Contains(strings.ToLower(content), "<html") {
 		doc, parseErr := html.Parse(strings.NewReader(content))
 		if parseErr != nil {
-			return fmt.Sprintf("error parsing fetched page: %v", parseErr)
+			return webFailed(ctx, fmt.Sprintf("parsing fetched page: %v", parseErr), resp.StatusCode)
 		}
 		title = nodeText(findElement(doc, "title"))
 		content = readableText(doc)
@@ -156,7 +182,7 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 		"title":   title,
 		"content": content,
 	})
-	return string(out)
+	return string(out), webSucceeded(resp.StatusCode)
 }
 
 func hasClass(n *html.Node, class string) bool {
