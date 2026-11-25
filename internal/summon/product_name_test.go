@@ -37,6 +37,10 @@ func TestNamedOnlyInProductName(t *testing.T) {
 		{text: "Wren, Obey Voice is slow", id: "wren", want: false},
 		{text: "Is ObeyVoice running?", id: "obey", want: true},
 		{text: "Obey Voices are many", id: "obey", want: false},
+		{text: "Obey—voice is slow", id: "obey", want: true},
+		{text: "Obey - Voice is slow", id: "obey", want: true},
+		{text: "Obey -voice is slow", id: "obey", want: true},
+		{text: "Obey; voice is slow", id: "obey", want: false},
 	} {
 		if got := r.NamedOnlyInProductName(tc.text, tc.id); got != tc.want {
 			t.Errorf("NamedOnlyInProductName(%q, %q) = %v, want %v", tc.text, tc.id, got, tc.want)
@@ -57,9 +61,34 @@ func TestPersonaNamedAfterTheProductIsStillAddressed(t *testing.T) {
 	}
 }
 
+func TestNamesThatGoPastTheProductNameAreStillNames(t *testing.T) {
+	r := productRoster(t,
+		Identity{ID: "assistant", DisplayName: "Obey Voice Assistant", Aliases: []string{"obey voice bot"}},
+		Identity{ID: "wren", DisplayName: "Wren"},
+	)
+	for _, tc := range []struct {
+		text string
+		want bool
+	}{
+		{text: "what do you think, Obey Voice Assistant?", want: false},
+		{text: "Obey Voice Assistant what do you think", want: false},
+		{text: "Obey-Voice bot, hi", want: false},
+		{text: "ObeyVoice Assistant, hi", want: false},
+		{text: "Wren, Obey Voice is slow today", want: true},
+	} {
+		if got := r.NamedOnlyInProductName(tc.text, "assistant"); got != tc.want {
+			t.Errorf("NamedOnlyInProductName(%q) = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+	got, err := r.Resolve("Obey Voice Assistant, hi")
+	if err != nil || got.PersonaID != "assistant" {
+		t.Fatalf("Resolve = %#v, %v", got, err)
+	}
+}
+
 func TestGrammarDoesNotReadTheProductNameAsAName(t *testing.T) {
 	r := productRoster(t, Identity{ID: "obey", DisplayName: "Obey"}, Identity{ID: "wren", DisplayName: "Wren"})
-	for _, text := range []string{"Obey-voice, what time is it?", "Obey-voice.", "Hey obey-voice, hi", "Obey Voice, what time is it?", "Hey Obey voice"} {
+	for _, text := range []string{"Obey-voice, what time is it?", "Obey-voice.", "Obey—voice, hi", "Obey - Voice is slow", "Obey – voice, hi", "Hey obey-voice, hi", "Obey Voice, what time is it?", "Hey Obey voice"} {
 		got, err := r.Resolve(text)
 		if err != nil || got.PersonaID != "" {
 			t.Errorf("Resolve(%q) = %#v, %v", text, got, err)
@@ -70,6 +99,7 @@ func TestGrammarDoesNotReadTheProductNameAsAName(t *testing.T) {
 	}
 	for text, want := range map[string]string{
 		"Obey, voice memo please": ReasonVocative,
+		"Obey; voice memo please": ReasonVocative,
 		"Obey, what time is it?":  ReasonVocative,
 		"Obey what do you think":  ReasonImperative,
 		"Hey Obey":                ReasonBareName,

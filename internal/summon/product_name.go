@@ -2,7 +2,6 @@ package summon
 
 import (
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -11,13 +10,14 @@ import (
 const ProductName = "Obey Voice"
 
 // productNamePattern also accepts the transcriber spellings "Obey-Voice",
-// "Obey_Voice" and "ObeyVoice". A comma or period never joins the words.
+// "Obey - Voice", "Obey—Voice", "Obey_Voice" and "ObeyVoice". A comma or
+// period never joins the words.
 var productNamePattern = func() *regexp.Regexp {
 	words := strings.Fields(ProductName)
 	for i, word := range words {
 		words[i] = regexp.QuoteMeta(word)
 	}
-	return regexp.MustCompile(`(?i)\b` + strings.Join(words, `(?:\s+|[-_‐‑–]?)`) + `\b`)
+	return regexp.MustCompile(`(?i)\b` + strings.Join(words, `(?:\s*[-_‐‑–—]\s*|\s*)`) + `\b`)
 }()
 
 // productNameCovers reports whether text opens with the product name and the
@@ -28,8 +28,8 @@ func productNameCovers(text string, consumed int) bool {
 }
 
 // NamedOnlyInProductName reports whether the persona's names occur in text
-// only inside the product name. A persona whose whole name is the product name
-// is still named by it.
+// only inside the product name. A name that contains the product name, such
+// as one that is the product name or goes on past it, is still its own name.
 func (r *Roster) NamedOnlyInProductName(text, personaID string) bool {
 	if r == nil {
 		return false
@@ -52,13 +52,20 @@ func (r *Roster) NamedOnlyInProductName(text, personaID string) bool {
 		}
 		return false
 	}
-	if !mentioned(productNamePattern.ReplaceAllLiteralString(text, ProductName)) {
+	canonical := productNamePattern.ReplaceAllLiteralString(text, ProductName)
+	if !mentioned(canonical) {
 		return false
+	}
+	product, haystack := mentionWords(ProductName), mentionWords(canonical)
+	for _, name := range names {
+		if strings.Contains(name, product) && strings.Contains(haystack, name) {
+			return false
+		}
 	}
 	for _, segment := range productNamePattern.Split(text, -1) {
 		if mentioned(segment) {
 			return false
 		}
 	}
-	return !slices.Contains(names, mentionWords(ProductName))
+	return true
 }
