@@ -18,14 +18,17 @@ func (r *Roster) Lookup(name string) (Address, error) {
 // Mentions is only a cheap candidate check, never an addressing decision.
 // Every name position and punctuation style reaches semantic classification.
 func (r *Roster) Mentions(text string) bool {
-	words := func(s string) string {
-		return " " + strings.Join(strings.FieldsFunc(strings.ToLower(s), func(c rune) bool { return !unicode.IsLetter(c) && !unicode.IsDigit(c) }), " ") + " "
-	}
-	haystack := words(text)
+	haystack := mentionWords(text)
 	for _, name := range r.names {
-		if strings.Contains(haystack, words(name.value)) {
+		if strings.Contains(haystack, mentionWords(name.value)) {
 			return true
 		}
 	}
 	return false
+}
+
+// mentionWords is text as space-delimited lowercase words, so a name compares
+// whole words regardless of punctuation.
+func mentionWords(s string) string {
+	return " " + strings.Join(strings.FieldsFunc(strings.ToLower(s), func(c rune) bool { return !unicode.IsLetter(c) && !unicode.IsDigit(c) }), " ") + " "
 }
