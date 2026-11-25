@@ -176,19 +176,14 @@ func TestSpawnRouteForAnInlinePersonaStartsNoJob(t *testing.T) {
 
 	select {
 	case r := <-h.routes:
-		if r.State != "rejected" || !strings.Contains(r.Message, "Lumen does its work in the conversation") {
+		if r.State != "rejected" || r.ReasonCode != events.RouteReasonInlineWork || !strings.Contains(r.Message, "Lumen does its work in the conversation, so it hands none to background jobs") {
 			t.Fatalf("route = %+v", r)
+		}
+		if label := events.RejectedRouteLabel(r); label != "No job started" {
+			t.Fatalf("shown as %q", label)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("no route decision")
-	}
-	select {
-	case msg := <-h.info:
-		if !strings.Contains(msg, "starts no background jobs") {
-			t.Fatalf("info = %q", msg)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("the refusal was not shown")
 	}
 	if len(spoken) != 1 || spoken[0] != inlineSpawnLine {
 		t.Fatalf("spoken = %q", spoken)
@@ -196,20 +191,70 @@ func TestSpawnRouteForAnInlinePersonaStartsNoJob(t *testing.T) {
 	if n := len(h.jobs.Status()); n != 0 || h.configured.calls() != 0 || len(h.builtConfigs()) != 0 {
 		t.Fatalf("a job ran: jobs %d, worker %d, own %d", n, h.configured.calls(), len(h.builtConfigs()))
 	}
-	if _, err := h.a.admitSpawn(t.Context(), "", h.a.workerSource()); err == nil || !strings.Contains(err.Error(), "starts no background jobs") {
+	if _, err := h.a.admitSpawn(t.Context(), "", h.a.workerSource()); err == nil || !strings.Contains(err.Error(), "hands none to background jobs") {
 		t.Fatalf("admitSpawn = %v", err)
 	}
 }
 
 // The story writer is a job too: a narrate route for a long story from an
-// inline persona is answered the same way and starts nothing.
+// inline persona is answered the same way, as one route decision, and starts
+// nothing; the work inbox's own story refusal does not take its place.
 func TestLongStoryRouteForAnInlinePersonaStartsNoJob(t *testing.T) {
-	h := newOwnHarness(t, workPersona(config.WorkInline, true), nil)
-	metrics := newTurnMetrics()
-	spoken := []string{}
-	metrics.routedSpeech = &spoken
-	h.a.HandleRoute(t.Context(), h.p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "Tell me a long story.", Source: "test"})
-	if len(spoken) != 1 || spoken[0] != inlineSpawnLine || len(h.jobs.Status()) != 0 {
-		t.Fatalf("spoken %q, jobs %+v", spoken, h.jobs.Status())
+	for _, inbox := range []bool{false, true} {
+		h := newOwnHarness(t, workPersona(config.WorkInline, true), nil)
+		if inbox {
+			if err := h.a.EnableConversationWork("inline-chat", nil, workPersona(config.WorkInline, true), nil); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = h.a.CloseWork() })
+		}
+		metrics := newTurnMetrics()
+		spoken := []string{}
+		metrics.routedSpeech = &spoken
+		routed := 0
+		h.p.OnRoute = func(RouteDecision) { routed++ }
+		h.a.HandleRoute(t.Context(), h.p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "Tell me a long story.", Source: "test"})
+		var decisions []events.RouteDecided
+		for len(h.routes) > 0 {
+			decisions = append(decisions, <-h.routes)
+		}
+		if len(decisions) != 1 || decisions[0].State != "rejected" || decisions[0].ReasonCode != events.RouteReasonInlineWork || routed != 1 {
+			t.Fatalf("inbox %v: decisions %+v, OnRoute %d", inbox, decisions, routed)
+		}
+		if len(h.errs) != 0 {
+			t.Fatalf("inbox %v: error %q", inbox, <-h.errs)
+		}
+		if len(spoken) != 1 || spoken[0] != inlineSpawnLine || len(h.jobs.Status()) != 0 {
+			t.Fatalf("inbox %v: spoken %q, jobs %+v", inbox, spoken, h.jobs.Status())
+		}
+	}
+}
+
+// Under tiered mode's strict policy an inline persona is refused, as its own
+// work would be: its turns go through the worker tiers, and it is told once.
+func TestStrictTieredPolicyRefusesInlineWork(t *testing.T) {
+	cfg := strictPolicy(tieredPersona("ollama", config.WorkInline, true))
+	w := newWorkPipeline(t, cfg, "Sure.")
+	var notices []string
+	events.Subscribe(w.p.Events, func(e events.Info) { notices = append(notices, e.Message) })
+	for range 2 {
+		if err := w.p.RunTurnTextMode(t.Context(), "Look into the build failure."); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if w.p.worksInline() || w.b.opts[0].RouterToolsPolicy != brain.RouterToolsRouteOnly || !w.p.routeContext().TieredWorkers {
+		t.Fatalf("strict tiered inline persona: inline %v, policy %q", w.p.worksInline(), w.b.opts[0].RouterToolsPolicy)
+	}
+	refused := 0
+	for _, n := range notices {
+		if strings.Contains(n, "Mira: inline work is refused under the strict worker policy") {
+			refused++
+		}
+	}
+	if refused != 1 {
+		t.Fatalf("notices = %q", notices)
+	}
+	if w := newWorkPipeline(t, tieredPersona("ollama", config.WorkInline, true), "Sure."); !w.p.worksInline() {
+		t.Fatal("the advisory policy refused inline work")
 	}
 }

@@ -57,6 +57,17 @@ func TestInlineWorkIsChosenOnlyByThePersona(t *testing.T) {
 	if WorksInline(nil) {
 		t.Error("no persona works inline")
 	}
+	tiered := func(policy string) *Config {
+		w := DefaultVoiceWorkers()
+		w.Mode, w.Policy.ChargePolicy = WorkerModeTiered, policy
+		return &Config{BrainProvider: "claude", PersonaWork: WorkInline, VoiceWorkers: w}
+	}
+	if strict := tiered("strict"); WorksInline(strict) || WorkOf(strict) != WorkInline || InlineWorkRefused(strict) == nil {
+		t.Errorf("strict tiered: inline %v, refused %v", WorksInline(strict), InlineWorkRefused(strict))
+	}
+	if advisory := tiered("advisory"); !WorksInline(advisory) || InlineWorkRefused(advisory) != nil {
+		t.Errorf("advisory tiered: inline %v, refused %v", WorksInline(advisory), InlineWorkRefused(advisory))
+	}
 	if err := ValidateWork("conversation"); err == nil || !strings.Contains(err.Error(), "inline") {
 		t.Errorf("ValidateWork error does not name inline: %v", err)
 	}

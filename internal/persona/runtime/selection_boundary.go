@@ -361,7 +361,8 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				if workers := p.Agency.WorkerSettings(); workers != nil {
 					cfg.VoiceWorkers = workers
 				}
-				if cfg.VoiceWorkers == nil || cfg.VoiceWorkers.Mode != config.WorkerModeTiered {
+				// A persona that works inline hands no work to a worker.
+				if (cfg.VoiceWorkers == nil || cfg.VoiceWorkers.Mode != config.WorkerModeTiered) && !config.WorksInline(cfg) {
 					worker, workerErr = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewWorker(ctx, cfg) }, closeBrain)
 				}
 			}

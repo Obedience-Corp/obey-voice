@@ -59,9 +59,21 @@ func WorkOf(cfg *Config) string {
 }
 
 // WorksInline reports whether the bound persona does its work in the
-// conversation and starts no background jobs.
+// conversation and hands none to background jobs. A persona set to inline
+// that the installation policy refuses does not.
 func WorksInline(cfg *Config) bool {
-	return cfg != nil && WorkOf(cfg) == WorkInline
+	return cfg != nil && WorkOf(cfg) == WorkInline && InlineWorkRefused(cfg) == nil
+}
+
+// InlineWorkRefused is why the bound persona, set to inline, may not work
+// inline: tiered mode's strict policy holds tool work to a tier's limits and
+// allowlist, which a live turn's tools are not held to. Its work then goes to
+// the worker tiers. It is nil otherwise.
+func InlineWorkRefused(cfg *Config) error {
+	if cfg == nil || WorkOf(cfg) != WorkInline || !OwnWorkStrict(cfg) {
+		return nil
+	}
+	return fmt.Errorf("inline work is refused under the strict worker policy, which holds tool work to a tier's limits that a live turn is not held to, so the worker tiers do its work. Set its work to worker, or use the advisory policy")
 }
 
 // WorkReason says why WorkOf chose what it did, for doctor and the persona

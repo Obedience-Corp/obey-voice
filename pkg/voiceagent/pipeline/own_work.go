@@ -60,7 +60,7 @@ func (a *Agency) resolveWork() workDecision {
 
 // inlineRefusal is why a spawn from a persona that works inline starts no job.
 func (d workDecision) inlineRefusal() error {
-	return userSentence(fmt.Sprintf("%s does its work in the conversation, so it starts no background jobs. Ask again and it will answer here.", personaLabel(d.bound)))
+	return userSentence(fmt.Sprintf("%s does its work in the conversation, so it hands none to background jobs. Ask again and it will answer here.", personaLabel(d.bound)))
 }
 
 // worksInline reports whether the bound persona keeps its work in the
@@ -82,7 +82,29 @@ func (p *Pipeline) withTurnWork(ctx context.Context) context.Context {
 	if p.Agency == nil {
 		return ctx
 	}
+	p.Agency.noteInlineRefused()
 	return context.WithValue(ctx, turnWorkKey{}, p.Agency.resolveWork())
+}
+
+// noteInlineRefused tells the user, once per persona this session, that the
+// installation policy refuses the persona's inline work.
+func (a *Agency) noteInlineRefused() {
+	cfg := a.currentConfig()
+	refused := config.InlineWorkRefused(cfg)
+	if refused == nil {
+		return
+	}
+	key := personaKey(cfg.ActivePersona)
+	a.mu.Lock()
+	shown := a.inlineRefusedShown[key]
+	if a.inlineRefusedShown == nil {
+		a.inlineRefusedShown = map[string]bool{}
+	}
+	a.inlineRefusedShown[key] = true
+	a.mu.Unlock()
+	if !shown {
+		a.pipeline.emit(events.Info{Message: personaLabel(cfg) + ": " + refused.Error()})
+	}
 }
 
 // turnWork is the decision the turn carries, or a fresh one for a route that

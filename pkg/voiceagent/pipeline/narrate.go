@@ -154,10 +154,6 @@ func (n *Narrator) retryFlushPending() {
 
 func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
 	if wantsWrittenStory(d.Transcript, n.workDir()) {
-		if work := n.agency.turnWork(ctx); work.inline {
-			n.agency.refuseInlineSpawn(ctx, turn, metrics, d, work)
-			return
-		}
 		n.mu.Lock()
 		writing := n.storyJobID != ""
 		n.mu.Unlock()

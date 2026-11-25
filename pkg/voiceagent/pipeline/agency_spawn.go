@@ -155,15 +155,14 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 }
 
 // inlineSpawnLine is what a persona that works inline says instead of
-// starting a background job.
-const inlineSpawnLine = "I work right here in the conversation and don't start background jobs. Ask me again and I'll answer here."
+// handing work to a background job.
+const inlineSpawnLine = "I work right here in the conversation and don't hand work to background jobs. Ask me again and I'll answer here."
 
 // refuseInlineSpawn answers a spawn route from a persona that works inline:
 // no job starts, the reason is shown, and the persona says so.
 func (a *Agency) refuseInlineSpawn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision, work workDecision) {
-	refusal := work.inlineRefusal().Error()
-	a.emitRouteDecision(d, "rejected", "", refusal)
-	a.pipeline.emit(events.Info{Message: "no job started: " + refusal})
+	d.ReasonCode = events.RouteReasonInlineWork
+	a.emitRouteDecision(d, "rejected", "", work.inlineRefusal().Error())
 	if turn != nil && metrics != nil {
 		if err := a.pipeline.speakStandalone(ctx, turn, metrics, inlineSpawnLine); err != nil {
 			metrics.degraded = true

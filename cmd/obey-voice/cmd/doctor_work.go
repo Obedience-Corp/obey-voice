@@ -40,8 +40,14 @@ func workDiag(id string, cfg *config.Config) config.Diagnostic {
 		provider = "ollama"
 	}
 	switch {
-	case config.WorksInline(cfg):
-		d.Detail = "it does its work in the conversation and starts no background jobs; " + reason
+	case config.WorkOf(cfg) == config.WorkInline:
+		if refused := config.InlineWorkRefused(cfg); refused != nil {
+			d.Severity = config.SeverityWarn
+			d.Detail = workerDetail(cfg) + "; " + reason + ", but " + refused.Error()
+			d.Remediation = fmt.Sprintf("obey-voice persona edit %s --work worker, or use the advisory worker policy", id)
+			break
+		}
+		d.Detail = "it does its work in the conversation and hands none to background jobs; " + reason
 		if !cfg.VoiceToolsEnabled {
 			d.Detail += "; voice_tools_enabled is off, so it has no tools"
 		}

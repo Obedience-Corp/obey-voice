@@ -48,7 +48,7 @@ func TestDoctorSaysWhoDoesEachPersonasWork(t *testing.T) {
 		"work persona rex":   "[OK  ] work persona rex: the worker codex (gpt-5.5) does it; default: its brain.worker is set",
 		"work persona ada":   "[OK  ] work persona ada: the worker ollama (qwen3:8b) does it; brain.work is worker",
 		"work persona kai":   "[OK  ] work persona kai: its own ollama (persona:14b) does it; brain.work is own",
-		"work persona lumen": "[OK  ] work persona lumen: it does its work in the conversation and starts no background jobs; brain.work is inline",
+		"work persona lumen": "[OK  ] work persona lumen: it does its work in the conversation and hands none to background jobs; brain.work is inline",
 	} {
 		if got := doctorLine(t, out, name); got != want {
 			t.Errorf("%s:\n got %q\nwant %q", name, got, want)
@@ -72,6 +72,10 @@ func TestDoctorSaysWhoDoesEachPersonasWork(t *testing.T) {
 	}
 	if got := doctorLine(t, out, "work persona ember"); got != "[OK  ] work persona ember: the worker tiers do it; default on ollama" {
 		t.Errorf("tiered ember = %q", got)
+	}
+	if got := doctorLine(t, out, "work persona lumen"); !strings.HasPrefix(got, "[WARN] work persona lumen: the worker tiers do it; brain.work is inline, but inline work is refused under the strict worker policy") ||
+		!strings.Contains(out, "persona edit lumen --work worker") {
+		t.Errorf("strict lumen = %q", got)
 	}
 
 	tiered.Policy.ChargePolicy, tiered.Policy.DailyChargeMicroUSD = "advisory", nil
