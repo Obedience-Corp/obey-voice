@@ -31,6 +31,18 @@ go test ./...                  # Plain Go test fallback
 
 Integration tests expect `bin/linux/obey-voice` to exist. The build dashboard creates it for the integration workflow.
 
+A test binary never uses your real install. The config folder, personas,
+sessions and `~` paths resolve to a throwaway home under `obey-voice-test-homes`
+in the temp directory, so tests that call `config.Load()` get default settings
+plus environment overrides (`MODELS_DIR`, `OPENAI_SPEECH_URL`, ...). The model
+cache under `~/.cache/obey-voice` is still read. The live Kokoro and
+openai-speech comparison reads an install's settings only when you name it:
+
+```bash
+OBEY_VOICE_TEST_INSTALL="$HOME/.obey/agents/voice/obey-voice" \
+  go test -tags integration ./pkg/voiceagent/tts/openaispeech -run TestOpenAISpeechVsKokoroRealtime -v
+```
+
 Playback crackle (Studio Display mono-client class) is guarded by `pkg/voiceagent/audio`
 layout + crackle tests in normal `go test -race ./...`. After any change under
 `pkg/voiceagent/audio`, also run `just test audio-hardware` on an affected machine and
