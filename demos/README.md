@@ -311,6 +311,23 @@ on that CLI. Colors are forced in both VHS and the application process.
 
 ![Persona model manager](persona-model-view.gif)
 
+## persona-work-rows.gif — inline work and the Job control row
+
+```bash
+just demo-persona-work-rows
+```
+
+Edits a disposable persona in the real persona form. The **Work** row moves
+from `own` through `worker` to `inline`, with the help line saying what each
+does and the Worker row marked unused; the **Job control** row moves from
+`(default)` to `on`, with its help line. `ctrl+j` saves, and after the TUI
+exits the fixture prints the saved `work` and `job_control` lines from the
+persona's `persona.yaml`. The fixture runs the TUI with a fresh home and a
+`PATH` without provider CLIs, so no installed configuration, credentials,
+model or audio is used; its Ollama endpoint is deliberately unavailable.
+
+![Persona Work and Job control rows](persona-work-rows.gif)
+
 ## persona-switch.gif — main menu Personas list / switch / create
 
 Full Bubble Tea launcher flow for multi-persona voice agents:
