@@ -186,6 +186,9 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 			}
 			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
 		}
+		if roster.NamedOnlyInProductName(text, address.PersonaID) {
+			return summon.Address{Remainder: text}, nil
+		}
 		// Keep the user's words exactly, including the name at any position.
 		address.Remainder, address.Bare = text, chosen.Bare && account == "user"
 		return address, nil
