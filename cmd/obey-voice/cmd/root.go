@@ -643,9 +643,9 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 // wireCompact equips the pipeline for /compact: the summarize instruction,
 // resolved from bound() each time compaction runs so it names the persona
 // then bound, and a pre-compact session backup. A prompt-resolution failure
-// at startup disables /compact with a visible error instead of blocking
-// startup; a later one falls back to the last instruction that persona
-// resolved, never another persona's.
+// at startup is reported without blocking startup or turning compaction off;
+// each later compaction resolves again and reports its own failure, falling
+// back to the last instruction that persona resolved, never another persona's.
 func wireCompact(p *pipeline.Pipeline, cfg *config.Config, bound func() *config.Config, sess *session.Session, bus *events.Bus) {
 	var mu sync.Mutex
 	lastGood := map[string]string{}
@@ -665,8 +665,7 @@ func wireCompact(p *pipeline.Pipeline, cfg *config.Config, bound func() *config.
 		return prompt, nil
 	}
 	if _, err := resolve(); err != nil {
-		bus.Emit(events.Error{Stage: "compact", Message: fmt.Sprintf("compact prompt: %v (/compact disabled)", err)})
-		return
+		bus.Emit(events.Error{Stage: "compact", Message: fmt.Sprintf("compact prompt: %v (compaction will retry when it next runs)", err)})
 	}
 	p.ResolveCompactPrompt = resolve
 	if cfg != nil && cfg.MaxHistory > 0 {
