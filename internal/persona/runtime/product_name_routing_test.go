@@ -19,6 +19,7 @@ func TestProductNameIsNotASummons(t *testing.T) {
 		{input: "Hey Obey voice, what time is it?", want: "wren", asked: true},
 		{input: "Obey-voice, what time is it?", want: "wren", asked: true},
 		{input: "Is ObeyVoice running?", want: "wren"},
+		{input: "Is ObeyVoice running, Wren?", want: "wren", asked: true},
 		{input: "Obey what do you think", want: "obey", asked: true},
 		{input: "what do you think, Obey?", want: "obey", asked: true},
 		{input: "How do you like Obey Voice, Obey?", want: "obey", asked: true},

@@ -2,6 +2,7 @@ package summon
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -33,8 +34,7 @@ func (r *Roster) NamedOnlyInProductName(text, personaID string) bool {
 	if r == nil {
 		return false
 	}
-	spans := productNamePattern.FindAllString(text, -1)
-	if len(spans) == 0 {
+	if !productNamePattern.MatchString(text) {
 		return false
 	}
 	var names []string
@@ -52,7 +52,7 @@ func (r *Roster) NamedOnlyInProductName(text, personaID string) bool {
 		}
 		return false
 	}
-	if !mentioned(text) {
+	if !mentioned(productNamePattern.ReplaceAllLiteralString(text, ProductName)) {
 		return false
 	}
 	for _, segment := range productNamePattern.Split(text, -1) {
@@ -60,12 +60,5 @@ func (r *Roster) NamedOnlyInProductName(text, personaID string) bool {
 			return false
 		}
 	}
-	for _, span := range spans {
-		for _, name := range names {
-			if mentionWords(span) == name {
-				return false
-			}
-		}
-	}
-	return true
+	return !slices.Contains(names, mentionWords(ProductName))
 }

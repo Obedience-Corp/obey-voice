@@ -35,7 +35,7 @@ func TestNamedOnlyInProductName(t *testing.T) {
 		{text: "Obey. Voice notes are off", id: "obey", want: false},
 		{text: "Obey what do you think", id: "obey", want: false},
 		{text: "Wren, Obey Voice is slow", id: "wren", want: false},
-		{text: "Is ObeyVoice running?", id: "obey", want: false},
+		{text: "Is ObeyVoice running?", id: "obey", want: true},
 		{text: "Obey Voices are many", id: "obey", want: false},
 	} {
 		if got := r.NamedOnlyInProductName(tc.text, tc.id); got != tc.want {
