@@ -276,9 +276,13 @@ func TestCompactConversationGuards(t *testing.T) {
 		b := &compactBrain{history: compactHistory(), summary: "s"}
 		bus := events.NewBus()
 		var reported []string
+		started := false
 		bus.SubscribeAll(func(e events.Event) {
 			if failure, ok := e.(events.Error); ok && failure.Stage == "compact" {
 				reported = append(reported, failure.Message)
+			}
+			if info, ok := e.(events.Info); ok && info.Message == "compact: starting" {
+				started = true
 			}
 		})
 		p := &Pipeline{Brain: b, Events: bus, AutoCompactAfter: 2,
@@ -291,6 +295,9 @@ func TestCompactConversationGuards(t *testing.T) {
 		}
 		if len(reported) != 1 || !strings.Contains(reported[0], "document removed") {
 			t.Fatalf("compact errors = %q, want one visible notice", reported)
+		}
+		if started {
+			t.Fatal("an unresolved prompt announced a compaction it then skipped")
 		}
 		if len(b.thinkInputs) != 0 || len(b.loaded) != 0 {
 			t.Fatal("an unresolved prompt must not summarize or reseed")

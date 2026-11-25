@@ -85,6 +85,10 @@ func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnM
 	if !compact {
 		return nil
 	}
+	if _, err := p.compactPrompt(); err != nil {
+		p.skipUnresolvedCompact(err)
+		return nil
+	}
 	ctx, cancel := p.withBrainTimeout(ctx)
 	defer cancel()
 	p.emit(events.Info{Message: "compact: starting"})
@@ -106,16 +110,15 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 	if p.Brain == nil || !p.compactConfigured() {
 		return errors.New("compact prompt not configured")
 	}
-	prompt, err := p.compactPrompt()
-	if err != nil {
-		err = fmt.Errorf("compact prompt: %w", err)
-		if automatic {
-			p.emit(events.Error{Stage: "compact", Message: err.Error() + " (compaction skipped)"})
-			return nil
-		}
+	if err := p.awaitProvider(ctx); err != nil {
 		return err
 	}
-	if err := p.awaitProvider(ctx); err != nil {
+	prompt, err := p.compactPrompt()
+	if err != nil {
+		if automatic {
+			p.skipUnresolvedCompact(err)
+			return nil
+		}
 		return err
 	}
 	instruction := p.compactionInstruction(prompt)
@@ -268,5 +271,12 @@ func (p *Pipeline) compactPrompt() (string, error) {
 	if err == nil && strings.TrimSpace(prompt) == "" {
 		err = errors.New("resolved to empty text")
 	}
-	return prompt, err
+	if err != nil {
+		return "", fmt.Errorf("compact prompt: %w", err)
+	}
+	return prompt, nil
+}
+
+func (p *Pipeline) skipUnresolvedCompact(err error) {
+	p.emit(events.Error{Stage: "compact", Message: err.Error() + " (compaction skipped)"})
 }
