@@ -175,7 +175,7 @@ func (r *Roster) Resolve(text string) (Address, error) {
 		addressText = fillerRest
 	}
 	entry, remainder, ok := r.matchOpening(addressText)
-	if !ok {
+	if !ok || productNameCovers(addressText, len(addressText)-len(remainder)) {
 		return noAddress, nil
 	}
 
