@@ -163,7 +163,7 @@ const inlineSpawnLine = "I work right here in the conversation and don't start b
 func (a *Agency) refuseInlineSpawn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision, work workDecision) {
 	refusal := work.inlineRefusal().Error()
 	a.emitRouteDecision(d, "rejected", "", refusal)
-	a.pipeline.emit(events.Info{Message: "spawn declined: " + refusal})
+	a.pipeline.emit(events.Info{Message: "no job started: " + refusal})
 	if turn != nil && metrics != nil {
 		if err := a.pipeline.speakStandalone(ctx, turn, metrics, inlineSpawnLine); err != nil {
 			metrics.degraded = true

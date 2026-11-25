@@ -56,6 +56,7 @@ func (o *OllamaBrain) turnToolSession(opts StreamOptions) *toolSession {
 		singleCall:     opts.effectiveRouterPolicy() == RouterToolsRouteOnly && singleCallConfigured(o.cfg),
 		workerTiers:    opts.WorkerTiers,
 		delegation:     o.delegationForTurn(opts),
+		inline:         config.WorksInline(o.cfg),
 		commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
 		boundary:       NewBoundary(o.cfg.WorkerBoundary),
 		onStart:        opts.OnToolStart,

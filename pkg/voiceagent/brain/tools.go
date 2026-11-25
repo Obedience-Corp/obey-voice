@@ -44,8 +44,11 @@ type toolSession struct {
 	budget        *WorkerBudget
 	limitErr      error
 	delegation    *delegation.Runtime
-	catalog       []skills.Skill
-	workerTiers   *WorkerTierAvailability
+	// inline is set for a persona that works in the conversation: it may
+	// list and cancel delegations but not start one.
+	inline      bool
+	catalog     []skills.Skill
+	workerTiers *WorkerTierAvailability
 	// routerPolicy selects live route_only vs legacy full tools. Workers use legacy.
 	routerPolicy RouterToolsPolicy
 	// singleCall answers chat in the route_only routing request itself.
@@ -134,7 +137,11 @@ func (s *toolSession) tools() api.Tools {
 		tools = append(tools, jobControlTool())
 	}
 	if s.delegation != nil && !(s.routerPolicy == RouterToolsRouteOnly && s.workerTiers != nil) {
-		tools = append(tools, delegationTools()...)
+		for _, tool := range delegationTools() {
+			if !s.inline || tool.Function.Name != "agent_delegate" {
+				tools = append(tools, tool)
+			}
+		}
 	}
 	if s.budget != nil {
 		filtered := tools[:0]
@@ -156,6 +163,9 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 	name := call.Function.Name
 	if (name == "agent_delegate" || name == "agent_cancel" || name == "agent_delegations") && s.routerPolicy == RouterToolsRouteOnly && s.workerTiers != nil {
 		return "error: delegation is unavailable on the tiered live router"
+	}
+	if name == "agent_delegate" && s.inline {
+		return "error: this persona works in the conversation and starts no delegations; do the work here"
 	}
 	if err := s.budget.AllowTool(name); err != nil {
 		s.limitErr = err

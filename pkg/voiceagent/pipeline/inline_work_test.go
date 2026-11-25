@@ -102,23 +102,40 @@ func TestInlinePersonaKeepsItsToolsOnEveryRouterSetting(t *testing.T) {
 		{"tiered inline", tiered(config.WorkInline), "", brain.RouterToolsDirect},
 		{"tiered worker", tiered(""), "", brain.RouterToolsRouteOnly},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			w := newWorkPipeline(t, tc.cfg, "Sure.")
-			w.p.RouterToolsPolicy, w.p.RouteJSON = tc.router, tc.router == brain.RouterToolsRouteOnly
-			if err := w.p.RunTurnTextMode(t.Context(), "Look into the build failure."); err != nil {
-				t.Fatal(err)
-			}
-			opts := w.b.opts[0]
-			if opts.RouterToolsPolicy != tc.want || !opts.ToolsEnabled {
-				t.Fatalf("policy %q tools %v, want %q", opts.RouterToolsPolicy, opts.ToolsEnabled, tc.want)
-			}
-			if tc.want == brain.RouterToolsDirect && (opts.BackgroundWorker || opts.WorkerTiers != nil || opts.RouteJSON || w.p.routeContext().TieredWorkers) {
-				t.Fatalf("inline turn can still hand off: %+v", opts)
-			}
-		})
+		for _, voice := range []bool{false, true} {
+			t.Run(tc.name+map[bool]string{false: "/text", true: "/voice"}[voice], func(t *testing.T) {
+				w := newWorkPipeline(t, tc.cfg.Clone(), "Sure.")
+				w.p.RouterToolsPolicy, w.p.RouteJSON = tc.router, tc.router == brain.RouterToolsRouteOnly
+				var err error
+				if voice {
+					w.p.STT = &fakeSTT{text: "Look into the build failure."}
+					_, err = w.p.RunTurn(t.Context())
+				} else {
+					err = w.p.RunTurnTextMode(t.Context(), "Look into the build failure.")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				checkInlineTurn(t, w, tc.want)
+			})
+		}
 	}
 	if w := newWorkPipeline(t, workPersona(config.WorkWorker, true), "Sure."); !w.p.backgroundWorkerAvailable() {
 		t.Fatal("a persona set to worker lost its hand-off")
+	}
+}
+
+func checkInlineTurn(t *testing.T, w *workPipeline, want brain.RouterToolsPolicy) {
+	t.Helper()
+	if len(w.b.opts) != 1 {
+		t.Fatalf("model ran %d time(s)", len(w.b.opts))
+	}
+	opts := w.b.opts[0]
+	if opts.RouterToolsPolicy != want || !opts.ToolsEnabled {
+		t.Fatalf("policy %q tools %v, want %q", opts.RouterToolsPolicy, opts.ToolsEnabled, want)
+	}
+	if want == brain.RouterToolsDirect && (opts.BackgroundWorker || opts.WorkerTiers != nil || opts.RouteJSON || w.p.routeContext().TieredWorkers) {
+		t.Fatalf("inline turn can still hand off: %+v", opts)
 	}
 }
 
@@ -181,5 +198,18 @@ func TestSpawnRouteForAnInlinePersonaStartsNoJob(t *testing.T) {
 	}
 	if _, err := h.a.admitSpawn(t.Context(), "", h.a.workerSource()); err == nil || !strings.Contains(err.Error(), "starts no background jobs") {
 		t.Fatalf("admitSpawn = %v", err)
+	}
+}
+
+// The story writer is a job too: a narrate route for a long story from an
+// inline persona is answered the same way and starts nothing.
+func TestLongStoryRouteForAnInlinePersonaStartsNoJob(t *testing.T) {
+	h := newOwnHarness(t, workPersona(config.WorkInline, true), nil)
+	metrics := newTurnMetrics()
+	spoken := []string{}
+	metrics.routedSpeech = &spoken
+	h.a.HandleRoute(t.Context(), h.p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteNarrate, Transcript: "Tell me a long story.", Source: "test"})
+	if len(spoken) != 1 || spoken[0] != inlineSpawnLine || len(h.jobs.Status()) != 0 {
+		t.Fatalf("spoken %q, jobs %+v", spoken, h.jobs.Status())
 	}
 }

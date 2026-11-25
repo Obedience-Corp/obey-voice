@@ -154,6 +154,10 @@ func (n *Narrator) retryFlushPending() {
 
 func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
 	if wantsWrittenStory(d.Transcript, n.workDir()) {
+		if work := n.agency.turnWork(ctx); work.inline {
+			n.agency.refuseInlineSpawn(ctx, turn, metrics, d, work)
+			return
+		}
 		n.mu.Lock()
 		writing := n.storyJobID != ""
 		n.mu.Unlock()
@@ -194,10 +198,6 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 // registered with it.
 func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics, tier config.WorkerTierName) {
 	work := n.agency.turnWork(ctx)
-	if work.inline {
-		n.pipeline.emit(events.Error{Stage: "job", Message: work.inlineRefusal().Error()})
-		return
-	}
 	spec := job.Spec{Task: "write a long story", Run: n.storyWriterRun(nil, nil)}
 	if work.own != nil {
 		ownTier, err := work.admit(tier)
