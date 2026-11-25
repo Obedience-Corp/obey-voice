@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A persona can now work inline: with `brain.work: inline` (`obey-voice persona edit <id> --work inline`, or the persona form's Work row) it does its tool work itself, in the conversation, and no background job starts from its turns. Before, `own` was the closest choice, and it only chose which model ran a job: phrase shortcuts such as "show me a picture of …" and "search the web …", the model's `start_background_work`, `web_search` and `fetch_url` hand-offs, a spoken "I'll run a command…" and tiered routing all still started jobs. An inline persona's live turns use its tools directly whatever `voice_router_tools` or `brain.router` says, and are not offered worker tiers. If a request of its is still routed to a job, none starts; an info line says why and the persona says it works in the conversation. Jobs already running and the keyboard `/work` commands are unchanged. `obey-voice doctor` lists inline personas. The persona form's Work row explains each choice, and a new Job control row sets `brain.job_control` to `(default)`, `on` or `off`; choosing `(default)` removes the setting from the profile.
+
 ## v0.4.0
 
 This file was started on 2026-11-19, so it does not describe everything in this release. The [v0.4.0 release notes](https://github.com/Obedience-Corp/obey-voice/releases/tag/v0.4.0) list every pull request merged since v0.3.2.

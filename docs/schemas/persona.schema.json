@@ -504,8 +504,8 @@
         },
         "work": {
           "type": "string",
-          "enum": ["", "own", "worker"],
-          "description": "Who runs this persona's background work. own: the persona's own backend and model, in a background session of its own. worker: the configured worker below. Empty takes the default: worker on Ollama or when worker below names a provider, model or host, own otherwise."
+          "enum": ["", "own", "worker", "inline"],
+          "description": "Who runs this persona's background work. own: the persona's own backend and model, in a background session of its own. worker: the configured worker below. inline: nobody; the persona does its tool work in the conversation and no background job starts from its turns. Empty takes the default: worker on Ollama or when worker below names a provider, model or host, own otherwise."
         },
         "router": {
           "type": "string",

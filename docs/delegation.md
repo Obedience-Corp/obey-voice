@@ -104,8 +104,8 @@ work until the operator checks Obey and restarts the voice session.
 ## Who does the work
 
 A spawned job runs on one of two backends, chosen per persona by its
-`brain.work` setting (`obey-voice persona edit <id> --work own|worker`, or the
-**Work** row of the persona form):
+`brain.work` setting (`obey-voice persona edit <id> --work own|worker|inline`,
+or the **Work** row of the persona form), or does not start at all:
 
 - `own`: the persona's own backend and model do it. The job gets a new
   instance of that backend, built from the persona's settings: its provider,
@@ -115,6 +115,22 @@ A spawned job runs on one of two backends, chosen per persona by its
   calls or output enter it.
 - `worker`: the configured worker does it: the persona's `brain.worker`,
   else `voice_worker_provider` and `voice_worker_model`, or a tier.
+- `inline`: no job starts. The persona uses its tools itself, on its own
+  turns in the conversation, and waits for them. None of the shortcuts that
+  hand a request to a job before the model runs apply (`show me a picture
+  of …`, `search the web …`, `build this …`, `search for …`, `tell me a long
+  story`), the model is not offered `start_background_work`, a `web_search`
+  or `fetch_url` call or a second tool round runs on the turn instead of
+  being handed off, and a spoken "I'll run a command…" is the reply rather
+  than a job. Its live turns use the direct router whatever
+  `voice_router_tools` or the persona's `brain.router` says, and tiered
+  workers are not offered to it, since it has no worker to route to; with
+  `voice_tools_enabled: false` it has no tools. Should anything still route a
+  request of its to a job, no job starts: an info line says why and the
+  persona says it works in the conversation and to ask again. Jobs already
+  running are not touched, and `/work` commands from the keyboard work as
+  before. A reply moved to the background because you addressed another
+  persona still continues as a job, but cannot hand work off from there.
 
 Left empty, a persona hands its work to the worker when it is on Ollama or
 when its profile names a worker of its own (`brain.worker` with a provider,
