@@ -138,24 +138,27 @@ The **Work** row (`brain.work`) decides whether the worker is used at all.
 `own` has the persona's jobs run on its own backend and model, in a session
 separate from the one it talks in; `worker` has them run on the Worker rows;
 `inline` has the persona do the work itself in the conversation, and it never
-starts a job. The row shows all four choices on one line and checks the
-current one: `(default)`, `own`, `worker` and `inline`. `(default)` is
-`worker` on Ollama or when the Worker rows name a worker for this persona,
-and `own` otherwise; the row shows which as you change the Brain and Worker
-rows. From the shell, `obey-voice persona edit <id> --work own`, `--work
-worker`, `--work inline`, or `--work ""` for the default. While a persona
-does its own work or works inline, its Worker rows are not used and say so.
-An inline persona's live turns always use its tools directly, whatever its
-router setting; see [Who does the work](delegation.md#who-does-the-work).
+hands work to a background job. A reply you interrupt by addressing another
+persona can still finish in the background, as for any persona. The row shows
+all four choices on one line and checks the current one: `(default)`, `own`,
+`worker` and `inline`. `(default)` is `worker` on Ollama or when the Worker
+rows name a worker for this persona, and `own` otherwise; the row shows which
+as you change the Brain and Worker rows. From the shell, `obey-voice persona
+edit <id> --work own`, `--work worker`, `--work inline`, or `--work ""` for
+the default. While a persona does its own work or works inline, its Worker
+rows are not used and say so. An inline persona's live turns always use its
+tools directly, whatever its router setting. Under tiered workers with the
+strict policy, inline is refused, as own work on a hosted backend is: its work
+goes to the worker tiers, and the session and `obey-voice doctor` say so.
+`obey-voice doctor` lists who does each persona's work and why. See [Who does
+the work](delegation.md#who-does-the-work) for permissions, limits and tiers.
 
 The **Job control** row (`brain.job_control`) lets the persona cancel, ask a
 report of, or correct its own jobs when you ask. It lists `(default)`, `on`
 and `off` on one line and checks the current one; `(default)` inherits
-`voice_job_control`. Small local models have misused it, so try it with your
-model first. `obey-voice doctor` lists who does each
-persona's work and why. See
-[Who does the work](delegation.md#who-does-the-work) for permissions, limits
-and tiers.
+`voice_job_control`. An inline persona hands no work to jobs, so the row says
+so; its only job of its own is a reply moved to the background. Small local
+models have misused it, so try it with your model first.
 
 ### Shipped personas
 
