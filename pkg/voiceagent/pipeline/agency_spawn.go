@@ -21,6 +21,10 @@ import (
 const spawnClarifier = "I did not catch what you would like me to work on. What should I do?"
 
 func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
+	if work := a.turnWork(ctx); work.inline {
+		a.refuseInlineSpawn(ctx, turn, metrics, d, work)
+		return
+	}
 	if err := a.jobs.CheckAdmission(); err != nil {
 		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 		return
@@ -150,6 +154,23 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	}
 }
 
+// inlineSpawnLine is what a persona that works inline says instead of
+// starting a background job.
+const inlineSpawnLine = "I work right here in the conversation and don't start background jobs. Ask me again and I'll answer here."
+
+// refuseInlineSpawn answers a spawn route from a persona that works inline:
+// no job starts, the reason is shown, and the persona says so.
+func (a *Agency) refuseInlineSpawn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision, work workDecision) {
+	refusal := work.inlineRefusal().Error()
+	a.emitRouteDecision(d, "rejected", "", refusal)
+	a.pipeline.emit(events.Info{Message: "spawn declined: " + refusal})
+	if turn != nil && metrics != nil {
+		if err := a.pipeline.speakStandalone(ctx, turn, metrics, inlineSpawnLine); err != nil {
+			metrics.degraded = true
+		}
+	}
+}
+
 // userSentence is an error whose text is shown to the user as written.
 type userSentence string
 
@@ -175,6 +196,9 @@ type spawnWork struct {
 func (a *Agency) admitSpawn(ctx context.Context, tier config.WorkerTierName, source workerSource) (spawnWork, error) {
 	decision := a.turnWork(ctx)
 	w := spawnWork{decision: decision, own: decision.own != nil, cfg: decision.own}
+	if decision.inline {
+		return w, decision.inlineRefusal()
+	}
 	var err error
 	if w.own {
 		w.ownTier, err = decision.admit(tier)

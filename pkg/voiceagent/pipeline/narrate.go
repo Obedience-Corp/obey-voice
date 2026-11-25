@@ -194,6 +194,10 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 // registered with it.
 func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics, tier config.WorkerTierName) {
 	work := n.agency.turnWork(ctx)
+	if work.inline {
+		n.pipeline.emit(events.Error{Stage: "job", Message: work.inlineRefusal().Error()})
+		return
+	}
 	spec := job.Spec{Task: "write a long story", Run: n.storyWriterRun(nil, nil)}
 	if work.own != nil {
 		ownTier, err := work.admit(tier)

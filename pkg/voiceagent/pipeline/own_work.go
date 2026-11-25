@@ -24,6 +24,9 @@ type workDecision struct {
 	// refused is why the persona's own work cannot run under the current
 	// policy; set only with own.
 	refused error
+	// inline is set when the persona works in the conversation: nothing it
+	// says or does starts a background job.
+	inline bool
 }
 
 type turnWorkKey struct{}
@@ -31,6 +34,9 @@ type turnWorkKey struct{}
 // resolveWork is the one place the choice is made.
 func (a *Agency) resolveWork() workDecision {
 	cfg := a.currentConfig()
+	if config.WorksInline(cfg) {
+		return workDecision{bound: cfg, inline: true}
+	}
 	if cfg == nil || config.WorkOf(cfg) != config.WorkOwn {
 		return workDecision{}
 	}
@@ -50,6 +56,17 @@ func (a *Agency) resolveWork() workDecision {
 		d.refused = config.OwnWorkTiersClosed(cfg)
 	}
 	return d
+}
+
+// inlineRefusal is why a spawn from a persona that works inline starts no job.
+func (d workDecision) inlineRefusal() error {
+	return userSentence(fmt.Sprintf("%s does its work in the conversation, so it starts no background jobs. Ask again and it will answer here.", personaLabel(d.bound)))
+}
+
+// worksInline reports whether the bound persona keeps its work in the
+// conversation. Every path that would start a job from a live turn asks it.
+func (p *Pipeline) worksInline() bool {
+	return p.Agency != nil && config.WorksInline(p.Agency.currentConfig())
 }
 
 // admit is the routed tier an own job runs under, or why it cannot run.
