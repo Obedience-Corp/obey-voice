@@ -103,7 +103,7 @@ func (d *demoWorkerController) StopWorkers() error {
 }
 
 func demoWorkers(inner workerController) workerController {
-	activity := `searched 1 time (1 unknown) · {"query":"Denver CO current temperature today","results":[{"title":"Denver, CO Current Weather | AccuWeather","url":"https://www.accuweather.com/en/us/denver/80203/current-weather/347810","snippet":"Current weather in Denver, CO. Check conditions, forecasts, and radar.","temperature_f":48,"wind_mph":9,"ok":true}]}`
+	activity := `searched 1 time (1 succeeded) · {"query":"Denver CO current temperature today","results":[{"title":"Denver, CO Current Weather | AccuWeather","url":"https://www.accuweather.com/en/us/denver/80203/current-weather/347810","snippet":"Current weather in Denver, CO. Check conditions, forecasts, and radar.","temperature_f":48,"wind_mph":9,"ok":true}]}`
 	task := "Now just tell me the weather in denver colorado"
 	if demoWorkCueEnabled() {
 		task = demoWorkCueTask

@@ -36,7 +36,7 @@ func TestPersonaDirectoryRealToolsRemainIsolated(t *testing.T) {
 		}
 		wg.Go(func() {
 			dir := config.WorkDirFrom(cfg)
-			read := toolReadFile(dir, map[string]any{"path": "identity.txt"})
+			read, _ := toolReadFile(dir, map[string]any{"path": "identity.txt"})
 			if !strings.Contains(read, name) {
 				t.Errorf("relative read in %s: %s", dir, read)
 			}

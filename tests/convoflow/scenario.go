@@ -69,9 +69,12 @@ type scenarioBrain struct {
 	Host     string `yaml:"host"`
 	// JobControl is the run's voice_job_control, whatever the operator's
 	// config says. It offers the persona job_control only on the direct
-	// router (router_tools: legacy).
-	JobControl bool `yaml:"job_control"`
+	// router (router_tools: legacy). Set either way, the run needs the
+	// direct router and no work inbox, or it is skipped.
+	JobControl *bool `yaml:"job_control"`
 }
+
+func (b scenarioBrain) jobControl() bool { return b.JobControl != nil && *b.JobControl }
 
 type scenarioWorker struct {
 	SustainedLoad bool   `yaml:"sustained_load"`
@@ -154,11 +157,23 @@ type Expectation struct {
 	// in the turn: "applied" or "refused", optionally ":<outcome or reason>"
 	// ("applied:stopped", "refused:bare_stop"), or "none" for no settlement.
 	JobControl string `yaml:"job_control"`
+	// JobControlAction wants the turn's one applied job control settlement to
+	// name this action: cancel, report or steer.
+	JobControlAction string `yaml:"job_control_action"`
 	// AbortReason wants a job_aborted event with this reason in the turn.
 	AbortReason string `yaml:"abort_reason"`
 	// SpokenOnce wants exactly one match of this pattern in what the turn
 	// spoke.
 	SpokenOnce string `yaml:"spoken_once"`
+	// ReportCheckpointMatches and ReportCheckpointNotMatches test the
+	// checkpoint of the turn's job_report: the job's folded activity when the
+	// report was accepted. The turn's job is the one its job control named,
+	// else the first one reported. No job_report fails either.
+	ReportCheckpointMatches    string `yaml:"report_checkpoint_matches"`
+	ReportCheckpointNotMatches string `yaml:"report_checkpoint_not_matches"`
+	// WorkFileAbsent wants no file of this name anywhere under the run's work
+	// directory.
+	WorkFileAbsent string `yaml:"work_file_absent"`
 }
 
 type duration struct{ time.Duration }
@@ -221,7 +236,7 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 	if scn.Input != "text" && scn.Input != "speech" {
 		return nil, fmt.Errorf("load %s: input must be text or speech", name)
 	}
-	if scn.Brain.JobControl && !strings.EqualFold(scn.RouterTools, string(brain.RouterToolsLegacy)) {
+	if scn.Brain.jobControl() && !strings.EqualFold(scn.RouterTools, string(brain.RouterToolsLegacy)) {
 		return nil, fmt.Errorf("load %s: brain.job_control needs router_tools: legacy, the direct router", name)
 	}
 	if scn.LatencyCondition != "" && scn.LatencyCondition != "baseline" && scn.LatencyCondition != "worker" {
@@ -292,6 +307,11 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 		for _, ex := range t.Expect {
 			if ex.WorkFileContains != "" && ex.WorkFile == "" {
 				return nil, fmt.Errorf("load %s: turn %q: work_file_contains needs work_file", name, t.ID)
+			}
+			switch ex.JobControlAction {
+			case "", "cancel", "report", "steer":
+			default:
+				return nil, fmt.Errorf("load %s: turn %q: job_control_action must be cancel, report or steer", name, t.ID)
 			}
 		}
 		if t.ExpectError != "" && t.Op != "select_persona" {

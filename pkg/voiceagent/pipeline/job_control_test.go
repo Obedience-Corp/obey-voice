@@ -1361,7 +1361,7 @@ func TestGrantFollowsTheAnsweringProvidersSetting(t *testing.T) {
 }
 
 // Each settled control is published as a job.control route decision: applied
-// with the job and its outcome, or refused with the reason.
+// with the job and its outcome, or refused with the reason, naming the action.
 func TestJobControlSettlementIsPublished(t *testing.T) {
 	h := newPersonaControlHarness(t)
 	var mu sync.Mutex
@@ -1377,10 +1377,15 @@ func TestJobControlSettlementIsPublished(t *testing.T) {
 	other := h.spawnAs("sage", "Render the demo video")
 	h.turn(true, "Cancel the video render.", replies(batch(controlCall("cancel", other))))
 	h.turn(true, "Cancel the summary.", replies(batch(controlCall("cancel", own))))
+	memo := h.spawn("Draft the memo")
+	h.turn(true, "Tell the memo job to use the short title.", replies(batch(controlCall("steer", memo, "instruction", "Use the short title."))))
 	mu.Lock()
 	defer mu.Unlock()
-	if len(settled) != 2 || settled[0].State != controlRefused || settled[0].Message != refusedNotOwn || settled[0].JobID != other ||
-		settled[1].State != controlApplied || settled[1].Message != string(ControlStopped) || settled[1].JobID != own {
+	if len(settled) != 3 || settled[2].JobID != memo || settled[2].Action != "steer" {
+		t.Fatalf("steer settled = %+v", settled)
+	}
+	if settled[0].State != controlRefused || settled[0].Message != refusedNotOwn || settled[0].JobID != other || settled[0].Action != "cancel" ||
+		settled[1].State != controlApplied || settled[1].Message != string(ControlStopped) || settled[1].JobID != own || settled[1].Action != "cancel" {
 		t.Fatalf("settled = %+v", settled)
 	}
 }

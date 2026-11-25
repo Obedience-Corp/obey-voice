@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,9 @@ import (
 	"time"
 
 	"golang.org/x/net/html"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/internal/searchendpoint"
 )
 
 const (
@@ -41,44 +45,94 @@ func webHTTPClient() *http.Client {
 	}
 }
 
-func toolWebSearch(ctx context.Context, args map[string]any) string {
-	return toolWebSearchWithClient(ctx, args, webHTTPClient(), duckDuckGoHTMLURL)
+func toolWebSearch(ctx context.Context, args map[string]any) (string, toolEnd) {
+	endpoint := searchendpoint.From(ctx)
+	if endpoint == "" {
+		endpoint = duckDuckGoHTMLURL
+	}
+	return toolWebSearchWithClient(ctx, args, webHTTPClient(), endpoint)
 }
 
-func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *http.Client, endpoint string) string {
+// webFailed is the "error <reason>" text a web tool returns, and its failed
+// end. status is the HTTP status received, zero when there was no response.
+func webFailed(reason string, status int) (string, toolEnd) {
+	end := toolFailed(reason)
+	end.httpStatus = status
+	return "error " + reason, end
+}
+
+// webCut is webFailed for a request or body read that returned err, which
+// is a cancel when err is the call's cancellation.
+func webCut(err error, reason string, status int) (string, toolEnd) {
+	text, end := webFailed(reason, status)
+	if errors.Is(err, context.Canceled) {
+		end.status = events.ToolOutcomeCanceled
+	}
+	return text, end
+}
+
+// redirectStatus is the status of the response a refused redirect returned
+// with err, zero without one. Its body is already closed.
+func redirectStatus(resp *http.Response) int {
+	if resp == nil {
+		return 0
+	}
+	return resp.StatusCode
+}
+
+func webSucceeded(status int) toolEnd {
+	end := toolSucceeded()
+	end.httpStatus = status
+	return end
+}
+
+func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *http.Client, endpoint string) (string, toolEnd) {
 	query, _ := args["query"].(string)
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return "error: query is required"
+		return failWith("query is required")
 	}
 
 	form := url.Values{"q": {query}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return fmt.Sprintf("error creating web search request: %v", err)
+		return webFailed(fmt.Sprintf("creating web search request: %v", err), 0)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ObeyVoice/1.0; +https://github.com/Obedience-Corp/obey-voice)")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Sprintf("error searching web: %v", err)
+		return webCut(err, fmt.Sprintf("searching web: %v", err), redirectStatus(resp))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("error searching web: HTTP %d", resp.StatusCode)
+		return webFailed(fmt.Sprintf("searching web: HTTP %d", resp.StatusCode), resp.StatusCode)
 	}
 
-	doc, err := html.Parse(io.LimitReader(resp.Body, maxWebBodyBytes))
+	limited := &io.LimitedReader{R: resp.Body, N: maxWebBodyBytes}
+	doc, err := html.Parse(limited)
 	if err != nil {
-		return fmt.Sprintf("error parsing web search results: %v", err)
+		return webCut(err, fmt.Sprintf("parsing web search results: %v", err), resp.StatusCode)
 	}
+	end := webSucceeded(resp.StatusCode)
+	end.truncated = cutAtCap(resp, limited.N <= 0)
 	results := parseDuckDuckGoResults(doc, 5)
 	if len(results) == 0 {
-		return fmt.Sprintf(`{"query":%s,"results":[],"message":"No search results found."}`, strconv.Quote(query))
+		return fmt.Sprintf(`{"query":%s,"results":[],"message":"No search results found."}`, strconv.Quote(query)), end
 	}
 	out, _ := json.Marshal(map[string]any{"query": query, "results": results})
-	return string(out)
+	return string(out), end
+}
+
+// cutAtCap reports whether a body read up to the raw cap lost anything there.
+// A declared length settles it. Without one, reaching the cap counts as cut:
+// reading on for proof would hold a ready result on a stream that stays open.
+func cutAtCap(resp *http.Response, reachedCap bool) bool {
+	if !reachedCap {
+		return false
+	}
+	return resp.ContentLength < 0 || resp.ContentLength > maxWebBodyBytes
 }
 
 func parseDuckDuckGoResults(doc *html.Node, limit int) []webSearchResult {
@@ -108,55 +162,59 @@ func parseDuckDuckGoResults(doc *html.Node, limit int) []webSearchResult {
 	return results
 }
 
-func toolFetchURL(ctx context.Context, args map[string]any) string {
+func toolFetchURL(ctx context.Context, args map[string]any) (string, toolEnd) {
 	return toolFetchURLWithClient(ctx, args, webHTTPClient())
 }
 
-func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *http.Client) string {
+func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *http.Client) (string, toolEnd) {
 	rawURL, _ := args["url"].(string)
 	rawURL = strings.TrimSpace(rawURL)
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return "error: url must be an absolute HTTP or HTTPS URL"
+		return failWith("url must be an absolute HTTP or HTTPS URL")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return fmt.Sprintf("error creating fetch request: %v", err)
+		return webFailed(fmt.Sprintf("creating fetch request: %v", err), 0)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ObeyVoice/1.0; +https://github.com/Obedience-Corp/obey-voice)")
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Sprintf("error fetching URL: %v", err)
+		return webCut(err, fmt.Sprintf("fetching URL: %v", err), redirectStatus(resp))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Sprintf("error fetching URL: HTTP %d", resp.StatusCode)
+		return webFailed(fmt.Sprintf("fetching URL: HTTP %d", resp.StatusCode), resp.StatusCode)
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWebBodyBytes))
 	if err != nil {
-		return fmt.Sprintf("error reading URL: %v", err)
+		return webCut(err, fmt.Sprintf("reading URL: %v", err), resp.StatusCode)
 	}
+	capped := cutAtCap(resp, len(data) == maxWebBodyBytes)
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	content := string(data)
 	title := ""
 	if strings.Contains(contentType, "html") || strings.Contains(strings.ToLower(content), "<html") {
 		doc, parseErr := html.Parse(strings.NewReader(content))
 		if parseErr != nil {
-			return fmt.Sprintf("error parsing fetched page: %v", parseErr)
+			return webFailed(fmt.Sprintf("parsing fetched page: %v", parseErr), resp.StatusCode)
 		}
 		title = nodeText(findElement(doc, "title"))
 		content = readableText(doc)
 	}
-	content = truncateWebText(strings.TrimSpace(content))
+	content = strings.TrimSpace(content)
+	end := webSucceeded(resp.StatusCode)
+	end.truncated = capped || len(content) > maxWebTextBytes
+	content = truncateWebText(content)
 	out, _ := json.Marshal(map[string]any{
 		"url":     resp.Request.URL.String(),
 		"status":  resp.StatusCode,
 		"title":   title,
 		"content": content,
 	})
-	return string(out)
+	return string(out), end
 }
 
 func hasClass(n *html.Node, class string) bool {

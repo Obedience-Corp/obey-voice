@@ -15,6 +15,9 @@ type RouteDecided struct {
 	JobID      string         `json:"job_id,omitempty"`
 	Task       string         `json:"task,omitempty"`
 	Message    string         `json:"message,omitempty"`
+	// Action is the job control a job.control settlement asked for: cancel,
+	// report or steer. Empty on every other decision.
+	Action string `json:"action,omitempty"`
 }
 
 func (RouteDecided) eventType() string { return "route.decided" }

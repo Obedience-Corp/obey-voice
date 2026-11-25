@@ -198,6 +198,34 @@ func TestRouteExpectsAreScopedToTheTurn(t *testing.T) {
 	}
 }
 
+// worker_tool_unknown counts a job's tool finishes with no observed outcome;
+// the live brain's and those with an outcome do not count.
+func TestWorkerToolUnknownCountsJobFinishesWithoutAnOutcome(t *testing.T) {
+	t.Parallel()
+	rec := &recorder{}
+	rec.add(events.ToolCallFinished{ID: "c1", JobID: "job-1", Name: "read_file", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}})
+	rec.add(events.ToolCallFinished{ID: "c2", JobID: "job-1", Name: "write_file", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeFailed}})
+	rec.add(events.ToolCallFinished{ID: "c3", JobID: "job-1", Name: "web_search"})
+	rec.add(events.ToolCallFinished{ID: "c4", JobID: "job-1", Name: "fetch_url", Err: "error: boom"})
+	rec.add(events.ToolCallFinished{ID: "c5", Name: "list_files"})
+	if m := collectMetrics(rec); m.WorkerToolUnknown != 1 {
+		t.Fatalf("worker_tool_unknown = %d, want 1", m.WorkerToolUnknown)
+	}
+	// A start with no finish, or one whose finish names another job, counts.
+	rec.add(events.ToolCallStarted{ID: "c6", JobID: "job-1", Name: "read_file"})
+	rec.add(events.ToolCallStarted{ID: "c7", JobID: "job-1", Name: "read_file"})
+	rec.add(events.ToolCallFinished{ID: "c7", JobID: "job-2", Name: "read_file", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}})
+	rec.add(events.ToolCallStarted{ID: "c8", JobID: "job-1", Name: "read_file"})
+	rec.add(events.ToolCallFinished{ID: "c8", JobID: "job-1", Name: "read_file", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}})
+	m := collectMetrics(rec)
+	if m.WorkerToolUnknown != 3 {
+		t.Fatalf("worker_tool_unknown = %d, want 3", m.WorkerToolUnknown)
+	}
+	if err := evalRunExpect(Expectation{Metric: "worker_tool_unknown", Op: "==", Value: 0}, rec, m); err == nil {
+		t.Fatal("one unknown passed worker_tool_unknown == 0")
+	}
+}
+
 // A spawned worker's tool calls carry a job id and are the worker's, never
 // the talking brain's: they must not trip live_tool_calls.
 func TestWorkerToolCallsAreNotLive(t *testing.T) {

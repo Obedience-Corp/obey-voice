@@ -141,18 +141,25 @@ func TestCaptureHeaderAndImmutableCopy(t *testing.T) {
 
 func TestCaptureBytePressureEvictsOnlyNecessaryNoise(t *testing.T) {
 	w := captureTestWriter(&testSink{})
-	// Fill close to the reserved payload budget with a single non-durable record
-	// followed by terminal records. The incoming terminal should evict noise only.
+	// Fill close to the payload budget with one non-durable record followed by
+	// terminal records, by the writer's own accounting, so the next terminal
+	// needs room and the noise alone is enough to give it.
 	text := strings.Repeat("x", 10000)
-	w.enqueue(record{Type: "agent_delta", Text: text})
-	for {
+	queued := func() int64 {
 		w.mu.Lock()
-		before := w.queuedBytes
-		w.mu.Unlock()
-		size, _ := boundedSize(reflect.ValueOf(record{Type: "user", Text: text}), 0)
-		if before+2*size > MaxQueuedBytes-3*MaxRecordBytes-captureReserve {
-			break
-		}
+		defer w.mu.Unlock()
+		return w.queuedBytes
+	}
+	const margin = 1024
+	w.enqueue(record{Type: "agent_delta", Text: text + strings.Repeat("x", 500)})
+	noise := queued()
+	w.enqueue(record{Type: "user", Text: text})
+	terminal := queued() - noise
+	if noise < terminal+2*margin {
+		t.Fatalf("noise is %d bytes and a terminal %d; the noise must be the larger by %d", noise, terminal, 2*margin)
+	}
+	incoming := terminal + 6*10000
+	for queued()+incoming <= MaxQueuedBytes-3*MaxRecordBytes-captureReserve+margin {
 		w.enqueue(record{Type: "user", Text: text})
 	}
 	before := w.dropped.Load()

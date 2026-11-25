@@ -23,6 +23,8 @@ just convoflow run work-stream-report                 # after the worker's first
 just convoflow run work-stream-boundary               # a worker told to leave the campaign is refused by its tools (boundary_refusals >= 1)
 just convoflow run job-control-cancel                 # direct router, job control on: the persona hands work off, then "cancel that job" is its job_control call, applied once (route job.control, job_aborted cancelled, one host line, no new job)
 just convoflow run job-control-off                    # the same two turns with job control off: "cancel that job" reaches the persona, which cannot end a job; no settlement and no job_aborted in that turn
+just convoflow run job-control-report                 # direct router, job control on: "have that job stop and report" is the persona's job_control report, applied once; the job uses no tool after it, finishes cut short "report requested", and its answer is spoken
+just convoflow run job-control-steer                  # direct router, job control on: "tell that job to name the last file omega.txt" is the persona's job_control steer, applied once; the running job includes it and writes omega.txt
 just convoflow run search-web-intent -worker-provider=grok   # comparison, not the gate
 ```
 
@@ -85,8 +87,22 @@ the direct router. `job_control: applied` (or `refused`, optionally with
 `:<outcome or reason>` such as `applied:stopped` or `refused:bare_stop`) wants
 the host's settlement of a persona's `job_control` call in the turn, published
 as a `route.decided` event of kind `job.control`; `job_control: none` wants no
-settlement. `abort_reason: cancelled` wants a `job_aborted` with that reason,
-and `spoken_once: <regex>` exactly one match in what the turn spoke.
+settlement. `job_control_action: cancel|report|steer` wants the turn's one
+applied settlement to name that action (the `action` the host publishes on the
+settlement). `abort_reason: cancelled` wants a `job_aborted` with that reason,
+and `spoken_once: <regex>` exactly one match in everything spoken so far in the
+run, as `spoken_matches` and `spoken_not_matches` read it.
+`report_checkpoint_matches: <regex>` and `report_checkpoint_not_matches:
+<regex>` test the checkpoint of the turn's `job_report` (the job its job control
+named), the folded activity with per-outcome counts; either fails when there is
+no such report. `work_file_absent: <name>` wants no file of that name anywhere
+under the run's `work/`. A scenario that sets `brain: { job_control: … }` either
+way is skipped (exit 2) when the operator's settings turn on the work inbox
+(`voice_work_enabled`) or tiered workers, which make the live router route-only;
+the operator's settings are not overridden.
+
+The `worker_tool_unknown` metric counts tool finishes carrying a job id whose
+outcome is unknown; every host-run worker tool reports succeeded or failed.
 
 Two no-model paths exist, neither is the gate:
 

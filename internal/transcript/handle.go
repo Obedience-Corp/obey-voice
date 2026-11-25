@@ -199,7 +199,7 @@ func encodeEvent(e events.Event) (record, bool) {
 	case events.DecisionEvaluated:
 		return record{Type: "decision.evaluated", Decision: &x}, true
 	case events.RouteDecided:
-		return record{Type: "route.decided", WorkScope: &x.Scope, Kind: x.Kind, Tier: x.Tier, ReasonCode: x.ReasonCode, State: x.State, JobID: x.JobID, Text: x.Task, Message: x.Message}, true
+		return record{Type: "route.decided", WorkScope: &x.Scope, Kind: x.Kind, Tier: x.Tier, ReasonCode: x.ReasonCode, Action: x.Action, State: x.State, JobID: x.JobID, Text: x.Task, Message: x.Message}, true
 	case events.WorkDelivery:
 		return record{Type: "work_delivery", Delivery: &x}, true
 	case events.JobQueued:

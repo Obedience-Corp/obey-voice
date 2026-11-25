@@ -162,9 +162,9 @@ const (
 // publishSettlement records what the host decided about a control: the job
 // it named, and the receipt's outcome or the reason it was refused.
 func (a *Agency) publishSettlement(control *brain.JobControl, out controlOutcome) {
-	state, id, message := controlRefused, "", out.Refusal
+	state, id, message, action := controlRefused, "", out.Refusal, ""
 	if control != nil && control.Request != nil {
-		id = control.Request.JobID
+		id, action = control.Request.JobID, string(control.Request.Action)
 	}
 	if out.Receipt != nil {
 		state, message = controlApplied, out.Receipt.Rejected
@@ -172,7 +172,9 @@ func (a *Agency) publishSettlement(control *brain.JobControl, out controlOutcome
 			message = string(out.Receipt.Jobs[0].Outcome)
 		}
 	}
-	a.emitRouteDecision(RouteDecision{Kind: RouteJobControl}, state, id, message)
+	settled := a.routeDecisionEvent(RouteDecision{Kind: RouteJobControl}, state, id, message)
+	settled.Action = action
+	a.pipeline.emit(settled)
 }
 
 func controlSpoken(c *brain.JobControl) string {

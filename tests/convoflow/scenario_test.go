@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -193,5 +194,33 @@ turns:
 				t.Fatalf("invalid decoder scenario accepted/wrong rejection: %v", err)
 			}
 		})
+	}
+}
+
+// A spawned job is acknowledged with the host's own line, the one handleSpawn
+// speaks when the job starts at once; nothing else in these runs is queued.
+func TestGateScenariosExpectTheSpawnAcknowledgement(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"search-web-intent", "chat-then-work", "job-status", "work-stream-gate"} {
+		scn, err := loadScenario(filepath.Join("scenarios", name+".yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := 0
+		for _, turn := range scn.Turns {
+			for _, ex := range turn.Expect {
+				if ex.SpokenMatches == "" || !strings.Contains(ex.SpokenMatches, "report back") {
+					continue
+				}
+				found++
+				re := regexp.MustCompile(ex.SpokenMatches)
+				if !re.MatchString("Sure. I'll work on that and report back.") || re.MatchString("I've queued that task and will report back.") || re.MatchString("Working on it.") {
+					t.Fatalf("%s: %q does not match only the started acknowledgement", name, ex.SpokenMatches)
+				}
+			}
+		}
+		if found != 1 {
+			t.Fatalf("%s: %d acknowledgement expectations", name, found)
+		}
 	}
 }

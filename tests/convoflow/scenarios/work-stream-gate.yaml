@@ -15,8 +15,7 @@ turns:
       - { event: job_queued }
       - { event: job_started }
       - { route_kind: spawn }
-      - { spoken_matches: "(?i)working on it" }
-      - { no_event: tool_call_started }
+      - { spoken_matches: "I'll work on that and report back\\." }
 
   # "So far: …" is spoken only once the worker has closed a fold row; a small
   # model often thinks for longer than this turn lasts, so the fold's spoken
@@ -38,5 +37,6 @@ expect:
   - { metric: job_started, op: "==", value: 1 }
   - { metric: job_finished, op: "==", value: 1 }
   - { metric: worker_tool_calls, op: ">=", value: 2 }
+  - { metric: worker_tool_unknown, op: "==", value: 0 }
   - { metric: live_tool_calls, op: "==", value: 0 }
   - { metric: crackle_failing_wavs, op: "==", value: 0 }

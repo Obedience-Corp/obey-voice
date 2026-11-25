@@ -220,7 +220,7 @@ func (n *Normalizer) Normalize(e events.Event, snap work.Snapshot) (Record, bool
 	case events.RouteDecided:
 		sc = v.Scope
 		id = v.JobID
-		data = map[string]any{"kind": v.Kind, "tier": v.Tier, "reason_code": v.ReasonCode, "state": v.State, "message": n.Text(v.Message, 1024)}
+		data = map[string]any{"kind": v.Kind, "tier": v.Tier, "reason_code": v.ReasonCode, "action": v.Action, "state": v.State, "message": n.Text(v.Message, 1024)}
 	case events.ToolCallStarted:
 		r.Type, r.Scope = "tool.started", "work"
 		sc = v.WorkScope

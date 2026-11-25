@@ -74,6 +74,7 @@ type record struct {
 	Kind         string   `json:"kind,omitempty"`
 	Tier         string   `json:"tier,omitempty"`
 	ReasonCode   string   `json:"reason_code,omitempty"`
+	Action       string   `json:"action,omitempty"`
 	JobID        string   `json:"job_id,omitempty"`
 	Summary      string   `json:"summary,omitempty"`
 	Preview      string   `json:"preview,omitempty"`

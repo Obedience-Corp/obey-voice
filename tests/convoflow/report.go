@@ -25,6 +25,7 @@ type metricsFile struct {
 	JobAborted         int                `json:"job_aborted"`
 	LiveToolCalls      int                `json:"live_tool_calls"`
 	WorkerToolCalls    int                `json:"worker_tool_calls"`
+	WorkerToolUnknown  int                `json:"worker_tool_unknown"`
 	BoundaryRefusals   int                `json:"boundary_refusals"`
 	LiveRouterHit      int                `json:"live_router_hit"`
 	LiveRouterMiss     int                `json:"live_router_miss"`
@@ -68,7 +69,7 @@ func writeReport(e *engine) error {
 	fmt.Fprintf(&b, "- turns: %d\n", len(e.scn.Turns))
 	fmt.Fprintf(&b, "- events: %d\n", len(e.rec.snapshot()))
 	fmt.Fprintf(&b, "- job_started: %d · job_finished: %d · job_failed: %d · job_aborted: %d\n", m.JobStarted, m.JobFinished, m.JobFailed, m.JobAborted)
-	fmt.Fprintf(&b, "- live_tool_calls: %d · worker_tool_calls: %d · boundary_refusals: %d · live_router_hit: %d · live_router_miss: %d\n", m.LiveToolCalls, m.WorkerToolCalls, m.BoundaryRefusals, m.LiveRouterHit, m.LiveRouterMiss)
+	fmt.Fprintf(&b, "- live_tool_calls: %d · worker_tool_calls: %d · worker_tool_unknown: %d · boundary_refusals: %d · live_router_hit: %d · live_router_miss: %d\n", m.LiveToolCalls, m.WorkerToolCalls, m.WorkerToolUnknown, m.BoundaryRefusals, m.LiveRouterHit, m.LiveRouterMiss)
 	fmt.Fprintf(&b, "- spoken_leak_lines: %d\n", m.SpokenLeakLines)
 	if m.crackleKnown {
 		fmt.Fprintf(&b, "- crackle_failing_wavs: %d / %d scored\n", m.CrackleFailingWavs, m.PlaybackWavs)
@@ -123,27 +124,28 @@ func cell(s string) string {
 
 func writeMetricsJSON(e *engine, m runMetrics) error {
 	out := metricsFile{
-		Scenario:         e.scn.Name,
-		Profile:          e.profile.Profile,
-		LiveProvider:     e.profile.LiveProvider,
-		LiveModel:        e.profile.LiveModel,
-		WorkerProvider:   e.profile.WorkerProvider,
-		WorkerModel:      e.profile.WorkerModel,
-		Input:            e.profile.Input,
-		StopReason:       e.stopReason,
-		JobStarted:       m.JobStarted,
-		JobFinished:      m.JobFinished,
-		JobFailed:        m.JobFailed,
-		JobAborted:       m.JobAborted,
-		LiveToolCalls:    m.LiveToolCalls,
-		WorkerToolCalls:  m.WorkerToolCalls,
-		BoundaryRefusals: m.BoundaryRefusals,
-		LiveRouterHit:    m.LiveRouterHit,
-		LiveRouterMiss:   m.LiveRouterMiss,
-		SpokenLeakLines:  m.SpokenLeakLines,
-		PlaybackWavs:     m.PlaybackWavs,
-		Turns:            len(e.scn.Turns),
-		WallS:            e.wallSeconds(),
+		Scenario:          e.scn.Name,
+		Profile:           e.profile.Profile,
+		LiveProvider:      e.profile.LiveProvider,
+		LiveModel:         e.profile.LiveModel,
+		WorkerProvider:    e.profile.WorkerProvider,
+		WorkerModel:       e.profile.WorkerModel,
+		Input:             e.profile.Input,
+		StopReason:        e.stopReason,
+		JobStarted:        m.JobStarted,
+		JobFinished:       m.JobFinished,
+		JobFailed:         m.JobFailed,
+		JobAborted:        m.JobAborted,
+		LiveToolCalls:     m.LiveToolCalls,
+		WorkerToolCalls:   m.WorkerToolCalls,
+		WorkerToolUnknown: m.WorkerToolUnknown,
+		BoundaryRefusals:  m.BoundaryRefusals,
+		LiveRouterHit:     m.LiveRouterHit,
+		LiveRouterMiss:    m.LiveRouterMiss,
+		SpokenLeakLines:   m.SpokenLeakLines,
+		PlaybackWavs:      m.PlaybackWavs,
+		Turns:             len(e.scn.Turns),
+		WallS:             e.wallSeconds(),
 	}
 	if e.scn.LatencyCondition != "" {
 		out.Latency = &workLatencyReport{Schema: workLatencySchema, Samples: e.latencySamples, Notes: []string{"Raw production turn offsets; zero means unobserved. Recording-only playback is not audible delivery. Compare separately pinned baseline/worker runs with -compare."}}

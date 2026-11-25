@@ -20,10 +20,9 @@ import (
 
 const reportAnswer = "Read notes.txt; other.txt is not read yet."
 
-// oneFileRead is the fold of a job that has read one file, whose read reports
-// no outcome: the checkpoint a report taken between its first tool call and
-// its next one keeps.
-const oneFileRead = "read 1 file (1 unknown)"
+// oneFileRead is the fold of a job that has read one file: the checkpoint a
+// report taken between its first tool call and its next one keeps.
+const oneFileRead = "read 1 file (1 succeeded)"
 
 func (h *steerJobHarness) reports() *[]events.JobReport {
 	var got []events.JobReport

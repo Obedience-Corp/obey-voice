@@ -27,7 +27,7 @@ func TestToolWebSearchReturnsStructuredResults(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	raw := toolWebSearchWithClient(context.Background(), map[string]any{
+	raw, _ := toolWebSearchWithClient(context.Background(), map[string]any{
 		"query": "most expensive home Peru",
 	}, server.Client(), server.URL)
 	var got struct {
@@ -54,7 +54,7 @@ func TestToolFetchURLReturnsReadableText(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	raw := toolFetchURLWithClient(context.Background(), map[string]any{"url": server.URL}, server.Client())
+	raw, _ := toolFetchURLWithClient(context.Background(), map[string]any{"url": server.URL}, server.Client())
 	var got struct {
 		Title   string `json:"title"`
 		Content string `json:"content"`
@@ -72,7 +72,7 @@ func TestToolFetchURLReturnsReadableText(t *testing.T) {
 
 func TestToolFetchURLRejectsNonHTTPURL(t *testing.T) {
 	t.Parallel()
-	got := toolFetchURL(context.Background(), map[string]any{"url": "file:///etc/passwd"})
+	got, _ := toolFetchURL(context.Background(), map[string]any{"url": "file:///etc/passwd"})
 	if !strings.Contains(got, "HTTP or HTTPS") {
 		t.Fatalf("result = %q", got)
 	}

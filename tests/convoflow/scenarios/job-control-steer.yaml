@@ -1,0 +1,38 @@
+name: job-control-steer
+description: on the direct router with job control on, "tell that job" reaches the persona, whose job_control steer the host applies once to the job it handed off; the running job takes the correction at its next step and finishes with the corrected last file; no new job
+duration: 25m
+input: text
+router_tools: legacy
+brain: { job_control: true }
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: hand-off
+    user: "Work on this in the background: in the work directory, write ten small text files one at a time, named one.txt, two.txt, three.txt, four.txt, five.txt, six.txt, seven.txt, eight.txt, nine.txt and last.txt, each holding one short sentence; then list the directory."
+    wait: worker_tool
+    timeout: 5m
+    expect:
+      - { event: job_started }
+      - { route_kind: spawn }
+      - { no_event: job_terminal }
+
+  - id: steer
+    user: "Tell that job to name the last file omega.txt instead and put the single word corrected in it."
+    wait: job_terminal
+    timeout: 15m
+    expect:
+      - { route_kind: job.control }
+      - { job_control: applied:accepted }
+      - { job_control_action: steer }
+      - { correction: included }
+      - { no_event: job_started }
+      - { event: job_terminal }
+      - { work_file: omega.txt, work_file_contains: corrected }
+      - { work_file_absent: last.txt }
+
+expect:
+  - { metric: job_started, op: "==", value: 1 }
+  - { metric: job_finished, op: "==", value: 1 }
+  - { metric: job_aborted, op: "==", value: 0 }
+  - { metric: job_failed, op: "==", value: 0 }

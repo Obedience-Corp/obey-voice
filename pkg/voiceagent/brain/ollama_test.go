@@ -931,7 +931,7 @@ func TestWarmupToolsFollowThePolicyAndDelegation(t *testing.T) {
 		rt     *delegation.Runtime
 		want   *toolSession
 	}{
-		{name: "legacy", policy: "legacy", want: &toolSession{routerPolicy: RouterToolsLegacy, viewImage: func(context.Context, string) (string, bool) { return "", false }}},
+		{name: "legacy", policy: "legacy", want: &toolSession{routerPolicy: RouterToolsLegacy, viewImage: func(context.Context, string) (string, bool, toolEnd) { return "", false, toolEnd{} }}},
 		{name: "route_only with delegation", policy: "route_only", rt: runtime, want: &toolSession{routerPolicy: RouterToolsRouteOnly, delegation: runtime}},
 	}
 	for _, tt := range tests {
