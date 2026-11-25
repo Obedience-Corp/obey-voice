@@ -234,6 +234,15 @@ func (m personasModel) jobControlChanged() bool {
 	return *m.jobControl != *m.savedJobControl
 }
 
+// jobControlRow notes that an inline persona hands no work to jobs, so the
+// only job of its own it can control is a reply moved to the background.
+func (m personasModel) jobControlRow(line string) string {
+	if m.effectiveWork() == config.WorkInline && !config.OwnWorkStrict(m.cfg) {
+		return line + dimStyle.Render("  (inline: hands no work to jobs)")
+	}
+	return line
+}
+
 func cloneBool(v *bool) *bool {
 	if v == nil {
 		return nil

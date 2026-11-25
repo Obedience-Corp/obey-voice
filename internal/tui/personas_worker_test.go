@@ -341,7 +341,7 @@ func TestPersonaFormSavesInlineWorkAndJobControl(t *testing.T) {
 	}
 
 	m.setFormRow(formRowWork)
-	if help := m.formRowHelp(); !strings.Contains(help, "inline: does the work itself in the conversation; never starts a job") {
+	if help := m.formRowHelp(); !strings.Contains(help, "inline: does the work itself in the conversation; never hands work to a job") {
 		t.Fatalf("Work help = %q", help)
 	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft})
@@ -351,10 +351,18 @@ func TestPersonaFormSavesInlineWorkAndJobControl(t *testing.T) {
 	if got := line("Worker "); !strings.Contains(got, "unused: it works in the conversation") {
 		t.Fatalf("Worker row for inline = %q", got)
 	}
+	if got := line("Job control"); !strings.Contains(got, "(inline: hands no work to jobs)") {
+		t.Fatalf("Job control row for inline = %q", got)
+	}
 	m.setFormRow(formRowJobControl)
-	if help := m.formRowHelp(); !strings.Contains(help, "cancel, ask a report of, or correct its own jobs") || !strings.Contains(help, "misused") {
+	if help := m.formRowHelp(); !strings.Contains(help, "its only own job is a reply moved to the background") || !strings.Contains(help, "misused") {
+		t.Fatalf("Job control help for inline = %q", help)
+	}
+	m.work = ""
+	if help := m.formRowHelp(); !strings.Contains(help, "cancel, ask a report of, or correct its own jobs") {
 		t.Fatalf("Job control help = %q", help)
 	}
+	m.work = config.WorkInline
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if got := line("Job control"); !strings.Contains(got, "✓ on") {
 		t.Fatalf("Job control row after → = %q", got)
