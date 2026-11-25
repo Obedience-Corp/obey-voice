@@ -3,6 +3,7 @@
 ## Unreleased
 
 - A persona whose name is heard only inside the product name is no longer addressed by it. Before, "This is just a test of Obey Voice." said to another persona could be routed to the persona named Obey when the addressee classifier picked Obey, and "Obey-voice, what time is it?" selected Obey by name grammar alone. Now a name that occurs in the message only as part of "Obey Voice" (also "Obey-Voice", "Obey - Voice", "Obey—Voice", "Obey_Voice" and "ObeyVoice") keeps the current persona, whichever model answered. "Obey, what time is it?", "Hey Obey", "@obey" and "Obey what do you think" still address Obey, as does a message that names Obey outside the product name too, such as "Obey, how do you like Obey Voice?". A persona whose name is "Obey Voice" or goes on past it, such as "Obey Voice Assistant", is still addressed by that name.
+- A line break between "Obey" and "Voice" no longer reads as the product name, so a typed message or a persona's reply that ends a line with "Obey" and starts the next with "Voice" can still address Obey. Spaces and tabs between the words still read as the product name.
 
 ## v0.4.0
 

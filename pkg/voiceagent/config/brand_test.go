@@ -12,6 +12,12 @@ func TestAppSlugIsObeyVoice(t *testing.T) {
 	}
 }
 
+func TestAppSlugSpellsAppName(t *testing.T) {
+	if want := strings.ReplaceAll(strings.ToLower(AppName), " ", "-"); AppSlug != want {
+		t.Fatalf("AppSlug = %q, want %q from AppName %q", AppSlug, want, AppName)
+	}
+}
+
 func TestDefaultPathsUseAppSlug(t *testing.T) {
 	cfg := DefaultConfigDir()
 	if !strings.HasSuffix(cfg, filepath.Join("agents", "voice", AppSlug)) {

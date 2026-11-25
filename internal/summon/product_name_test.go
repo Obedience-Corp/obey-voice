@@ -41,6 +41,10 @@ func TestNamedOnlyInProductName(t *testing.T) {
 		{text: "Obey - Voice is slow", id: "obey", want: true},
 		{text: "Obey -voice is slow", id: "obey", want: true},
 		{text: "Obey; voice is slow", id: "obey", want: false},
+		{text: "Obey\nvoice is slow", id: "obey", want: false},
+		{text: "Obey -\nvoice is slow", id: "obey", want: false},
+		{text: "Obey\t voice is slow", id: "obey", want: true},
+		{text: "Obey  Voice is slow", id: "obey", want: true},
 	} {
 		if got := r.NamedOnlyInProductName(tc.text, tc.id); got != tc.want {
 			t.Errorf("NamedOnlyInProductName(%q, %q) = %v, want %v", tc.text, tc.id, got, tc.want)
