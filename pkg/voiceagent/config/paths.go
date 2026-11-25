@@ -154,6 +154,7 @@ var homeDir = func() string {
 	return home
 }
 
+// With no OS home this and osHomeDir are both ".", so a test binary still redirects.
 var inheritedHome = osHomeDir()
 
 func osHomeDir() string {
