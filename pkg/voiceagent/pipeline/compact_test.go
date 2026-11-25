@@ -304,6 +304,38 @@ func TestCompactConversationGuards(t *testing.T) {
 		}
 	})
 
+	t.Run("prompt that stops resolving falls back", func(t *testing.T) {
+		b := &compactBrain{history: compactHistory(), summary: "s"}
+		bus := events.NewBus()
+		var reported []string
+		bus.SubscribeAll(func(e events.Event) {
+			if failure, ok := e.(events.Error); ok && failure.Stage == "compact" {
+				reported = append(reported, failure.Message)
+			}
+		})
+		resolutions := 0
+		p := &Pipeline{Brain: b, Events: bus, AutoCompactAfter: 1,
+			ResolveCompactPrompt: func() (string, error) {
+				resolutions++
+				return "LAST GOOD", errors.New("document removed")
+			}}
+		if err := p.CompactConversation(context.Background()); err != nil {
+			t.Fatalf("manual compact with a fallback: %v", err)
+		}
+		if err := p.autoCompactIfNeeded(context.Background()); err != nil {
+			t.Fatalf("automatic compact with a fallback: %v", err)
+		}
+		if !reflect.DeepEqual(b.thinkInputs, []string{"LAST GOOD", "LAST GOOD"}) {
+			t.Fatalf("summarize instructions = %q, want the fallback twice", b.thinkInputs)
+		}
+		if len(reported) != 2 || !strings.Contains(reported[0], "document removed") {
+			t.Fatalf("compact errors = %q, want one visible notice per compaction", reported)
+		}
+		if resolutions != 2 {
+			t.Fatalf("prompt resolved %d times, want once per compaction", resolutions)
+		}
+	})
+
 	t.Run("nothing to compact", func(t *testing.T) {
 		p := &Pipeline{Brain: &compactBrain{}, CompactPrompt: "S"}
 		if err := p.CompactConversation(context.Background()); err == nil {

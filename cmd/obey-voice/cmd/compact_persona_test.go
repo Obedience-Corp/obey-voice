@@ -5,6 +5,8 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -113,6 +115,59 @@ func TestCompactNamesThePersonaBoundWhenItRuns(t *testing.T) {
 		if !strings.Contains(instruction, "as Basil.") || strings.Contains(instruction, "as Juniper") {
 			t.Fatalf("compaction %d named the wrong persona: %q", i, instruction)
 		}
+	}
+}
+
+func TestCompactFallbackNeverBorrowsAnotherPersonasPrompt(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	writeNamedTestPersona(t, "juniper", "Juniper")
+	writeNamedTestPersona(t, "basil", "Basil")
+	doc := filepath.Join(config.PromptsDir(), "compact", "garden.yaml")
+	if err := os.MkdirAll(filepath.Dir(doc), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "schema: obey-voice.prompt.v1\nprompt:\n  name: garden\n  kind: compact\n  system_prompt: |-\n    " + compactDefaultOpening + " as {agent_name}.\n"
+	if err := os.WriteFile(doc, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{ActivePersona: "juniper", BrainProvider: "ollama", TTSProvider: "kokoro", CompactPrompt: "garden"}
+
+	var inputs []string
+	record := func(c *config.Config) (brain.Provider, error) {
+		b, err := serveBrainForConfig(c)
+		if err != nil {
+			return nil, err
+		}
+		b.LoadHistory(juniperHistory())
+		return compactRecordingBrain{servePersonaTestBrain: b.(*servePersonaTestBrain), inputs: &inputs}, nil
+	}
+	s := newSwitcherForTest(t, cfg)
+	s.newBrain = record
+	if err := s.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.selector.Close)
+	s.pipeline.Brain.LoadHistory(juniperHistory())
+	wireCompact(s.pipeline, cfg, s.boundConfig, s.sessions.sess, events.NewBus())
+	if err := os.Remove(doc); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.apply("basil"); err != nil {
+		t.Fatalf("switch to basil: %v", err)
+	}
+	if err := s.pipeline.CompactConversation(t.Context()); err == nil || !strings.Contains(err.Error(), "garden") {
+		t.Fatalf("compact for a persona that never resolved = %v, want the resolution error", err)
+	}
+	if _, err := s.apply("juniper"); err != nil {
+		t.Fatalf("switch back to juniper: %v", err)
+	}
+	if err := s.pipeline.CompactConversation(t.Context()); err != nil {
+		t.Fatalf("compact with juniper's last instruction: %v", err)
+	}
+	got := compactInstructions(inputs)
+	if len(got) != 1 || !strings.Contains(got[0], "as Juniper.") {
+		t.Fatalf("compact instructions = %q, want only juniper's last one", got)
 	}
 }
 

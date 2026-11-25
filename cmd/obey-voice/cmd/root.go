@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
@@ -642,13 +643,32 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 // wireCompact equips the pipeline for /compact: the summarize instruction,
 // resolved from bound() each time compaction runs so it names the persona
 // then bound, and a pre-compact session backup. A prompt-resolution failure
-// disables /compact with a visible error instead of blocking startup.
+// at startup disables /compact with a visible error instead of blocking
+// startup; a later one falls back to the last instruction that persona
+// resolved, never another persona's.
 func wireCompact(p *pipeline.Pipeline, cfg *config.Config, bound func() *config.Config, sess *session.Session, bus *events.Bus) {
-	if _, err := brain.CompactInstruction(bound()); err != nil {
+	var mu sync.Mutex
+	lastGood := map[string]string{}
+	resolve := func() (string, error) {
+		current := bound()
+		prompt, err := brain.CompactInstruction(current)
+		key := ""
+		if current != nil {
+			key = current.ActivePersona + "\x00" + current.AgentName
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			return lastGood[key], err
+		}
+		lastGood[key] = prompt
+		return prompt, nil
+	}
+	if _, err := resolve(); err != nil {
 		bus.Emit(events.Error{Stage: "compact", Message: fmt.Sprintf("compact prompt: %v (/compact disabled)", err)})
 		return
 	}
-	p.ResolveCompactPrompt = func() (string, error) { return brain.CompactInstruction(bound()) }
+	p.ResolveCompactPrompt = resolve
 	if cfg != nil && cfg.MaxHistory > 0 {
 		p.AutoCompactAfter = cfg.MaxHistory * 2
 	}

@@ -85,8 +85,8 @@ func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnM
 	if !compact {
 		return nil
 	}
-	if _, err := p.compactPrompt(); err != nil {
-		p.skipUnresolvedCompact(err)
+	prompt, ok := p.usableCompactPrompt()
+	if !ok {
 		return nil
 	}
 	ctx, cancel := p.withBrainTimeout(ctx)
@@ -99,27 +99,32 @@ func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnM
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return p.compactConversation(ctx, input, true)
+	return p.compactConversation(ctx, input, prompt)
 }
 
 func (p *Pipeline) CompactConversation(ctx context.Context) error {
-	return p.compactConversation(ctx, "", false)
+	return p.compactConversation(ctx, "", "")
 }
 
-func (p *Pipeline) compactConversation(ctx context.Context, input string, automatic bool) (resultErr error) {
+// compactConversation runs automatically when prompt holds the instruction
+// prepareTurn resolved; manual /compact passes "" and resolves it here.
+func (p *Pipeline) compactConversation(ctx context.Context, input, prompt string) (resultErr error) {
+	automatic := prompt != ""
 	if p.Brain == nil || !p.compactConfigured() {
 		return errors.New("compact prompt not configured")
 	}
 	if err := p.awaitProvider(ctx); err != nil {
 		return err
 	}
-	prompt, err := p.compactPrompt()
-	if err != nil {
-		if automatic {
-			p.skipUnresolvedCompact(err)
-			return nil
+	if !automatic {
+		resolved, err := p.compactPrompt()
+		if resolved == "" {
+			return err
 		}
-		return err
+		if err != nil {
+			p.emitCompactPromptError(err, "using the last instruction that loaded")
+		}
+		prompt = resolved
 	}
 	instruction := p.compactionInstruction(prompt)
 	history := p.Brain.History()
@@ -268,15 +273,33 @@ func (p *Pipeline) compactPrompt() (string, error) {
 		return p.CompactPrompt, nil
 	}
 	prompt, err := p.ResolveCompactPrompt()
-	if err == nil && strings.TrimSpace(prompt) == "" {
-		err = errors.New("resolved to empty text")
+	if strings.TrimSpace(prompt) == "" {
+		prompt = ""
+		if err == nil {
+			err = errors.New("resolved to empty text")
+		}
 	}
 	if err != nil {
-		return "", fmt.Errorf("compact prompt: %w", err)
+		return prompt, fmt.Errorf("compact prompt: %w", err)
 	}
 	return prompt, nil
 }
 
-func (p *Pipeline) skipUnresolvedCompact(err error) {
-	p.emit(events.Error{Stage: "compact", Message: err.Error() + " (compaction skipped)"})
+// usableCompactPrompt reports a resolution failure, and whether a fallback
+// instruction still lets automatic compaction run.
+func (p *Pipeline) usableCompactPrompt() (string, bool) {
+	prompt, err := p.compactPrompt()
+	if err == nil {
+		return prompt, true
+	}
+	if prompt == "" {
+		p.emitCompactPromptError(err, "compaction skipped")
+		return "", false
+	}
+	p.emitCompactPromptError(err, "using the last instruction that loaded")
+	return prompt, true
+}
+
+func (p *Pipeline) emitCompactPromptError(err error, outcome string) {
+	p.emit(events.Error{Stage: "compact", Message: err.Error() + " (" + outcome + ")"})
 }
