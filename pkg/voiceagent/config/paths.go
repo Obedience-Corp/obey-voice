@@ -1,9 +1,14 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"testing"
 
 	"github.com/spf13/viper"
 )
@@ -131,15 +136,35 @@ func SkillsDir() string {
 	return filepath.Join(configDir, "skills")
 }
 
-// homeDir reports the user's home directory. A variable so a test can drive
-// the branch where the OS has none to report.
+// homeDir reports the home the install root and "~" paths derive from. A
+// variable so a test can drive the branch where the OS has none to report.
+// A test binary never gets the HOME it started with, so a test that skips
+// SetConfigDirForTest cannot touch the real install; a HOME the test sets
+// itself is honored.
 var homeDir = func() string {
+	home := osHomeDir()
+	if testing.Testing() && home == inheritedHome {
+		return testHomeDir()
+	}
+	return home
+}
+
+var inheritedHome = osHomeDir()
+
+func osHomeDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "."
 	}
 	return home
 }
+
+// testHomeDir is only a path: nothing creates it unless a test writes there.
+var testHomeDir = sync.OnceValue(func() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return filepath.Join(os.TempDir(), fmt.Sprintf("%s-test-home-%d-%s", AppSlug, os.Getpid(), hex.EncodeToString(b[:])))
+})
 
 // PromptsDirFrom resolves the user prompt-documents directory for an
 // already-loaded Config without consulting mutable global viper state.

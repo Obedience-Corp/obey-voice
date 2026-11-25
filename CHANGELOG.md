@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Running `go test` can no longer change your Obey Voice install. A test binary now resolves the install root, `~` paths and everything under them (config, personas, sessions, meetings, prompts, skills, captures, backups) to a per-process folder under the temp directory instead of the HOME it was started with; a test that sets HOME itself still gets that HOME. Before, a test that did not redirect the config folder wrote the real `config.yaml`: three TUI tests switched the active persona and its voice and turned on `brain_provider: ollama` with tools and skills. Those tests now use their own temp folders. The model cache under `~/.cache/obey-voice` is unchanged, so tests still find downloaded models.
+
 ## v0.4.0
 
 This file was started on 2026-11-19, so it does not describe everything in this release. The [v0.4.0 release notes](https://github.com/Obedience-Corp/obey-voice/releases/tag/v0.4.0) list every pull request merged since v0.3.2.

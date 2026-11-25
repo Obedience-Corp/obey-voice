@@ -22,9 +22,10 @@ func DefaultConfigDir() string {
 	return filepath.Join(homeDir(), ".obey", "agents", "voice", AppSlug)
 }
 
-// DefaultCacheDir returns the default cache root (~/.cache/<AppSlug>).
+// DefaultCacheDir returns the default cache root (~/.cache/<AppSlug>). Unlike
+// the install root it is not redirected in tests, which read downloaded models.
 func DefaultCacheDir() string {
-	return filepath.Join(homeDir(), ".cache", AppSlug)
+	return filepath.Join(osHomeDir(), ".cache", AppSlug)
 }
 
 // DefaultModelsDir returns the default model download/cache directory.
