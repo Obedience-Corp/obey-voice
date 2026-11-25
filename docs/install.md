@@ -21,6 +21,34 @@ macOS users may need to grant microphone permission to the terminal app used to 
 
 ## Desktop app (macOS)
 
+The desktop app runs on Apple Silicon Macs with macOS 15 or later. Each release
+publishes it three ways: a download on GitHub, a Homebrew cask, and the source.
+All three include the engine and its native speech libraries, and reuse existing
+settings, personas, sessions and model caches.
+
+### Download from GitHub
+
+1. Open the [latest release](https://github.com/Obedience-Corp/obey-voice/releases/latest)
+   and, under **Assets**, download `obey-voice-app-vX.Y.Z-macos-arm64.zip`.
+2. Unzip it and move **Obey Voice Agent.app** to Applications.
+3. Open it. The app is ad-hoc signed and is not notarized by Apple, so macOS
+   refuses the first launch. Approve it under **System Settings → Privacy &
+   Security → Open Anyway**, then open it again. See
+   [Apple's opening instructions](https://support.apple.com/en-us/102445).
+
+To check the download first, fetch the matching `.zip.sha256` into the same
+folder and run, with the version you downloaded:
+
+```sh
+shasum -a 256 -c obey-voice-app-vX.Y.Z-macos-arm64.zip.sha256
+```
+
+To update, quit the app (**Quit Obey** in the menu bar) and replace it with the
+newer download. The [Homebrew cask](#homebrew-macos--linux) installs the same
+archive and upgrades with `brew upgrade --cask`.
+
+### Build from source
+
 The native desktop app is built from the same checkout as the CLI. Install
 Rust 1.95 (selected by `apps/desktop/rust-toolchain.toml`), Go 1.26.1+, Python 3,
 Xcode Command Line Tools, and `just`. The Go dependencies are public; no
@@ -94,11 +122,10 @@ musl systems such as Alpine require a separate native build strategy.
 
 The `obedience-corp/tap/obey-voice` formula installs the released CLI with its
 native speech libraries. It supports Apple Silicon macOS 15+ and x86_64 Linux
-with glibc 2.39+ (Ubuntu 24.04+). It does not install the desktop app; use the
-[desktop source install](#desktop-app-macos) for that.
+with glibc 2.39+ (Ubuntu 24.04+). It does not install the desktop app.
 
-The separate desktop cask, `obedience-corp/tap/obey-voice-app`, is created by the
-release pipeline after the first verified desktop archive is published. It is **not yet available**. Once that first app release is public:
+The desktop app is a separate cask, `obedience-corp/tap/obey-voice-app`,
+updated by the release pipeline with each desktop release:
 
 ```bash
 brew install --cask obedience-corp/tap/obey-voice-app

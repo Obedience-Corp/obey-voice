@@ -76,7 +76,7 @@ See the [installation guide](docs/install.md) for app and terminal setup.
 
 Installs the released CLI with its native speech libraries on Apple Silicon
 macOS 15+ and x86_64 Linux with glibc 2.39+ (Ubuntu 24.04+). The desktop app is
-installed separately from source below.
+installed separately; see [Desktop app](#desktop-app-macos) below.
 
 The CLI is available through the Obedience Corp tap:
 
@@ -89,11 +89,21 @@ On first launch, choose providers and download speech models. No Go or Rust
 toolchain is needed for the CLI with Parakeet STT and Kokoro TTS.
 [Homebrew setup, upgrades, and dev-install coexistence](docs/install.md#homebrew-macos--linux).
 
-The desktop package is a separate cask, `obedience-corp/tap/obey-voice-app`.
-It will become installable after the first desktop release is published;
-until then, use `just desktop install` below. The release pipeline supports
-ad-hoc signing without Apple credentials. Those downloads are not notarized
-and may require **Open Anyway** approval in macOS Privacy & Security settings.
+### Desktop app (macOS)
+
+For Apple Silicon Macs with macOS 15 or later. Download
+`obey-voice-app-vX.Y.Z-macos-arm64.zip` from the
+[latest release](https://github.com/Obedience-Corp/obey-voice/releases/latest),
+unzip it and move **Obey Voice Agent.app** to Applications. Or install the same
+archive with Homebrew:
+
+```bash
+brew install --cask obedience-corp/tap/obey-voice-app
+```
+
+The app is ad-hoc signed and is not notarized by Apple, so macOS refuses the
+first launch until you approve it under **System Settings → Privacy & Security →
+Open Anyway**. [Download, checksum and update steps](docs/install.md#desktop-app-macos).
 
 ### Build from source
 
