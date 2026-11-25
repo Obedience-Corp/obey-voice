@@ -324,7 +324,9 @@ does and the Worker row marked unused; the **Job control** row moves from
 exits the fixture prints the saved `work` and `job_control` lines from the
 persona's `persona.yaml`. The fixture runs the TUI with a fresh home and a
 `PATH` without provider CLIs, so no installed configuration, credentials,
-model or audio is used; its Ollama endpoint is deliberately unavailable.
+model or audio is used; its Ollama endpoint is deliberately unavailable. The
+persona list behind the form also holds the shipped personas, which the app
+seeds into the empty home.
 
 ![Persona Work and Job control rows](persona-work-rows.gif)
 

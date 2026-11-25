@@ -736,6 +736,11 @@ conversation (`chat`), work for a worker (`spawn`) or reading aloud (`narrate`).
 Other brains decide the same question with a private classifier; for them
 `json_route` behaves exactly like `route_only`.
 
+A persona whose `brain.work` is `inline` has no worker to route to, so its
+live turns use their tools directly whatever this setting, its `brain.router`
+or tiered worker mode says (see
+[Who does the work](delegation.md#who-does-the-work)).
+
 | Value | What a live Ollama turn does |
 | --- | --- |
 | `direct` (default) | Offers file, command and lookup tools on the first request. |
@@ -932,10 +937,11 @@ When comparing the two routed modes, keep `route_only` unless routing accuracy h
 
 ### Persona job control (`voice_job_control`)
 
-`voice_job_control: true` offers a speaking Ollama persona on the direct router
-the `job_control` tool, with which it can cancel, ask a report of, or correct
-one of its own background jobs when you ask. It is off by default, and with it
-off nothing a persona is sent changes. Small local models have been measured
+`voice_job_control: true` offers a speaking Ollama persona on the direct
+router (which includes any persona whose `brain.work` is `inline`) the
+`job_control` tool, with which it can cancel, ask a report of, or correct one
+of its own background jobs when you ask. It is off by default, and with it off
+nothing a persona is sent changes. Small local models have been measured
 misusing it, including cancelling a job on a bare "stop", so measure yours
 first. A persona's `brain.job_control` (`true` or `false`) wins over the app
 setting; leaving it out inherits it:

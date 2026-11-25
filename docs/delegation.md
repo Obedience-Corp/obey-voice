@@ -48,7 +48,9 @@ Ask for a self-contained task such as “Check the active campaign workitems in
 the background and tell me which one is ready.” The model can use:
 
 - `agent_delegate`: queue one task; the acknowledgment contains a local ticket
-  and explicitly says that Obey admission is pending.
+  and explicitly says that Obey admission is pending. A persona whose
+  `brain.work` is `inline` is not offered it, and a call to it is refused; it
+  can still list and cancel its delegations.
 - `agent_delegations`: read cached status immediately, without waiting.
 - `agent_cancel`: request cancellation for the exact ticket or durable ID, only
   on explicit user intent. The host checks the request first: the tool can
@@ -127,10 +129,12 @@ or the **Work** row of the persona form), or does not start at all:
   workers are not offered to it, since it has no worker to route to; with
   `voice_tools_enabled: false` it has no tools. Should anything still route a
   request of its to a job, no job starts: an info line says why and the
-  persona says it works in the conversation and to ask again. Jobs already
-  running are not touched, and `/work` commands from the keyboard work as
-  before. A reply moved to the background because you addressed another
-  persona still continues as a job, but cannot hand work off from there.
+  persona says it works in the conversation and to ask again. It is not
+  offered `agent_delegate` either. Jobs already running are not touched, and
+  `/work` commands from the keyboard work as before. One job can still carry
+  its words: a reply moved to the background because you addressed another
+  persona while it was answering continues as a job, as for any persona, but
+  cannot hand work off from there.
 
 Left empty, a persona hands its work to the worker when it is on Ollama or
 when its profile names a worker of its own (`brain.worker` with a provider,
@@ -499,7 +503,8 @@ The tool, `job_control(action, job_id, instruction)`, is offered only on a
 live turn that answers you, on the direct router: never to a worker, a result
 notification, a continuation, a group discussion, a summary, a retried input or
 a recovery round, and never under `route_only`, `json_route`, `single_call` or
-tiered routing. It is not offered on a repair or retry of a request either:
+tiered routing. A persona whose `brain.work` is `inline` always uses the
+direct router, so it is offered the tool under those settings too. It is not offered on a repair or retry of a request either:
 the image repair, the retry after malformed tool syntax, the retry without
 tools for a model that rejects them, or the final answer of a turn whose tools
 are off. It sits between `view_image` and `start_background_work` in the tool
