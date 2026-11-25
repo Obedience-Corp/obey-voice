@@ -233,7 +233,7 @@ func TestPersonaFormWorkRowListsChoicesInlineAndPersists(t *testing.T) {
 	if line := row(); !strings.Contains(line, "✓ (default) own") || !strings.Contains(line, "own") || !strings.Contains(line, "worker") {
 		t.Fatalf("Work row = %q, want every choice with the default checked", line)
 	}
-	if !strings.Contains(m.formRowHelp(), "own brain") {
+	if !strings.Contains(m.formRowHelp(), "own model") {
 		t.Fatalf("Work help = %q", m.formRowHelp())
 	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
@@ -309,5 +309,83 @@ func TestPersonaFormWorkDefaultFollowsTheWorkerRows(t *testing.T) {
 	m.work = config.WorkOwn
 	if work, worker = lines(); !strings.Contains(work, "✓ own") || !strings.Contains(worker, "unused") {
 		t.Fatalf("set to own: Work %q, Worker %q", work, worker)
+	}
+}
+
+// The Work row offers inline beside own and worker, and the Job control row
+// lists its three choices inline; both are saved by the form's real writers,
+// and choosing (default) again clears job control from the profile.
+func TestPersonaFormSavesInlineWorkAndJobControl(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	cfg := &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "worker-model"}
+	m := newPersonas(cfg)
+	m.width, m.height = 160, 40
+	m.beginCreate()
+	m.nameInput.SetValue("Lumen")
+	m.promptTA.SetValue("You are Lumen.")
+	line := func(label string) string {
+		t.Helper()
+		for _, l := range strings.Split(stripANSI(m.View()), "\n") {
+			if strings.Contains(l, label) && !strings.Contains(l, label+"er") {
+				return l
+			}
+		}
+		t.Fatalf("no %s row:\n%s", label, stripANSI(m.View()))
+		return ""
+	}
+	if got := line("Work "); !strings.Contains(got, "inline") {
+		t.Fatalf("Work row = %q", got)
+	}
+	if got := line("Job control"); !strings.Contains(got, "✓ (default)") || !strings.Contains(got, "on") || !strings.Contains(got, "off") {
+		t.Fatalf("Job control row = %q", got)
+	}
+
+	m.setFormRow(formRowWork)
+	if help := m.formRowHelp(); !strings.Contains(help, "inline: does the work itself in the conversation; never starts a job") {
+		t.Fatalf("Work help = %q", help)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft})
+	if got := line("Work "); !strings.Contains(got, "✓ inline") {
+		t.Fatalf("Work row after ← = %q", got)
+	}
+	if got := line("Worker "); !strings.Contains(got, "unused: it works in the conversation") {
+		t.Fatalf("Worker row for inline = %q", got)
+	}
+	m.setFormRow(formRowJobControl)
+	if help := m.formRowHelp(); !strings.Contains(help, "cancel, ask a report of, or correct its own jobs") || !strings.Contains(help, "misused") {
+		t.Fatalf("Job control help = %q", help)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
+	if got := line("Job control"); !strings.Contains(got, "✓ on") {
+		t.Fatalf("Job control row after → = %q", got)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if m.formMode != "" {
+		t.Fatalf("create failed: %s", m.message)
+	}
+	p, err := persona.Load("lumen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Brain.Work != config.WorkInline || p.Brain.JobControl == nil || !*p.Brain.JobControl {
+		t.Fatalf("created brain = %+v", p.Brain)
+	}
+
+	for i, item := range m.items {
+		if item != nil && item.ID == "lumen" {
+			m.cursor = i
+		}
+	}
+	m.beginEditAt(formRowJobControl)
+	if got := line("Job control"); !strings.Contains(got, "✓ on") {
+		t.Fatalf("edit opened with Job control row %q", got)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if m.formMode != "" {
+		t.Fatalf("edit failed: %s", m.message)
+	}
+	if p, err = persona.Load("lumen"); err != nil || p.Brain.JobControl != nil || p.Brain.Work != config.WorkInline {
+		t.Fatalf("edited brain = %+v (%v)", p.Brain, err)
 	}
 }

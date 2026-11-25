@@ -80,8 +80,11 @@ type personasModel struct {
 	workerTiers       *config.WorkerTierOverrides
 	workerOllamaHost  string
 	// work is who runs this persona's background work: "" (its backend's
-	// default), "own" or "worker".
+	// default), "own", "worker" or "inline".
 	work string
+	// jobControl is brain.job_control: nil inherits voice_job_control.
+	// savedJobControl is what the profile held when the form opened.
+	jobControl, savedJobControl *bool
 	// Model row picker: discovered models per provider + async scan state.
 	// See personas_models.go; brainModelInput stays the selected value.
 	brainModels personaModelPicker
@@ -105,6 +108,7 @@ type personasModel struct {
 	saveName             func(id, displayName string) (*persona.Profile, error)
 	saveStack            func(id string, b persona.Brain, t persona.TTS) (*persona.Profile, error)
 	saveDirectory        func(id, directory string) (*persona.Profile, error)
+	saveJobControl       func(id string, jobControl *bool) (*persona.Profile, error)
 	deletePersona        func(*config.Config, string) (*persona.DeleteResult, error)
 	setInactive          func(*config.Config, string, bool) (*persona.Profile, error)
 	selectedPersona      func() string
@@ -124,17 +128,18 @@ type personasModel struct {
 
 func newPersonas(cfg *config.Config) personasModel {
 	m := personasModel{
-		cfg:           cfg,
-		loadDefaults:  config.LoadRaw,
-		usePersona:    persona.Use,
-		createPersona: persona.CreateAndUseWithOpts,
-		savePrompt:    persona.UpdateSystemPrompt,
-		saveName:      persona.UpdateDisplayName,
-		saveStack:     persona.UpdateStack,
-		saveDirectory: persona.UpdateStartingDirectory,
-		deletePersona: persona.Delete,
-		setInactive:   persona.SetInactive,
-		loadPrompt:    persona.LoadSystemPrompt,
+		cfg:            cfg,
+		loadDefaults:   config.LoadRaw,
+		usePersona:     persona.Use,
+		createPersona:  persona.CreateAndUseWithOpts,
+		savePrompt:     persona.UpdateSystemPrompt,
+		saveName:       persona.UpdateDisplayName,
+		saveStack:      persona.UpdateStack,
+		saveDirectory:  persona.UpdateStartingDirectory,
+		saveJobControl: persona.UpdateJobControl,
+		deletePersona:  persona.Delete,
+		setInactive:    persona.SetInactive,
+		loadPrompt:     persona.LoadSystemPrompt,
 		// Prefer profile-aware load so a private prompts/persona/<id>.yaml wins
 		// over a stale prompts.persona ref (e.g. TTS voice name as the ref).
 		loadPromptForProfile: persona.LoadSystemPromptForProfile,

@@ -287,3 +287,24 @@ func UpdateStack(id string, brain Brain, tts TTS) (*Profile, error) {
 	}
 	return p, nil
 }
+
+// UpdateJobControl sets brain.job_control alone; nil clears it so the persona
+// inherits voice_job_control again. UpdateStack keeps the saved value instead.
+func UpdateJobControl(id string, jobControl *bool) (*Profile, error) {
+	if err := ValidateID(id); err != nil {
+		return nil, err
+	}
+	p, err := Load(id)
+	if err != nil {
+		return nil, err
+	}
+	p.Brain.JobControl = nil
+	if jobControl != nil {
+		v := *jobControl
+		p.Brain.JobControl = &v
+	}
+	if err := Write(p, false); err != nil {
+		return nil, fmt.Errorf("saving persona job control: %w", err)
+	}
+	return p, nil
+}

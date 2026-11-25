@@ -59,6 +59,10 @@ func CreateWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
 			p.Brain.Model = model // model for the cloned provider
 		}
 		p.Brain.Work = strings.ToLower(strings.TrimSpace(opts.Brain.Work))
+		if opts.Brain.JobControl != nil {
+			v := *opts.Brain.JobControl
+			p.Brain.JobControl = &v
+		}
 		p.Brain.Worker = Worker{
 			Provider:   strings.TrimSpace(opts.Brain.Worker.Provider),
 			Model:      strings.TrimSpace(opts.Brain.Worker.Model),
@@ -92,7 +96,7 @@ func stackOverridden(opts CreateOpts) bool {
 	return strings.TrimSpace(opts.Brain.Provider) != "" || strings.TrimSpace(opts.Brain.Model) != "" ||
 		strings.TrimSpace(opts.TTS.Provider) != "" || strings.TrimSpace(opts.TTS.Voice) != "" ||
 		strings.TrimSpace(opts.Brain.Worker.Provider) != "" || strings.TrimSpace(opts.Brain.Worker.Model) != "" || strings.TrimSpace(opts.Brain.Worker.OllamaHost) != "" ||
-		strings.TrimSpace(opts.Brain.Work) != ""
+		strings.TrimSpace(opts.Brain.Work) != "" || opts.Brain.JobControl != nil
 }
 
 // CreateAndUseWithOpts creates a persona (with optional system prompt) and activates it.

@@ -124,6 +124,7 @@ func (m *personasModel) formWorker() persona.Worker {
 func (m *personasModel) prefillWorker(p *persona.Profile) {
 	if p == nil {
 		m.work = ""
+		m.jobControl, m.savedJobControl = nil, nil
 		m.workerTiers = nil
 		m.workerProviderIdx = 0
 		m.workerModel = ""
@@ -131,14 +132,15 @@ func (m *personasModel) prefillWorker(p *persona.Profile) {
 		return
 	}
 	m.work = strings.ToLower(strings.TrimSpace(p.Brain.Work))
+	m.jobControl, m.savedJobControl = cloneBool(p.Brain.JobControl), cloneBool(p.Brain.JobControl)
 	m.workerTiers = p.Brain.WorkerTiers.Clone()
 	m.workerProviderIdx = providerIndex(stackWorkerProviders(), p.Brain.Worker.Provider)
 	m.workerModel = strings.TrimSpace(p.Brain.Worker.Model)
 	m.workerOllamaHost = strings.TrimSpace(p.Brain.Worker.OllamaHost)
 }
 
-// workOptions are the Work row's choices: the backend's default, then own and
-// worker. All stay on screen, with a check on the current one.
+// workOptions are the Work row's choices: the backend's default, then own,
+// worker and inline. All stay on screen, with a check on the current one.
 func workOptions() []string {
 	return append([]string{""}, config.WorkChoices...)
 }
@@ -182,4 +184,60 @@ func (m personasModel) workRowValue() string {
 		}
 	}
 	return strings.Join(parts, "  ")
+}
+
+// jobControlOptions are the Job control row's choices, all on screen.
+var jobControlOptions = []string{stackDefaultLabel, "on", "off"}
+
+func (m personasModel) jobControlIndex() int {
+	switch {
+	case m.jobControl == nil:
+		return 0
+	case *m.jobControl:
+		return 1
+	default:
+		return 2
+	}
+}
+
+func (m *personasModel) cycleJobControl(delta int) {
+	switch (m.jobControlIndex() + delta + len(jobControlOptions)) % len(jobControlOptions) {
+	case 0:
+		m.jobControl = nil
+	case 1:
+		on := true
+		m.jobControl = &on
+	default:
+		off := false
+		m.jobControl = &off
+	}
+}
+
+// jobControlRowValue lists every choice inline and checks the current one.
+func (m personasModel) jobControlRowValue() string {
+	current := m.jobControlIndex()
+	parts := make([]string, 0, len(jobControlOptions))
+	for i, label := range jobControlOptions {
+		if i == current {
+			parts = append(parts, statusStyle.Render("✓ "+label))
+		} else {
+			parts = append(parts, dimStyle.Render("  "+label))
+		}
+	}
+	return strings.Join(parts, "  ")
+}
+
+func (m personasModel) jobControlChanged() bool {
+	if m.jobControl == nil || m.savedJobControl == nil {
+		return m.jobControl != m.savedJobControl
+	}
+	return *m.jobControl != *m.savedJobControl
+}
+
+func cloneBool(v *bool) *bool {
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
 }
