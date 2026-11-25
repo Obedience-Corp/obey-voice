@@ -3,11 +3,16 @@ package config
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -160,11 +165,50 @@ func osHomeDir() string {
 }
 
 // testHomeDir is only a path: nothing creates it unless a test writes there.
+// Every test binary's home sits under one parent, and the homes of binaries
+// that have exited are removed when the next one starts.
 var testHomeDir = sync.OnceValue(func() string {
+	parent := filepath.Join(os.TempDir(), AppSlug+"-test-homes")
+	pruneTestHomes(parent, processAlive)
 	var b [8]byte
 	_, _ = rand.Read(b[:])
-	return filepath.Join(os.TempDir(), fmt.Sprintf("%s-test-home-%d-%s", AppSlug, os.Getpid(), hex.EncodeToString(b[:])))
+	return filepath.Join(parent, fmt.Sprintf("%d-%s", os.Getpid(), hex.EncodeToString(b[:])))
 })
+
+var testHomeName = regexp.MustCompile(`^([1-9][0-9]*)-[0-9a-f]{16}$`)
+
+func pruneTestHomes(parent string, alive func(pid int) bool) {
+	if info, err := os.Lstat(parent); err != nil || !info.IsDir() {
+		return
+	}
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		m := testHomeName.FindStringSubmatch(entry.Name())
+		if m == nil || !entry.IsDir() {
+			continue
+		}
+		if pid, err := strconv.Atoi(m[1]); err == nil && !alive(pid) {
+			_ = os.RemoveAll(filepath.Join(parent, entry.Name()))
+		}
+	}
+}
+
+// processAlive never reports a Windows process dead: Signal(0) is unsupported
+// there, so test homes are not pruned on Windows.
+func processAlive(pid int) bool {
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
 
 // PromptsDirFrom resolves the user prompt-documents directory for an
 // already-loaded Config without consulting mutable global viper state.

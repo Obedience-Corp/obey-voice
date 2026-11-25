@@ -67,3 +67,62 @@ func TestConfigDirForTestStillWins(t *testing.T) {
 		t.Fatalf("ConfigDir() = %q, ConfigFile() = %q", ConfigDir(), ConfigFile())
 	}
 }
+
+func TestPruneTestHomesRemovesOnlyExitedBinariesHomes(t *testing.T) {
+	parent := t.TempDir()
+	outside := t.TempDir()
+	mkdir := func(name string) string {
+		dir := filepath.Join(parent, name)
+		if err := os.MkdirAll(filepath.Join(dir, ".obey"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	dead := mkdir("101-0123456789abcdef")
+	live := mkdir("202-0123456789abcdef")
+	other := mkdir("notes")
+	file := filepath.Join(parent, "103-0123456789abcdef")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(parent, "104-0123456789abcdef")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+
+	pruneTestHomes(parent, func(pid int) bool { return pid == 202 })
+
+	if _, err := os.Stat(dead); !os.IsNotExist(err) {
+		t.Errorf("home of an exited binary kept: %v", err)
+	}
+	for _, kept := range []string{live, other, file, link, outside} {
+		if _, err := os.Lstat(kept); err != nil {
+			t.Errorf("%s removed: %v", kept, err)
+		}
+	}
+}
+
+func TestPruneTestHomesSkipsASymlinkedParent(t *testing.T) {
+	target := t.TempDir()
+	home := filepath.Join(target, "101-0123456789abcdef")
+	if err := os.Mkdir(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(t.TempDir(), "homes")
+	if err := os.Symlink(target, parent); err != nil {
+		t.Fatal(err)
+	}
+	pruneTestHomes(parent, func(int) bool { return false })
+	if _, err := os.Stat(home); err != nil {
+		t.Fatalf("pruned through a symlinked parent: %v", err)
+	}
+}
+
+func TestTestHomeSitsUnderTheSharedParent(t *testing.T) {
+	if got, want := filepath.Dir(testHomeDir()), filepath.Join(os.TempDir(), AppSlug+"-test-homes"); got != want {
+		t.Fatalf("test home parent = %q, want %q", got, want)
+	}
+	if !testHomeName.MatchString(filepath.Base(testHomeDir())) {
+		t.Fatalf("test home name %q does not match what pruning removes", filepath.Base(testHomeDir()))
+	}
+}
