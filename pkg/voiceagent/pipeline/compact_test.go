@@ -272,6 +272,31 @@ func TestCompactConversationGuards(t *testing.T) {
 		}
 	})
 
+	t.Run("prompt that no longer resolves", func(t *testing.T) {
+		b := &compactBrain{history: compactHistory(), summary: "s"}
+		bus := events.NewBus()
+		var reported []string
+		bus.SubscribeAll(func(e events.Event) {
+			if failure, ok := e.(events.Error); ok && failure.Stage == "compact" {
+				reported = append(reported, failure.Message)
+			}
+		})
+		p := &Pipeline{Brain: b, Events: bus, AutoCompactAfter: 2,
+			ResolveCompactPrompt: func() (string, error) { return "", errors.New("document removed") }}
+		if err := p.CompactConversation(context.Background()); err == nil || !strings.Contains(err.Error(), "document removed") {
+			t.Fatalf("manual compact error = %v, want the resolution failure", err)
+		}
+		if err := p.autoCompactIfNeeded(context.Background()); err != nil {
+			t.Fatalf("automatic compact must not fail the turn: %v", err)
+		}
+		if len(reported) != 1 || !strings.Contains(reported[0], "document removed") {
+			t.Fatalf("compact errors = %q, want one visible notice", reported)
+		}
+		if len(b.thinkInputs) != 0 || len(b.loaded) != 0 {
+			t.Fatal("an unresolved prompt must not summarize or reseed")
+		}
+	})
+
 	t.Run("nothing to compact", func(t *testing.T) {
 		p := &Pipeline{Brain: &compactBrain{}, CompactPrompt: "S"}
 		if err := p.CompactConversation(context.Background()); err == nil {

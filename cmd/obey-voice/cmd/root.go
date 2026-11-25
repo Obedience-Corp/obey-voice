@@ -492,7 +492,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
 			}
 		}
-		wireCompact(p, cfg, sess, bus)
+		wireCompact(p, cfg, selector.Config, sess, bus)
 
 		// Capture the bind id (StartDefaultsID or a persona id) so Settings →
 		// ReloadVoice cannot swap this conversation onto a different identity's
@@ -639,16 +639,16 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 	}
 }
 
-// wireCompact equips the pipeline for /compact: the resolved summarize
-// instruction and a pre-compact session backup. A prompt-resolution failure
+// wireCompact equips the pipeline for /compact: the summarize instruction,
+// resolved from bound() each time compaction runs so it names the persona
+// then bound, and a pre-compact session backup. A prompt-resolution failure
 // disables /compact with a visible error instead of blocking startup.
-func wireCompact(p *pipeline.Pipeline, cfg *config.Config, sess *session.Session, bus *events.Bus) {
-	prompt, err := brain.CompactInstruction(cfg)
-	if err != nil {
+func wireCompact(p *pipeline.Pipeline, cfg *config.Config, bound func() *config.Config, sess *session.Session, bus *events.Bus) {
+	if _, err := brain.CompactInstruction(bound()); err != nil {
 		bus.Emit(events.Error{Stage: "compact", Message: fmt.Sprintf("compact prompt: %v (/compact disabled)", err)})
 		return
 	}
-	p.CompactPrompt = prompt
+	p.ResolveCompactPrompt = func() (string, error) { return brain.CompactInstruction(bound()) }
 	if cfg != nil && cfg.MaxHistory > 0 {
 		p.AutoCompactAfter = cfg.MaxHistory * 2
 	}

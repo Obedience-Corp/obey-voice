@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Compaction in a conversation with several personas now names the persona being compacted. Before, the summarize instruction was worked out once when the conversation started, so after a switch the new persona was asked to write its briefing as the persona the conversation began with; it could answer with a one-line refusal, and that refusal replaced its context. The instruction is now worked out from the persona answering each time compaction runs, for `/compact` and for automatic compaction. If the `compact_prompt` document can no longer be loaded at that point, `/compact` reports the error and automatic compaction is skipped with a visible error instead of failing the turn.
+
 ## v0.4.0
 
 This file was started on 2026-11-19, so it does not describe everything in this release. The [v0.4.0 release notes](https://github.com/Obedience-Corp/obey-voice/releases/tag/v0.4.0) list every pull request merged since v0.3.2.
