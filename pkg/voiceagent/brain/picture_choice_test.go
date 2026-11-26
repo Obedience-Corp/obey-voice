@@ -310,3 +310,68 @@ func TestPictureRetryAnswersTheSameRequestTwice(t *testing.T) {
 		})
 	}
 }
+
+// Pictures kept in a subfolder are offered by their relative path, and the
+// chosen one is attached.
+func TestPictureRetryChoosesAFileInASubfolder(t *testing.T) {
+	o, sent := pictureServer(t, choiceReply(`{"wanted":"a lion","file":"images/lion.jpg","caption":"Here is a lion."}`))
+	if err := os.MkdirAll(filepath.Join(o.workDir, "images"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeJPEG(t, filepath.Join(o.workDir, "images", "dolphin.jpg"))
+	writeJPEG(t, filepath.Join(o.workDir, "images", "lion.jpg"))
+	turn := runRoutedTurn(t, o, lionRequest, liveDirect)
+	const want = "Here is a lion.\n![lion.jpg](<images/lion.jpg>)"
+	if turn.result.Err != nil || turn.answer != want {
+		t.Fatalf("answer=%q err=%v", turn.answer, turn.result.Err)
+	}
+	if format := string(sent()[1].Format); !strings.Contains(format, `"enum":["none","images/dolphin.jpg","images/lion.jpg"]`) {
+		t.Fatalf("schema = %s", format)
+	}
+	_, refs, err := chatmedia.DefaultStore().ImportReply(turn.answer, o.workDir)
+	if err != nil || len(refs) != 1 || refs[0].Name != "lion.jpg" {
+		t.Fatalf("import: %+v %v", refs, err)
+	}
+}
+
+// Names are listed without decoding them; a chosen file that is not a usable
+// picture fails the reply check and the persona says no picture was attached.
+func TestPictureRetryChoosingAnUnusableFileSaysNoPictureWasAttached(t *testing.T) {
+	o, _ := pictureServer(t, choiceReply(`{"wanted":"a lion","file":"images/lion.jpg","caption":"Here is a lion."}`))
+	if err := os.MkdirAll(filepath.Join(o.workDir, "images"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(o.workDir, "images", "lion.jpg"), []byte("<html>not found</html>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	turn := runRoutedTurn(t, o, lionRequest, liveDirect)
+	if turn.answer != noPictureLine || !errors.Is(turn.result.Err, ErrNoPictureAttached) || !turn.result.Recovered {
+		t.Fatalf("answer=%q err=%v", turn.answer, turn.result.Err)
+	}
+	for _, saved := range o.History() {
+		if strings.Contains(saved.Content, "Here is a lion.") {
+			t.Fatalf("the rejected reply was recorded: %+v", saved)
+		}
+	}
+}
+
+// A choice cut off after its file, as a small model does when it fills its
+// output budget with whitespace, still counts; the host writes the caption.
+func TestPictureRetryKeepsAChoiceCutOffAfterItsFile(t *testing.T) {
+	for _, tc := range []struct{ content, want string }{
+		{`{ "wanted": "a giraffe" , "file": "none"` + strings.Repeat(" ", 200), noPictureLine},
+		{`{"wanted":"a lion","file":"lion.jpg",` + strings.Repeat("\t", 200), pictureCaption + "\n![lion.jpg](<lion.jpg>)"},
+	} {
+		o, _ := pictureServer(t, choiceReply(tc.content))
+		pictureWorkDir(t, o)
+		turn := runRoutedTurn(t, o, lionRequest, liveDirect)
+		if turn.result.Err != nil || turn.answer != tc.want {
+			t.Fatalf("%q: answer=%q err=%v", tc.content[:40], turn.answer, turn.result.Err)
+		}
+	}
+	for _, cut := range []string{`{"wanted":"a lion","fi`, `{"wanted":"a lion","file":"lio`, `{"file":"lion.jpg"`} {
+		if _, _, ok := truncatedPictureChoice(cut); ok {
+			t.Errorf("%q read as a choice", cut)
+		}
+	}
+}

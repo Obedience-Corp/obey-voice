@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strings"
 
@@ -44,12 +45,17 @@ type pictureChoice struct {
 // choosePicture returns the choice retry for a failed reply, or nil where the
 // free-form correction applies: an owed follow-up, a turn that is not the
 // speaking persona's live turn, a request that does not ask for a picture to
-// be shown, or a work directory with no usable picture.
+// be shown, or a work directory with no picture in it or its subfolders.
+// The names are listed, not decoded: the chosen file is checked like any
+// reply image once the model has answered.
 func (o *OllamaBrain) choosePicture(ctx context.Context, input string, direct imageRequestContext, opts StreamOptions) *pictureChoice {
 	if direct == noImageContext || direct == owedImageFollowup || !o.answersLive(opts) || !requestsPictureDelivery(input) {
 		return nil
 	}
-	files := o.replyCandidates(ctx)
+	if NewBoundary(workerBoundary(o.cfg)).CheckPath(o.workDir, ".") != nil {
+		return nil
+	}
+	files := chatmedia.PictureNames(ctx, o.workDir)
 	if len(files) == 0 {
 		return nil
 	}
@@ -130,7 +136,15 @@ func (c *pictureChoice) reply(response api.ChatResponse) (string, error) {
 		Caption *string `json:"caption"`
 	}
 	if err := json.Unmarshal([]byte(response.Message.Content), &choice); err != nil {
-		return "", fmt.Errorf("decode picture choice: %w", err)
+		// A small model can fill the rest of its output budget with
+		// whitespace after the file. The choice is made by then; the host
+		// supplies the caption.
+		wanted, file, ok := truncatedPictureChoice(response.Message.Content)
+		if !ok {
+			return "", fmt.Errorf("decode picture choice: %w", err)
+		}
+		empty := ""
+		choice.Wanted, choice.File, choice.Caption = &wanted, &file, &empty
 	}
 	if choice.Wanted == nil || choice.File == nil || choice.Caption == nil {
 		return "", errors.New("the picture choice is missing a field")
@@ -149,7 +163,8 @@ func (c *pictureChoice) reply(response api.ChatResponse) (string, error) {
 	if caption == "" {
 		caption = pictureCaption
 	}
-	return caption + "\n![" + *choice.File + "](<" + *choice.File + ">)", nil
+	label := strings.NewReplacer("[", "", "]", "").Replace(path.Base(*choice.File))
+	return caption + "\n![" + label + "](<" + *choice.File + ">)", nil
 }
 
 // pictureCaptionText is a caption as one line of prose that cannot itself be
@@ -172,4 +187,29 @@ func (o *OllamaBrain) sayNoPicture(ctx context.Context, out chan<- string, opts 
 	o.stopped.reply, o.stopped.sent = true, noPictureLine
 	o.trimHistory()
 	return nil
+}
+
+// truncatedPictureChoice reads wanted and file from a choice cut off after
+// them.
+func truncatedPictureChoice(content string) (wanted, file string, ok bool) {
+	dec := json.NewDecoder(strings.NewReader(content))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return "", "", false
+	}
+	for _, want := range []string{"wanted", "file"} {
+		key, err := dec.Token()
+		if err != nil || key != want {
+			return "", "", false
+		}
+		var value string
+		if err := dec.Decode(&value); err != nil {
+			return "", "", false
+		}
+		if want == "wanted" {
+			wanted = value
+		} else {
+			file = value
+		}
+	}
+	return wanted, file, true
 }

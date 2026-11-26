@@ -121,13 +121,20 @@ speech. If a file is missing, invalid, or over the animation limit, or the
 agent only returns prose, the agent gets one more try.
 
 When you asked to see a picture ("show me a picture of a lion in the chat") and
-the top level of the work directory holds decodable pictures, that try is a
-choice rather than a free reply: the model is sent the conversation with no
-tools and thinking off, and answers in JSON with what you asked to see, one of
-those file names or `none`, and a one-sentence caption. The host writes the
-reply from it, the caption followed by `![name](<name>)`, and that reply goes
-through the same file checks and import as one the model wrote, so only the
-caption is spoken. With `none`, the caption is said instead, when it says the
+the work directory or one of its immediate subfolders holds PNG, JPEG or GIF
+files, that try is a choice rather than a free reply: the model is sent the
+conversation with no tools and thinking off, and answers in JSON with what you
+asked to see, one of those files or `none`, and a one-sentence caption. Files
+are offered by their path in the work directory, such as `images/lion.jpg`:
+the top level first, then each visible subfolder, in name order, up to 64
+names; past that the list is cut off. Hidden files and folders, deeper folders
+and links that lead outside the work directory are not offered, and the files
+are not opened to list them. The host writes the reply from the choice, the
+caption followed by `![lion.jpg](<images/lion.jpg>)`, and that reply goes
+through the same file checks and import as one the model wrote, so a chosen
+file that is not a usable picture attaches nothing, and only the caption is
+spoken. A choice cut off after its file still counts, with the host's
+caption. With `none`, the caption is said instead, when it says the
 picture could not be found; otherwise the host says "I couldn't put a picture
 in the chat this time." No new picture is fetched on this path: a model that
 needs its tools to obtain one gets the free correction below.
