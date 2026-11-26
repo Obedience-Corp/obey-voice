@@ -20,12 +20,15 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // This process test exercises the real CLI, network server, persona selector,
 // and persisted session without touching the user's install or model services.
 func TestServeRestartProcess(t *testing.T) {
 	if os.Getenv("OBEY_SERVE_RESTART_HELPER") == "1" {
+		config.SetConfigDirForTest(t, os.Getenv("OBEY_SERVE_RESTART_INSTALL"))
 		rootCmd.SetArgs([]string{"serve", "--bind", "127.0.0.1", "--port", os.Getenv("OBEY_SERVE_RESTART_PORT"), "--no-mdns", "--no-voice", "--remote-mic=false", "--banner-json"})
 		if err := rootCmd.Execute(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -73,7 +76,7 @@ func TestServeRestartProcess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestServeRestartProcess$")
-	child.Env = append(os.Environ(), "HOME="+home, "OBEY_SERVE_RESTART_HELPER=1", "OBEY_SERVE_RESTART_PORT="+strconv.Itoa(port))
+	child.Env = append(os.Environ(), "HOME="+home, "OBEY_SERVE_RESTART_HELPER=1", "OBEY_SERVE_RESTART_INSTALL="+dir, "OBEY_SERVE_RESTART_PORT="+strconv.Itoa(port))
 	stdout, err := child.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)

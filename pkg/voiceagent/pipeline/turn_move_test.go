@@ -1081,3 +1081,26 @@ func TestMovedReplyWithNoTextAtAllFailsItsJob(t *testing.T) {
 		t.Fatalf("an empty moved reply ended as %+v", ended)
 	}
 }
+
+// A moved reply of an inline persona is still its own reply finishing, and is
+// recorded as inline; a hand-off at its end starts no worker.
+func TestMovedReplyOfAnInlinePersonaHandsNothingOff(t *testing.T) {
+	c := newMovingConversation(t)
+	worker := &recordingWorker{reply: "Checked by the worker."}
+	c.p.Agency.ReplaceWorker(worker, &config.Config{AgentName: "Anika", ActivePersona: "anika", PersonaWork: config.WorkInline}, nil)
+	c.anika.route = "spawn"
+	c.holdTurn()
+	c.move()
+	id := c.movedJob().ID
+	c.p.Agency.mu.Lock()
+	work := c.p.Agency.workerOrigins[id].admission["work"]
+	c.p.Agency.mu.Unlock()
+	if work != config.WorkInline {
+		t.Fatalf("moved job recorded work %q", work)
+	}
+	close(c.anika.release)
+	failed := c.next(func(e events.Event) bool { _, ok := e.(events.JobFailed); return ok }).(events.JobFailed)
+	if failed.ID != id || !strings.Contains(failed.Err, "hands none to background jobs") || worker.calls() != 0 {
+		t.Fatalf("job failed = %+v, worker ran %d", failed, worker.calls())
+	}
+}

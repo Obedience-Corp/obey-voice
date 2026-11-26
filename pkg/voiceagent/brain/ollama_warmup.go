@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/ollama/ollama/api"
 )
 
@@ -38,6 +39,7 @@ func (o *OllamaBrain) configuredTurnOptions() StreamOptions {
 		ToolsEnabled:      o.cfg.VoiceToolsEnabled || tiers != nil,
 		RouterToolsPolicy: configuredLiveToolsPolicy(o.cfg),
 		RouteJSON:         JSONRouteEnabled(o.cfg.VoiceRouterTools),
+		InlineWork:        config.WorksInline(o.cfg),
 	}
 }
 

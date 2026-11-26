@@ -32,7 +32,10 @@ A tier's assignment applies only to work the persona hands to a worker. A
 persona whose `brain.work` is `own` does its background work on its own
 backend and model; the tier its spawn is routed to, with these overrides
 applied, still sets that job's limits, and a tier with `enabled: false`
-refuses it (see [Who does the work](delegation.md#who-does-the-work)). Setting
+refuses it (see [Who does the work](delegation.md#who-does-the-work)). A
+persona whose `brain.work` is `inline` hands no work to jobs, so no tier is
+offered to it and its `worker_tiers` are not used, except under the strict
+policy, which refuses inline work and sends its work to the tiers. Setting
 `worker_tiers` does not by itself make `worker` the persona's default; naming
 a `brain.worker` does.
 

@@ -94,7 +94,7 @@ type CatalogIssue struct {
 //	brain:
 //	  provider: ollama          # or claude, grok; empty = app default
 //	  model: qwen2.5:14b        # provider-specific model id; empty = app default
-//	  work: own                 # own or worker; empty = worker on Ollama or with a worker below, else own
+//	  work: own                 # own, worker or inline (works in the conversation, starts no jobs); empty = worker on Ollama or with a worker below, else own
 //	  worker:                   # the model that runs spawned background jobs
 //	    provider: ollama        # or claude, grok; empty = app default
 //	    model: qwen3:8b         # empty = that provider's usual default
@@ -108,7 +108,8 @@ type Brain struct {
 	Provider    string                      `yaml:"provider,omitempty" json:"provider"`
 	Model       string                      `yaml:"model,omitempty" json:"model"`
 	// Work is who runs the persona's background work: "own" on its own
-	// backend and model, "worker" on the configured worker.
+	// backend and model, "worker" on the configured worker, "inline" none:
+	// the persona does its tool work in the conversation.
 	Work   string `yaml:"work,omitempty" json:"work"`
 	Worker Worker `yaml:"worker,omitempty" json:"worker"`
 	// Router is this persona's voice_router_tools: how its live turns choose

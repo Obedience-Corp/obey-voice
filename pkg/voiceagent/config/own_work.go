@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -12,18 +13,27 @@ const (
 	WorkOwn = "own"
 	// WorkWorker hands it to the configured worker.
 	WorkWorker = "worker"
+	// WorkInline keeps the work in the conversation: the persona uses its
+	// tools on its own turns and no background job starts from them.
+	WorkInline = "inline"
 )
 
 // WorkChoices are the values brain.work accepts; empty takes the default.
-var WorkChoices = []string{WorkOwn, WorkWorker}
+var WorkChoices = []string{WorkOwn, WorkWorker, WorkInline}
 
 // ValidateWork accepts an empty value or one of WorkChoices.
 func ValidateWork(value string) error {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", WorkOwn, WorkWorker:
+	if value = strings.TrimSpace(value); value == "" || slices.Contains(WorkChoices, strings.ToLower(value)) {
 		return nil
 	}
-	return fmt.Errorf("brain.work %q: use %s or %s (empty takes the default)", value, WorkOwn, WorkWorker)
+	return fmt.Errorf("brain.work %q: use %s, %s or %s (empty takes the default)", value, WorkOwn, WorkWorker, WorkInline)
+}
+
+func chosenWork(cfg *Config) string {
+	if value := strings.ToLower(strings.TrimSpace(cfg.PersonaWork)); slices.Contains(WorkChoices, value) {
+		return value
+	}
+	return ""
 }
 
 // DefaultWork is who does the work of a persona on provider when its
@@ -42,10 +52,28 @@ func WorkOf(cfg *Config) string {
 	if cfg == nil {
 		return WorkWorker
 	}
-	if value := strings.ToLower(strings.TrimSpace(cfg.PersonaWork)); value == WorkOwn || value == WorkWorker {
+	if value := chosenWork(cfg); value != "" {
 		return value
 	}
 	return DefaultWork(cfg.BrainProvider, cfg.PersonaNamesWorker)
+}
+
+// WorksInline reports whether the bound persona does its work in the
+// conversation and hands none to background jobs. A persona set to inline
+// that the installation policy refuses does not.
+func WorksInline(cfg *Config) bool {
+	return cfg != nil && WorkOf(cfg) == WorkInline && InlineWorkRefused(cfg) == nil
+}
+
+// InlineWorkRefused is why the bound persona, set to inline, may not work
+// inline: tiered mode's strict policy holds tool work to a tier's limits and
+// allowlist, which a live turn's tools are not held to. Its work then goes to
+// the worker tiers. It is nil otherwise.
+func InlineWorkRefused(cfg *Config) error {
+	if cfg == nil || WorkOf(cfg) != WorkInline || !OwnWorkStrict(cfg) {
+		return nil
+	}
+	return fmt.Errorf("inline work is refused under the strict worker policy, which holds tool work to a tier's limits that a live turn is not held to, so the worker tiers do its work. Set its work to worker, or use the advisory policy")
 }
 
 // WorkReason says why WorkOf chose what it did, for doctor and the persona
@@ -54,7 +82,7 @@ func WorkReason(cfg *Config) string {
 	if cfg == nil {
 		return "no persona is bound"
 	}
-	if value := strings.ToLower(strings.TrimSpace(cfg.PersonaWork)); value == WorkOwn || value == WorkWorker {
+	if value := chosenWork(cfg); value != "" {
 		return "brain.work is " + value
 	}
 	if cfg.PersonaNamesWorker {

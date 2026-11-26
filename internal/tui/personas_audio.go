@@ -121,8 +121,9 @@ func (m personasModel) visibleFormLines() []string {
 		focus = len(lines) - 3
 	} else {
 		for i, line := range lines {
-			plain := ansi.Strip(line)
-			if strings.Contains(plain, "▸ ") || strings.Contains(plain, "› ") {
+			// The marker leads a row inside its box; a "‹ value ›" chip is not one.
+			plain := strings.TrimLeft(strings.TrimPrefix(strings.TrimSpace(ansi.Strip(line)), "│"), " ")
+			if strings.HasPrefix(plain, "▸ ") || strings.HasPrefix(plain, "› ") {
 				focus = i
 				break
 			}

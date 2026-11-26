@@ -133,7 +133,7 @@ func (u *UI) onRouteDecided(e events.RouteDecided) {
 		if msg == "" {
 			msg = "routing rejected"
 		}
-		u.status("Worker rejected: " + msg)
+		u.status(events.RejectedRouteLabel(e) + ": " + msg)
 		return
 	}
 	if e.State == "accepted" && e.JobID != "" {

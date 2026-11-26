@@ -49,6 +49,9 @@ type StreamOptions struct {
 	// BackgroundWorker lets an ordinary live Ollama turn hand its original
 	// request to the host before performing side effects.
 	BackgroundWorker bool
+	// InlineWork says the bound persona works in the conversation: an Ollama
+	// brain offers it no agent_delegate and refuses one.
+	InlineWork bool
 	// JobControl says the host can authorize a job control from this turn: a
 	// live turn answering a person. An Ollama brain whose configuration turns
 	// voice_job_control on then offers the job_control tool on a direct turn.

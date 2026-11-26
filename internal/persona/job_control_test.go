@@ -57,3 +57,64 @@ func TestUpdateStackKeepsJobControl(t *testing.T) {
 		t.Fatalf("persona.yaml = %s (%v)", data, err)
 	}
 }
+
+// The persona form saves its stack and job control in one write; choosing
+// (default) clears job control rather than keeping the saved value as
+// UpdateStack does.
+func TestUpdateStackWithJobControlSetsAndClears(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	if err := Write(&Profile{Schema: Schema, ID: "lumen", DisplayName: "Lumen", Brain: Brain{JobControl: new(true)},
+		TTS: TTS{Provider: "kokoro", Voice: "af_heart"}, Prompts: PromptRefs{Persona: "lumen"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	read := func() (*Profile, string) {
+		t.Helper()
+		p, err := Load("lumen")
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(p.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p, string(data)
+	}
+	tts := TTS{Provider: "kokoro", Voice: "af_heart"}
+	if _, err := UpdateStackWithJobControl("lumen", Brain{Work: config.WorkInline}, tts); err != nil {
+		t.Fatal(err)
+	}
+	p, yaml := read()
+	if p.Brain.JobControl != nil || strings.Contains(yaml, "job_control") || !strings.Contains(yaml, "work: inline") {
+		t.Fatalf("cleared: brain %+v\n%s", p.Brain, yaml)
+	}
+	if _, err := UpdateStackWithJobControl("lumen", Brain{Work: config.WorkInline, JobControl: new(false)}, tts); err != nil {
+		t.Fatal(err)
+	}
+	p, yaml = read()
+	if p.Brain.JobControl == nil || *p.Brain.JobControl || !strings.Contains(yaml, "job_control: false") {
+		t.Fatalf("off: brain %+v\n%s", p.Brain, yaml)
+	}
+	cfg := &config.Config{BrainProvider: "ollama", VoiceJobControl: true}
+	Apply(cfg, p)
+	if !config.WorksInline(cfg) || cfg.VoiceJobControl {
+		t.Fatalf("bound: work %q, job control %v", config.WorkOf(cfg), cfg.VoiceJobControl)
+	}
+}
+
+func TestCreateWithOptsKeepsInlineWorkAndJobControl(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	p, err := CreateWithOpts(&config.Config{BrainProvider: "ollama"}, CreateOpts{
+		DisplayName: "Lumen",
+		Brain:       Brain{Work: "Inline", JobControl: new(false)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Brain.Work != config.WorkInline || got.Brain.JobControl == nil || *got.Brain.JobControl {
+		t.Fatalf("created brain = %+v", got.Brain)
+	}
+}

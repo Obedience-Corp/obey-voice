@@ -10,7 +10,8 @@ import (
 )
 
 // personaWorkDiags says, for every persona, who runs its background work:
-// its own backend and model, or the worker, and why. Read-only.
+// its own backend and model, the worker, or nobody because it works inline,
+// and why. Read-only.
 func personaWorkDiags(cfg *config.Config) []config.Diagnostic {
 	if cfg == nil {
 		return nil
@@ -39,6 +40,17 @@ func workDiag(id string, cfg *config.Config) config.Diagnostic {
 		provider = "ollama"
 	}
 	switch {
+	case config.WorkOf(cfg) == config.WorkInline:
+		if refused := config.InlineWorkRefused(cfg); refused != nil {
+			d.Severity = config.SeverityWarn
+			d.Detail = workerDetail(cfg) + "; " + reason + ", but " + refused.Error()
+			d.Remediation = fmt.Sprintf("obey-voice persona edit %s --work worker, or use the advisory worker policy", id)
+			break
+		}
+		d.Detail = "it does its work in the conversation and hands none to background jobs; " + reason
+		if !cfg.VoiceToolsEnabled {
+			d.Detail += "; voice_tools_enabled is off, so it has no tools"
+		}
 	case config.WorkOf(cfg) == config.WorkOwn && cfg.VoiceWorkEnabled && brain.IsHosted(provider):
 		d.Detail = workerDetail(cfg) + "; " + reason + ", but voice_work_enabled keeps a hosted persona's work on the local worker"
 	case config.WorkOf(cfg) == config.WorkOwn:

@@ -82,8 +82,9 @@ func (m *conversationModel) routeDecided(e events.RouteDecided) {
 		if msg == "" {
 			msg = "routing rejected"
 		}
-		m.setStatus("Worker rejected: "+msg, true)
-		m.appendTranscript(dimStyle.Render("  Worker rejected · " + msg))
+		label := events.RejectedRouteLabel(e)
+		m.setStatus(label+": "+msg, true)
+		m.appendTranscript(dimStyle.Render("  " + label + " · " + msg))
 		return
 	}
 	if e.State != "accepted" || e.JobID == "" {

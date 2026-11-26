@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -463,5 +464,68 @@ func TestAWorkerChosenOnlyInSettingsLeavesAPersonaOnClaudeDoingItsOwnWork(t *tes
 	defer mu.Unlock()
 	if len(notices) != 1 || !strings.Contains(notices[0], "obey-voice persona edit mira --work worker") {
 		t.Fatalf("notices = %q, want one", notices)
+	}
+}
+
+// Switching between an inline persona and one set to worker carries nothing
+// across: each request of the worker persona starts a job on the configured
+// worker, and the inline persona's, before, between and after, start none and
+// are never offered a route or hand-off.
+func TestSwitchingBetweenInlineAndWorkerPersonasLeaksNothing(t *testing.T) {
+	t.Setenv("OBEY_CLAUDE_FIXTURE_SPAWN", "haiku")
+	t.Setenv("OBEY_OLLAMA_FIXTURE_SPAWN", "haiku")
+	c := newConversation(t, 50, "ember", "claude", "", func(c *claudeConversation) {
+		ownWorkSetup(t, config.WorkWorker, t.TempDir())(c)
+		ember := testProfile("ember", "Ember", "ember")
+		ember.Brain = persona.Brain{Provider: "ollama", Work: config.WorkInline}
+		writeTestProfile(t, c.catalog.Dir, ember)
+	})
+	finished := make(chan events.JobFinished, 2)
+	events.Subscribe(c.p.Events, func(e events.JobFinished) { finished <- e })
+	inline := func(jobs int) {
+		t.Helper()
+		c.say("Ember, can you change it to haiku?", "Ember, look up the release notes.")
+		if got := c.responses(); got[len(got)-1].Envelope == nil || got[len(got)-1].Envelope.PersonaID != "ember" {
+			t.Fatalf("Ember did not answer: %+v", got[len(got)-1])
+		}
+		if w := c.p.Workers(); len(w) != jobs {
+			t.Fatalf("jobs after Ember's turns = %+v, want %d", w, jobs)
+		}
+	}
+	worker := func() {
+		t.Helper()
+		c.say("Mira, can you change it to haiku?")
+		select {
+		case done := <-finished:
+			if !strings.HasPrefix(done.Summary, ollamaJobResult) || done.Envelope == nil || done.Envelope.PersonaID != "mira" {
+				t.Fatalf("result = %+v, want the configured worker's answer under Mira", done)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("Mira's job did not finish: %+v errors %+v", c.p.Workers(), c.errorEvents())
+		}
+	}
+	inline(0)
+	worker()
+	inline(1)
+	worker()
+	inline(2)
+
+	c.mu.Lock()
+	calls := append([]ollamaCall(nil), c.ollamaCalls...)
+	c.mu.Unlock()
+	live := 0
+	for _, call := range calls {
+		if len(call.Tools) == 0 || slices.ContainsFunc(call.Messages, func(m ollamaMessage) bool { return strings.Contains(m.Content, claudeJobBrief) }) {
+			continue
+		}
+		live++
+		for _, offered := range []string{"route", "start_background_work", "agent_delegate"} {
+			if slices.Contains(call.Tools, offered) {
+				t.Fatalf("Ember was offered %s: %v", offered, call.Tools)
+			}
+		}
+	}
+	if live != 6 {
+		t.Fatalf("Ember's live requests with tools = %d, want 6", live)
 	}
 }

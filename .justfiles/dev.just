@@ -34,6 +34,15 @@ demo-context-meter: build
         TERM=xterm-256color COLORTERM=truecolor vhs demos/context-meter.tape
     just _optimize-demo-gif demos/context-meter.gif
 
+# Persona form: inline work and the Job control row, on a disposable persona.
+demo-persona-work-rows: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env -u NO_COLOR -u CLICOLOR CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor vhs demos/persona-work-rows.tape
+    just _optimize-demo-gif demos/persona-work-rows.gif
+    ls -lh demos/persona-work-rows.gif
+
 # Color recording of the real persona model list, using disposable Settings.
 demo-persona-model-view: build
     #!/usr/bin/env bash

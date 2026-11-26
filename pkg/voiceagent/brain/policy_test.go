@@ -217,6 +217,26 @@ func TestToolSurfaceContextMatchesRouterPolicy(t *testing.T) {
 	}
 }
 
+// A persona that works inline is told it has its tools, never that route is
+// its only one, whatever the router setting or worker mode.
+func TestInlinePersonaUsesItsToolsDirectly(t *testing.T) {
+	tiered := config.DefaultVoiceWorkers()
+	tiered.Mode = config.WorkerModeTiered
+	for name, cfg := range map[string]*config.Config{
+		"route_only":  {VoiceToolsEnabled: true, VoiceRouterTools: "route_only", PersonaWork: config.WorkInline},
+		"single_call": {VoiceToolsEnabled: true, VoiceRouterTools: SingleCallSetting, PersonaWork: config.WorkInline},
+		"tiered":      {VoiceToolsEnabled: true, VoiceWorkers: tiered, PersonaWork: config.WorkInline},
+	} {
+		surface := ToolSurfaceContext(cfg)
+		if strings.Contains(surface, "Live tool: route") || !strings.Contains(surface, "web_search") {
+			t.Errorf("%s: inline surface:\n%s", name, surface)
+		}
+		if WorkerTierAvailabilityForConfig(cfg) != nil {
+			t.Errorf("%s: an inline persona was offered worker tiers", name)
+		}
+	}
+}
+
 func TestAssembleSystemPromptUsesDisplayName(t *testing.T) {
 	cfg := policyCfg()
 	cfg.UserDisplayName = "Lance"

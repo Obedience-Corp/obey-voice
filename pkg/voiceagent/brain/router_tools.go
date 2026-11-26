@@ -78,9 +78,10 @@ func NormalizeRouterToolsPolicy(raw string) RouterToolsPolicy {
 }
 
 // configuredLiveToolsPolicy includes tiered admission, which remains active even
-// when direct tool execution is disabled.
+// when direct tool execution is disabled. A persona that works inline has no
+// worker to route to, so it always uses its tools directly.
 func configuredLiveToolsPolicy(cfg *config.Config) RouterToolsPolicy {
-	if cfg == nil {
+	if cfg == nil || config.WorksInline(cfg) {
 		return RouterToolsDirect
 	}
 	if cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
@@ -248,8 +249,9 @@ func workerTierAvailability(cfg *config.Config) *WorkerTierAvailability {
 
 // WorkerTierAvailabilityForConfig exposes only tiers that are enabled and
 // statically admissible. Installed-model/catalog checks remain dispatch-time.
+// A persona that works inline routes to no tier.
 func WorkerTierAvailabilityForConfig(cfg *config.Config) *WorkerTierAvailability {
-	if cfg == nil || cfg.VoiceWorkers == nil || cfg.VoiceWorkers.Mode != config.WorkerModeTiered {
+	if cfg == nil || cfg.VoiceWorkers == nil || cfg.VoiceWorkers.Mode != config.WorkerModeTiered || config.WorksInline(cfg) {
 		return nil
 	}
 	available := &WorkerTierAvailability{}

@@ -249,3 +249,47 @@ func TestSessionRestoreDropsWorkerAndKeepsReadySubscription(t *testing.T) {
 		})
 	}
 }
+
+// A persona that works inline may list and cancel delegations but is never
+// offered agent_delegate, and a call to it anyway starts nothing. The turn's
+// options decide, not the configuration the brain was built with: a policy
+// saved since can make a persona built under the strict policy work inline.
+func TestInlinePersonaStartsNoDelegation(t *testing.T) {
+	client := &delegationClientStub{started: make(chan struct{})}
+	runtime, err := delegation.New(context.Background(), client, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = runtime.Close() }()
+	strict := config.DefaultVoiceWorkers()
+	strict.Mode, strict.Policy.ChargePolicy = config.WorkerModeTiered, "strict"
+	o := &OllamaBrain{cfg: &config.Config{PersonaWork: config.WorkInline, VoiceWorkers: strict}}
+	if err := o.AttachDelegation(runtime); err != nil {
+		t.Fatal(err)
+	}
+	offered := func(inline bool) map[string]bool {
+		names := map[string]bool{}
+		for _, tool := range o.turnToolSession(StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, InlineWork: inline}).tools() {
+			names[tool.Function.Name] = true
+		}
+		return names
+	}
+	if names := offered(false); !names["agent_delegate"] {
+		t.Fatalf("not inline: tools=%v", names)
+	}
+	names := offered(true)
+	if names["agent_delegate"] || !names["agent_cancel"] || !names["agent_delegations"] {
+		t.Fatalf("tools=%v", names)
+	}
+	sess := o.turnToolSession(StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, InlineWork: true})
+	call := api.ToolCall{Function: api.ToolCallFunction{Name: "agent_delegate"}}
+	call.Function.Arguments.Set("task", "Inspect the active workitems.")
+	if got := sess.execute(context.Background(), ".", call); !strings.Contains(got, "starts no delegations") {
+		t.Fatalf("execute agent_delegate = %q", got)
+	}
+	select {
+	case <-client.started:
+		t.Fatal("a delegation started")
+	default:
+	}
+}
