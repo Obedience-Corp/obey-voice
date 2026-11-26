@@ -48,7 +48,7 @@ func (o *OllamaBrain) chatRequest(messages []api.Message, tools api.Tools, optio
 
 // turnToolSession is the tool session a turn's requests are offered tools
 // from.
-func (o *OllamaBrain) turnToolSession(opts StreamOptions) *toolSession {
+func (o *OllamaBrain) turnToolSession(ctx context.Context, opts StreamOptions) *toolSession {
 	s := &toolSession{
 		budget:         opts.workerBudget(),
 		catalog:        o.skills,
@@ -62,7 +62,7 @@ func (o *OllamaBrain) turnToolSession(opts StreamOptions) *toolSession {
 		onStart:        opts.OnToolStart,
 		onEnd:          opts.OnToolEnd,
 	}
-	if o.offersViewImage(opts) {
+	if o.offersViewImage(ctx, opts) {
 		s.viewImage = o.viewImage
 	}
 	s.jobControl = o.offersJobControl(opts)
@@ -282,6 +282,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			req.Tools = nil
 		} else {
 			fmt.Fprintf(os.Stderr, "obey-voice: ollama model %q rejected think (%v); continuing with think=false\n", o.model, err)
+			o.thinkRefused.Store(true)
 			req.Think = ollamaThinkValue("false")
 		}
 	}

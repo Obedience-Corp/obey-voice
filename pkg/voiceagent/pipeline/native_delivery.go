@@ -61,7 +61,9 @@ func (p *Pipeline) collectNativeReply(ctx context.Context, cancelTurn context.Ca
 		if !ok {
 			return reply.String(), result, errors.New("native chat closed without a terminal result")
 		}
-		if result.Err != nil {
+		// The no-picture line is the host's answer to a failed picture
+		// request, so it is spoken; the failure is reported beside it.
+		if result.Err != nil && !(result.Recovered && errors.Is(result.Err, brain.ErrNoPictureAttached)) {
 			return reply.String(), result, result.Err
 		}
 		if !utf8.ValidString(reply.String()) {

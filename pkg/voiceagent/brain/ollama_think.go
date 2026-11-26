@@ -83,6 +83,10 @@ func (o *OllamaBrain) resolvedThink() *api.ThinkValue {
 	if o.cfg != nil {
 		raw = o.cfg.OllamaThink
 	}
+	// A model that rejected think once is not asked again.
+	if o.thinkRefused.Load() {
+		return &api.ThinkValue{Value: false}
+	}
 	v := resolveOllamaThink(raw, o.model)
 	s := strings.TrimSpace(strings.ToLower(raw))
 	if s == "false" || s == "off" || s == "0" || s == "no" {

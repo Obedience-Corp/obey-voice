@@ -25,6 +25,10 @@ func TestOllamaMalformedToolFailureDoesNotStartSpeech(t *testing.T) {
 			_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
 			return
 		}
+		if r.URL.Path == "/api/show" {
+			_, _ = w.Write([]byte(`{"capabilities":["completion","tools"]}`))
+			return
+		}
 		requests.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": failure})

@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -87,7 +88,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		defer func() { o.maybeEmitContinuityBudget("") }()
 
 		// Per-turn tool session: exposes skills through progressive disclosure.
-		sess := o.turnToolSession(opts)
+		sess := o.turnToolSession(ctx, opts)
 
 		stream := ollama.Stream{
 			Speak: func(text string) error { return sendChunk(ctx, out, text) },
@@ -105,6 +106,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		directImage, owedImage := o.directImageRequest(input, opts)
 		sess.imageDelivery = directImage.requiresFile(input)
 		var imageRepair string
+		var picking *pictureChoice
 
 		rounds := newToolRounds(o.cfg, opts)
 		workerAvailable := opts.canHandOff()
@@ -118,7 +120,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		inspectedLocally := false
 		for i := 0; rounds.more(i); i++ {
 			finalAnswer, finalInstruction := rounds.final(ctx, i)
-			handoff := workerAvailable && !finalAnswer && continuation == "" && !repetitionRetry
+			handoff := workerAvailable && !finalAnswer && continuation == "" && !repetitionRetry && picking == nil
 			var tools api.Tools
 			if opts.ToolsEnabled && !routedChat && !finalAnswer {
 				tools = sess.tools()
@@ -128,6 +130,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				if imageRepair != "" || routeRetried {
 					tools = withoutJobControl(tools)
 				}
+			}
+			if picking != nil {
+				tools = nil
 			}
 
 			// The route is chosen from what the user said, not from a skill's
@@ -229,6 +234,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				chat = o.chatRouteRecovery
 			} else if jsonRouting {
 				chat = o.chatJSONRoute
+			} else if picking != nil {
+				chat = picking.chat(o)
 			}
 			requestCtx, cancelRequest := ctx, context.CancelFunc(func() {})
 			if finalAnswer {
@@ -240,6 +247,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			roundStarted := time.Now()
 			err := chat(requestCtx, req, receive)
 			cancelRequest()
+			var pickErr error
+			if picking != nil && errors.Is(err, errPictureChoice) && ctx.Err() == nil {
+				pickErr, err = err, nil
+			}
 			toolCalls := output.ToolCalls
 			err = sess.checkStreamRoute(ctx, routing, jsonRouting, output.Usage.Complete, toolCalls, roundStarted, err)
 			err = output.FlushFilters(err)
@@ -250,6 +261,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			var invalidImage error
 			if checkImageResult && err == nil && len(toolCalls) == 0 && !single.deciding {
 				invalidImage = o.imageReplyError(output.HeldText(), input, directImage, imageRepair != "")
+				if pickErr != nil {
+					invalidImage = pickErr
+				} else if picking != nil && picking.none {
+					invalidImage = nil
+				}
 			}
 
 			finalReady := !finalAnswer || (output.Usage.Complete && output.Usage.DoneReason != "length" && hasSpeakableContent(cleanForVoice(output.HeldText())))
@@ -265,14 +281,22 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				if routeRetried || routedChat || finalAnswer {
 					err := fmt.Errorf("model did not select a route; no work was dispatched")
 					if invalidImage != nil {
-						err = fmt.Errorf("no image was attached: %w", invalidImage)
+						err = fmt.Errorf("%w: %w", ErrNoPictureAttached, invalidImage)
+						if sayErr := o.sayNoPicture(ctx, out, opts); sayErr != nil {
+							done <- StreamResult{Err: sayErr}
+							return
+						}
 					}
 					done <- StreamResult{Err: err, Recovered: true}
 					return
 				}
 				routeRetried = true
 				if invalidImage != nil {
-					imageRepair = o.imageRepairPrompt(ctx, directImage, owedImage, invalidImage)
+					if picking = o.choosePicture(ctx, input, directImage, opts); picking != nil {
+						imageRepair = picking.prompt(o)
+					} else {
+						imageRepair = o.imageRepairPrompt(ctx, directImage, owedImage, invalidImage)
+					}
 					if routing && !single.answering {
 						skillCtx += "\n" + missingRouteInstruction
 					}

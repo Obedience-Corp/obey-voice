@@ -206,11 +206,7 @@ func (o *OllamaBrain) imageRepairPrompt(ctx context.Context, directRequest image
 			"request": fmt.Sprintf("%.512s", owed), "work_dir": o.workDir, "import_error": problem,
 		})
 	}
-	paths := []string{}
-	if NewBoundary(workerBoundary(o.cfg)).CheckPath(o.workDir, ".") == nil {
-		paths = append(paths, chatmedia.DefaultStore().ReplyCandidates(ctx, o.workDir)...)
-	}
-	candidates, _ := json.Marshal(paths)
+	candidates, _ := json.Marshal(append([]string{}, o.replyCandidates(ctx)...))
 	return systemPrompt(o.cfg, "direct-image-repair", map[string]string{
 		"work_dir": o.workDir, "import_error": problem, "candidates": string(candidates),
 	})

@@ -287,11 +287,11 @@ func TestSingleCallSettingSelection(t *testing.T) {
 		}
 	}
 	o := &OllamaBrain{cfg: &config.Config{VoiceRouterTools: SingleCallSetting}}
-	if sess := o.turnToolSession(StreamOptions{RouterToolsPolicy: RouterToolsDirect}); sess.singleCall {
+	if sess := o.turnToolSession(t.Context(), StreamOptions{RouterToolsPolicy: RouterToolsDirect}); sess.singleCall {
 		t.Fatal("direct turns never answer in a routing request")
 	}
 	o.cfg.VoiceRouterTools = "route_only"
-	if sess := o.turnToolSession(singleCallTurn); sess.singleCall || jsonOf(t, sess.tools()) != jsonOf(t, liveRouterTools()) {
+	if sess := o.turnToolSession(t.Context(), singleCallTurn); sess.singleCall || jsonOf(t, sess.tools()) != jsonOf(t, liveRouterTools()) {
 		t.Fatal("route_only must keep its route schema")
 	}
 	tiers := &WorkerTierAvailability{Simple: true}

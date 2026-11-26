@@ -269,7 +269,7 @@ func TestInlinePersonaStartsNoDelegation(t *testing.T) {
 	}
 	offered := func(inline bool) map[string]bool {
 		names := map[string]bool{}
-		for _, tool := range o.turnToolSession(StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, InlineWork: inline}).tools() {
+		for _, tool := range o.turnToolSession(t.Context(), StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, InlineWork: inline}).tools() {
 			names[tool.Function.Name] = true
 		}
 		return names
@@ -281,7 +281,7 @@ func TestInlinePersonaStartsNoDelegation(t *testing.T) {
 	if names["agent_delegate"] || !names["agent_cancel"] || !names["agent_delegations"] {
 		t.Fatalf("tools=%v", names)
 	}
-	sess := o.turnToolSession(StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, InlineWork: true})
+	sess := o.turnToolSession(t.Context(), StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, InlineWork: true})
 	call := api.ToolCall{Function: api.ToolCallFunction{Name: "agent_delegate"}}
 	call.Function.Arguments.Set("task", "Inspect the active workitems.")
 	if got := sess.execute(context.Background(), ".", call); !strings.Contains(got, "starts no delegations") {

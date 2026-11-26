@@ -42,7 +42,7 @@ func newLiveRequestBrain(t *testing.T, cfg *config.Config, reply func(n int) api
 			_, _ = io.WriteString(w, `{"models":[{"name":"fixture"}]}`)
 			return
 		case "/api/show":
-			_, _ = io.WriteString(w, `{"capabilities":["completion","tools"],"details":{"family":"fixture"}}`)
+			_, _ = io.WriteString(w, `{"capabilities":["completion","tools","vision"],"details":{"family":"fixture"}}`)
 			return
 		}
 		body, err := io.ReadAll(r.Body)

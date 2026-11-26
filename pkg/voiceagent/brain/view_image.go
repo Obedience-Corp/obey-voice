@@ -36,12 +36,46 @@ func viewImageTool() api.Tool {
 	}
 }
 
-// offersViewImage reports whether a turn's tools include view_image: a live,
-// foreground turn of the speaking persona with direct tools. Workers and
-// requests that answer no new user message do not get it.
-func (o *OllamaBrain) offersViewImage(opts StreamOptions) bool {
+// answersLive reports whether a turn is a live, foreground turn of the
+// speaking persona with direct tools. Workers and requests that answer no new
+// user message are not.
+func (o *OllamaBrain) answersLive(opts StreamOptions) bool {
 	return opts.effectiveRouterPolicy() == RouterToolsDirect && (o.cfg == nil || !o.cfg.IsWorker) && opts.workerBudget() == nil &&
 		!opts.Background && !opts.AgentContinuation && opts.Discussion == nil && !opts.TransientHistory
+}
+
+// offersViewImage reports whether a turn's tools include view_image: a live
+// turn of a model that can see pictures.
+func (o *OllamaBrain) offersViewImage(ctx context.Context, opts StreamOptions) bool {
+	if !o.answersLive(opts) || o.audioResolver != nil {
+		return false
+	}
+	views, err := o.seesImages(ctx)
+	return err == nil && views
+}
+
+// seesImages is viewsImages answered once per brain, so the tools a model is
+// offered do not cost a request each turn or change between turns. A failed
+// question is asked again next time. The lock is not held while Ollama
+// answers, so a slow server never queues other turns behind one question.
+func (o *OllamaBrain) seesImages(ctx context.Context) (bool, error) {
+	if o.client == nil {
+		return false, errors.New("check image support: no Ollama client")
+	}
+	o.visionMu.Lock()
+	cached := o.vision
+	o.visionMu.Unlock()
+	if cached != nil {
+		return *cached, nil
+	}
+	views, err := o.viewsImages(ctx)
+	if err != nil {
+		return false, err
+	}
+	o.visionMu.Lock()
+	o.vision = &views
+	o.visionMu.Unlock()
+	return views, nil
 }
 
 // viewImage imports an image file inside the work directory and records it on
@@ -56,7 +90,7 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool,
 	if o.audioResolver != nil {
 		return viewFailed(cannotViewReason)
 	}
-	views, err := o.viewsImages(ctx)
+	views, err := o.seesImages(ctx)
 	if err != nil {
 		return viewFailed(err.Error())
 	}

@@ -987,6 +987,11 @@ func (p *Pipeline) collectTextStream(ctx context.Context, cancel context.CancelF
 	if p.Native != nil {
 		reply, result, err := p.collectNativeReply(ctx, cancel, stream, metrics)
 		metrics.route.Tier, metrics.route.ReasonCode = result.RouteTier, result.RouteReasonCode
+		if err == nil && result.Err != nil {
+			metrics.degraded = true
+			p.emit(events.Error{Stage: "brain", Message: result.Err.Error()})
+			logDegradedTurn("brain", result.Err)
+		}
 		return strings.TrimSpace(reply), result.Route, err
 	}
 	observeCtx, stopObserving := context.WithCancel(ctx)

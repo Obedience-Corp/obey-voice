@@ -2,9 +2,11 @@ package brain
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"image"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,7 +15,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -185,20 +189,61 @@ func TestViewImageRefusesAFileOutsideTheWorkDirectory(t *testing.T) {
 	}
 }
 
-func TestViewImageOnAModelThatCannotViewImages(t *testing.T) {
+// A model that cannot view images is not offered view_image, and its
+// capability is asked once, not on every request.
+func TestViewImageIsNotOfferedToAModelThatCannotViewImages(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
-	o, sent := toolModel(t, false, opensThenAnswers("shot.png"))
-	writePNG(t, filepath.Join(o.workDir, "shot.png"))
-	reply, err := o.ThinkFull(t.Context(), "Look at shot.png.", directTools)
-	if err != nil || reply == "" {
-		t.Fatalf("turn: %q %v", reply, err)
-	}
-	requests := sent()
-	if result := toolResult(t, requests[1], "view_image"); !strings.HasSuffix(result, cannotViewImages) {
-		t.Fatalf("tool result = %q", result)
-	}
-	if len(imagesBy(t, requests[1])) != 0 || len(o.History()[0].OpenedImages) != 0 {
-		t.Fatal("a model that cannot view images was given the picture")
+	for _, vision := range []bool{false, true} {
+		var shows atomic.Int32
+		var mu sync.Mutex
+		var requests []api.ChatRequest
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/show" {
+				shows.Add(1)
+				capabilities := []string{"completion", "tools"}
+				if vision {
+					capabilities = append(capabilities, "vision")
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": capabilities})
+				return
+			}
+			var req api.ChatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+				return
+			}
+			mu.Lock()
+			requests = append(requests, req)
+			mu.Unlock()
+			if !vision && len(req.Messages) > 0 && req.Messages[len(req.Messages)-1].Role == "user" && strings.Contains(req.Messages[len(req.Messages)-1].Content, "Look at shot.png.") {
+				callTool(w, req, "view_image", map[string]any{"path": "shot.png"})
+				return
+			}
+			answer(w, req, api.Message{Role: "assistant", Content: "Done."}, "stop")
+		}))
+		base, _ := url.Parse(srv.URL)
+		o := &OllamaBrain{client: api.NewClient(base, srv.Client()), model: "fixture", fullSystemPrompt: "You are Obey.", cfg: defaultConversationConfig(), workDir: t.TempDir()}
+		writePNG(t, filepath.Join(o.workDir, "shot.png"))
+		for _, input := range []string{"Look at shot.png.", "Thanks.", "And again."} {
+			if _, err := o.ThinkFull(t.Context(), input, directTools); err != nil {
+				t.Fatal(err)
+			}
+		}
+		srv.Close()
+		if hasTool(requests[0].Tools, viewImageToolName) != vision || hasTool(requests[len(requests)-1].Tools, viewImageToolName) != vision {
+			t.Fatalf("vision=%t: view_image offered first %t, last %t", vision, hasTool(requests[0].Tools, viewImageToolName), hasTool(requests[len(requests)-1].Tools, viewImageToolName))
+		}
+		if !hasTool(requests[0].Tools, "read_file") {
+			t.Fatalf("vision=%t: the other tools went with view_image", vision)
+		}
+		if !vision {
+			if result := toolResult(t, requests[1], viewImageToolName); !strings.Contains(result, "not available in this turn") || len(o.History()[0].OpenedImages) != 0 {
+				t.Fatalf("a model that cannot view images got %q", result)
+			}
+		}
+		if shows.Load() != 1 {
+			t.Fatalf("vision=%t: the model's capabilities were asked %d times", vision, shows.Load())
+		}
 	}
 }
 
@@ -283,7 +328,7 @@ func TestViewImageIsOfferedOnlyOnLiveTurns(t *testing.T) {
 		"discussion":    {o, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, Discussion: &discussion.Directive{}}, false},
 		"transient":     {o, StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect, TransientHistory: true}, false},
 	} {
-		if got := hasTool(tc.brain.turnToolSession(tc.opts).tools(), "view_image"); got != tc.want {
+		if got := hasTool(tc.brain.turnToolSession(t.Context(), tc.opts).tools(), "view_image"); got != tc.want {
 			t.Errorf("%s: view_image offered = %t", name, got)
 		}
 	}
@@ -347,12 +392,10 @@ func TestViewImageThatIsNotCarriedIsNotRecorded(t *testing.T) {
 	}
 
 	// A model that cannot view images is given that reason.
-	blind, blindSent := toolModel(t, false, opensThenAnswers("shot.png"))
+	blind, _ := toolModel(t, false, nil)
 	writePNG(t, filepath.Join(blind.workDir, "shot.png"))
-	if _, err := blind.ThinkFull(t.Context(), "Look at shot.png.", directTools); err != nil {
-		t.Fatal(err)
-	}
-	if result := toolResult(t, blindSent()[1], "view_image"); !strings.Contains(result, "cannot view images") || strings.Contains(result, "bytes") || strings.Contains(result, "MiB") {
+	blind.appendMessage(api.Message{Role: "user", Content: "Look at shot.png."}, nil)
+	if result, _, _ := blind.viewImage(t.Context(), "shot.png"); !strings.Contains(result, "cannot view images") || strings.Contains(result, "bytes") || strings.Contains(result, "MiB") {
 		t.Fatalf("tool result = %q", result)
 	}
 	if len(blind.History()[0].OpenedImages) != 0 {
@@ -448,5 +491,34 @@ func TestHandOffAfterALookAtAPicture(t *testing.T) {
 				t.Fatalf("%d pictures recorded as opened, want %d", opened, tc.opened)
 			}
 		})
+	}
+}
+
+// A slow capability question must not hold up another turn that asks too.
+func TestVisionQuestionDoesNotBlockOtherTurns(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{}, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entered <- struct{}{}
+		<-release
+		_, _ = io.WriteString(w, `{"capabilities":["completion","vision"]}`)
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	base, _ := url.Parse(srv.URL)
+	o := &OllamaBrain{client: api.NewClient(base, http.DefaultClient), model: "m"}
+	go func() { _, _ = o.seesImages(context.Background()) }()
+	<-entered
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := o.seesImages(ctx); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("second question answered while the server was held")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second turn waited behind the first capability question")
 	}
 }

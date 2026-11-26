@@ -76,7 +76,7 @@ func (o *OllamaBrain) WarmupTurn(ctx context.Context, opts StreamOptions) {
 	var sess *toolSession
 	var tools api.Tools
 	if opts.ToolsEnabled {
-		sess = o.turnToolSession(opts)
+		sess = o.turnToolSession(ctx, opts)
 		tools = sess.tools()
 		if opts.canHandOff() {
 			tools = withBackgroundWork(tools)
