@@ -18,6 +18,8 @@ const toolTimeAnswerInstruction = "The time budget for this job is nearly used. 
 
 const toolRepeatAnswerInstruction = "The same tool calls kept returning the same results without progress. No more tools are available. Answer now using the results already collected. State what was completed, what remains, and the concrete blocker that stopped progress. Do not claim unfinished work succeeded, promise to answer later, or describe tool-loop reasoning."
 
+const toolContextAnswerInstruction = "The context for this turn is nearly full. No more tools are available. Answer the user's request now using the results already collected. State what was completed, what remains, and any concrete blocker. Do not claim unfinished work succeeded, promise to answer later, or describe tool-loop reasoning."
+
 const toolReportAnswerInstruction = "The user asked for a report on this job. No more tools are available. Stop here and say what is done, what is not, and where anything you made is. Do not claim unfinished work succeeded, promise to answer later, or describe tool-loop reasoning."
 
 const (
@@ -30,6 +32,7 @@ const (
 	stopTime       = "worker time budget nearly used"
 	stopRepeat     = "worker repeated the same tool call"
 	stopReport     = "a report was requested"
+	stopContext    = "the context for this turn is nearly full"
 )
 
 // workerTimeReserve is how much of a deadline a worker keeps for its final
@@ -116,6 +119,27 @@ func (r *toolRounds) final(ctx context.Context, i int) (bool, string) {
 		r.instruction, r.stop, r.forced = toolReportAnswerInstruction, stopReport, ForcedByReport
 	}
 	return r.instruction != "", r.instruction
+}
+
+// contextFull makes the next request of a live turn its answer round, because
+// another tool round no longer fits the context window. It reports whether it
+// did; workers compact their context instead.
+func (r *toolRounds) contextFull() bool {
+	if r.worker || r.instruction != "" {
+		return false
+	}
+	r.instruction, r.stop = toolContextAnswerInstruction, stopContext
+	return true
+}
+
+// answerRoundTokens is the most an answer round's instruction adds to a
+// request.
+func answerRoundTokens() int {
+	n := 0
+	for _, instruction := range []string{toolLimitAnswerInstruction, toolContextAnswerInstruction, toolRepeatAnswerInstruction} {
+		n = max(n, estimateMessageTokens([]api.Message{{Role: "user", Content: instruction}}, nil))
+	}
+	return n
 }
 
 func (r *toolRounds) limitInstruction(ctx context.Context, i int) string {

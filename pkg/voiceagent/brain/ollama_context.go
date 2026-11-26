@@ -23,6 +23,22 @@ const toolResultTruncationMarker = "... (truncated to fit context)"
 // instead of dropped, because Ollama 0.32.14 + qwen3.8 500s when
 // truncation leaves no plain user message (ollama#17778).
 func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
+	o.fitContext(skillCtx, 0, 0)
+}
+
+// fitAfterToolRound prepares the next request of a live turn's tool loop.
+// Older turns are archived to make room for the tool schemas that request
+// offers, sized as the pre-request check sizes it. The turn's own tool
+// results are shrunk only as far as its tools-free answer round needs: when
+// another tool round does not fit, that request becomes the answer round.
+func (o *OllamaBrain) fitAfterToolRound(skillCtx string, tools api.Tools) {
+	o.fitContext(skillCtx, estimateMessageTokens(nil, tools), answerRoundTokens())
+}
+
+// fitContext keeps the estimated prompt plus a reserve under 90% of num_ctx.
+// dropReserve is what the next request adds when it is a tool round;
+// shrinkReserve is what it adds when it is the answer round.
+func (o *OllamaBrain) fitContext(skillCtx string, dropReserve, shrinkReserve int) {
 	if o.cfg != nil && o.cfg.IsWorker {
 		return // Workers summarize completed tool exchanges before the next request.
 	}
@@ -38,16 +54,16 @@ func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
 	}
 	// Drop/archive older exchanges before expanding a pressured active turn.
 	limit := budget * 9 / 10
-	if o.estimateTokens(skillCtx) <= limit {
+	if o.estimateTokens(skillCtx)+max(dropReserve, shrinkReserve) <= limit {
 		return
 	}
-	trimmed := o.dropOldestBeforeLastUser(skillCtx, limit)
-	for o.estimateTokens(skillCtx) > o.effectiveNumCtx()*85/100 && o.expandContext() {
+	trimmed := o.dropOldestBeforeLastUser(skillCtx, limit-dropReserve)
+	for o.estimateTokens(skillCtx)+dropReserve > o.effectiveNumCtx()*85/100 && o.expandContext() {
 	}
 	budget = o.effectiveNumCtx()
 	limit = budget * 9 / 10
-	if o.estimateTokens(skillCtx) > limit {
-		trimmed = o.shrinkToolsToTokenLimit(skillCtx, limit) || trimmed
+	if o.estimateTokens(skillCtx)+shrinkReserve > limit {
+		trimmed = o.shrinkToolsToTokenLimit(skillCtx, limit-shrinkReserve) || trimmed
 	}
 	if trimmed && !o.budgetWarned {
 		o.budgetWarned = true
