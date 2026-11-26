@@ -180,32 +180,39 @@ func (m *conversationModel) refreshContent() {
 	if !m.ready {
 		return
 	}
+	width, profile := m.viewport.Width, lipgloss.ColorProfile()
 	parts := make([]string, 0, len(m.items))
-	texts := make([]string, len(m.items))
-	for i, it := range m.items {
-		if s := it.render(m.showThink, m.viewport.Width); s != "" {
-			texts[i] = s
-			if len(it.attachments) > 0 {
-				s += "\n" + m.renderMedia(it.attachments, max(1, m.viewport.Width-4), m.threadPreviewRows(len(it.attachments)))
-			}
-			parts = append(parts, s)
+	pieces := make([]*wrapPiece, 0, len(m.items))
+	// Result rows count each item's text alone, without its pictures.
+	var rows []workResultRows
+	line := 0
+	for i := range m.items {
+		l := m.layoutItem(i, width, profile)
+		if l.text == "" {
+			continue
 		}
+		if id := m.items[i].workResultID; id != "" {
+			rows = append(rows, workResultRows{id: id, start: line, end: line + l.wrap.rows})
+		}
+		line += l.wrap.rows
+		pieces = append(pieces, &l.wrap)
+		part := l.text
+		if refs := m.items[i].attachments; len(refs) > 0 {
+			var media *wrapPiece
+			part, media = l.withMedia(m.renderMedia(refs, max(1, width-4), m.threadPreviewRows(len(refs))), width)
+			pieces = append(pieces, media)
+		}
+		parts = append(parts, part)
 	}
 	m.transcript = parts
-	m.layoutWorkResultRows(texts)
-	content := strings.Join(parts, "\n")
+	m.workResultRows = rows
 	// Render the in-progress turn live beneath the finalized transcript so
 	// thinking and speakable stream in before ResponseReady lands.
+	live := ""
 	if m.streamingThink != "" || m.streamingAgent != "" {
-		live := renderAgentBubble(m.agentName, m.streamingThink, m.streamingAgent, m.streamingThink != "")
-		if content != "" {
-			content += "\n" + live
-		} else {
-			content = live
-		}
+		live = renderAgentBubble(m.agentName, m.streamingThink, m.streamingAgent, m.streamingThink != "")
 	}
-	// lipgloss wraps to width so long turns don't overflow the viewport.
-	m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(content))
+	m.showTranscript(parts, pieces, live)
 }
 
 // appendStreamingDelta grows the in-progress agent turn and re-renders,
