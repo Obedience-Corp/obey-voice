@@ -87,6 +87,7 @@ type conversationModel struct {
 	workScope               work.WorkScope
 	workDisplayHidden       bool
 	workDisplay             workDisplayState
+	workResultRows          []workResultRows
 	workStripExpiryDeadline time.Time
 	workStripExpiryScope    work.WorkScope
 	workActivity            bool

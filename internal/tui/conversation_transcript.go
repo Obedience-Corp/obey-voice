@@ -181,8 +181,10 @@ func (m *conversationModel) refreshContent() {
 		return
 	}
 	parts := make([]string, 0, len(m.items))
-	for _, it := range m.items {
+	texts := make([]string, len(m.items))
+	for i, it := range m.items {
 		if s := it.render(m.showThink, m.viewport.Width); s != "" {
+			texts[i] = s
 			if len(it.attachments) > 0 {
 				s += "\n" + m.renderMedia(it.attachments, max(1, m.viewport.Width-4), m.threadPreviewRows(len(it.attachments)))
 			}
@@ -190,6 +192,7 @@ func (m *conversationModel) refreshContent() {
 		}
 	}
 	m.transcript = parts
+	m.layoutWorkResultRows(texts)
 	content := strings.Join(parts, "\n")
 	// Render the in-progress turn live beneath the finalized transcript so
 	// thinking and speakable stream in before ResponseReady lands.

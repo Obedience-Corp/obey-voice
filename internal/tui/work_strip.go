@@ -255,6 +255,42 @@ func (m conversationModel) selectedWorkJob() *work.JobView {
 	}
 	return nil
 }
+
+// workResultRows is the row range a background result's text took when the
+// transcript was last laid out.
+type workResultRows struct {
+	id         string
+	start, end int
+}
+
+// layoutWorkResultRows records where each background result sits, given each
+// item's rendered text (empty for items that draw nothing). Rows are counted
+// per item, without pictures.
+func (m *conversationModel) layoutWorkResultRows(rendered []string) {
+	m.workResultRows = m.workResultRows[:0]
+	last := -1
+	for i := range m.items {
+		if m.items[i].workResultID != "" {
+			last = i
+		}
+	}
+	wrap := lipgloss.NewStyle().Width(max(m.viewport.Width, 1))
+	line := 0
+	for i := 0; i <= last; i++ {
+		s := rendered[i]
+		if s == "" {
+			continue
+		}
+		h := lipgloss.Height(wrap.Render(s))
+		if id := m.items[i].workResultID; id != "" {
+			m.workResultRows = append(m.workResultRows, workResultRows{id: id, start: line, end: line + h})
+		}
+		line += h
+	}
+}
+
+// markVisibleWorkResults marks results on screen as seen. It reads the layout
+// refreshContent recorded, so a scroll does no rendering.
 func (m *conversationModel) markVisibleWorkResults() {
 	if m.activityFocused || m.workDisplayHidden || !m.ready {
 		return
@@ -262,16 +298,10 @@ func (m *conversationModel) markVisibleWorkResults() {
 	if m.workDisplay.seen == nil {
 		m.workDisplay.seen = map[string]bool{}
 	}
-	start, end, line := m.viewport.YOffset, m.viewport.YOffset+m.viewport.Height, 0
-	for _, item := range m.items {
-		rendered := item.render(m.showThink, m.viewport.Width)
-		if rendered == "" {
-			continue
+	start, end := m.viewport.YOffset, m.viewport.YOffset+m.viewport.Height
+	for _, r := range m.workResultRows {
+		if !m.workDisplay.seen[r.id] && r.start < end && r.end > start {
+			m.workDisplay.seen[r.id] = true
 		}
-		h := lipgloss.Height(lipgloss.NewStyle().Width(max(m.viewport.Width, 1)).Render(rendered))
-		if item.workResultID != "" && line < end && line+h > start {
-			m.workDisplay.seen[item.workResultID] = true
-		}
-		line += h
 	}
 }
