@@ -1,9 +1,16 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"testing"
 
 	"github.com/spf13/viper"
 )
@@ -131,14 +138,77 @@ func SkillsDir() string {
 	return filepath.Join(configDir, "skills")
 }
 
-// homeDir reports the user's home directory. A variable so a test can drive
-// the branch where the OS has none to report.
+// homeDir reports the home the install root and "~" paths derive from. A
+// variable so a test can drive the branch where the OS has none to report.
+// A test binary never gets the HOME it started with, so a test that skips
+// SetConfigDirForTest cannot touch the real install. A HOME the test sets
+// while it runs is honored; a HOME a parent process chose for a child test
+// binary is the one that child started with, so it is redirected too.
 var homeDir = func() string {
+	home := osHomeDir()
+	if testing.Testing() && home == inheritedHome {
+		return testHomeDir()
+	}
+	return home
+}
+
+// With no OS home this and osHomeDir are both ".", so a test binary still redirects.
+var inheritedHome = osHomeDir()
+
+func osHomeDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "."
 	}
 	return home
+}
+
+// testHomeDir is this test binary's home. The homes sit under one folder that
+// only this user can enter; each binary locks its home for as long as it runs,
+// and a later binary removes the homes whose lock is free. When that folder
+// is someone else's, the home is a private one that nothing removes.
+var testHomeDir = sync.OnceValue(func() string {
+	home, lock := newTestHome(os.TempDir(), ownedPrivateDir)
+	testHomeLock = lock
+	return home
+})
+
+// testHomeLock stays open until the binary exits: closing it frees the lock.
+var testHomeLock *os.File
+
+func newTestHome(tmp string, private func(os.FileInfo) bool) (string, *os.File) {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	name := fmt.Sprintf("%d-%s", os.Getpid(), hex.EncodeToString(b[:]))
+	parent := filepath.Join(tmp, testHomesParentName())
+	if !claimTestHomesParent(parent, private) {
+		if dir, err := os.MkdirTemp(tmp, AppSlug+"-test-home-"); err == nil {
+			return dir, nil
+		}
+		return filepath.Join(tmp, AppSlug+"-test-home-"+name), nil
+	}
+	pruneTestHomes(parent)
+	return filepath.Join(parent, name), lockTestHome(parent, name)
+}
+
+// testHomesParentName carries the uid because a shared temp directory holds
+// every user's folder. Windows reports no uid and keeps a temp folder per user.
+func testHomesParentName() string {
+	if uid := os.Getuid(); uid >= 0 {
+		return fmt.Sprintf("%s-test-homes-%d", AppSlug, uid)
+	}
+	return AppSlug + "-test-homes"
+}
+
+// claimTestHomesParent creates parent for this user alone, or accepts one that
+// already is. Another user can create the name first in a shared temp
+// directory, as a folder or a link, so an existing one is checked, not trusted.
+func claimTestHomesParent(parent string, private func(os.FileInfo) bool) bool {
+	if err := os.Mkdir(parent, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return false
+	}
+	info, err := os.Lstat(parent)
+	return err == nil && info.IsDir() && private(info)
 }
 
 // PromptsDirFrom resolves the user prompt-documents directory for an

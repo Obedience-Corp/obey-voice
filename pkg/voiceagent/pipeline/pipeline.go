@@ -220,6 +220,16 @@ type Pipeline struct {
 	// CompactPrompt is the resolved kind=compact instruction for /compact's
 	// summarize turn. Empty disables compaction with a clear error.
 	CompactPrompt string
+	// ResolveCompactPrompt, when set, is called each time compaction runs so
+	// the instruction names the persona bound at that moment; CompactPrompt
+	// is then ignored. A prompt returned with an error is a fallback:
+	// compaction uses it and reports the error.
+	ResolveCompactPrompt func() (string, error)
+	// compactSkipsShown holds the automatic-compaction skip notices already
+	// shown, so a failure that persists across turns is reported once. Any
+	// successful resolve clears it.
+	compactSkipMu     sync.Mutex
+	compactSkipsShown map[string]bool
 	// AutoCompactAfter is the history length that triggers CompactConversation
 	// before a user turn, instead of silently dropping old messages. Zero
 	// disables auto-compact. /compact still works at any length.

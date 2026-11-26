@@ -96,6 +96,7 @@ func TestPersonasScreenCreateWithSystemPrompt(t *testing.T) {
 }
 
 func TestPersonasScreenEditSystemPrompt(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
 	m := newPersonas(cfg)
 	m.listPersonas = func() ([]*persona.Profile, error) {
@@ -130,10 +131,15 @@ func TestPersonasScreenEditSystemPrompt(t *testing.T) {
 	m.saveStack = func(id string, b persona.Brain, tt persona.TTS) (*persona.Profile, error) {
 		return &persona.Profile{ID: id, Brain: b, TTS: tt}, nil
 	}
+	var reapplied string
+	m.usePersona = func(_ *config.Config, id string) error { reapplied = id; return nil }
 	m.promptTA.SetValue("You are {agent_name}, revised.")
 	m, _ = m.submitForm()
 	if !strings.Contains(savedPrompt, "revised") {
 		t.Fatalf("saved prompt = %q", savedPrompt)
+	}
+	if reapplied != "samantha" {
+		t.Fatalf("editing the active persona reapplied %q, want samantha", reapplied)
 	}
 	if m.formMode != "" {
 		t.Fatal("form should close")
