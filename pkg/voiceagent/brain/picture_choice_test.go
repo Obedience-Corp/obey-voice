@@ -275,3 +275,38 @@ func TestPictureRetryNeedsCandidatesAndALiveRequest(t *testing.T) {
 		}
 	}
 }
+
+// The choice is made at temperature 0 and the host lines are fixed, so asking
+// again can produce the same reply word for word. It is still delivered.
+func TestPictureRetryAnswersTheSameRequestTwice(t *testing.T) {
+	for name, choice := range map[string]string{
+		"chosen": `{"wanted":"a lion","file":"lion.jpg","caption":"Here is a lion."}`,
+		"none":   `{"wanted":"a lion","file":"none","caption":"Here it is."}`,
+		"failed": "Here is a lion!",
+	} {
+		t.Run(name, func(t *testing.T) {
+			o, sent := pictureServer(t, func(_ int, req api.ChatRequest) (int, api.Message) {
+				if len(req.Format) == 0 {
+					return http.StatusOK, api.Message{Role: "assistant", Content: plainLion}
+				}
+				return http.StatusOK, api.Message{Role: "assistant", Content: choice}
+			})
+			pictureWorkDir(t, o)
+			var answers []string
+			for range 2 {
+				turn := runRoutedTurn(t, o, lionRequest, liveDirect)
+				if name == "failed" {
+					if !errors.Is(turn.result.Err, ErrNoPictureAttached) {
+						t.Fatalf("err = %v", turn.result.Err)
+					}
+				} else if turn.result.Err != nil {
+					t.Fatalf("err = %v", turn.result.Err)
+				}
+				answers = append(answers, turn.answer)
+			}
+			if answers[0] == "" || answers[1] != answers[0] || len(sent()) != 4 {
+				t.Fatalf("answers=%q requests=%d", answers, len(sent()))
+			}
+		})
+	}
+}

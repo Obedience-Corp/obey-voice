@@ -16,6 +16,10 @@ import (
 // noPictureLine is spoken when a picture request ends without a picture.
 const noPictureLine = "I couldn't put a picture in the chat this time."
 
+// ErrNoPictureAttached ends a picture request whose reply carried no picture
+// after its retry. The stream has already sent the no-picture line.
+var ErrNoPictureAttached = errors.New("no image was attached")
+
 // pictureCaption is said with a chosen picture whose caption was empty.
 const pictureCaption = "Here's the picture."
 

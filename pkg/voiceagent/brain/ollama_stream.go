@@ -281,7 +281,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				if routeRetried || routedChat || finalAnswer {
 					err := fmt.Errorf("model did not select a route; no work was dispatched")
 					if invalidImage != nil {
-						err = fmt.Errorf("no image was attached: %w", invalidImage)
+						err = fmt.Errorf("%w: %w", ErrNoPictureAttached, invalidImage)
 						if sayErr := o.sayNoPicture(ctx, out, opts); sayErr != nil {
 							done <- StreamResult{Err: sayErr}
 							return
