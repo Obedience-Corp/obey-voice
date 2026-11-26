@@ -321,8 +321,8 @@ Edits a disposable persona in the real persona form. The **Work** row moves
 from `own` through `worker` to `inline`, with the help line saying what each
 does and the Worker row marked unused; the **Job control** row moves from
 `(default)` to `on`; for an inline persona the row and its help line say it
-hands no work to jobs, so its only job of its own is a reply moved to the
-background. `ctrl+j` saves, and after the TUI
+governs only a reply moved to the background when you address another
+persona. `ctrl+j` saves, and after the TUI
 exits the fixture prints the saved `work` and `job_control` lines from the
 persona's `persona.yaml`. The fixture runs the TUI with a fresh home and a
 `PATH` without provider CLIs, so no installed configuration, credentials,

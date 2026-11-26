@@ -298,7 +298,7 @@ func (m personasModel) formRowHelp() string {
 		return "Worker model · (default) lets the worker's provider choose"
 	case formRowJobControl:
 		if m.effectiveWork() == config.WorkInline && !config.OwnWorkStrict(m.cfg) {
-			return "Job control · an inline persona hands no work to jobs; its only own job is a reply moved to the background · small local models have misused it"
+			return "Job control · inline: only for a reply moved to the background when you address another persona · small local models have misused it"
 		}
 		return "Job control · lets this persona cancel, ask a report of, or correct its own jobs · small local models have misused it · (default) inherits Settings"
 	case formRowTTSProvider:

@@ -241,8 +241,20 @@ func SetInactive(cfg *config.Config, id string, inactive bool) (*Profile, error)
 // UpdateStack persists brain + TTS choices onto one persona profile. This is
 // the only write path for a persona's model/voice stack: Settings writes
 // global defaults only (design WI-c8884d §5.2), and the Personas editor
-// writes here. Empty fields clear back to inherit-global.
+// writes here. Empty fields clear back to inherit-global; a nil job control
+// keeps the saved one.
 func UpdateStack(id string, brain Brain, tts TTS) (*Profile, error) {
+	return updateStack(id, brain, tts, false)
+}
+
+// UpdateStackWithJobControl is UpdateStack for the persona form, which edits
+// job control too: brain.JobControl is saved as given, and nil clears it so
+// the persona inherits voice_job_control again. It is one write.
+func UpdateStackWithJobControl(id string, brain Brain, tts TTS) (*Profile, error) {
+	return updateStack(id, brain, tts, true)
+}
+
+func updateStack(id string, brain Brain, tts TTS, setJobControl bool) (*Profile, error) {
 	if err := ValidateID(id); err != nil {
 		return nil, err
 	}
@@ -255,13 +267,14 @@ func UpdateStack(id string, brain Brain, tts TTS) (*Profile, error) {
 	if workerTiers == nil {
 		workerTiers = p.Brain.WorkerTiers
 	}
-	// The stack editors do not edit the router or job control either.
+	// The stack editors do not edit the router; only the persona form edits
+	// job control.
 	router := strings.TrimSpace(brain.Router)
 	if router == "" {
 		router = p.Brain.Router
 	}
 	jobControl := brain.JobControl
-	if jobControl == nil {
+	if jobControl == nil && !setJobControl {
 		jobControl = p.Brain.JobControl
 	}
 	p.Brain = Brain{
@@ -284,27 +297,6 @@ func UpdateStack(id string, brain Brain, tts TTS) (*Profile, error) {
 	}
 	if err := Write(p, false); err != nil {
 		return nil, fmt.Errorf("saving persona stack: %w", err)
-	}
-	return p, nil
-}
-
-// UpdateJobControl sets brain.job_control alone; nil clears it so the persona
-// inherits voice_job_control again. UpdateStack keeps the saved value instead.
-func UpdateJobControl(id string, jobControl *bool) (*Profile, error) {
-	if err := ValidateID(id); err != nil {
-		return nil, err
-	}
-	p, err := Load(id)
-	if err != nil {
-		return nil, err
-	}
-	p.Brain.JobControl = nil
-	if jobControl != nil {
-		v := *jobControl
-		p.Brain.JobControl = &v
-	}
-	if err := Write(p, false); err != nil {
-		return nil, fmt.Errorf("saving persona job control: %w", err)
 	}
 	return p, nil
 }

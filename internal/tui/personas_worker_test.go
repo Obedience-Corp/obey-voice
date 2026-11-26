@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -351,11 +352,11 @@ func TestPersonaFormSavesInlineWorkAndJobControl(t *testing.T) {
 	if got := line("Worker "); !strings.Contains(got, "unused: it works in the conversation") {
 		t.Fatalf("Worker row for inline = %q", got)
 	}
-	if got := line("Job control"); !strings.Contains(got, "(inline: hands no work to jobs)") {
+	if got := line("Job control"); !strings.Contains(got, "(inline: only a moved reply)") {
 		t.Fatalf("Job control row for inline = %q", got)
 	}
 	m.setFormRow(formRowJobControl)
-	if help := m.formRowHelp(); !strings.Contains(help, "its only own job is a reply moved to the background") || !strings.Contains(help, "misused") {
+	if help := m.formRowHelp(); !strings.Contains(help, "inline: only for a reply moved to the background when you address another persona") || !strings.Contains(help, "misused") {
 		t.Fatalf("Job control help for inline = %q", help)
 	}
 	m.work = ""
@@ -395,5 +396,60 @@ func TestPersonaFormSavesInlineWorkAndJobControl(t *testing.T) {
 	}
 	if p, err = persona.Load("lumen"); err != nil || p.Brain.JobControl != nil || p.Brain.Work != config.WorkInline {
 		t.Fatalf("edited brain = %+v (%v)", p.Brain, err)
+	}
+}
+
+// Edit saves Work and Job control in the stack's one write: a failed save
+// leaves both as they were on disk, and the next save writes both.
+func TestPersonaFormEditSavesWorkAndJobControlInOneWrite(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	if err := persona.Write(&persona.Profile{Schema: persona.Schema, ID: "lumen", DisplayName: "Lumen",
+		Brain: persona.Brain{Provider: "ollama", Work: config.WorkOwn, JobControl: new(true)},
+		TTS:   persona.TTS{Provider: "kokoro", Voice: "af_heart"}, Prompts: persona.PromptRefs{Persona: "lumen"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	m := newPersonas(&config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "worker-model"})
+	m.width, m.height = 160, 40
+	m.reload()
+	for i, item := range m.items {
+		if item != nil && item.ID == "lumen" {
+			m.cursor = i
+		}
+	}
+	m.beginEditAt(formRowWork)
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
+	m.setFormRow(formRowJobControl)
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.work != config.WorkInline || m.jobControl != nil {
+		t.Fatalf("form: work %q, job control %v", m.work, m.jobControl)
+	}
+	saved := func() persona.Brain {
+		t.Helper()
+		p, err := persona.Load("lumen")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.Brain
+	}
+
+	m.saveStack = func(string, persona.Brain, persona.TTS) (*persona.Profile, error) {
+		return nil, errors.New("disk full")
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if m.formMode != "edit" || !strings.Contains(m.message, "Failed to save model/voice: disk full") {
+		t.Fatalf("failed save: mode %q, message %q", m.formMode, m.message)
+	}
+	if b := saved(); b.Work != config.WorkOwn || b.JobControl == nil || !*b.JobControl {
+		t.Fatalf("a failed save changed the profile: %+v", b)
+	}
+
+	m.saveStack = persona.UpdateStackWithJobControl
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if m.formMode != "" {
+		t.Fatalf("save failed: %s", m.message)
+	}
+	if b := saved(); b.Work != config.WorkInline || b.JobControl != nil {
+		t.Fatalf("saved brain = %+v, want inline with job control cleared", b)
 	}
 }

@@ -124,7 +124,7 @@ func (m *personasModel) formWorker() persona.Worker {
 func (m *personasModel) prefillWorker(p *persona.Profile) {
 	if p == nil {
 		m.work = ""
-		m.jobControl, m.savedJobControl = nil, nil
+		m.jobControl = nil
 		m.workerTiers = nil
 		m.workerProviderIdx = 0
 		m.workerModel = ""
@@ -132,7 +132,7 @@ func (m *personasModel) prefillWorker(p *persona.Profile) {
 		return
 	}
 	m.work = strings.ToLower(strings.TrimSpace(p.Brain.Work))
-	m.jobControl, m.savedJobControl = cloneBool(p.Brain.JobControl), cloneBool(p.Brain.JobControl)
+	m.jobControl = cloneBool(p.Brain.JobControl)
 	m.workerTiers = p.Brain.WorkerTiers.Clone()
 	m.workerProviderIdx = providerIndex(stackWorkerProviders(), p.Brain.Worker.Provider)
 	m.workerModel = strings.TrimSpace(p.Brain.Worker.Model)
@@ -227,18 +227,11 @@ func (m personasModel) jobControlRowValue() string {
 	return strings.Join(parts, "  ")
 }
 
-func (m personasModel) jobControlChanged() bool {
-	if m.jobControl == nil || m.savedJobControl == nil {
-		return m.jobControl != m.savedJobControl
-	}
-	return *m.jobControl != *m.savedJobControl
-}
-
 // jobControlRow notes that an inline persona hands no work to jobs, so the
 // only job of its own it can control is a reply moved to the background.
 func (m personasModel) jobControlRow(line string) string {
 	if m.effectiveWork() == config.WorkInline && !config.OwnWorkStrict(m.cfg) {
-		return line + dimStyle.Render("  (inline: hands no work to jobs)")
+		return line + dimStyle.Render("  (inline: only a moved reply)")
 	}
 	return line
 }

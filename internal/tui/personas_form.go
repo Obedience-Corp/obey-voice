@@ -885,13 +885,6 @@ func (m personasModel) submitForm() (personasModel, tea.Cmd) {
 				return m, nil
 			}
 		}
-		if m.jobControlChanged() && m.saveJobControl != nil {
-			if _, err := m.saveJobControl(m.editID, m.jobControl); err != nil {
-				m.setFormRow(formRowJobControl)
-				m.message = fmt.Sprintf("Failed to save job control: %v", err)
-				return m, nil
-			}
-		}
 		if audio != nil {
 			if _, err := persona.UpdateAudio(m.editID, audio); err != nil {
 				m.message = "Failed to save audio: " + err.Error()

@@ -58,11 +58,12 @@ func TestUpdateStackKeepsJobControl(t *testing.T) {
 	}
 }
 
-// The persona form sets job control on its own, and choosing the default
-// clears it rather than keeping the saved value as UpdateStack does.
-func TestUpdateJobControlSetsAndClears(t *testing.T) {
+// The persona form saves its stack and job control in one write; choosing
+// (default) clears job control rather than keeping the saved value as
+// UpdateStack does.
+func TestUpdateStackWithJobControlSetsAndClears(t *testing.T) {
 	setConfigDir(t, t.TempDir())
-	if err := Write(&Profile{Schema: Schema, ID: "lumen", DisplayName: "Lumen", Brain: Brain{Work: config.WorkInline, JobControl: new(true)},
+	if err := Write(&Profile{Schema: Schema, ID: "lumen", DisplayName: "Lumen", Brain: Brain{JobControl: new(true)},
 		TTS: TTS{Provider: "kokoro", Voice: "af_heart"}, Prompts: PromptRefs{Persona: "lumen"}}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -78,14 +79,15 @@ func TestUpdateJobControlSetsAndClears(t *testing.T) {
 		}
 		return p, string(data)
 	}
-	if _, err := UpdateJobControl("lumen", nil); err != nil {
+	tts := TTS{Provider: "kokoro", Voice: "af_heart"}
+	if _, err := UpdateStackWithJobControl("lumen", Brain{Work: config.WorkInline}, tts); err != nil {
 		t.Fatal(err)
 	}
 	p, yaml := read()
 	if p.Brain.JobControl != nil || strings.Contains(yaml, "job_control") || !strings.Contains(yaml, "work: inline") {
 		t.Fatalf("cleared: brain %+v\n%s", p.Brain, yaml)
 	}
-	if _, err := UpdateJobControl("lumen", new(false)); err != nil {
+	if _, err := UpdateStackWithJobControl("lumen", Brain{Work: config.WorkInline, JobControl: new(false)}, tts); err != nil {
 		t.Fatal(err)
 	}
 	p, yaml = read()

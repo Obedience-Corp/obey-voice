@@ -156,9 +156,10 @@ the work](delegation.md#who-does-the-work) for permissions, limits and tiers.
 The **Job control** row (`brain.job_control`) lets the persona cancel, ask a
 report of, or correct its own jobs when you ask. It lists `(default)`, `on`
 and `off` on one line and checks the current one; `(default)` inherits
-`voice_job_control`. An inline persona hands no work to jobs, so the row says
-so; its only job of its own is a reply moved to the background. Small local
-models have misused it, so try it with your model first.
+`voice_job_control`. An inline persona hands no work to jobs, so for it the
+row governs only a reply moved to the background when you address another
+persona, and the row and its help line say so. Small local models have
+misused it, so try it with your model first.
 
 ### Shipped personas
 
