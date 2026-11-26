@@ -32,12 +32,13 @@ go test ./...                  # Plain Go test fallback
 Integration tests expect `bin/linux/obey-voice` to exist. The build dashboard creates it for the integration workflow.
 
 A test binary never uses your real install. The config folder, personas,
-sessions and `~` paths resolve to a throwaway home under
-`obey-voice-test-homes-<uid>` in the temp directory, a folder only your user can
-enter. A test binary locks its home while it runs, and the next one to start
-removes the homes whose lock is free. Tests that call `config.Load()` get
-default settings plus environment overrides (`MODELS_DIR`, `OPENAI_SPEECH_URL`,
-...). The model cache under `~/.cache/obey-voice` is still read. The live Kokoro and
+sessions and the `~` paths the `config` package expands resolve to a throwaway
+home under `obey-voice-test-homes-<uid>` in the temp directory, a folder only
+your user can enter. A test binary locks its home while it runs, and the next
+one to start removes the homes whose lock is free. Tests that call
+`config.Load()` get default settings plus environment overrides (`MODELS_DIR`,
+`OPENAI_SPEECH_URL`, ...). The model cache under `~/.cache/obey-voice` is still
+the real one. The live Kokoro and
 openai-speech comparison reads an install's settings only when you name it:
 
 ```bash

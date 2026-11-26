@@ -28,7 +28,7 @@ func lockTestHome(parent, name string) *os.File {
 	// A pruning binary can take a pending file in the instant before it is
 	// locked, which costs that attempt.
 	for range 3 {
-		if f := claimLockFile(lock); f != nil {
+		if f := claimLockFile(lock, flockExcludes); f != nil {
 			return f
 		}
 	}
@@ -37,13 +37,13 @@ func lockTestHome(parent, name string) *os.File {
 
 // claimLockFile takes the lock before the file gets its final name, so a
 // pruning binary never finds a lock file its owner does not hold yet.
-func claimLockFile(lock string) *os.File {
+func claimLockFile(lock string, excludes func(locked string) bool) *os.File {
 	pending := lock + ".new"
 	f, err := os.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil
 	}
-	if tryFlock(f) && flockExcludes(pending) && os.Rename(pending, lock) == nil {
+	if tryFlock(f) && excludes(pending) && os.Rename(pending, lock) == nil {
 		return f
 	}
 	_ = f.Close()
@@ -56,15 +56,16 @@ func tryFlock(f *os.File) bool {
 }
 
 // flockExcludes reports whether a second open of an already locked file is
-// refused. Some network filesystems grant it, and there a free lock would not
-// mean the owner has exited.
+// refused as locked. Some network filesystems grant it, and there a free lock
+// would not mean the owner has exited.
 func flockExcludes(locked string) bool {
-	probe, err := os.Open(locked)
+	probe, err := os.OpenFile(locked, os.O_RDWR, 0)
 	if err != nil {
 		return false
 	}
 	defer probe.Close()
-	return !tryFlock(probe)
+	err = unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+	return errors.Is(err, unix.EWOULDBLOCK)
 }
 
 // pruneTestHomes removes the homes whose binary has exited: those whose lock

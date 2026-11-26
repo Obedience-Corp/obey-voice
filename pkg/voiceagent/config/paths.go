@@ -141,8 +141,9 @@ func SkillsDir() string {
 // homeDir reports the home the install root and "~" paths derive from. A
 // variable so a test can drive the branch where the OS has none to report.
 // A test binary never gets the HOME it started with, so a test that skips
-// SetConfigDirForTest cannot touch the real install; a HOME the test sets
-// itself is honored.
+// SetConfigDirForTest cannot touch the real install. A HOME the test sets
+// while it runs is honored; a HOME a parent process chose for a child test
+// binary is the one that child started with, so it is redirected too.
 var homeDir = func() string {
 	home := osHomeDir()
 	if testing.Testing() && home == inheritedHome {

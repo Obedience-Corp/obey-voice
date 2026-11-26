@@ -17,9 +17,9 @@ func TestTestBinaryNeverResolvesTheInheritedInstall(t *testing.T) {
 	if !testing.Testing() {
 		t.Fatal("testing.Testing() is false inside a test binary")
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home != inheritedHome {
-		t.Fatalf("os.UserHomeDir() = %q, %v; want the HOME the binary started with %q", home, err, inheritedHome)
+	home := osHomeDir()
+	if home != inheritedHome {
+		t.Fatalf("osHomeDir() = %q, want the HOME the binary started with %q", home, inheritedHome)
 	}
 	install := filepath.Join(home, ".obey")
 	underTestHome := map[string]string{
@@ -161,6 +161,9 @@ func TestNewTestHomeLeavesAnotherUsersParentAlone(t *testing.T) {
 
 func TestTestHomeSitsUnderThisUsersParent(t *testing.T) {
 	want := filepath.Join(os.TempDir(), testHomesParentName())
+	if !claimTestHomesParent(want, ownedPrivateDir) {
+		t.Skipf("%s is not this user's, so the test binary keeps a home of its own", want)
+	}
 	if got := filepath.Dir(testHomeDir()); got != want {
 		t.Fatalf("test home parent = %q, want %q", got, want)
 	}

@@ -9,11 +9,37 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
+// requireFlock skips on a temp filesystem whose flock does not exclude: there
+// no home is locked and none is pruned.
+func requireFlock(t *testing.T) {
+	t.Helper()
+	f := lockTestHome(t.TempDir(), "1-0123456789abcdef")
+	if f == nil {
+		t.Skip("this filesystem gives no exclusive flock")
+	}
+	f.Close()
+}
+
+type fakeDirInfo struct {
+	os.FileInfo
+	mode os.FileMode
+	uid  uint32
+}
+
+func (i fakeDirInfo) Mode() os.FileMode { return i.mode }
+func (i fakeDirInfo) IsDir() bool       { return i.mode.IsDir() }
+func (i fakeDirInfo) Sys() any          { return &syscall.Stat_t{Uid: i.uid} }
+
 func TestTestHomeIsLockedInAFolderOnlyThisUserCanEnter(t *testing.T) {
+	requireFlock(t)
 	home := testHomeDir()
+	if want := filepath.Join(os.TempDir(), testHomesParentName()); filepath.Dir(home) != want {
+		t.Skipf("%s is not this user's, so the test binary keeps a home of its own", want)
+	}
 	info, err := os.Lstat(filepath.Dir(home))
 	if err != nil || !info.IsDir() || !ownedPrivateDir(info) {
 		t.Fatalf("parent of %q is not a folder private to this user: %v, %v", home, info, err)
@@ -48,6 +74,64 @@ func TestOwnedPrivateDirRefusesAFolderOthersCanEnter(t *testing.T) {
 		if got := ownedPrivateDir(info); got != want {
 			t.Errorf("ownedPrivateDir(mode %v) = %v, want %v", mode, got, want)
 		}
+	}
+}
+
+func TestOwnedPrivateDirRefusesAnotherUsersFolder(t *testing.T) {
+	me := uint32(os.Getuid())
+	if !ownedPrivateDir(fakeDirInfo{mode: os.ModeDir | 0o700, uid: me}) {
+		t.Fatal("refused this user's private folder")
+	}
+	if ownedPrivateDir(fakeDirInfo{mode: os.ModeDir | 0o700, uid: me + 1}) {
+		t.Fatal("accepted a private folder that belongs to another user")
+	}
+}
+
+func TestClaimLockFileLocksBeforeTheLockFileHasItsName(t *testing.T) {
+	requireFlock(t)
+	lock := filepath.Join(t.TempDir(), "101-0123456789abcdef.lock")
+	probed := ""
+	f := claimLockFile(lock, func(locked string) bool {
+		probed = locked
+		if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+			t.Errorf("the lock file had its name before the lock was proven: %v", err)
+		}
+		return flockExcludes(locked)
+	})
+	if f == nil {
+		t.Fatal("no lock")
+	}
+	defer f.Close()
+	if probed != lock+".new" {
+		t.Errorf("probed %q, want the pending file", probed)
+	}
+}
+
+func TestClaimLockFileLeavesNothingWhenTheLockDoesNotExclude(t *testing.T) {
+	dir := t.TempDir()
+	lock := filepath.Join(dir, "101-0123456789abcdef.lock")
+	if f := claimLockFile(lock, func(string) bool { return false }); f != nil {
+		f.Close()
+		t.Fatal("kept a lock that does not exclude")
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Fatalf("left %v behind (%v); a home with a lock file can be pruned", entries, err)
+	}
+}
+
+func TestFlockExcludesNeedsAHeldLock(t *testing.T) {
+	requireFlock(t)
+	path := filepath.Join(t.TempDir(), "lock")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if flockExcludes(path) {
+		t.Fatal("reported a lock nobody holds as excluding")
+	}
+	if !tryFlock(f) || !flockExcludes(path) {
+		t.Fatal("a held lock was not reported as excluding")
 	}
 }
 
@@ -189,6 +273,7 @@ func TestPruneTestHomesAcrossProcesses(t *testing.T) {
 		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 		return
 	}
+	requireFlock(t)
 	tmp := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestPruneTestHomesAcrossProcesses$", "-test.v")
 	cmd.Env = append(os.Environ(), "OBEY_VOICE_TEST_HOME_HELPER=1", "TMPDIR="+tmp)
