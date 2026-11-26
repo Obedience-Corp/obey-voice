@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var testHomeLockName = regexp.MustCompile(`^([1-9][0-9]*-[0-9a-f]{16})\.lock$`)
+var testHomeLockName = regexp.MustCompile(`^([1-9][0-9]*-[0-9a-f]{16})\.lock(\.new)?$`)
 
 func ownedPrivateDir(info os.FileInfo) bool {
 	st, ok := info.Sys().(*syscall.Stat_t)
@@ -21,23 +21,34 @@ func ownedPrivateDir(info os.FileInfo) bool {
 }
 
 // lockTestHome marks the home called name as in use for as long as the
-// returned file stays open. The lock is taken before the file gets its final
-// name, so a pruning binary never finds a lock file its owner does not hold
-// yet. Without a lock that excludes, no lock file is left and the home is
-// never pruned.
+// returned file stays open. Without a lock that excludes, no lock file is
+// left and the home is never pruned.
 func lockTestHome(parent, name string) *os.File {
 	lock := filepath.Join(parent, name+".lock")
+	// A pruning binary can take a pending file in the instant before it is
+	// locked, which costs that attempt.
+	for range 3 {
+		if f := claimLockFile(lock); f != nil {
+			return f
+		}
+	}
+	return nil
+}
+
+// claimLockFile takes the lock before the file gets its final name, so a
+// pruning binary never finds a lock file its owner does not hold yet.
+func claimLockFile(lock string) *os.File {
 	pending := lock + ".new"
 	f, err := os.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil
 	}
-	if !tryFlock(f) || !flockExcludes(pending) || os.Rename(pending, lock) != nil {
-		_ = f.Close()
-		_ = os.Remove(pending)
-		return nil
+	if tryFlock(f) && flockExcludes(pending) && os.Rename(pending, lock) == nil {
+		return f
 	}
-	return f
+	_ = f.Close()
+	_ = os.Remove(pending)
+	return nil
 }
 
 func tryFlock(f *os.File) bool {
@@ -57,7 +68,8 @@ func flockExcludes(locked string) bool {
 }
 
 // pruneTestHomes removes the homes whose binary has exited: those whose lock
-// file nothing holds. A home with no lock file is left alone.
+// file nothing holds. A home with no lock file is left alone. A pending lock
+// file nothing holds is from a binary that died while claiming its home.
 func pruneTestHomes(parent string) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -68,11 +80,16 @@ func pruneTestHomes(parent string) {
 		if m == nil || !entry.Type().IsRegular() {
 			continue
 		}
-		removeUnlockedTestHome(filepath.Join(parent, m[1]), filepath.Join(parent, entry.Name()))
+		home := filepath.Join(parent, m[1])
+		if m[2] != "" {
+			home = ""
+		}
+		removeUnlocked(home, filepath.Join(parent, entry.Name()))
 	}
 }
 
-func removeUnlockedTestHome(home, lock string) {
+// removeUnlocked removes home, when there is one, and then its lock file.
+func removeUnlocked(home, lock string) {
 	f, err := os.OpenFile(lock, os.O_RDWR|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return
@@ -81,11 +98,13 @@ func removeUnlockedTestHome(home, lock string) {
 	if !tryFlock(f) {
 		return
 	}
-	info, err := os.Lstat(home)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-	case err != nil || !info.IsDir() || os.RemoveAll(home) != nil:
-		return
+	if home != "" {
+		info, err := os.Lstat(home)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil || !info.IsDir() || os.RemoveAll(home) != nil:
+			return
+		}
 	}
 	_ = os.Remove(lock)
 }

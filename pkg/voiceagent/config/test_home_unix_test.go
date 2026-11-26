@@ -25,7 +25,7 @@ func TestTestHomeIsLockedInAFolderOnlyThisUserCanEnter(t *testing.T) {
 		t.Fatal("the test binary holds no lock on its home")
 	}
 	lock := home + ".lock"
-	if !testHomeLockName.MatchString(filepath.Base(lock)) {
+	if m := testHomeLockName.FindStringSubmatch(filepath.Base(lock)); m == nil || m[1] != filepath.Base(home) || m[2] != "" {
 		t.Fatalf("lock name %q is not one pruning looks at", filepath.Base(lock))
 	}
 	held, err := testHomeLock.Stat()
@@ -143,16 +143,25 @@ func TestPruneTestHomesRemovesOnlyHomesWhoseLockIsFree(t *testing.T) {
 		t.Fatal(err)
 	}
 	freeLock(fileHome)
-	pending := mkdir("707-0123456789abcdef")
-	if err := os.WriteFile(lockOf(pending)+".new", nil, 0o600); err != nil {
+	diedClaiming := mkdir("707-0123456789abcdef")
+	if err := os.WriteFile(lockOf(diedClaiming)+".new", nil, 0o600); err != nil {
 		t.Fatal(err)
+	}
+	claiming := filepath.Join(parent, "909-0123456789abcdef.lock.new")
+	beingClaimed, err := os.OpenFile(claiming, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer beingClaimed.Close()
+	if !tryFlock(beingClaimed) {
+		t.Fatal("no lock on the pending file")
 	}
 	goneHome := filepath.Join(parent, "808-0123456789abcdef")
 	freeLock(goneHome)
 
 	pruneTestHomes(parent)
 
-	for _, removed := range []string{exited, lockOf(exited), lockOf(goneHome)} {
+	for _, removed := range []string{exited, lockOf(exited), lockOf(goneHome), lockOf(diedClaiming) + ".new"} {
 		if _, err := os.Lstat(removed); !os.IsNotExist(err) {
 			t.Errorf("%s kept after its binary exited: %v", filepath.Base(removed), err)
 		}
@@ -160,7 +169,7 @@ func TestPruneTestHomesRemovesOnlyHomesWhoseLockIsFree(t *testing.T) {
 	for _, kept := range []string{
 		running, lockOf(running), unlocked, other, lockOf(other),
 		linkedLock, lockOf(linkedLock), linkedHome, lockOf(linkedHome),
-		fileHome, lockOf(fileHome), pending, lockOf(pending) + ".new",
+		fileHome, lockOf(fileHome), diedClaiming, claiming,
 		outside, outsideFile,
 	} {
 		if _, err := os.Lstat(kept); err != nil {
