@@ -487,7 +487,9 @@ tiered routing. It is not offered on a repair or retry of a request either:
 the image repair, the retry after malformed tool syntax, the retry without
 tools for a model that rejects them, or the final answer of a turn whose tools
 are off. It sits between `view_image` and `start_background_work` in the tool
-list whether or not jobs exist, and the warm-up request carries it too. With
+list whether or not jobs exist, and the warm-up request carries it too. A
+model that cannot view images is not offered `view_image`; it is still
+offered `job_control`. With
 the option off nothing a persona is sent changes.
 
 The model only asks; Obey Voice decides. When a model response on a live

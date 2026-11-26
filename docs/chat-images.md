@@ -118,19 +118,38 @@ responsibility of the agent's available tools.
 Speaking agents with direct Ollama tools can obtain and attach an image on the
 same turn. For explicit picture requests the host checks the reply before
 speech. If a file is missing, invalid, or over the animation limit, or the
-agent only returns prose, the agent gets one correction with the reason and
-can use its tools to produce a usable file. For a direct reply, this correction
-names the rejected path and lists up to four decodable files in the top level
-of the work directory. The agent can choose one that fits the request or
-obtain a different image. If that fails, the chat reports
-the error. Once the model finishes, stopping voice playback preserves the
-picture in the conversation.
+agent only returns prose, the agent gets one more try.
+
+When you asked to see a picture ("show me a picture of a lion in the chat") and
+the top level of the work directory holds decodable pictures, that try is a
+choice rather than a free reply: the model is sent the conversation with no
+tools and thinking off, and answers in JSON with what you asked to see, one of
+those file names or `none`, and a one-sentence caption. The host writes the
+reply from it, the caption followed by `![name](<name>)`, and that reply goes
+through the same file checks and import as one the model wrote, so only the
+caption is spoken. With `none`, the caption is said instead, when it says the
+picture could not be found; otherwise the host says "I couldn't put a picture
+in the chat this time." No new picture is fetched on this path: a model that
+needs its tools to obtain one gets the free correction below.
+
+Otherwise, for an empty work directory, a follow-up about a picture still owed,
+or a request that does not ask to see a picture, the correction names the
+reason and the rejected path, lists up to four decodable files in the top level
+of the work directory, and keeps the tools, so the agent can choose one that
+fits the request or obtain a different image.
+
+If the try still attaches nothing, the persona says "I couldn't put a picture in
+the chat this time." and the chat reports the error beside it, instead of the
+turn ending in silence. The picture is still owed, so asking "where is it?"
+gets the owed-picture correction. Once the model finishes, stopping voice
+playback preserves the picture in the conversation.
 
 With route-only tools, requests to find or create an image must reach a worker that can obtain the file.
 Saying "attached below" or naming a directory does not attach anything. The live
 Ollama router retries explicit image-delivery claims once if they contain neither
 a file reference nor a tool call. A repeated unsupported claim produces an error
-instead of entering speech and chat history. This shares the required routing
+instead of entering speech and chat history; the persona says "I couldn't put a
+picture in the chat this time." in its place. This shares the required routing
 step's single retry; an honest refusal selects `route(kind=chat)` before answering.
 When a live reply omits a route without an unsupported image claim, that retry uses
 the same route schema as constrained JSON instead of asking for another native tool
@@ -190,7 +209,9 @@ longer attached; that one stays recorded, is named as no longer attached, and
 can be opened again to bring it back. A picture the request already attaches to
 the message is reported as already there. A persona can open
 four pictures while answering one message. A model that cannot view images, or a
-native-audio persona, gets an answer saying so and the turn goes on. In the round
+native-audio persona, is not offered `view_image`. Whether the model views
+images is asked of Ollama once per conversation's model, so the tool list stays
+the same from turn to turn; a failed question is asked again on the next turn. In the round
 that opens a picture, and in every round after one has been opened, the turn goes
 to a background worker only when the persona asks for background work itself;
 web searches and further local steps run in its own turn. A look that fails
