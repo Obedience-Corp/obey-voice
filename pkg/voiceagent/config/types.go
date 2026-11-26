@@ -269,8 +269,10 @@ type Config struct {
 	// falls back to the server's model default — which silently truncates
 	// long prompts from the top, eating the system prompt first.
 	OllamaNumCtx int `mapstructure:"ollama_num_ctx"`
-	// OllamaResponseTokens bounds one foreground response across tool rounds
-	// and continuations. Zero uses the default; workers retain their own budgets.
+	// OllamaResponseTokens bounds what one round of a foreground response
+	// generates: its request, a repair and any continuation. Each tool round
+	// starts with the full amount. Zero uses the default; workers retain their
+	// own budgets.
 	OllamaResponseTokens int `mapstructure:"ollama_response_tokens"`
 	// VoiceWorkerNumCtx is the worker Chat window. 0 uses the worker model's
 	// advertised context capacity, independently of the voice conversation.

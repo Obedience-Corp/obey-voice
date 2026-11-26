@@ -1356,7 +1356,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Maximum response size",
-      "help": "Limits a foreground Ollama response, including reasoning and tool rounds. Stops runaway generation without automatically continuing. Workers use their own budgets.",
+      "help": "Limits what a foreground Ollama model request generates, including reasoning. Each tool round gets the full amount again. Stops runaway generation without automatically continuing. Workers use their own budgets.",
       "unit": "tokens",
       "min": 1,
       "max": 131072,

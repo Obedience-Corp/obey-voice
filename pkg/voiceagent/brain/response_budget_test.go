@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -215,4 +216,34 @@ func TestResponseBudgetChargesMalformedToolRepair(t *testing.T) {
 	if !errors.Is(result.Err, ErrResponseLimit) || calls != 2 || text != "" {
 		t.Fatalf("repair restarted allowance: calls=%d text=%q result=%+v", calls, text, result)
 	}
+}
+
+// Each tool round starts with the full allowance, and the byte fuse counts one
+// request: two rounds that together pass the fuse are not a runaway.
+func TestResponseBudgetRefillsAfterEachToolRound(t *testing.T) {
+	eachMode(t, func(t *testing.T, streaming bool) {
+		cfg := liveDefaults(t)
+		cfg.OllamaResponseTokens = 64
+		l := newLiveTurns(t, cfg, "")
+		reasoning := strings.Repeat("checking the next file ", 30)
+		reply := func(n int, req api.ChatRequest) api.ChatResponse {
+			if n <= 2 {
+				r := toolResponse(readFileCall(fmt.Sprintf("part-%d.txt", n)))
+				r.Message.Thinking, r.Metrics.EvalCount = reasoning, 30
+				return r
+			}
+			r := answerResponse("Both parts are missing.")
+			r.Metrics.EvalCount = 10
+			return r
+		}
+		answer, reqs, err := l.run(t.Context(), streaming, "Read both parts.", reply)
+		if err != nil || !strings.Contains(answer, "missing") || len(reqs) != 3 {
+			t.Fatalf("answer=%q err=%v requests=%d", answer, err, len(reqs))
+		}
+		for i, req := range reqs {
+			if req.Options["num_predict"] != float64(32) {
+				t.Fatalf("request %d cap = %v, want the full allowance's tool-round share 32", i+1, req.Options["num_predict"])
+			}
+		}
+	})
 }

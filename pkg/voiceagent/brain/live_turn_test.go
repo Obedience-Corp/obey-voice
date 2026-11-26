@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -74,11 +75,12 @@ type liveTurns struct {
 	reqs  []api.ChatRequest
 	turn  int
 	reply func(n int, req api.ChatRequest) api.ChatResponse
+	opts  StreamOptions
 }
 
 func newLiveTurns(t *testing.T, cfg *config.Config, workDir string) *liveTurns {
 	t.Helper()
-	l := &liveTurns{t: t}
+	l := &liveTurns{t: t, opts: liveOptions()}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/chat" {
 			http.NotFound(w, r)
@@ -120,14 +122,14 @@ func (l *liveTurns) run(ctx context.Context, streaming bool, input string, reply
 	var answer string
 	var err error
 	if streaming {
-		stream, startErr := l.o.ThinkStream(ctx, input, liveOptions())
+		stream, startErr := l.o.ThinkStream(ctx, input, l.opts)
 		if startErr != nil {
 			l.t.Fatal(startErr)
 		}
 		answer, _ = drainStream(l.t, stream)
 		err = (<-stream.Done).Err
 	} else {
-		answer, err = l.o.ThinkFull(ctx, input, liveOptions())
+		answer, err = l.o.ThinkFull(ctx, input, l.opts)
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -163,8 +165,10 @@ func TestLongLiveTurnKeepsItsRequestAndAnswerInContext(t *testing.T) {
 		name          string
 		rounds, calls int
 	}{
-		{"window opens on a tool result", 10, 8},
-		{"window opens on a tool call", 7, 12},
+		{"window opens on a tool result", 45, 1},
+		{"window opens on a tool call", 45, 2},
+		{"several calls a round, window opens on a tool result", 10, 8},
+		{"several calls a round, window opens on a tool call", 7, 12},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -268,4 +272,129 @@ func TestRepeatedSkillReadAddsItsTextOnce(t *testing.T) {
 			t.Fatalf("skill text appears %d times in the turn's context, want 1", copies)
 		}
 	})
+}
+
+func TestLiveTurnOfFortySmallRoundsAnswers(t *testing.T) {
+	const rounds = 40
+	eachMode(t, func(t *testing.T, streaming bool) {
+		l := newLiveTurns(t, liveDefaults(t), "")
+		reply := func(n int, req api.ChatRequest) api.ChatResponse {
+			if n <= rounds {
+				r := toolResponse(readFileCall(fmt.Sprintf("chapter-%d.txt", n)))
+				r.Metrics.EvalCount = 300
+				return r
+			}
+			return answerResponse("None of the forty chapters exist yet.")
+		}
+		answer, reqs, err := l.run(t.Context(), streaming, "Read all forty chapters.", reply)
+		if err != nil || !strings.Contains(answer, "forty chapters") || len(reqs) != rounds+1 {
+			t.Fatalf("answer=%q err=%v requests=%d", answer, err, len(reqs))
+		}
+		share := float64(l.o.cfg.OllamaResponseTokens / 2)
+		for i, req := range reqs {
+			if len(req.Tools) == 0 {
+				t.Fatalf("request %d had tools withheld", i+1)
+			}
+			if req.Options["num_predict"] != share {
+				t.Fatalf("request %d cap = %v, want %v", i+1, req.Options["num_predict"], share)
+			}
+		}
+	})
+}
+
+func TestLiveTurnRepeatingOneCallIsStoppedByTheGuard(t *testing.T) {
+	const answer = "plan.txt does not exist, so I stopped trying to read it."
+	eachMode(t, func(t *testing.T, streaming bool) {
+		l := newLiveTurns(t, liveDefaults(t), "")
+		reply := func(_ int, req api.ChatRequest) api.ChatResponse {
+			if len(req.Tools) > 0 {
+				return toolResponse(readFileCall("plan.txt"))
+			}
+			return answerResponse(answer)
+		}
+		got, reqs, err := l.run(t.Context(), streaming, "Read the plan.", reply)
+		if err != nil || !strings.Contains(got, answer) || len(reqs) != maxRepeatedToolRounds+1 {
+			t.Fatalf("answer=%q err=%v requests=%d", got, err, len(reqs))
+		}
+		last := reqs[len(reqs)-1]
+		if len(last.Tools) != 0 || !hasInstruction(last, toolRepeatAnswerInstruction) {
+			t.Fatalf("the answer did not come from the guard's answer round: tools=%d", len(last.Tools))
+		}
+		history := l.o.History()
+		if reply := history[len(history)-1]; reply.Role != "assistant" || reply.Content != answer || reply.Disposition != "" {
+			t.Fatalf("the forced answer is not an ordinary reply: %+v", reply)
+		}
+	})
+}
+
+// A request that generates past ollama_response_tokens, after a tool round,
+// ends the turn with the output-limit result and is not continued.
+func TestLiveTurnRunawayRequestEndsWithOutputLimit(t *testing.T) {
+	eachMode(t, func(t *testing.T, streaming bool) {
+		l := newLiveTurns(t, liveDefaults(t), "")
+		reply := func(n int, _ api.ChatRequest) api.ChatResponse {
+			if n == 1 {
+				return toolResponse(readFileCall("draft.txt"))
+			}
+			r := answerResponse("The draft is missing and the draft is missing and")
+			r.DoneReason, r.Metrics.EvalCount = "length", l.o.cfg.OllamaResponseTokens+1
+			return r
+		}
+		_, reqs, err := l.run(t.Context(), streaming, "Summarize the draft.", reply)
+		if !errors.Is(err, ErrResponseLimit) || len(reqs) != 2 {
+			t.Fatalf("err=%v requests=%d", err, len(reqs))
+		}
+	})
+}
+
+// Stopping a turn while a round's first call runs leaves the rest of that
+// round unrun and sends nothing more; stopping during its last call sends no
+// further request.
+func TestStoppedLiveTurnRunsNoFurtherCallOrRequest(t *testing.T) {
+	for _, stopAt := range []int{1, 3} {
+		t.Run(fmt.Sprintf("stopped during call %d", stopAt), func(t *testing.T) {
+			eachMode(t, func(t *testing.T, streaming bool) {
+				dir := t.TempDir()
+				l := newLiveTurns(t, liveDefaults(t), dir)
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				started := 0
+				l.opts.OnToolStart = func(ToolCall) {
+					if started++; started == stopAt {
+						cancel()
+					}
+				}
+				write := func(name string) []api.ToolCall {
+					return []api.ToolCall{{Function: api.ToolCallFunction{Name: "write_file", Arguments: mustArgs(map[string]any{"path": name, "content": "seedling notes"})}}}
+				}
+				var calls []api.ToolCall
+				for _, name := range []string{"bed-1.txt", "bed-2.txt", "bed-3.txt"} {
+					calls = append(calls, write(name)...)
+				}
+				reply := func(int, api.ChatRequest) api.ChatResponse { return toolResponse(calls) }
+				_, reqs, err := l.run(ctx, streaming, "Write the bed notes.", reply)
+				if !errors.Is(err, context.Canceled) || len(reqs) != 1 || started != stopAt {
+					t.Fatalf("err=%v requests=%d calls started=%d", err, len(reqs), started)
+				}
+				for i, name := range []string{"bed-1.txt", "bed-2.txt", "bed-3.txt"} {
+					_, statErr := os.Stat(filepath.Join(dir, name))
+					if ran := statErr == nil; ran != (i < stopAt) {
+						t.Fatalf("%s written=%v after a stop during call %d", name, ran, stopAt)
+					}
+				}
+				if !streaming {
+					return
+				}
+				results := 0
+				for _, turn := range l.o.History() {
+					if turn.Role == "tool" {
+						results++
+					}
+				}
+				if results != len(calls) {
+					t.Fatalf("%d tool results for %d calls", results, len(calls))
+				}
+			})
+		})
+	}
 }

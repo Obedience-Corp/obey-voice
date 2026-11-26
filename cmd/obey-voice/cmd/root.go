@@ -480,6 +480,8 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 		// selector, which gives the brain the group roster first.
 		selector.Warmup(ctx)
 
+		// Read once here: a save rewrites sess under the store's lock.
+		savedID := sess.ID
 		saveConversation := func() error {
 			if selector != nil {
 				return sess.Save(selector.Transcript(), selector.ContextSnapshots())
@@ -588,9 +590,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				return recordings.replay(ctx, p, cfg.OutputDevice, id, epoch)
 			},
 			Persist: func() {
-				if err := saveConversation(); err != nil {
-					fmt.Fprintf(os.Stderr, "  warning: failed to save session %s: %v\n", sess.ID, err)
-				}
+				saveSettled(p, savedID, saveConversation, os.Stderr)
 			},
 			Cleanup: func() {
 				// Join/materialize pending captions while their publication
@@ -607,9 +607,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				}
 				// Final flush after drain: a turn that finished during shutdown
 				// is kept even if Persist ran before it landed.
-				if err := saveConversation(); err != nil {
-					fmt.Fprintf(os.Stderr, "  warning: failed to save session %s: %v\n", sess.ID, err)
-				}
+				saveSettled(p, savedID, saveConversation, os.Stderr)
 				liveTTS.Close()
 				cleanup()
 				recordings.close()

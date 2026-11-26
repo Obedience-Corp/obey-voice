@@ -15,8 +15,9 @@ import (
 )
 
 // Exercise real tool execution and the Ollama transport without a model or
-// external effects. Failed reads must reach a bounded, tools-free final turn.
-func TestOllamaToolLimitFinalAnswer(t *testing.T) {
+// external effects. A turn that repeats a failing read must reach a bounded,
+// tools-free final turn.
+func TestRepeatedFailingReadFinalAnswer(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		for _, mode := range []string{"answer", "empty", "filler", "thinking only", "tools again", "provider error", "truncated", "incomplete", "cancel"} {
 			t.Run(map[bool]string{true: "stream", false: "full"}[streaming]+"/"+mode, func(t *testing.T) {
@@ -32,9 +33,9 @@ func TestOllamaToolLimitFinalAnswer(t *testing.T) {
 					}
 					calls++
 					response := api.ChatResponse{Done: true, DoneReason: "stop", Message: api.Message{Role: "assistant"}}
-					if calls <= maxToolIterations {
+					if calls <= maxRepeatedToolRounds {
 						if len(req.Tools) == 0 {
-							t.Error("tools disabled before the round limit")
+							t.Error("tools disabled before the repeat guard")
 						}
 						response.Message.ToolCalls = []api.ToolCall{{Function: api.ToolCallFunction{Name: "read_file", Arguments: mustArgs(map[string]any{"path": "missing.txt"})}}}
 					} else {
@@ -72,7 +73,7 @@ func TestOllamaToolLimitFinalAnswer(t *testing.T) {
 					if result.Err == "" {
 						t.Error("fixture read should fail")
 					}
-					if mode == "cancel" && executed == maxToolIterations {
+					if mode == "cancel" && executed == maxRepeatedToolRounds {
 						cancel()
 					}
 				}
@@ -105,16 +106,16 @@ func TestOllamaToolLimitFinalAnswer(t *testing.T) {
 				if strings.Contains(answer, "going in circles") {
 					t.Fatalf("canned answer: %q", answer)
 				}
-				if executed != maxToolIterations {
+				if executed != maxRepeatedToolRounds {
 					t.Fatalf("executed=%d", executed)
 				}
 				if mode == "cancel" {
-					if !errors.Is(err, context.Canceled) || calls != maxToolIterations {
+					if !errors.Is(err, context.Canceled) || calls != maxRepeatedToolRounds {
 						t.Fatalf("limit bypass: calls=%d err=%v", calls, err)
 					}
 					return
 				}
-				wantCalls := maxToolIterations + 1
+				wantCalls := maxRepeatedToolRounds + 1
 				if !streaming && mode == "truncated" {
 					wantCalls += maxWorkerContinuations
 				}
@@ -123,7 +124,7 @@ func TestOllamaToolLimitFinalAnswer(t *testing.T) {
 				}
 				foundFinalInstruction := false
 				for _, m := range final.Messages {
-					foundFinalInstruction = foundFinalInstruction || m.Content == toolLimitAnswerInstruction
+					foundFinalInstruction = foundFinalInstruction || m.Content == toolRepeatAnswerInstruction
 				}
 				if len(final.Tools) != 0 || !foundFinalInstruction {
 					t.Fatalf("missing tools-free final instruction: %+v", final)
@@ -134,7 +135,7 @@ func TestOllamaToolLimitFinalAnswer(t *testing.T) {
 						results++
 					}
 				}
-				if results != maxToolIterations {
+				if results != maxRepeatedToolRounds {
 					t.Fatalf("final answer lost tool evidence: %d results", results)
 				}
 			})
