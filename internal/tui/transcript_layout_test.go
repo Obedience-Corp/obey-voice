@@ -164,6 +164,14 @@ func TestTranscriptMatchesFullRenderThroughEveryChange(t *testing.T) {
 	snap.Revision++
 	snap.Pending = snap.Pending[1:]
 	send("work result removed", events.WorkStateChanged{Snapshot: snap})
+	other := fixtureWorkSnapshot(1)
+	other.Scope = work.WorkScope{SessionID: "s2", RuntimeEpoch: "r2", ConversationEpoch: "c2"}
+	for i := range other.Pending {
+		other.Pending[i].Outcome.Scope = other.Scope
+		other.Pending[i].DeliveryKey.Scope = other.Scope
+	}
+	send("job 4 running", events.JobStarted{ID: "job-4", Task: "still running"})
+	send("work scope changed", events.WorkStateChanged{Snapshot: other})
 	_ = scope
 
 	input := &utterance.Finalized{ID: "voice-1", CaptureEpoch: 3, Transcript: utterance.Transcript{State: utterance.Pending}}
@@ -181,6 +189,9 @@ func TestTranscriptMatchesFullRenderThroughEveryChange(t *testing.T) {
 	step("previews loaded")
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
 	step("pictures paused")
+	m, _ = m.Update(mediaPlaced{token: m.media.token, placed: map[mediaBox]int{}})
+	step("pictures placed")
+	send("reply with pictures", events.ReplyImagesReady{Response: "Here are the charts.", Attachments: refs})
 	m.setSize(61, 44)
 	step("taller viewport")
 
