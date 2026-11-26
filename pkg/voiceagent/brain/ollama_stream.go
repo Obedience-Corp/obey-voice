@@ -183,6 +183,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				messages = append(messages, api.Message{Role: "user", Content: finalInstruction})
 			}
 			if budgetErr := o.messagesBudgetError(messages, tools); budgetErr != nil {
+				if len(tools) > 0 && hadTools && rounds.contextFull() {
+					i-- // the same round, sent as the answer round
+					continue
+				}
 				done <- StreamResult{Err: budgetErr, Recovered: ctx.Err() == nil}
 				return
 			}
@@ -413,7 +417,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					}
 					// read_skill is the established instruction-loading path. Preserve its
 					// full body in this turn's transient skill splice, not persisted history.
-					if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
+					if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled && !strings.Contains(skillCtx, result) {
 						skillCtx += "\n" + result
 					}
 					o.appendProjectedToolResult(tc, result, opts.Identity)
@@ -422,7 +426,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// Re-budget after tools: a large result can push the user
 				// query out of num_ctx. qwen3.8 on Ollama 0.32.14 then 500s
 				// with "no user query found in messages" (ollama#17778).
-				o.ensureContextBudget(skillCtx)
+				o.fitAfterToolRound(skillCtx, sess.tools())
 				continue // re-request with tool results
 			}
 

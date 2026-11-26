@@ -53,20 +53,39 @@ func (o *OllamaBrain) trimHistory() {
 // With it, the turn marks apply as well, capped by MaxHistory. The message
 // marks stay in force so a tool-heavy window never reaches the pipeline's
 // count-based compaction trigger (also MaxHistory*2 messages).
+//
+// A newest turn whose tool work alone outgrows the window is kept whole and
+// everything before it goes, rather than leaving the model without the
+// request it just answered.
 func (o *OllamaBrain) historyTrimStart() int {
 	high, low := o.cfg.MaxHistory*2, o.cfg.MaxHistory
+	var start int
 	if !o.cfg.ContinuityArchiveEnabled {
 		if len(o.history) <= high {
 			return 0
 		}
-		return historyWindowStart(o.history, low)
+		start = historyWindowStart(o.history, low)
+	} else {
+		highTurns := min(o.cfg.MaxHistory, archiveHistoryTurnsHigh)
+		lowTurns := min(archiveHistoryTurnsLow, max(1, highTurns/2))
+		if len(o.history) <= high && userTurns(o.history) <= highTurns {
+			return 0
+		}
+		start = max(historyWindowStart(o.history, low), turnWindowStart(o.history, lowTurns))
 	}
-	highTurns := min(o.cfg.MaxHistory, archiveHistoryTurnsHigh)
-	lowTurns := min(archiveHistoryTurnsLow, max(1, highTurns/2))
-	if len(o.history) <= high && userTurns(o.history) <= highTurns {
-		return 0
+	if last := lastUserIndex(o.history); low > 0 && last >= 0 && start > last && turnRanTools(o.history[last:]) {
+		start = last
 	}
-	return max(historyWindowStart(o.history, low), turnWindowStart(o.history, lowTurns))
+	return start
+}
+
+func turnRanTools(turn []api.Message) bool {
+	for _, m := range turn {
+		if len(m.ToolCalls) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func userTurns(history []api.Message) int {

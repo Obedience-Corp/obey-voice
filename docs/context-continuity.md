@@ -23,7 +23,10 @@ that starts a compaction. A routed chat turn stores four messages, so below
 `max_history: 24` the message marks are reached first. A spawn or other routed
 acknowledgement the host writes itself is trimmed the same way when its own
 messages take the window past the message mark, so it cannot start a
-compaction. A window never opens inside a tool-call group.
+compaction. A window never opens inside a tool-call group. A turn whose tool
+rounds alone are longer than the message window is kept whole when it ends,
+with everything before it archived, so the next request still carries that
+turn's request and reply.
 
 Images stay attached only to the three most recent turns, counting the one
 being answered. When a turn ages past that, once a reply is in, its images are
@@ -240,6 +243,7 @@ OBEY_VOICE_LIVE_REPETITION_MODEL='<installed-model>' go test -tags=integration \
 
 `read_skill` is special: its full instructions remain in the existing transient
 skill splice for the active turn, while its persisted tool result is projected.
+Reading the same skill again in that turn does not add a second copy.
 An instruction set that cannot fit the safe request budget causes an explicit
 recovery response instead of silently omitting the tail of the skill.
 
@@ -250,6 +254,14 @@ request. A failed compact stops that incoming request and reports a degraded
 response. Model requests have a final check including tool schemas, tool-call
 arguments, archive recall and continuation instructions; the estimate remains
 approximately four bytes per token and is not an exact model tokenizer.
+
+Inside a live turn's tool loop, older turns are archived to make room for the
+next tool round, measured the same way as that final check. When the turn's own
+tool rounds leave no room for another, the next request offers no tools and
+asks the model to answer from the results it has, saying what is done, what
+remains and any blocker, instead of failing the turn. Ask it to continue in a
+new turn; the usual compaction then applies. A request that does not fit even
+without tools still fails as before. Workers compact their own context instead.
 
 A truncated completion is marked incomplete in history. The same stream carries
 a tools-disabled continuation after an attempted compact, without a spoken

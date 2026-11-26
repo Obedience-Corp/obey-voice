@@ -149,6 +149,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			}
 		}
 		if err := o.contextBudgetError(skillCtx, tools); err != nil {
+			if len(tools) > 0 && hadTools && rounds.contextFull() {
+				i-- // the same round, sent as the answer round
+				continue
+			}
 			o.history = restore
 			o.canonical = restoreCanonical
 			o.working = restoreWorking
@@ -182,6 +186,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			messages = append(messages, api.Message{Role: "user", Content: finalInstruction})
 		}
 		if err := o.messagesBudgetError(messages, tools); err != nil {
+			if len(tools) > 0 && hadTools && rounds.contextFull() {
+				i--
+				continue
+			}
 			return "", err
 		}
 		req := o.newChatRequest(messages, tools)
@@ -319,7 +327,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				}
 				// read_skill is the established instruction-loading path. Preserve its
 				// full body in this turn's transient skill splice, not persisted history.
-				if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
+				if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled && !strings.Contains(skillCtx, result) {
 					skillCtx += "\n" + result
 				}
 				o.appendProjectedToolResult(tc, result, opts.Identity)
@@ -329,7 +337,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				rounds.observe(response.ToolCalls[:len(results)], results)
 				same.observe(ctx, response.ToolCalls[:len(results)], results)
 			}
-			o.ensureContextBudget(skillCtx)
+			o.fitAfterToolRound(skillCtx, sess.tools())
 			continue
 		}
 
