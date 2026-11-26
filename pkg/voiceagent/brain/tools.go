@@ -22,11 +22,9 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
-// maxToolIterations bounds tool rounds; one tools-free answer request follows.
-const maxToolIterations = 10
-
-// This is a transient instruction, never a fabricated assistant response.
-const toolLimitAnswerInstruction = "The tool round limit for this turn has been reached. No more tools are available. Answer the user's request now using the results already collected. State what was completed, what failed or remains unverified, and any concrete blocker. Do not claim unfinished work succeeded, promise to answer later, or describe tool-loop reasoning."
+// toolLimitAnswerInstruction asks a job that has used its request budget to
+// answer. It is a transient instruction, never a fabricated assistant response.
+const toolLimitAnswerInstruction = "The request limit for this job has been reached. No more tools are available. Answer the user's request now using the results already collected. State what was completed, what failed or remains unverified, and any concrete blocker. Do not claim unfinished work succeeded, promise to answer later, or describe tool-loop reasoning."
 
 // skillBodyMaxBytes caps read_skill output (same budget as read_file).
 const skillBodyMaxBytes = 32 * 1024

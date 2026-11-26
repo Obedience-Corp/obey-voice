@@ -367,7 +367,7 @@ func brainKeys() []KeySpec {
 		{
 			Key: "ollama_response_tokens", Type: TypeInt, Default: 4096, Unit: "tokens", Min: num(1), Max: num(131072),
 			Group: GroupBrain, Title: "Maximum response size",
-			Help: "Limits a foreground Ollama response, including reasoning and tool rounds. Stops runaway generation without automatically continuing. Workers use their own budgets.",
+			Help: "Limits what a foreground Ollama model request generates, including reasoning. Each tool round gets the full amount again. Stops runaway generation without automatically continuing. Workers use their own budgets.",
 		},
 		{
 			Key: "ollama_num_batch", Type: TypeInt, Default: 128, Unit: "tokens", Min: num(0), Max: num(4096),

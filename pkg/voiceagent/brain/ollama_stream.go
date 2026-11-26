@@ -116,7 +116,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			endAt = jobControlToolName
 		}
 		inspectedLocally := false
-		for i := 0; rounds.more(i); i++ {
+		for i := 0; ; i++ {
 			finalAnswer, finalInstruction := rounds.final(ctx, i)
 			handoff := workerAvailable && !finalAnswer && continuation == "" && !repetitionRetry
 			var tools api.Tools
@@ -408,7 +408,12 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 				// Execute each tool and add results (skills + full CLI tools).
 				results := make([]string, 0, len(toolCalls))
-				for _, tc := range toolCalls {
+				for k, tc := range toolCalls {
+					if err := ctx.Err(); err != nil {
+						o.appendStoppedToolResults(toolCalls[k:], opts.Identity)
+						done <- StreamResult{Err: fmt.Errorf("ollama stream: %w", err)}
+						return
+					}
 					result := sess.execute(ctx, o.workDir, tc)
 					results = append(results, result)
 					if sess.limitErr != nil {
@@ -422,7 +427,14 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					}
 					o.appendProjectedToolResult(tc, result, opts.Identity)
 				}
+				if err := ctx.Err(); err != nil {
+					done <- StreamResult{Err: fmt.Errorf("ollama stream: %w", err)}
+					return
+				}
 				rounds.observe(toolCalls, results)
+				if ranWork(toolCalls) {
+					responseLimit.refill()
+				}
 				// Re-budget after tools: a large result can push the user
 				// query out of num_ctx. qwen3.8 on Ollama 0.32.14 then 500s
 				// with "no user query found in messages" (ollama#17778).
@@ -521,8 +533,6 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			done <- StreamResult{Integrity: integrity}
 			return
 		}
-
-		done <- StreamResult{Err: fmt.Errorf("tool round limit reached without a final answer"), Recovered: ctx.Err() == nil}
 	}()
 
 	return &Stream{Chunks: out, Thinking: thinking, Done: done}, nil

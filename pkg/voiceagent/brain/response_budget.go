@@ -13,8 +13,13 @@ import (
 // restart the very generation this limit is meant to stop.
 var ErrResponseLimit = errors.New("response output limit reached; generation stopped")
 
+// responseBudget bounds what the model generates for one round of a
+// foreground turn: its request, a malformed-call repair and any automatic
+// continuation share the allowance. A round whose tool calls ran starts the
+// next with a full allowance, so a long tool loop is bounded by its rounds,
+// not by the sum of them.
 type responseBudget struct {
-	remaining, byteLimit, bytes, requestBytes, requestLimit int
+	limit, remaining, byteLimit, requestBytes, requestLimit int
 }
 
 func newResponseBudget(cfg *config.Config, opts StreamOptions) *responseBudget {
@@ -25,9 +30,16 @@ func newResponseBudget(cfg *config.Config, opts StreamOptions) *responseBudget {
 	if cfg != nil && cfg.OllamaResponseTokens > 0 {
 		limit = min(cfg.OllamaResponseTokens, 131072)
 	}
-	// A byte fuse also stops streaming servers that ignore num_predict or omit
+	// A per-request byte fuse also stops servers that ignore num_predict or omit
 	// terminal usage. This is a generous transport bound, not a tokenizer.
-	return &responseBudget{remaining: limit, byteLimit: limit * 16}
+	return &responseBudget{limit: limit, remaining: limit, byteLimit: limit * 16}
+}
+
+// refill gives the next round a full allowance after a round's tool calls ran.
+func (b *responseBudget) refill() {
+	if b != nil {
+		b.remaining = b.limit
+	}
 }
 
 type responseBudgetContextKey struct{}
@@ -82,9 +94,8 @@ func (b *responseBudget) observe(resp api.ChatResponse) error {
 		encoded, _ := json.Marshal(resp.Message.ToolCalls)
 		n += len(encoded)
 	}
-	b.bytes += n
 	b.requestBytes += n
-	if b.bytes > b.byteLimit {
+	if b.requestBytes > b.byteLimit {
 		return ErrResponseLimit
 	}
 	if resp.Done {

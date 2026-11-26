@@ -278,10 +278,16 @@ status, output preview and error, and retains those details after completion.
 `Ctrl+W` also opens the newest completed worker when none are active.
 
 Starting a worker updates its job status without inserting or speaking a canned
-"Working on it" reply. The worker's generated result arrives when ready. If an
-Ollama turn exhausts its ten tool rounds, it gets one final model request with
-tools disabled to answer from the collected results and explain any blockers.
-Existing request, runtime and token budgets still apply. A failed or empty final
+"Working on it" reply. The worker's generated result arrives when ready.
+
+A live Ollama turn that works with its own tools keeps going until the work is
+done; there is no limit on its number of tool rounds. It gets one final model
+request with tools disabled, to answer from the collected results and explain
+any blockers, when it repeats the same tool call with the same result three
+times with nothing new in between, or when its context window has no room for
+another tool round. Send a new message or press the talk key to stop it: a
+running command is stopped and the rest of that round's tool calls do not run.
+Workers keep their request, runtime and token budgets. A failed or empty final
 answer is reported as a failure rather than a successful result.
 
 **Allow background workers** (`t`) controls new jobs immediately and is saved

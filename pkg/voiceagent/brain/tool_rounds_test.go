@@ -120,20 +120,22 @@ func TestWorkerRunsPastRoundCap(t *testing.T) {
 	})
 }
 
-func TestLiveTurnKeepsRoundCap(t *testing.T) {
+func TestLiveTurnHasNoRoundCap(t *testing.T) {
+	const rounds = 25
 	eachMode(t, func(t *testing.T, streaming bool) {
 		run := runRounds(t, t.Context(), streaming, false, WorkerStreamOptions(true), func(n int, _ api.ChatRequest) api.ChatResponse {
-			if n <= maxToolIterations {
+			if n <= rounds {
 				return toolResponse(readFileCall(fmt.Sprintf("file-%d.txt", n)))
 			}
-			return answerResponse("Here is what I found so far.")
+			return answerResponse("Here is what I found.")
 		})
-		if run.err != nil || len(run.reqs) != maxToolIterations+1 {
+		if run.err != nil || len(run.reqs) != rounds+1 {
 			t.Fatalf("requests=%d err=%v", len(run.reqs), run.err)
 		}
-		last := run.reqs[maxToolIterations]
-		if len(last.Tools) != 0 || !hasInstruction(last, toolLimitAnswerInstruction) {
-			t.Fatalf("last request is not the round-limit answer: %+v", last)
+		for i, req := range run.reqs {
+			if len(req.Tools) == 0 {
+				t.Fatalf("request %d had tools withheld", i+1)
+			}
 		}
 	})
 }
@@ -496,7 +498,7 @@ func TestWorkerFinalAnswerIsCutOffBeforeTheDeadline(t *testing.T) {
 		if cut.Partial != written {
 			t.Fatalf("partial answer = %q, want %q", cut.Partial, written)
 		}
-		if msg := err.Error(); strings.Contains(msg, "context deadline exceeded") || strings.Contains(msg, stopRoundLimit) {
+		if msg := err.Error(); strings.Contains(msg, "context deadline exceeded") || strings.Contains(msg, stopRequests) {
 			t.Fatalf("error text = %q", msg)
 		}
 	})

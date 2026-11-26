@@ -116,7 +116,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	continuations := 0
 	rounds := newToolRounds(o.cfg, opts)
 	same := newSameOutput(rounds.worker, opts.OnSameOutput)
-	for i := 0; rounds.more(i); i++ {
+	for i := 0; ; i++ {
 		corrected := ctl != nil && ctl.waiting()
 		if corrected {
 			rounds.redirect()
@@ -309,6 +309,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 			results := make([]string, 0, len(response.ToolCalls))
 			for k, tc := range response.ToolCalls {
+				if err := ctx.Err(); err != nil {
+					return "", err
+				}
 				// The thread shows the call running, as it shows its result next.
 				// The control's answer below is what commits the call to run.
 				checkpoint(opts)
@@ -333,9 +336,15 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				o.appendProjectedToolResult(tc, result, opts.Identity)
 				checkpoint(opts)
 			}
+			if err := ctx.Err(); err != nil {
+				return "", fmt.Errorf("ollama error: %w", err)
+			}
 			if len(results) > 0 {
 				rounds.observe(response.ToolCalls[:len(results)], results)
 				same.observe(ctx, response.ToolCalls[:len(results)], results)
+				if ranWork(response.ToolCalls[:len(results)]) {
+					responseLimit.refill()
+				}
 			}
 			o.fitAfterToolRound(skillCtx, sess.tools())
 			continue
@@ -396,8 +405,6 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 		return text, nil
 	}
-
-	return "", fmt.Errorf("tool round limit reached without a final answer")
 }
 
 // takeCorrections appends the control's waiting corrections to history as

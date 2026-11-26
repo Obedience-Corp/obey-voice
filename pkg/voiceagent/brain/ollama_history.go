@@ -443,6 +443,17 @@ func (o *OllamaBrain) appendMessage(m api.Message, identity *TurnIdentity, dispo
 	o.history = append(o.history, m)
 }
 
+// stoppedToolResult is the result recorded for a call a stopped turn did not run.
+const stoppedToolResult = "not run: the turn was stopped before this call"
+
+// appendStoppedToolResults gives each call a stopped turn did not run its
+// result, so every call in history stays paired with one.
+func (o *OllamaBrain) appendStoppedToolResults(calls []api.ToolCall, identity *TurnIdentity) {
+	for _, tc := range calls {
+		o.appendProjectedToolResult(tc, stoppedToolResult, identity)
+	}
+}
+
 func (o *OllamaBrain) appendProjectedToolResult(tc api.ToolCall, raw string, identities ...*TurnIdentity) {
 	projected := o.projectedToolResult(tc, raw)
 	t := Turn{Role: "tool", Content: raw, ToolName: tc.Function.Name, ToolCallID: tc.ID, At: time.Now().UTC()}

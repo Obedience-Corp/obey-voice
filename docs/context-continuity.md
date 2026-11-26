@@ -262,6 +262,9 @@ asks the model to answer from the results it has, saying what is done, what
 remains and any blocker, instead of failing the turn. Ask it to continue in a
 new turn; the usual compaction then applies. A request that does not fit even
 without tools still fails as before. Workers compact their own context instead.
+A live turn has no limit on its number of tool rounds, so this answer round, the
+repeat guard (the same call with the same result three times) and the user
+stopping the turn are what end a long tool loop.
 
 A truncated completion is marked incomplete in history. The same stream carries
 a tools-disabled continuation after an attempted compact, without a spoken

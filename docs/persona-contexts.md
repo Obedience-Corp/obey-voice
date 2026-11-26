@@ -47,9 +47,13 @@ Older binaries refuse format-4 sessions rather than silently dropping the contex
 
 ## Incomplete and runaway responses
 
-Foreground Ollama replies default to a 4,096-token response allowance, shared
-across tool rounds and automatic continuations. Set `ollama_response_tokens` to
-adjust it, for example:
+Foreground Ollama replies default to a 4,096-token response allowance for each
+round of a turn: a model request, its malformed tool-generation repair and any
+automatic continuation share it, and each round that runs tools gives the next
+one the full allowance again, so a long tool loop is not cut short by the sum
+of its rounds. A request that still offers tools may use half of the allowance,
+keeping the rest for a repair. Set `ollama_response_tokens` to adjust it, for
+example:
 
 ```sh
 obey-voice config set ollama_response_tokens 8192
@@ -57,7 +61,8 @@ obey-voice config set ollama_response_tokens 8192
 
 The allowance includes reasoning. A malformed tool-generation repair reserves and
 charges its request allowance even when the server cannot report failed usage.
-An additional streaming byte bound stops servers that ignore the output setting.
+An additional byte bound on each request stops servers that ignore the output
+setting.
 Reaching the limit reports an error and does not automatically start another
 continuation. Worker and internal summary requests retain their separate policies.
 

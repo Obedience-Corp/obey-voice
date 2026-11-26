@@ -28,11 +28,11 @@ const (
 )
 
 const (
-	stopRoundLimit = "tool round limit reached"
-	stopTime       = "worker time budget nearly used"
-	stopRepeat     = "worker repeated the same tool call"
-	stopReport     = "a report was requested"
-	stopContext    = "the context for this turn is nearly full"
+	stopRequests = "request limit reached"
+	stopTime     = "worker time budget nearly used"
+	stopRepeat   = "the same tool call kept returning the same result"
+	stopReport   = "a report was requested"
+	stopContext  = "the context for this turn is nearly full"
 )
 
 // workerTimeReserve is how much of a deadline a worker keeps for its final
@@ -67,9 +67,9 @@ func (e *WorkerOutOfTimeError) Unwrap() []error {
 	return []error{ErrWorkerOutOfTime, context.DeadlineExceeded}
 }
 
-// toolRounds decides when a turn's tool loop must stop and answer. Live turns
-// stop after maxToolIterations rounds. Workers run until the job is done,
-// bounded by their deadline, request budget, and a no-progress guard.
+// toolRounds decides when a turn's tool loop must stop and answer. A turn runs
+// until the work is done, bounded by the no-progress guard, and on a live turn
+// by its context window; a worker also by its deadline and request budget.
 type toolRounds struct {
 	worker      bool
 	start       time.Time
@@ -87,7 +87,6 @@ type toolRounds struct {
 func newToolRounds(cfg *config.Config, opts StreamOptions) *toolRounds {
 	r := &toolRounds{
 		worker: (cfg != nil && cfg.IsWorker) || opts.workerBudget() != nil,
-		stop:   stopRoundLimit,
 		start:  time.Now(),
 		budget: opts.workerBudget(),
 	}
@@ -97,20 +96,12 @@ func newToolRounds(cfg *config.Config, opts StreamOptions) *toolRounds {
 	return r
 }
 
-// more reports whether round i may run. Workers are not bounded by count.
-func (r *toolRounds) more(i int) bool {
-	return r.worker || i <= maxToolIterations
-}
-
 // final reports whether round i is the tools-free answer round, and the
 // instruction to append to it. Once a round is final, later rounds stay final.
 // A limit due at the same round as a report is the reason given.
 func (r *toolRounds) final(ctx context.Context, i int) (bool, string) {
 	if r.instruction != "" {
 		return true, r.instruction
-	}
-	if !r.worker && i >= maxToolIterations {
-		return true, toolLimitAnswerInstruction
 	}
 	if r.worker {
 		r.instruction = r.limitInstruction(ctx, i)
@@ -136,7 +127,7 @@ func (r *toolRounds) contextFull() bool {
 // request.
 func answerRoundTokens() int {
 	n := 0
-	for _, instruction := range []string{toolLimitAnswerInstruction, toolContextAnswerInstruction, toolRepeatAnswerInstruction} {
+	for _, instruction := range []string{toolContextAnswerInstruction, toolRepeatAnswerInstruction} {
 		n = max(n, estimateMessageTokens([]api.Message{{Role: "user", Content: instruction}}, nil))
 	}
 	return n
@@ -148,7 +139,7 @@ func (r *toolRounds) limitInstruction(ctx context.Context, i int) string {
 		r.stop, r.forced = stopTime, ForcedByTime
 		return toolTimeAnswerInstruction
 	case ForcedByRequests:
-		r.forced = ForcedByRequests
+		r.stop, r.forced = stopRequests, ForcedByRequests
 		return toolLimitAnswerInstruction
 	}
 	return ""
@@ -173,11 +164,14 @@ func (r *toolRounds) redirect() {
 	if r.forced != "" && r.forced != ForcedByRepeat {
 		return
 	}
-	r.instruction, r.forced, r.stop, r.recent, r.stale = "", "", stopRoundLimit, nil, 0
+	r.instruction, r.forced, r.stop, r.recent, r.stale = "", "", "", nil, 0
 }
 
 // stopErr describes a final round that produced no usable answer.
 func (r *toolRounds) stopErr(detail string) error {
+	if r.stop == "" {
+		return errors.New(detail)
+	}
 	return fmt.Errorf("%s: %s", r.stop, detail)
 }
 
@@ -200,14 +194,12 @@ func (r *toolRounds) cutOff(ctx, request context.Context, partial string) error 
 }
 
 // observe records a completed round for the no-progress guard. results holds
-// what each call returned, in call order. A worker must answer once a round
-// has recurred with the same results and nothing new has happened in between.
-// A recurring round separated by new work, such as a test rerun after each
-// edit, is progress.
+// what each call returned, in call order. A turn must answer once a round has
+// recurred with the same results and nothing new has happened in between. A
+// recurring round separated by new work, such as a test rerun after each edit,
+// is progress. A live turn's forced answer is an ordinary reply; only a
+// worker's is reported as cut short.
 func (r *toolRounds) observe(calls []api.ToolCall, results []string) {
-	if !r.worker {
-		return
-	}
 	sig := roundSignature(calls, results)
 	if slices.Contains(r.recent, sig) {
 		r.stale++
@@ -221,7 +213,10 @@ func (r *toolRounds) observe(calls []api.ToolCall, results []string) {
 	stuck := r.stale >= maxRepeatedToolRounds-1 && count(r.recent, sig) >= maxRepeatedToolRounds
 	// A report accepted while the round ran is the reason the job answers.
 	if r.instruction == "" && stuck && (r.reporting == nil || !r.reporting()) {
-		r.instruction, r.stop, r.forced = toolRepeatAnswerInstruction, stopRepeat, ForcedByRepeat
+		r.instruction, r.stop = toolRepeatAnswerInstruction, stopRepeat
+		if r.worker {
+			r.forced = ForcedByRepeat
+		}
 	}
 }
 
@@ -266,4 +261,15 @@ func canonicalToolCalls(calls []api.ToolCall) string {
 	}
 	slices.Sort(parts)
 	return strings.Join(parts, "\x01")
+}
+
+// ranWork reports a round that ran a tool other than the route decision,
+// which with its reply is one response.
+func ranWork(calls []api.ToolCall) bool {
+	for _, c := range calls {
+		if strings.TrimSpace(c.Function.Name) != "route" {
+			return true
+		}
+	}
+	return false
 }
