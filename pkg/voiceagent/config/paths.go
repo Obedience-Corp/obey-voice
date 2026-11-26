@@ -5,14 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -165,50 +162,52 @@ func osHomeDir() string {
 	return home
 }
 
-// testHomeDir is only a path: nothing creates it unless a test writes there.
-// Every test binary's home sits under one parent, and the homes of binaries
-// that have exited are removed when the next one starts.
+// testHomeDir is this test binary's home. The homes sit under one folder that
+// only this user can enter; each binary locks its home for as long as it runs,
+// and a later binary removes the homes whose lock is free. When that folder
+// is someone else's, the home is a private one that nothing removes.
 var testHomeDir = sync.OnceValue(func() string {
-	parent := filepath.Join(os.TempDir(), AppSlug+"-test-homes")
-	pruneTestHomes(parent, processAlive)
-	var b [8]byte
-	_, _ = rand.Read(b[:])
-	return filepath.Join(parent, fmt.Sprintf("%d-%s", os.Getpid(), hex.EncodeToString(b[:])))
+	home, lock := newTestHome(os.TempDir(), ownedPrivateDir)
+	testHomeLock = lock
+	return home
 })
 
-var testHomeName = regexp.MustCompile(`^([1-9][0-9]*)-[0-9a-f]{16}$`)
+// testHomeLock stays open until the binary exits: closing it frees the lock.
+var testHomeLock *os.File
 
-func pruneTestHomes(parent string, alive func(pid int) bool) {
-	if info, err := os.Lstat(parent); err != nil || !info.IsDir() {
-		return
-	}
-	entries, err := os.ReadDir(parent)
-	if err != nil {
-		return
-	}
-	for _, entry := range entries {
-		m := testHomeName.FindStringSubmatch(entry.Name())
-		if m == nil || !entry.IsDir() {
-			continue
+func newTestHome(tmp string, private func(os.FileInfo) bool) (string, *os.File) {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	name := fmt.Sprintf("%d-%s", os.Getpid(), hex.EncodeToString(b[:]))
+	parent := filepath.Join(tmp, testHomesParentName())
+	if !claimTestHomesParent(parent, private) {
+		if dir, err := os.MkdirTemp(tmp, AppSlug+"-test-home-"); err == nil {
+			return dir, nil
 		}
-		if pid, err := strconv.Atoi(m[1]); err == nil && !alive(pid) {
-			_ = os.RemoveAll(filepath.Join(parent, entry.Name()))
-		}
+		return filepath.Join(tmp, AppSlug+"-test-home-"+name), nil
 	}
+	pruneTestHomes(parent)
+	return filepath.Join(parent, name), lockTestHome(parent, name)
 }
 
-// processAlive never reports a Windows process dead: Signal(0) is unsupported
-// there, so test homes are not pruned on Windows.
-func processAlive(pid int) bool {
-	if runtime.GOOS == "windows" {
-		return true
+// testHomesParentName carries the uid because a shared temp directory holds
+// every user's folder. Windows reports no uid and keeps a temp folder per user.
+func testHomesParentName() string {
+	if uid := os.Getuid(); uid >= 0 {
+		return fmt.Sprintf("%s-test-homes-%d", AppSlug, uid)
 	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
+	return AppSlug + "-test-homes"
+}
+
+// claimTestHomesParent creates parent for this user alone, or accepts one that
+// already is. Another user can create the name first in a shared temp
+// directory, as a folder or a link, so an existing one is checked, not trusted.
+func claimTestHomesParent(parent string, private func(os.FileInfo) bool) bool {
+	if err := os.Mkdir(parent, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return false
 	}
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil || errors.Is(err, syscall.EPERM)
+	info, err := os.Lstat(parent)
+	return err == nil && info.IsDir() && private(info)
 }
 
 // PromptsDirFrom resolves the user prompt-documents directory for an

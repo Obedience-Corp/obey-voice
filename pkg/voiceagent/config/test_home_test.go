@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,61 +69,102 @@ func TestConfigDirForTestStillWins(t *testing.T) {
 	}
 }
 
-func TestPruneTestHomesRemovesOnlyExitedBinariesHomes(t *testing.T) {
-	parent := t.TempDir()
-	outside := t.TempDir()
-	mkdir := func(name string) string {
-		dir := filepath.Join(parent, name)
-		if err := os.MkdirAll(filepath.Join(dir, ".obey"), 0o755); err != nil {
+func TestClaimTestHomesParentCreatesItForThisUserAlone(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "homes")
+	asked := false
+	private := func(info os.FileInfo) bool {
+		asked = true
+		return info.IsDir()
+	}
+	if !claimTestHomesParent(parent, private) {
+		t.Fatal("a parent that did not exist was not claimed")
+	}
+	if !asked {
+		t.Fatal("the new parent was never checked")
+	}
+	if !claimTestHomesParent(parent, private) {
+		t.Fatal("the parent this user created was refused the second time")
+	}
+}
+
+func TestClaimTestHomesParentRefusesWhatItCannotTrust(t *testing.T) {
+	private := func(os.FileInfo) bool { return true }
+	t.Run("a parent that is not private to this user", func(t *testing.T) {
+		parent := filepath.Join(t.TempDir(), "homes")
+		if err := os.Mkdir(parent, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		return dir
-	}
-	dead := mkdir("101-0123456789abcdef")
-	live := mkdir("202-0123456789abcdef")
-	other := mkdir("notes")
-	file := filepath.Join(parent, "103-0123456789abcdef")
-	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		if claimTestHomesParent(parent, func(os.FileInfo) bool { return false }) {
+			t.Fatal("claimed")
+		}
+	})
+	t.Run("a link to a folder", func(t *testing.T) {
+		parent := filepath.Join(t.TempDir(), "homes")
+		if err := os.Symlink(t.TempDir(), parent); err != nil {
+			t.Skip(err)
+		}
+		if claimTestHomesParent(parent, private) {
+			t.Fatal("claimed")
+		}
+	})
+	t.Run("a file", func(t *testing.T) {
+		parent := filepath.Join(t.TempDir(), "homes")
+		if err := os.WriteFile(parent, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if claimTestHomesParent(parent, private) {
+			t.Fatal("claimed")
+		}
+	})
+	t.Run("a temp folder that does not exist", func(t *testing.T) {
+		if claimTestHomesParent(filepath.Join(t.TempDir(), "missing", "homes"), private) {
+			t.Fatal("claimed")
+		}
+	})
+}
+
+func TestNewTestHomeLeavesAnotherUsersParentAlone(t *testing.T) {
+	tmp := t.TempDir()
+	parent := filepath.Join(tmp, testHomesParentName())
+	theirs := filepath.Join(parent, "101-0123456789abcdef")
+	if err := os.MkdirAll(theirs, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(parent, "104-0123456789abcdef")
-	if err := os.Symlink(outside, link); err != nil {
+	if err := os.WriteFile(theirs+".lock", nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	pruneTestHomes(parent, func(pid int) bool { return pid == 202 })
+	home, lock := newTestHome(tmp, func(os.FileInfo) bool { return false })
 
-	if _, err := os.Stat(dead); !os.IsNotExist(err) {
-		t.Errorf("home of an exited binary kept: %v", err)
+	if lock != nil {
+		lock.Close()
+		t.Error("a lock was taken under a parent that is not this user's")
 	}
-	for _, kept := range []string{live, other, file, link, outside} {
+	if insideDir(home, parent) {
+		t.Errorf("home %q is under a parent that is not this user's", home)
+	}
+	if !insideDir(home, tmp) || home == tmp {
+		t.Errorf("home %q is not a folder of its own under the temp folder %q", home, tmp)
+	}
+	if info, err := os.Lstat(home); err != nil || !info.IsDir() {
+		t.Errorf("fallback home %q is not a folder: %v", home, err)
+	}
+	for _, kept := range []string{theirs, theirs + ".lock"} {
 		if _, err := os.Lstat(kept); err != nil {
-			t.Errorf("%s removed: %v", kept, err)
+			t.Errorf("%s removed from a parent that is not this user's: %v", kept, err)
 		}
 	}
-}
-
-func TestPruneTestHomesSkipsASymlinkedParent(t *testing.T) {
-	target := t.TempDir()
-	home := filepath.Join(target, "101-0123456789abcdef")
-	if err := os.Mkdir(home, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	parent := filepath.Join(t.TempDir(), "homes")
-	if err := os.Symlink(target, parent); err != nil {
-		t.Fatal(err)
-	}
-	pruneTestHomes(parent, func(int) bool { return false })
-	if _, err := os.Stat(home); err != nil {
-		t.Fatalf("pruned through a symlinked parent: %v", err)
+	if entries, err := os.ReadDir(parent); err != nil || len(entries) != 2 {
+		t.Errorf("parent that is not this user's was written to: %v, %v", entries, err)
 	}
 }
 
-func TestTestHomeSitsUnderTheSharedParent(t *testing.T) {
-	if got, want := filepath.Dir(testHomeDir()), filepath.Join(os.TempDir(), AppSlug+"-test-homes"); got != want {
+func TestTestHomeSitsUnderThisUsersParent(t *testing.T) {
+	want := filepath.Join(os.TempDir(), testHomesParentName())
+	if got := filepath.Dir(testHomeDir()); got != want {
 		t.Fatalf("test home parent = %q, want %q", got, want)
 	}
-	if !testHomeName.MatchString(filepath.Base(testHomeDir())) {
-		t.Fatalf("test home name %q does not match what pruning removes", filepath.Base(testHomeDir()))
+	if uid := os.Getuid(); uid >= 0 && !strings.HasSuffix(want, fmt.Sprintf("-test-homes-%d", uid)) {
+		t.Fatalf("parent %q does not carry the uid %d", want, uid)
 	}
 }
