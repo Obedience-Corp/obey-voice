@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"strings"
+	"sync/atomic"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -52,8 +53,12 @@ type chatItem struct {
 	workResultID string
 }
 
+// chatItemRenders counts item renders so tests can bound what one event costs.
+var chatItemRenders atomic.Int64
+
 // render paints the item for a viewport width columns wide.
 func (it chatItem) render(showThink bool, width int) string {
+	chatItemRenders.Add(1)
 	if it.kind != chatItemAgent {
 		if it.hang != "" && width >= noticeIndent+2 {
 			return renderHanging(it.hangStyle, it.hang, width)
