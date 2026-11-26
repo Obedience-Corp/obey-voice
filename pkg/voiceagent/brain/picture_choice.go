@@ -74,12 +74,33 @@ func (c *pictureChoice) prompt(o *OllamaBrain) string {
 	return systemPrompt(o.cfg, "picture-choice", map[string]string{"candidates": string(files)})
 }
 
+type choiceField struct {
+	Type string   `json:"type"`
+	Enum []string `json:"enum,omitempty"`
+}
+
+// choiceSchema keeps its properties in this order: Ollama builds the output
+// grammar from it, so "wanted" is written before "file".
+type choiceSchema struct {
+	Type       string `json:"type"`
+	Properties struct {
+		Wanted  choiceField `json:"wanted"`
+		File    choiceField `json:"file"`
+		Caption choiceField `json:"caption"`
+	} `json:"properties"`
+	Required             []string `json:"required"`
+	AdditionalProperties bool     `json:"additionalProperties"`
+}
+
 // format asks for what the user wanted before the file, and lists "none"
 // first, so a small model names the subject before it picks a name.
 func (c *pictureChoice) format() json.RawMessage {
-	enum, _ := json.Marshal(append([]string{"none"}, c.files...))
-	return json.RawMessage(`{"type":"object","properties":{"wanted":{"type":"string"},"file":{"type":"string","enum":` + string(enum) +
-		`},"caption":{"type":"string"}},"required":["wanted","file","caption"],"additionalProperties":false}`)
+	schema := choiceSchema{Type: "object", Required: []string{"wanted", "file", "caption"}}
+	schema.Properties.Wanted = choiceField{Type: "string"}
+	schema.Properties.File = choiceField{Type: "string", Enum: append([]string{"none"}, c.files...)}
+	schema.Properties.Caption = choiceField{Type: "string"}
+	out, _ := json.Marshal(schema)
+	return out
 }
 
 // chat sends the round's messages with the choice schema in place of tools

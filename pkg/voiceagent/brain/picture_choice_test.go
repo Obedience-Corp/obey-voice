@@ -375,3 +375,23 @@ func TestPictureRetryKeepsAChoiceCutOffAfterItsFile(t *testing.T) {
 		}
 	}
 }
+
+func TestPictureChoiceSchemaQuotesFileNamesAndAsksForTheSubjectFirst(t *testing.T) {
+	c := &pictureChoice{files: []string{`say "cheese".png`, `images/a\b.jpg`}}
+	raw := c.format()
+	var schema struct {
+		Properties map[string]struct {
+			Enum []string `json:"enum"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("schema is not JSON: %v\n%s", err, raw)
+	}
+	if got := schema.Properties["file"].Enum; !slices.Equal(got, []string{"none", `say "cheese".png`, `images/a\b.jpg`}) {
+		t.Fatalf("file enum = %q", got)
+	}
+	wanted, file, caption := bytes.Index(raw, []byte(`"wanted"`)), bytes.Index(raw, []byte(`"file"`)), bytes.Index(raw, []byte(`"caption"`))
+	if !(wanted < file && file < caption) {
+		t.Fatalf("properties out of order: %s", raw)
+	}
+}

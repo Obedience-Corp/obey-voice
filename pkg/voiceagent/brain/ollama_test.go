@@ -789,6 +789,9 @@ func TestChatDoesNotRetryThinkOnUnrelatedError(t *testing.T) {
 	if n != 1 {
 		t.Errorf("requests = %d, want 1 (non-think errors must not retry without Think)", n)
 	}
+	if o.thinkRefused.Load() {
+		t.Error("an unrelated error was remembered as a think refusal")
+	}
 	if req.Think == nil || req.Think.Value != true {
 		t.Errorf("Think = %#v, want still true (no think-reject retry)", req.Think)
 	}

@@ -2,9 +2,11 @@ package brain
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"image"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -488,5 +491,34 @@ func TestHandOffAfterALookAtAPicture(t *testing.T) {
 				t.Fatalf("%d pictures recorded as opened, want %d", opened, tc.opened)
 			}
 		})
+	}
+}
+
+// A slow capability question must not hold up another turn that asks too.
+func TestVisionQuestionDoesNotBlockOtherTurns(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{}, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entered <- struct{}{}
+		<-release
+		_, _ = io.WriteString(w, `{"capabilities":["completion","vision"]}`)
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	base, _ := url.Parse(srv.URL)
+	o := &OllamaBrain{client: api.NewClient(base, http.DefaultClient), model: "m"}
+	go func() { _, _ = o.seesImages(context.Background()) }()
+	<-entered
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := o.seesImages(ctx); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("second question answered while the server was held")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second turn waited behind the first capability question")
 	}
 }

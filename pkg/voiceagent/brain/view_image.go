@@ -56,21 +56,25 @@ func (o *OllamaBrain) offersViewImage(ctx context.Context, opts StreamOptions) b
 
 // seesImages is viewsImages answered once per brain, so the tools a model is
 // offered do not cost a request each turn or change between turns. A failed
-// question is asked again next time.
+// question is asked again next time. The lock is not held while Ollama
+// answers, so a slow server never queues other turns behind one question.
 func (o *OllamaBrain) seesImages(ctx context.Context) (bool, error) {
 	if o.client == nil {
 		return false, errors.New("check image support: no Ollama client")
 	}
 	o.visionMu.Lock()
-	defer o.visionMu.Unlock()
-	if o.vision != nil {
-		return *o.vision, nil
+	cached := o.vision
+	o.visionMu.Unlock()
+	if cached != nil {
+		return *cached, nil
 	}
 	views, err := o.viewsImages(ctx)
 	if err != nil {
 		return false, err
 	}
+	o.visionMu.Lock()
 	o.vision = &views
+	o.visionMu.Unlock()
 	return views, nil
 }
 
