@@ -9,7 +9,6 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -263,33 +262,7 @@ type workResultRows struct {
 	start, end int
 }
 
-// layoutWorkResultRows records where each background result sits, given each
-// item's rendered text (empty for items that draw nothing). Rows are counted
-// per item, without pictures.
-func (m *conversationModel) layoutWorkResultRows(rendered []string) {
-	m.workResultRows = m.workResultRows[:0]
-	last := -1
-	for i := range m.items {
-		if m.items[i].workResultID != "" {
-			last = i
-		}
-	}
-	wrap := lipgloss.NewStyle().Width(max(m.viewport.Width, 1))
-	line := 0
-	for i := 0; i <= last; i++ {
-		s := rendered[i]
-		if s == "" {
-			continue
-		}
-		h := lipgloss.Height(wrap.Render(s))
-		if id := m.items[i].workResultID; id != "" {
-			m.workResultRows = append(m.workResultRows, workResultRows{id: id, start: line, end: line + h})
-		}
-		line += h
-	}
-}
-
-// markVisibleWorkResults marks results on screen as seen. It reads the layout
+// markVisibleWorkResults marks results on screen as seen. It reads the rows
 // refreshContent recorded, so a scroll does no rendering.
 func (m *conversationModel) markVisibleWorkResults() {
 	if m.activityFocused || m.workDisplayHidden || !m.ready {

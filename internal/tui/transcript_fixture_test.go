@@ -33,7 +33,7 @@ func fixtureItem(i int) chatItem {
 		return chatItem{kind: chatItemAgent, name: "Agent B", hosted: i%16 == 2, spoken: fmt.Sprintf("Reply %d.\n\nFirst paragraph with a long sentence that runs past the width of the viewport and must wrap onto a second line.\n- item one\n- item two 中文字符混合 English", i)}
 	case 3:
 		text := noticeText(fmt.Sprintf("Info %d: worker finished\tstep one\tstep two with a long tail of words that wraps and keeps its hanging indent across lines", i))
-		return chatItem{kind: chatItemSys, sys: dimStyle.Render("  " + text), hang: text, hangStyle: dimStyle}
+		return chatItem{kind: chatItemSys, sys: dimStyle.Render("  " + text), hang: text, hangStyle: &dimStyle}
 	case 4:
 		return chatItem{kind: chatItemSys, sys: dimStyle.Render("  ") + errorStyle.Render("✗") + dimStyle.Render(fmt.Sprintf(" tool search failed → %s: exit status 1 (exit code 1) in 1.2s\n    stderr: %s", strings.Repeat("path/to/some/file.go:12 ", 6), strings.Repeat("ε", 30)))}
 	case 5:

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 func teaWindowSize(width, height int) tea.WindowSizeMsg {
@@ -60,6 +62,57 @@ func BenchmarkTranscriptPageUp(b *testing.B) {
 				key = tea.KeyMsg{Type: tea.KeyPgUp}
 			}
 			m, _ = m.Update(key)
+		}
+	})
+}
+
+func BenchmarkTranscriptResponseDelta(b *testing.B) {
+	benchTranscript(b, func(b *testing.B, m conversationModel) {
+		for i := 0; b.Loop(); i++ {
+			if i%64 == 0 {
+				m.streamingAgent = ""
+			}
+			m, _ = m.Update(busEventMsg{event: events.ResponseDelta{Text: "word "}})
+		}
+	})
+}
+
+func BenchmarkTranscriptThinkingDelta(b *testing.B) {
+	benchTranscript(b, func(b *testing.B, m conversationModel) {
+		for i := 0; b.Loop(); i++ {
+			if i%64 == 0 {
+				m.streamingThink = ""
+			}
+			m, _ = m.Update(busEventMsg{event: events.ThinkingDelta{Text: "idea "}})
+		}
+	})
+}
+
+func BenchmarkTranscriptTypeKey(b *testing.B) {
+	benchTranscript(b, func(b *testing.B, m conversationModel) {
+		for i := 0; b.Loop(); i++ {
+			if i%64 == 0 {
+				m.input.SetValue("")
+			}
+			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		}
+	})
+}
+
+func BenchmarkTranscriptAppendReply(b *testing.B) {
+	benchTranscript(b, func(b *testing.B, m conversationModel) {
+		items, turns := len(m.items), len(m.plainTurns)
+		for b.Loop() {
+			m, _ = m.Update(busEventMsg{event: events.ResponseReady{Response: "A finished reply that wraps past the edge of the viewport at least once, with 🙂."}})
+			m.items, m.plainTurns = m.items[:items], m.plainTurns[:turns]
+		}
+	})
+}
+
+func BenchmarkTranscriptView(b *testing.B) {
+	benchTranscript(b, func(b *testing.B, m conversationModel) {
+		for b.Loop() {
+			_ = m.View()
 		}
 	})
 }

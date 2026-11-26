@@ -44,13 +44,15 @@ type chatItem struct {
 	// keeps the two-column indent; sys holds the unwrapped fallback. render
 	// prefers hang, so an edit to sys alone never shows on a notice item.
 	hang      string
-	hangStyle lipgloss.Style
+	hangStyle *lipgloss.Style
 	// notice preserves unstyled local command output for native clients.
 	notice string
 	// workResultID marks a canonical background result projection. These
 	// entries can be cleared when the work scope changes or the result is
 	// dismissed without touching ordinary conversation history.
 	workResultID string
+	// layout caches the item as last drawn; see layoutItem.
+	layout *itemLayout
 }
 
 // chatItemRenders counts item renders so tests can bound what one event costs.
@@ -61,7 +63,11 @@ func (it chatItem) render(showThink bool, width int) string {
 	chatItemRenders.Add(1)
 	if it.kind != chatItemAgent {
 		if it.hang != "" && width >= noticeIndent+2 {
-			return renderHanging(it.hangStyle, it.hang, width)
+			style := lipgloss.NewStyle()
+			if it.hangStyle != nil {
+				style = *it.hangStyle
+			}
+			return renderHanging(style, it.hang, width)
 		}
 		return it.sys
 	}
@@ -120,7 +126,7 @@ func noticeText(text string) string {
 // appendNotice adds a notice line that keeps its indent when it wraps.
 func (m *conversationModel) appendNotice(style lipgloss.Style, text string) {
 	text = noticeText(text)
-	m.items = append(m.items, chatItem{kind: chatItemSys, sys: style.Render(strings.Repeat(" ", noticeIndent) + text), hang: text, hangStyle: style})
+	m.items = append(m.items, chatItem{kind: chatItemSys, sys: style.Render(strings.Repeat(" ", noticeIndent) + text), hang: text, hangStyle: &style})
 	m.refreshContent()
 	m.applyFollow()
 }

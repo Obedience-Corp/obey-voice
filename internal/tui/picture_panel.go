@@ -501,12 +501,13 @@ func (m conversationModel) pictureHit(x, y int) (pictureSpot, bool) {
 	width := max(1, m.viewport.Width-4)
 	var hit pictureSpot
 	found, total := false, 0
+	profile := lipgloss.ColorProfile()
 	for i, it := range m.items {
-		s := it.render(m.showThink, m.viewport.Width)
-		if s == "" {
+		l := m.layoutItem(i, m.viewport.Width, profile)
+		if l.text == "" {
 			continue
 		}
-		total += lipgloss.Height(wrap.Render(s))
+		total += l.wrap.rows
 		for j, r := range it.attachments {
 			h := lipgloss.Height(wrap.Render(m.renderMedia([]chatmedia.Ref{r}, width, m.threadPreviewRows(len(it.attachments)))))
 			if !found && line >= total && line < total+h {
