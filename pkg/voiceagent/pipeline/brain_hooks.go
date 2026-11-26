@@ -131,13 +131,14 @@ func toolFinishedEvent(jobID string, res brain.ToolResult, scopes ...work.WorkSc
 }
 
 func (p *Pipeline) liveRouterToolsPolicy() brain.RouterToolsPolicy {
-	if p.Agency != nil && tieredWorkers(p.Agency.currentConfig()) {
+	inline := p.worksInline()
+	if !inline && p.Agency != nil && tieredWorkers(p.Agency.currentConfig()) {
 		return brain.RouterToolsRouteOnly
 	}
 	if !p.VoiceToolsEnabled {
 		return ""
 	}
-	if p.RouterToolsPolicy != "" {
+	if !inline && p.RouterToolsPolicy != "" {
 		return p.RouterToolsPolicy
 	}
 	return brain.RouterToolsDirect
@@ -176,7 +177,8 @@ func (p *Pipeline) routeContext() RouteContext {
 		ctx.ManagedWorkActive = p.ManagedWorkActive()
 	}
 	if p.Agency != nil {
-		ctx.TieredWorkers = tieredWorkers(p.Agency.currentConfig())
+		ctx.InlineWork = p.worksInline()
+		ctx.TieredWorkers = !ctx.InlineWork && tieredWorkers(p.Agency.currentConfig())
 		ctx.LegacyImageWorker = !ctx.TieredWorkers && p.backgroundWorkerAvailable()
 	}
 	return ctx
@@ -186,7 +188,11 @@ func (p *Pipeline) backgroundWorkerAvailable() bool {
 	if !p.VoiceToolsEnabled || !p.WorkersEnabled() {
 		return false
 	}
-	if decision := p.Agency.resolveWork(); decision.own != nil {
+	decision := p.Agency.resolveWork()
+	if decision.inline {
+		return false
+	}
+	if decision.own != nil {
 		return decision.refused == nil
 	}
 	_, err := p.Agency.workerProvider()

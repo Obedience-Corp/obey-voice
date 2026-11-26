@@ -80,8 +80,10 @@ type personasModel struct {
 	workerTiers       *config.WorkerTierOverrides
 	workerOllamaHost  string
 	// work is who runs this persona's background work: "" (its backend's
-	// default), "own" or "worker".
+	// default), "own", "worker" or "inline".
 	work string
+	// jobControl is brain.job_control: nil inherits voice_job_control.
+	jobControl *bool
 	// Model row picker: discovered models per provider + async scan state.
 	// See personas_models.go; brainModelInput stays the selected value.
 	brainModels personaModelPicker
@@ -130,7 +132,8 @@ func newPersonas(cfg *config.Config) personasModel {
 		createPersona: persona.CreateAndUseWithOpts,
 		savePrompt:    persona.UpdateSystemPrompt,
 		saveName:      persona.UpdateDisplayName,
-		saveStack:     persona.UpdateStack,
+		// The form shows job control, so its stack save carries it.
+		saveStack:     persona.UpdateStackWithJobControl,
 		saveDirectory: persona.UpdateStartingDirectory,
 		deletePersona: persona.Delete,
 		setInactive:   persona.SetInactive,

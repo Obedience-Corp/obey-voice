@@ -237,8 +237,15 @@ func (m personasModel) stackLines() []string {
 	}
 	workerProvider := stackWorkerProviders()[m.workerProviderIdx]
 	workerRow := row(formRowWorkerProvider, "Worker", "‹ "+workerProvider+" ›")
-	if m.effectiveWork() == config.WorkOwn {
+	switch m.effectiveWork() {
+	case config.WorkOwn:
 		workerRow += dimStyle.Render("  (unused: it does its own work)")
+	case config.WorkInline:
+		if config.OwnWorkStrict(m.cfg) {
+			workerRow += dimStyle.Render("  (inline is refused under the strict worker policy)")
+		} else {
+			workerRow += dimStyle.Render("  (unused: it works in the conversation)")
+		}
 	}
 	if workerProvider == stackDefaultLabel && m.cfg != nil && !config.WorkerSelected(m.cfg) && (m.cfg.VoiceWorkers == nil || m.cfg.VoiceWorkers.Mode != config.WorkerModeTiered) {
 		// "(default)" is only honest when Settings actually holds a choice.
@@ -259,6 +266,7 @@ func (m personasModel) stackLines() []string {
 		row(formRowWork, "Work", m.workRowValue()),
 		workerRow,
 		workerModelRow,
+		m.jobControlRow(row(formRowJobControl, "Job control", m.jobControlRowValue())),
 		row(formRowTTSProvider, "TTS", "‹ "+ttsProvider+" ›"),
 		row(formRowVoice, "Voice", voiceValue),
 		row(formRowVoiceLanguage, "Language", languageValue),

@@ -36,6 +36,7 @@ type RouteContext struct {
 	TieredWorkers     bool
 	DirectTools       bool
 	LegacyImageWorker bool // A non-tiered worker is available to take background tasks.
+	InlineWork        bool // The persona works in the conversation; no shortcut starts a job.
 }
 
 // RouteDecision records how a turn was classified.
@@ -238,6 +239,9 @@ var spawnIntents = []string{
 }
 
 func classifyWorkIntent(transcript string, ctx RouteContext) bool {
+	if ctx.InlineWork {
+		return false
+	}
 	s := normalizeUtterance(transcript)
 	if ctx.DirectTools {
 		// Keep long-running work off the mic when a worker can take it.
@@ -270,6 +274,11 @@ func classifyPhrase(transcript string, ctx RouteContext) (RouteKind, bool) {
 			return RouteNone, false
 		}
 		if entry.requireJob && !ctx.JobActive && !(entry.kind == RouteJobAbort && ctx.ManagedWorkActive) {
+			return RouteNone, false
+		}
+		// The long story is written by a background job; an inline persona
+		// tells it in the conversation instead.
+		if ctx.InlineWork && entry.kind == RouteNarrate && isLongStoryPhrase(transcript) {
 			return RouteNone, false
 		}
 		return entry.kind, true
@@ -328,10 +337,11 @@ type promiseRepairState struct {
 
 // failedRouteRepairEnabled is intentionally false for tiered workers. Their
 // live route tool is required to create an explicitly tiered spawn; guessing a
-// spawn from spoken promise text would lose that required admission data.
+// spawn from spoken promise text would lose that required admission data. A
+// persona that works inline has no spawn to repair to.
 func (p *Pipeline) failedRouteRepairEnabled() bool {
 	tiered := p.Agency != nil && tieredWorkers(p.Agency.currentConfig())
-	return p.VoiceFailedRouteRepair && !tiered
+	return p.VoiceFailedRouteRepair && !tiered && !p.worksInline()
 }
 
 func (r *promiseRepairState) shouldRepair(accumulated string) bool {

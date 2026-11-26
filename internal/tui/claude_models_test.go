@@ -58,7 +58,7 @@ func TestPersonaFormListsTheClaudeCLIModels(t *testing.T) {
 	m := newPickerPersonas(t, &config.Config{BrainProvider: "ollama"}, p)
 	m.saveName = func(id, name string) (*persona.Profile, error) { return &persona.Profile{ID: id}, nil }
 	m.savePrompt = func(id, prompt string) (*persona.Profile, error) { return &persona.Profile{ID: id}, nil }
-	// saveStack stays persona.UpdateStack, so the pick is written to the store.
+	// saveStack stays the form's real writer, so the pick is written to the store.
 	m = openClaudeModelRow(t, m)
 
 	want := []string{stackDefaultLabel, "sonnet", "opus", "haiku", "sonnet[1m]", stackCustomLabel}

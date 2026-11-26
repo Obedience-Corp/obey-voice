@@ -282,7 +282,11 @@ func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *tra
 	if cfg != nil && cfg.BrainProvider != "" {
 		provider, model = cfg.BrainProvider, config.BrainModelFor(cfg, cfg.BrainProvider)
 	}
-	admission["provider"], admission["model"], admission["work"] = provider, model, config.WorkOwn
+	work := config.WorkOwn
+	if config.WorksInline(cfg) {
+		work = config.WorkInline
+	}
+	admission["provider"], admission["model"], admission["work"] = provider, model, work
 	workDir := brain.ReplyWorkDir(p.Brain)
 	if workDir == "" {
 		workDir = config.WorkDirFrom(cfg)

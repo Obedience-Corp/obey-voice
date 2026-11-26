@@ -77,6 +77,9 @@ type Agency struct {
 	// runningFor replaces a job's running time in the facts a turn is given;
 	// a measurement sets it, production never does.
 	runningFor func(job.Info) time.Duration
+	// inlineRefusedShown holds the personas told this session that their
+	// inline work is refused.
+	inlineRefusedShown map[string]bool // guarded by mu
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction
@@ -138,6 +141,13 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 	if a == nil {
 		return
 	}
+	if work := a.turnWork(ctx); work.inline && a.writesStory(d) {
+		a.refuseInlineSpawn(ctx, turn, metrics, d, work)
+		if a.pipeline.OnRoute != nil {
+			a.pipeline.OnRoute(d)
+		}
+		return
+	}
 	if d.Kind != RouteSpawn {
 		a.emitRouteDecision(d, "handled", "", "")
 	}
@@ -162,6 +172,18 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 	if a.pipeline.OnRoute != nil {
 		a.pipeline.OnRoute(d)
 	}
+}
+
+// writesStory reports a narrate route the story writer, a job, would answer.
+func (a *Agency) writesStory(d RouteDecision) bool {
+	if d.Kind != RouteNarrate {
+		return false
+	}
+	dir := config.WorkDirFrom(a.currentConfig())
+	if a.narrator != nil {
+		dir = a.narrator.workDir()
+	}
+	return wantsWrittenStory(d.Transcript, dir)
 }
 
 func (a *Agency) workerProvider() (brain.Provider, error) {

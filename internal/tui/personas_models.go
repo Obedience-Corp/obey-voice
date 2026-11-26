@@ -285,7 +285,7 @@ func (m personasModel) formRowHelp() string {
 		}
 		return "Model · (default) lets the provider choose"
 	case formRowWork:
-		return "Work · own: this persona's own brain does its background work · worker: the Worker below does it"
+		return "Work · own: jobs run on this persona's own model · worker: jobs run on the worker · inline: does the work itself in the conversation; never hands work to a job"
 	case formRowWorkerProvider:
 		if m.cfg != nil && m.cfg.VoiceWorkers != nil && m.cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
 			return "Tiered workers · edit brain.worker_tiers in persona.yaml; these rows edit legacy defaults"
@@ -296,6 +296,11 @@ func (m personasModel) formRowHelp() string {
 			return "Tiered models · persona worker_tiers override Settings; legacy model here is inactive"
 		}
 		return "Worker model · (default) lets the worker's provider choose"
+	case formRowJobControl:
+		if m.effectiveWork() == config.WorkInline && !config.OwnWorkStrict(m.cfg) {
+			return "Job control · inline: only for a reply moved to the background when you address another persona · small local models have misused it"
+		}
+		return "Job control · lets this persona cancel, ask a report of, or correct its own jobs · small local models have misused it · (default) inherits Settings"
 	case formRowTTSProvider:
 		return "TTS provider · (default) inherits Settings"
 	case formRowVoice:

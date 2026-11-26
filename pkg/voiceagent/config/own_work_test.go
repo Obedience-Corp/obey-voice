@@ -37,10 +37,39 @@ func TestWorkDefaultsToOwnOffOllamaAndWorkerOnIt(t *testing.T) {
 			t.Errorf("ValidateWork(%q) accepted", bad)
 		}
 	}
-	for _, ok := range []string{"", "own", "worker", " OWN "} {
+	for _, ok := range []string{"", "own", "worker", " OWN ", "inline", " Inline "} {
 		if err := ValidateWork(ok); err != nil {
 			t.Errorf("ValidateWork(%q) = %v", ok, err)
 		}
+	}
+}
+
+func TestInlineWorkIsChosenOnlyByThePersona(t *testing.T) {
+	for _, provider := range []string{"ollama", "claude"} {
+		cfg := &Config{BrainProvider: provider, PersonaWork: " Inline ", PersonaNamesWorker: true}
+		if WorkOf(cfg) != WorkInline || !WorksInline(cfg) || WorkReason(cfg) != "brain.work is inline" {
+			t.Errorf("%s set to inline: work %q, reason %q", provider, WorkOf(cfg), WorkReason(cfg))
+		}
+		if WorksInline(&Config{BrainProvider: provider}) || WorksInline(&Config{BrainProvider: provider, PersonaWork: WorkOwn}) {
+			t.Errorf("%s: inline without being chosen", provider)
+		}
+	}
+	if WorksInline(nil) {
+		t.Error("no persona works inline")
+	}
+	tiered := func(policy string) *Config {
+		w := DefaultVoiceWorkers()
+		w.Mode, w.Policy.ChargePolicy = WorkerModeTiered, policy
+		return &Config{BrainProvider: "claude", PersonaWork: WorkInline, VoiceWorkers: w}
+	}
+	if strict := tiered("strict"); WorksInline(strict) || WorkOf(strict) != WorkInline || InlineWorkRefused(strict) == nil {
+		t.Errorf("strict tiered: inline %v, refused %v", WorksInline(strict), InlineWorkRefused(strict))
+	}
+	if advisory := tiered("advisory"); !WorksInline(advisory) || InlineWorkRefused(advisory) != nil {
+		t.Errorf("advisory tiered: inline %v, refused %v", WorksInline(advisory), InlineWorkRefused(advisory))
+	}
+	if err := ValidateWork("conversation"); err == nil || !strings.Contains(err.Error(), "inline") {
+		t.Errorf("ValidateWork error does not name inline: %v", err)
 	}
 }
 

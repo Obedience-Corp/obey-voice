@@ -251,6 +251,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		RouteJSON:         p.liveRouteJSON(),
 		BackgroundWorker:  p.liveRouterToolsPolicy() == brain.RouterToolsDirect && p.backgroundWorkerAvailable(),
+		InlineWork:        p.worksInline(),
 		JobControl:        !nativeConversation && !isContinuation && admission.Discussion == nil && p.Agency != nil,
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
 		OnToolEnd:         p.toolEndHook(ctx),

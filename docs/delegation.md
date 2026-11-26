@@ -48,7 +48,9 @@ Ask for a self-contained task such as “Check the active campaign workitems in
 the background and tell me which one is ready.” The model can use:
 
 - `agent_delegate`: queue one task; the acknowledgment contains a local ticket
-  and explicitly says that Obey admission is pending.
+  and explicitly says that Obey admission is pending. A persona whose
+  `brain.work` is `inline` is not offered it, and a call to it is refused; it
+  can still list and cancel its delegations.
 - `agent_delegations`: read cached status immediately, without waiting.
 - `agent_cancel`: request cancellation for the exact ticket or durable ID, only
   on explicit user intent. The host checks the request first: the tool can
@@ -104,8 +106,8 @@ work until the operator checks Obey and restarts the voice session.
 ## Who does the work
 
 A spawned job runs on one of two backends, chosen per persona by its
-`brain.work` setting (`obey-voice persona edit <id> --work own|worker`, or the
-**Work** row of the persona form):
+`brain.work` setting (`obey-voice persona edit <id> --work own|worker|inline`,
+or the **Work** row of the persona form), or does not start at all:
 
 - `own`: the persona's own backend and model do it. The job gets a new
   instance of that backend, built from the persona's settings: its provider,
@@ -115,6 +117,28 @@ A spawned job runs on one of two backends, chosen per persona by its
   calls or output enter it.
 - `worker`: the configured worker does it: the persona's `brain.worker`,
   else `voice_worker_provider` and `voice_worker_model`, or a tier.
+- `inline`: the persona never hands work to a background job. It uses its tools
+  itself, on its own turns in the conversation, and waits for them. None of the
+  shortcuts that hand a request to a job before the model runs apply (`show me a
+  picture of …`, `search the web …`, `build this …`, `search for …`, `tell me a
+  long story`), the model is not offered `start_background_work` or
+  `agent_delegate`, a `web_search` or `fetch_url` call or a second tool round
+  runs on the turn instead of being handed off, and a spoken "I'll run a
+  command…" is the reply rather than a job. Its live turns use the direct router
+  whatever `voice_router_tools` or the persona's `brain.router` says, tiered
+  workers are not offered to it, and no worker is prepared for it; with
+  `voice_tools_enabled: false` it has no tools. Should anything still route a
+  request of its to a job, none starts: the conversation shows "No job started"
+  with the reason, and the persona says it works in the conversation and to ask
+  again. Jobs already running are not touched, and `/work` commands from the
+  keyboard work as before. A reply you interrupt by addressing another persona
+  can still finish in the background as a job, as for any persona; it is the
+  persona's own reply, recorded with work `inline`, and cannot hand work off.
+  Under tiered workers with the strict policy, inline is refused, as own work on
+  a hosted backend is, because that policy holds tool work to a tier's limits
+  and allowlist and a live turn's tools are not held to them: the persona's work
+  goes to the worker tiers, an info line says so once per session, and
+  `obey-voice doctor` warns.
 
 Left empty, a persona hands its work to the worker when it is on Ollama or
 when its profile names a worker of its own (`brain.worker` with a provider,
@@ -483,7 +507,9 @@ The tool, `job_control(action, job_id, instruction)`, is offered only on a
 live turn that answers you, on the direct router: never to a worker, a result
 notification, a continuation, a group discussion, a summary, a retried input or
 a recovery round, and never under `route_only`, `json_route`, `single_call` or
-tiered routing. It is not offered on a repair or retry of a request either:
+tiered routing. A persona working inline uses the direct router, so it is
+offered the tool under those settings too, unless the strict tiered policy
+refuses its inline work. It is not offered on a repair or retry of a request either:
 the image repair, the retry after malformed tool syntax, the retry without
 tools for a model that rejects them, or the final answer of a turn whose tools
 are off. It sits between `view_image` and `start_background_work` in the tool

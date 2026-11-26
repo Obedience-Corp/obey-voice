@@ -19,6 +19,7 @@ func (p *Pipeline) StartWarmup(ctx context.Context) {
 			RouterToolsPolicy: p.liveRouterToolsPolicy(),
 			RouteJSON:         p.liveRouteJSON(),
 			BackgroundWorker:  p.liveRouterToolsPolicy() == brain.RouterToolsDirect && p.backgroundWorkerAvailable(),
+			InlineWork:        p.worksInline(),
 			JobControl:        p.Agency != nil,
 		}
 		go b.WarmupTurn(ctx, opts)

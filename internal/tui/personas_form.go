@@ -26,6 +26,7 @@ const (
 	formRowWork
 	formRowWorkerProvider
 	formRowWorkerModel
+	formRowJobControl
 	formRowTTSProvider
 	formRowVoice
 	formRowVoiceLanguage
@@ -515,6 +516,8 @@ func (m *personasModel) cycleStackRow(delta int) {
 		m.clampSelectedWorkerModel()
 	case formRowWorkerModel:
 		m.cycleStackWorkerModel(delta)
+	case formRowJobControl:
+		m.cycleJobControl(delta)
 	case formRowTTSProvider:
 		list := stackTTSProviders()
 		m.ttsProviderIdx = (m.ttsProviderIdx + delta + len(list)) % len(list)
@@ -597,6 +600,7 @@ func (m *personasModel) formBrain() persona.Brain {
 		Model:       strings.TrimSpace(m.brainModelInput.Value()),
 		Work:        m.work,
 		Worker:      m.formWorker(),
+		JobControl:  cloneBool(m.jobControl),
 	}
 }
 
