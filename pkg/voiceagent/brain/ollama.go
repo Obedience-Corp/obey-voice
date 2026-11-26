@@ -123,6 +123,12 @@ type OllamaBrain struct {
 	// maxImageBytes lowers the image data a request carries below
 	// maxRequestImageBytes when set.
 	maxImageBytes int
+	// vision caches whether this model views images, for the tools it is
+	// offered. Guarded by visionMu.
+	vision   *bool
+	visionMu sync.Mutex
+	// thinkRefused is set once this model has rejected think.
+	thinkRefused atomic.Bool
 }
 
 // NewOllama creates an Ollama brain provider.

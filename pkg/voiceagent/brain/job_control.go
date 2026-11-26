@@ -83,7 +83,7 @@ type JobControl struct {
 // host can authorize a control on it, the configuration turns the tool on,
 // and it is a live direct turn answering a person.
 func (o *OllamaBrain) offersJobControl(opts StreamOptions) bool {
-	return opts.JobControl && o.catchesJobControl() && opts.ToolsEnabled && o.offersViewImage(opts) &&
+	return opts.JobControl && o.catchesJobControl() && opts.ToolsEnabled && o.answersLive(opts) &&
 		opts.Control == nil && !opts.OmitTurnInstruction && !opts.RetryInput
 }
 

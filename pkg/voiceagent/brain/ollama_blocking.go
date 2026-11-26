@@ -100,7 +100,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	o.ensureContextBudget(skillCtx)
 	o.maybeEmitContinuityBudget(skillCtx)
 
-	sess := o.turnToolSession(opts)
+	sess := o.turnToolSession(ctx, opts)
 	if ctl != nil {
 		sess.callSeq, sess.hookIDs = ctl.toolIDs()
 		defer func() { ctl.skillCtx = skillCtx }()

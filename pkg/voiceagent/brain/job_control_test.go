@@ -104,6 +104,13 @@ func TestJobControlIsOfferedOnlyOnLiveDirectTurnsAnsweringAPerson(t *testing.T) 
 	off.cfg.VoiceJobControl = false
 	worker, _ := controlModel(t)
 	worker.cfg.IsWorker = true
+	// A model that cannot view images is not offered view_image; job control
+	// does not follow it.
+	textOnly, _ := toolModel(t, false, nil)
+	textOnly.cfg.VoiceJobControl = true
+	if hasTool(textOnly.turnToolSession(t.Context(), liveControl).tools(), viewImageToolName) {
+		t.Fatal("a text-only model was offered view_image")
+	}
 	with := func(f func(*StreamOptions)) StreamOptions {
 		opts := liveControl
 		f(&opts)
@@ -115,6 +122,7 @@ func TestJobControlIsOfferedOnlyOnLiveDirectTurnsAnsweringAPerson(t *testing.T) 
 		want  bool
 	}{
 		"live direct":         {o, liveControl, true},
+		"text-only model":     {textOnly, liveControl, true},
 		"option off":          {off, liveControl, false},
 		"host cannot control": {o, with(func(s *StreamOptions) { s.JobControl = false }), false},
 		"worker":              {worker, liveControl, false},
@@ -129,7 +137,7 @@ func TestJobControlIsOfferedOnlyOnLiveDirectTurnsAnsweringAPerson(t *testing.T) 
 		"tools off":           {o, with(func(s *StreamOptions) { s.ToolsEnabled = false }), false},
 		"route only":          {o, with(func(s *StreamOptions) { s.RouterToolsPolicy = RouterToolsRouteOnly }), false},
 	} {
-		if got := hasTool(tc.brain.turnToolSession(tc.opts).tools(), jobControlToolName); got != tc.want {
+		if got := hasTool(tc.brain.turnToolSession(t.Context(), tc.opts).tools(), jobControlToolName); got != tc.want {
 			t.Errorf("%s: job_control offered = %t", name, got)
 		}
 	}

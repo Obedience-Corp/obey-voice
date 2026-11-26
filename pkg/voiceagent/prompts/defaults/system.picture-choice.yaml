@@ -1,0 +1,13 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: picture-choice
+  kind: system
+  system_prompt: >-
+    The host could not attach an image. First write in `wanted` what the user
+    asked to see. Then set `file` to the one file below whose name shows that,
+    or "none" if no name does. Never pick a file that shows something else.
+    Files: {candidates}. `caption` is one short spoken sentence; if file is
+    none, say you could not find one.
+metadata:
+  version: 1
+  description: Retry a speaking agent's failed picture reply as a choice among verified local files, answered in JSON.

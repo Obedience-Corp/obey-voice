@@ -66,6 +66,10 @@ func TestModelRejectedTools(t *testing.T) {
 func ollamaStub(t *testing.T, withTools, withoutTools *int) *api.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			_, _ = io.WriteString(w, `{"capabilities":["completion"]}`)
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		if bytes.Contains(body, []byte(`"tools":`)) {
 			*withTools++
@@ -725,6 +729,42 @@ func TestChatRetriesWithoutThinkWhenUnsupported(t *testing.T) {
 	}
 }
 
+// A model that rejected think is not asked with think again by the same
+// brain, so each later turn costs one request instead of two.
+func TestThinkRefusalIsRememberedForTheModel(t *testing.T) {
+	var withThink, withoutThink int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			_, _ = io.WriteString(w, `{"capabilities":["completion"]}`)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		if bytes.Contains(body, []byte(`"think":true`)) {
+			withThink++
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":"\"m\" does not support thinking"}`)
+			return
+		}
+		withoutThink++
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"hi"},"done":true,"done_reason":"stop"}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+	o := &OllamaBrain{client: api.NewClient(base, http.DefaultClient), model: "m", cfg: &config.Config{OllamaThink: "true", MaxHistory: 20}}
+	for _, input := range []string{"one", "two", "three"} {
+		if _, err := o.ThinkFull(t.Context(), input, StreamOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if withThink != 1 || withoutThink != 3 {
+		t.Fatalf("requests with think=%d without=%d, want 1 and 3", withThink, withoutThink)
+	}
+	other := &OllamaBrain{client: api.NewClient(base, http.DefaultClient), model: "m", cfg: &config.Config{OllamaThink: "true"}}
+	if !thinkEnabled(other.resolvedThink()) {
+		t.Fatal("another brain inherited the refusal")
+	}
+}
+
 func TestChatDoesNotRetryThinkOnUnrelatedError(t *testing.T) {
 	var n int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -789,6 +829,10 @@ func TestChatRetriesWithoutToolsWhenUnsupported(t *testing.T) {
 func recordingStub(t *testing.T, count *int, bodies *[][]byte) *api.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			_, _ = io.WriteString(w, `{"capabilities":["completion","tools","vision"]}`)
+			return
+		}
 		*count++
 		body, _ := io.ReadAll(r.Body)
 		*bodies = append(*bodies, body)

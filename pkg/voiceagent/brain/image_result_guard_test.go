@@ -145,7 +145,7 @@ func TestImageClaimRepairIsBoundedAndAllowsHonestFailure(t *testing.T) {
 				if err != nil || reply != second {
 					t.Fatalf("honest failure: %q %v", reply, err)
 				}
-			} else if err == nil || !strings.Contains(err.Error(), "no image was attached") || reply != "" {
+			} else if err == nil || !strings.Contains(err.Error(), "no image was attached") || reply != unattachedReply(streaming) {
 				t.Fatalf("unverified claim escaped: %q %v", reply, err)
 			}
 			for _, turn := range o.History() {
@@ -222,7 +222,7 @@ func TestImageClaimAfterChatRoute(t *testing.T) {
 					t.Fatalf("post-chat accounting: requests=%d usage=%d", len(*requests), usage)
 				}
 				if tc.blocked {
-					if err == nil || !strings.Contains(err.Error(), "no image was attached") || reply != "" {
+					if err == nil || !strings.Contains(err.Error(), "no image was attached") || reply != unattachedReply(streaming) {
 						t.Fatalf("unsupported claim escaped: reply=%q error=%v", reply, err)
 					}
 					for _, turn := range o.History() {
@@ -266,8 +266,12 @@ func TestDirectTextWriteCannotFakeImageDelivery(t *testing.T) {
 		} else {
 			reply, err = o.ThinkFull(t.Context(), input, opts)
 		}
-		if err == nil || !strings.Contains(err.Error(), "no image was attached") || reply != "" || len(*requests) != 3 {
+		if err == nil || !strings.Contains(err.Error(), "no image was attached") || reply != unattachedReply(streaming) || len(*requests) != 3 {
 			t.Fatalf("streaming=%t: reply=%q err=%v requests=%d", streaming, reply, err, len(*requests))
+		}
+		// The live turn's retry asks for a choice of the verified file.
+		if retry := (*requests)[2]; streaming != (len(retry.Format) > 0 && len(retry.Tools) == 0) {
+			t.Fatalf("streaming=%t: retry format=%s tools=%d", streaming, retry.Format, len(retry.Tools))
 		}
 		if data, err := os.ReadFile(path); err != nil || !bytes.Equal(data, testmedia.PNG()) {
 			t.Fatal("text write replaced an existing picture")
@@ -397,6 +401,15 @@ type directTurn struct {
 	history  []Turn
 }
 
+// unattachedReply is what a turn whose picture check failed after its retry
+// says: a live stream speaks the no-picture line, a blocking turn nothing.
+func unattachedReply(streaming bool) string {
+	if streaming {
+		return noPictureLine
+	}
+	return ""
+}
+
 func runDirectTurn(t *testing.T, streaming bool, history []Turn, input string, replies ...string) directTurn {
 	t.Helper()
 	messages := make([]api.Message, len(replies))
@@ -431,15 +444,17 @@ func TestOwedPictureFollowupIsNotAnsweredWithAnAnnouncement(t *testing.T) {
 		for _, streaming := range []bool{false, true} {
 			for _, retry := range []string{stalledImageReply, "I've attached it.", "I'll send it right away."} {
 				turn := runDirectTurn(t, streaming, history, input, stalledImageReply, retry)
-				if !errors.Is(turn.err, errUnattachedImage) || turn.answer != "" || len(turn.requests) != 2 {
+				if !errors.Is(turn.err, errUnattachedImage) || turn.answer != unattachedReply(streaming) || len(turn.requests) != 2 {
 					t.Fatalf("%q streaming=%t retry=%q: answer=%q err=%v requests=%d", input, streaming, retry, turn.answer, turn.err, len(turn.requests))
 				}
 				correction := turn.requests[1].Messages[len(turn.requests[1].Messages)-1].Content
 				if !strings.Contains(correction, "show me a picture of some dogs from the internet") {
 					t.Fatalf("%q: the correction does not name the picture that is owed: %s", input, correction)
 				}
-				if got := len(turn.history); got > len(history)+1 {
-					t.Fatalf("%q: an announcement was saved as a reply: %+v", input, turn.history[len(history):])
+				for _, saved := range turn.history[len(history):] {
+					if saved.Role == "assistant" && saved.Content != noPictureLine {
+						t.Fatalf("%q: an announcement was saved as a reply: %+v", input, turn.history[len(history):])
+					}
 				}
 			}
 		}
@@ -539,7 +554,7 @@ func TestOwedPictureKeepsExistingChecks(t *testing.T) {
 	} {
 		for _, streaming := range []bool{false, true} {
 			turn := runDirectTurn(t, streaming, tc.history, tc.input, tc.reply, tc.reply)
-			if !errors.Is(turn.err, tc.want) || turn.answer != "" {
+			if !errors.Is(turn.err, tc.want) || turn.answer != unattachedReply(streaming) {
 				t.Errorf("streaming=%t %q -> %q: answer=%q err=%v", streaming, tc.input, tc.reply, turn.answer, turn.err)
 			}
 		}

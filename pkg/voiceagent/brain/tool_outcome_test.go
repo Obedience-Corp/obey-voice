@@ -237,8 +237,8 @@ func TestWebSearchResultsKeepTheirText(t *testing.T) {
 	}
 }
 
-// view_image reports what it saw: a picture attached, or a model that cannot
-// view pictures.
+// view_image reports what it saw: a picture attached, or, for a model that
+// cannot view pictures and is not offered it, that it is not available.
 func TestViewImageReportsItsOutcome(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	for _, tc := range []struct {
@@ -249,7 +249,7 @@ func TestViewImageReportsItsOutcome(t *testing.T) {
 		err    string
 	}{
 		{name: "attached", vision: true, result: "is now attached", status: events.ToolOutcomeSucceeded},
-		{name: "cannot view", vision: false, result: cannotViewImages, status: events.ToolOutcomeFailed, err: cannotViewImages},
+		{name: "not offered", vision: false, result: "view_image is not available in this turn", status: events.ToolOutcomeFailed, err: "error: view_image is not available in this turn"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o, sent := toolModel(t, tc.vision, opensThenAnswers("shot.png"))
@@ -265,7 +265,7 @@ func TestViewImageReportsItsOutcome(t *testing.T) {
 				t.Fatalf("result = %q", result)
 			}
 			if len(ends) != 1 || ends[0].Outcome == nil || ends[0].Outcome.Status != tc.status || ends[0].Err != tc.err ||
-				ends[0].Preview != toolResultPreview(result) || ends[0].Outcome.InputSummary != "shot.png" {
+				(tc.vision && ends[0].Preview != toolResultPreview(result)) || ends[0].Outcome.InputSummary != "shot.png" {
 				t.Fatalf("ends = %+v", ends)
 			}
 		})
