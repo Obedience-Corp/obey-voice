@@ -113,7 +113,7 @@ func liveOptions() StreamOptions {
 
 // run sends one live turn and returns what it answered and the chat requests
 // it made.
-func (l *liveTurns) run(ctx context.Context, streaming bool, input string, reply func(n int, req api.ChatRequest) api.ChatResponse) (string, error, []api.ChatRequest) {
+func (l *liveTurns) run(ctx context.Context, streaming bool, input string, reply func(n int, req api.ChatRequest) api.ChatResponse) (string, []api.ChatRequest, error) {
 	l.t.Helper()
 	l.mu.Lock()
 	l.reply, l.turn = reply, 0
@@ -133,7 +133,7 @@ func (l *liveTurns) run(ctx context.Context, streaming bool, input string, reply
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return answer, err, append([]api.ChatRequest(nil), l.reqs[start:]...)
+	return answer, append([]api.ChatRequest(nil), l.reqs[start:]...), err
 }
 
 func readFileCalls(round, calls int) []api.ToolCall {
@@ -175,7 +175,7 @@ func TestLongLiveTurnKeepsItsRequestAndAnswerInContext(t *testing.T) {
 			eachMode(t, func(t *testing.T, streaming bool) {
 				l := newLiveTurns(t, liveDefaults(t), "")
 				hello := func(int, api.ChatRequest) api.ChatResponse { return answerResponse("Hello there.") }
-				if _, err, _ := l.run(t.Context(), streaming, "Hello.", hello); err != nil {
+				if _, _, err := l.run(t.Context(), streaming, "Hello.", hello); err != nil {
 					t.Fatal(err)
 				}
 				work := func(n int, req api.ChatRequest) api.ChatResponse {
@@ -184,11 +184,11 @@ func TestLongLiveTurnKeepsItsRequestAndAnswerInContext(t *testing.T) {
 					}
 					return answerResponse(answer)
 				}
-				got, err, reqs := l.run(t.Context(), streaming, request, work)
+				got, reqs, err := l.run(t.Context(), streaming, request, work)
 				if err != nil || !strings.Contains(got, answer) || len(reqs) != tc.rounds+1 {
 					t.Fatalf("answer=%q err=%v requests=%d", got, err, len(reqs))
 				}
-				_, err, next := l.run(t.Context(), streaming, "Thanks.", hello)
+				_, next, err := l.run(t.Context(), streaming, "Thanks.", hello)
 				if err != nil || len(next) == 0 {
 					t.Fatalf("follow-up turn: err=%v", err)
 				}
@@ -224,7 +224,7 @@ func TestLiveTurnThatFillsTheWindowAnswers(t *testing.T) {
 			}
 			return toolResponse(calls)
 		}
-		answer, err, reqs := l.run(t.Context(), streaming, "Read every report.", reply)
+		answer, reqs, err := l.run(t.Context(), streaming, "Read every report.", reply)
 		if err != nil || !strings.Contains(answer, "the rest remain") {
 			t.Fatalf("answer=%q err=%v", answer, err)
 		}
@@ -258,7 +258,7 @@ func TestRepeatedSkillReadAddsItsTextOnce(t *testing.T) {
 			}
 			return answerResponse("The garden plan is ready.")
 		}
-		_, err, reqs := l.run(t.Context(), streaming, "Plan the garden.", reply)
+		_, reqs, err := l.run(t.Context(), streaming, "Plan the garden.", reply)
 		if err != nil || len(reqs) != len(script)+1 {
 			t.Fatalf("err=%v requests=%d", err, len(reqs))
 		}
@@ -286,7 +286,7 @@ func TestLiveTurnOfFortySmallRoundsAnswers(t *testing.T) {
 			}
 			return answerResponse("None of the forty chapters exist yet.")
 		}
-		answer, err, reqs := l.run(t.Context(), streaming, "Read all forty chapters.", reply)
+		answer, reqs, err := l.run(t.Context(), streaming, "Read all forty chapters.", reply)
 		if err != nil || !strings.Contains(answer, "forty chapters") || len(reqs) != rounds+1 {
 			t.Fatalf("answer=%q err=%v requests=%d", answer, err, len(reqs))
 		}
@@ -312,7 +312,7 @@ func TestLiveTurnRepeatingOneCallIsStoppedByTheGuard(t *testing.T) {
 			}
 			return answerResponse(answer)
 		}
-		got, err, reqs := l.run(t.Context(), streaming, "Read the plan.", reply)
+		got, reqs, err := l.run(t.Context(), streaming, "Read the plan.", reply)
 		if err != nil || !strings.Contains(got, answer) || len(reqs) != maxRepeatedToolRounds+1 {
 			t.Fatalf("answer=%q err=%v requests=%d", got, err, len(reqs))
 		}
@@ -340,7 +340,7 @@ func TestLiveTurnRunawayRequestEndsWithOutputLimit(t *testing.T) {
 			r.DoneReason, r.Metrics.EvalCount = "length", l.o.cfg.OllamaResponseTokens+1
 			return r
 		}
-		_, err, reqs := l.run(t.Context(), streaming, "Summarize the draft.", reply)
+		_, reqs, err := l.run(t.Context(), streaming, "Summarize the draft.", reply)
 		if !errors.Is(err, ErrResponseLimit) || len(reqs) != 2 {
 			t.Fatalf("err=%v requests=%d", err, len(reqs))
 		}
@@ -372,7 +372,7 @@ func TestStoppedLiveTurnRunsNoFurtherCallOrRequest(t *testing.T) {
 					calls = append(calls, write(name)...)
 				}
 				reply := func(int, api.ChatRequest) api.ChatResponse { return toolResponse(calls) }
-				_, err, reqs := l.run(ctx, streaming, "Write the bed notes.", reply)
+				_, reqs, err := l.run(ctx, streaming, "Write the bed notes.", reply)
 				if !errors.Is(err, context.Canceled) || len(reqs) != 1 || started != stopAt {
 					t.Fatalf("err=%v requests=%d calls started=%d", err, len(reqs), started)
 				}

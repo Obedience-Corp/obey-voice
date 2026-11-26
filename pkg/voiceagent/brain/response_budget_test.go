@@ -236,7 +236,7 @@ func TestResponseBudgetRefillsAfterEachToolRound(t *testing.T) {
 			r.Metrics.EvalCount = 10
 			return r
 		}
-		answer, err, reqs := l.run(t.Context(), streaming, "Read both parts.", reply)
+		answer, reqs, err := l.run(t.Context(), streaming, "Read both parts.", reply)
 		if err != nil || !strings.Contains(answer, "missing") || len(reqs) != 3 {
 			t.Fatalf("answer=%q err=%v requests=%d", answer, err, len(reqs))
 		}
