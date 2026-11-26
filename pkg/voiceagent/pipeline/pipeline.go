@@ -225,6 +225,11 @@ type Pipeline struct {
 	// is then ignored. A prompt returned with an error is a fallback:
 	// compaction uses it and reports the error.
 	ResolveCompactPrompt func() (string, error)
+	// compactSkipsShown holds the automatic-compaction skip notices already
+	// shown, so a failure that persists across turns is reported once. Any
+	// successful resolve clears it.
+	compactSkipMu     sync.Mutex
+	compactSkipsShown map[string]bool
 	// AutoCompactAfter is the history length that triggers CompactConversation
 	// before a user turn, instead of silently dropping old messages. Zero
 	// disables auto-compact. /compact still works at any length.

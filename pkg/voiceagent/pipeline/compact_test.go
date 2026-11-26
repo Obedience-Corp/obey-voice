@@ -377,6 +377,111 @@ func TestCompactConversationGuards(t *testing.T) {
 	})
 }
 
+func recordCompactErrors(bus *events.Bus) *[]string {
+	var reported []string
+	bus.SubscribeAll(func(e events.Event) {
+		if failure, ok := e.(events.Error); ok && failure.Stage == "compact" {
+			reported = append(reported, failure.Message)
+		}
+	})
+	return &reported
+}
+
+func TestAutomaticCompactSkipIsReportedOnce(t *testing.T) {
+	t.Run("same failure on every turn", func(t *testing.T) {
+		b := &compactBrain{history: compactHistory(), summary: "s"}
+		bus := events.NewBus()
+		reported := recordCompactErrors(bus)
+		resolutions := 0
+		p := &Pipeline{Brain: b, Events: bus, AutoCompactAfter: 2,
+			ResolveCompactPrompt: func() (string, error) {
+				resolutions++
+				return "", errors.New("Juniper: document removed")
+			}}
+		for range 4 {
+			if err := p.autoCompactIfNeeded(context.Background()); err != nil {
+				t.Fatalf("automatic compact must not fail the turn: %v", err)
+			}
+		}
+		if len(*reported) != 1 || !strings.Contains((*reported)[0], "reported once") {
+			t.Fatalf("compact errors = %q, want one skip notice", *reported)
+		}
+		if resolutions != 4 {
+			t.Fatalf("prompt resolved %d times, want a retry on every turn", resolutions)
+		}
+	})
+
+	t.Run("another persona's failure is its own notice", func(t *testing.T) {
+		b := &compactBrain{history: compactHistory(), summary: "s"}
+		bus := events.NewBus()
+		reported := recordCompactErrors(bus)
+		failing := "Juniper"
+		p := &Pipeline{Brain: b, Events: bus, AutoCompactAfter: 2,
+			ResolveCompactPrompt: func() (string, error) {
+				return "", errors.New(failing + `: compact prompt "garden" not found`)
+			}}
+		for _, name := range []string{"Juniper", "Juniper", "Basil", "Basil"} {
+			failing = name
+			if err := p.autoCompactIfNeeded(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if len(*reported) != 2 || !strings.Contains((*reported)[0], "Juniper") || !strings.Contains((*reported)[1], "Basil") {
+			t.Fatalf("compact errors = %q, want one notice per persona", *reported)
+		}
+	})
+
+	t.Run("a prompt that loads again resets the notice", func(t *testing.T) {
+		b := &compactBrain{history: compactHistory(), summary: "s"}
+		bus := events.NewBus()
+		reported := recordCompactErrors(bus)
+		loads := false
+		p := &Pipeline{Brain: b, Events: bus, AutoCompactAfter: 2,
+			ResolveCompactPrompt: func() (string, error) {
+				if loads {
+					return "S", nil
+				}
+				return "", errors.New("Juniper: document removed")
+			}}
+		run := func() {
+			t.Helper()
+			b.history = compactHistory()
+			if err := p.autoCompactIfNeeded(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		run()
+		run()
+		loads = true
+		run()
+		if len(b.loaded) != 1 {
+			t.Fatalf("reseeds = %d, want the loaded prompt to compact once", len(b.loaded))
+		}
+		loads = false
+		run()
+		run()
+		if len(*reported) != 2 {
+			t.Fatalf("compact errors = %q, want the failure reported again after the prompt loaded", *reported)
+		}
+	})
+
+	t.Run("manual compact reports every time", func(t *testing.T) {
+		b := &compactBrain{history: compactHistory(), summary: "s"}
+		bus := events.NewBus()
+		recordCompactErrors(bus)
+		p := &Pipeline{Brain: b, Events: bus, AutoCompactAfter: 2,
+			ResolveCompactPrompt: func() (string, error) { return "", errors.New("Juniper: document removed") }}
+		if err := p.autoCompactIfNeeded(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		for i := range 3 {
+			if err := p.CompactConversation(context.Background()); err == nil || !strings.Contains(err.Error(), "document removed") {
+				t.Fatalf("manual compact %d error = %v, want the resolution failure", i, err)
+			}
+		}
+	})
+}
+
 // continuityCompactBrain isolates the provider's token-budget seam from the
 // older count trigger, and records whether the real turn was sent after failure.
 type continuityCompactBrain struct {

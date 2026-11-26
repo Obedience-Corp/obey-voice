@@ -182,6 +182,36 @@ func TestCompactFallbackNeverBorrowsAnotherPersonasPrompt(t *testing.T) {
 	}
 }
 
+func TestCompactPromptFailureNamesThePersona(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	writeNamedTestPersona(t, "juniper", "Juniper")
+	writeNamedTestPersona(t, "basil", "Basil")
+	cfg := &config.Config{ActivePersona: "juniper", BrainProvider: "ollama", TTSProvider: "kokoro", CompactPrompt: "garden"}
+	s := newSwitcherForTest(t, cfg)
+	if err := s.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.selector.Close)
+	wireCompact(s.pipeline, cfg, s.boundConfig, s.sessions.sess, events.NewBus())
+
+	_, juniperErr := s.pipeline.ResolveCompactPrompt()
+	if _, err := s.apply("basil"); err != nil {
+		t.Fatalf("switch to basil: %v", err)
+	}
+	_, basilErr := s.pipeline.ResolveCompactPrompt()
+	if juniperErr == nil || basilErr == nil {
+		t.Fatalf("resolve errors = %v, %v; want both personas to fail on the missing prompt", juniperErr, basilErr)
+	}
+	for _, c := range []struct {
+		err        error
+		name, peer string
+	}{{juniperErr, "Juniper", "Basil"}, {basilErr, "Basil", "Juniper"}} {
+		if msg := c.err.Error(); !strings.HasPrefix(msg, c.name+": ") || !strings.Contains(msg, "garden") || strings.Contains(msg, c.peer) {
+			t.Fatalf("resolve error = %q, want it to name %s and the prompt", msg, c.name)
+		}
+	}
+}
+
 func TestCompactPromptStartupFailureRetriesEachCompaction(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	writeNamedTestPersona(t, "juniper", "Juniper")
@@ -248,9 +278,6 @@ func TestServeResumeCompactsAsTheRestoredPersona(t *testing.T) {
 
 func TestRuntimeBuilderCompactsAsTheSelectedPersona(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
-	wasText, wasNoVoice := textMode, noVoice
-	textMode, noVoice = true, true
-	t.Cleanup(func() { textMode, noVoice = wasText, wasNoVoice })
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/tags" {
@@ -270,7 +297,7 @@ func TestRuntimeBuilderCompactsAsTheSelectedPersona(t *testing.T) {
 	writeNamedTestPersona(t, "juniper", "Juniper")
 	writeNamedTestPersona(t, "basil", "Basil")
 	ctx, cancel := context.WithCancel(t.Context())
-	rt, err := conversationRuntimeBuilder(nil)(ctx, nil, "", "juniper")
+	rt, err := conversationRuntimeBuilderFor(nil, true, true)(ctx, nil, "", "juniper")
 	if err != nil {
 		t.Fatal(err)
 	}

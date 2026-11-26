@@ -282,6 +282,9 @@ func (p *Pipeline) compactPrompt() (string, error) {
 	if err != nil {
 		return prompt, fmt.Errorf("compact prompt: %w", err)
 	}
+	p.compactSkipMu.Lock()
+	p.compactSkipsShown = nil
+	p.compactSkipMu.Unlock()
 	return prompt, nil
 }
 
@@ -293,13 +296,35 @@ func (p *Pipeline) usableCompactPrompt() (string, bool) {
 		return prompt, true
 	}
 	if prompt == "" {
-		p.emitCompactPromptError(err, "compaction skipped")
+		p.emitCompactSkip(err)
 		return "", false
 	}
 	p.emitCompactPromptError(err, "using the last instruction that loaded")
 	return prompt, true
 }
 
+// emitCompactSkip reports a skipped automatic compaction once per message;
+// the resolver names the persona, so each persona's failure is shown.
+func (p *Pipeline) emitCompactSkip(err error) {
+	message := compactPromptErrorMessage(err, "compaction skipped; it retries each turn and this is reported once")
+	p.compactSkipMu.Lock()
+	shown := p.compactSkipsShown[message]
+	if !shown {
+		if p.compactSkipsShown == nil {
+			p.compactSkipsShown = map[string]bool{}
+		}
+		p.compactSkipsShown[message] = true
+	}
+	p.compactSkipMu.Unlock()
+	if !shown {
+		p.emit(events.Error{Stage: "compact", Message: message})
+	}
+}
+
 func (p *Pipeline) emitCompactPromptError(err error, outcome string) {
-	p.emit(events.Error{Stage: "compact", Message: err.Error() + " (" + outcome + ")"})
+	p.emit(events.Error{Stage: "compact", Message: compactPromptErrorMessage(err, outcome)})
+}
+
+func compactPromptErrorMessage(err error, outcome string) string {
+	return err.Error() + " (" + outcome + ")"
 }

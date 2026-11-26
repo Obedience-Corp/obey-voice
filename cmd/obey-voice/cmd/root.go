@@ -644,21 +644,29 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 // resolved from bound() each time compaction runs so it names the persona
 // then bound, and a pre-compact session backup. A prompt-resolution failure
 // at startup is reported without blocking startup or turning compaction off;
-// each later compaction resolves again and reports its own failure, falling
-// back to the last instruction that persona resolved, never another persona's.
+// each later compaction resolves again and reports its own failure, naming
+// the persona and falling back to the last instruction that persona
+// resolved, never another persona's.
 func wireCompact(p *pipeline.Pipeline, cfg *config.Config, bound func() *config.Config, sess *session.Session, bus *events.Bus) {
 	var mu sync.Mutex
 	lastGood := map[string]string{}
 	resolve := func() (string, error) {
 		current := bound()
 		prompt, err := brain.CompactInstruction(current)
-		key := ""
+		key, name := "", ""
 		if current != nil {
 			key = current.ActivePersona + "\x00" + current.AgentName
+			name = strings.TrimSpace(current.AgentName)
+			if name == "" {
+				name = current.ActivePersona
+			}
 		}
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil {
+			if name != "" {
+				err = fmt.Errorf("%s: %w", name, err)
+			}
 			return lastGood[key], err
 		}
 		lastGood[key] = prompt
