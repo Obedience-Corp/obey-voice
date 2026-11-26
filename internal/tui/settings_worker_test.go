@@ -45,6 +45,7 @@ func TestWorkerSectionOffersOnlyWorkerBackends(t *testing.T) {
 // The whole point of the change: picking a brain does not quietly leave the
 // worker to a default. Settings lands the operator on the choice.
 func TestChoosingABrainLandsOnTheWorkerSection(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	cfg := &config.Config{BrainProvider: "grok"}
 	saved := map[string]any{}
 	m := newSettings(cfg, workerTestProviders())
@@ -64,6 +65,7 @@ func TestChoosingABrainLandsOnTheWorkerSection(t *testing.T) {
 // Once a worker is chosen, picking a different brain must not drag the operator
 // back through a decision they already made.
 func TestChoosingABrainKeepsAnExistingWorkerChoice(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	cfg := &config.Config{BrainProvider: "grok", VoiceWorkerProvider: "ollama"}
 	m := newSettings(cfg, workerTestProviders())
 	m.saveConfig = func(string, any) error { return nil }

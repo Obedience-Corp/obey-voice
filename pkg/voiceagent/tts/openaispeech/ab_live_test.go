@@ -25,7 +25,12 @@ import (
 //	go test -tags integration ./pkg/voiceagent/tts/openaispeech/ -run TestOpenAISpeechVsKokoroRealtime -v
 //
 // OPENAI_SPEECH_AB_OUT=path writes the per-case medians as JSON.
+// OBEY_VOICE_TEST_INSTALL=<install folder> measures that install's settings; a
+// test binary otherwise never reads the real install and gets the defaults.
 func TestOpenAISpeechVsKokoroRealtime(t *testing.T) {
+	if dir := os.Getenv("OBEY_VOICE_TEST_INSTALL"); dir != "" {
+		config.SetConfigDirForTest(t, dir)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		t.Skipf("no config: %v", err)
