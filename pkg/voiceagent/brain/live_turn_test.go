@@ -111,7 +111,7 @@ func liveOptions() StreamOptions {
 
 // run sends one live turn and returns what it answered and the chat requests
 // it made.
-func (l *liveTurns) run(ctx context.Context, streaming bool, input string, reply func(n int, req api.ChatRequest) api.ChatResponse) (string, error, []api.ChatRequest) {
+func (l *liveTurns) run(ctx context.Context, streaming bool, input string, reply func(n int, req api.ChatRequest) api.ChatResponse) (string, []api.ChatRequest, error) {
 	l.t.Helper()
 	l.mu.Lock()
 	l.reply, l.turn = reply, 0
@@ -131,7 +131,7 @@ func (l *liveTurns) run(ctx context.Context, streaming bool, input string, reply
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return answer, err, append([]api.ChatRequest(nil), l.reqs[start:]...)
+	return answer, append([]api.ChatRequest(nil), l.reqs[start:]...), err
 }
 
 func readFileCalls(round, calls int) []api.ToolCall {
@@ -171,7 +171,7 @@ func TestLongLiveTurnKeepsItsRequestAndAnswerInContext(t *testing.T) {
 			eachMode(t, func(t *testing.T, streaming bool) {
 				l := newLiveTurns(t, liveDefaults(t), "")
 				hello := func(int, api.ChatRequest) api.ChatResponse { return answerResponse("Hello there.") }
-				if _, err, _ := l.run(t.Context(), streaming, "Hello.", hello); err != nil {
+				if _, _, err := l.run(t.Context(), streaming, "Hello.", hello); err != nil {
 					t.Fatal(err)
 				}
 				work := func(n int, req api.ChatRequest) api.ChatResponse {
@@ -180,11 +180,11 @@ func TestLongLiveTurnKeepsItsRequestAndAnswerInContext(t *testing.T) {
 					}
 					return answerResponse(answer)
 				}
-				got, err, reqs := l.run(t.Context(), streaming, request, work)
+				got, reqs, err := l.run(t.Context(), streaming, request, work)
 				if err != nil || !strings.Contains(got, answer) || len(reqs) != tc.rounds+1 {
 					t.Fatalf("answer=%q err=%v requests=%d", got, err, len(reqs))
 				}
-				_, err, next := l.run(t.Context(), streaming, "Thanks.", hello)
+				_, next, err := l.run(t.Context(), streaming, "Thanks.", hello)
 				if err != nil || len(next) == 0 {
 					t.Fatalf("follow-up turn: err=%v", err)
 				}
@@ -220,7 +220,7 @@ func TestLiveTurnThatFillsTheWindowAnswers(t *testing.T) {
 			}
 			return toolResponse(calls)
 		}
-		answer, err, reqs := l.run(t.Context(), streaming, "Read every report.", reply)
+		answer, reqs, err := l.run(t.Context(), streaming, "Read every report.", reply)
 		if err != nil || !strings.Contains(answer, "the rest remain") {
 			t.Fatalf("answer=%q err=%v", answer, err)
 		}
@@ -254,7 +254,7 @@ func TestRepeatedSkillReadAddsItsTextOnce(t *testing.T) {
 			}
 			return answerResponse("The garden plan is ready.")
 		}
-		_, err, reqs := l.run(t.Context(), streaming, "Plan the garden.", reply)
+		_, reqs, err := l.run(t.Context(), streaming, "Plan the garden.", reply)
 		if err != nil || len(reqs) != len(script)+1 {
 			t.Fatalf("err=%v requests=%d", err, len(reqs))
 		}
