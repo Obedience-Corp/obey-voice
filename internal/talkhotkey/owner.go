@@ -7,9 +7,11 @@ import (
 	"time"
 )
 
-// macAppProcess is the Obey Voice Mac app's process name (PRODUCT_NAME "Obey
-// Voice"). It registers the default combo for itself while it runs.
-const macAppProcess = "Obey Voice"
+// MacAppProcess is the Obey Voice Mac app's process name (PRODUCT_NAME "Obey
+// Voice"). It registers the default combo for itself while it runs. The config
+// package imports this one, so the name is spelled here and config's tests
+// hold it equal to config.AppName.
+const MacAppProcess = "Obey Voice"
 
 // ownerProbeTimeout bounds the process lookup; pgrep answers in milliseconds.
 const ownerProbeTimeout = time.Second
@@ -39,7 +41,7 @@ func OtherOwner(combo Combo) (string, bool) {
 	if !Supported() || combo.String() != DefaultCombo {
 		return "", false
 	}
-	if ProcessRunning(macAppProcess) {
+	if ProcessRunning(MacAppProcess) {
 		return "the Obey Voice Mac app", true
 	}
 	return "", false

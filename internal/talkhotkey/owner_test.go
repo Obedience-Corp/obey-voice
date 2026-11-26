@@ -13,7 +13,7 @@ func TestOtherOwnerNamesTheMacAppOnTheDefaultCombo(t *testing.T) {
 	if !Supported() {
 		t.Skip("no helper on this platform")
 	}
-	withProcessRunning(t, map[string]bool{macAppProcess: true})
+	withProcessRunning(t, map[string]bool{MacAppProcess: true})
 	combo, _ := ParseCombo(DefaultCombo)
 	owner, ok := OtherOwner(combo)
 	if !ok || owner != "the Obey Voice Mac app" {
