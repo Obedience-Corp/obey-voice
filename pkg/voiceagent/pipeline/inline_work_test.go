@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"strings"
 	"testing"
 	"time"
@@ -256,5 +257,108 @@ func TestStrictTieredPolicyRefusesInlineWork(t *testing.T) {
 	}
 	if w := newWorkPipeline(t, tieredPersona("ollama", config.WorkInline, true), "Sure."); !w.p.worksInline() {
 		t.Fatal("the advisory policy refused inline work")
+	}
+}
+
+// Every way a live turn can start a job, taken by one inline persona, starts
+// none; the same persona set to worker starts one each time, so no row passes
+// for want of a job it could start.
+func TestNoEntryPointStartsAJobForAnInlinePersona(t *testing.T) {
+	turn := func(input string) func(*testing.T, *workPipeline) bool {
+		return func(t *testing.T, w *workPipeline) bool {
+			if err := w.p.RunTurnTextMode(t.Context(), input); err != nil {
+				t.Fatal(err)
+			}
+			return w.jobStarted()
+		}
+	}
+	route := func(kind RouteKind, input, source string) func(*testing.T, *workPipeline) bool {
+		return func(t *testing.T, w *workPipeline) bool {
+			metrics := newTurnMetrics()
+			metrics.routedSpeech = &[]string{}
+			w.p.Agency.HandleRoute(t.Context(), w.p.newTurnConductor(metrics), metrics, RouteDecision{Kind: kind, Transcript: input, Source: source})
+			return w.jobStarted()
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		tools bool
+		reply string
+		route string
+		run   func(*testing.T, *workPipeline) bool
+	}{
+		{name: "picture shortcut", tools: true, run: turn("Show me a picture of a red fox.")},
+		{name: "background intent", tools: true, run: turn("Search the web for the tide tables.")},
+		{name: "routed intent", run: turn("Search for the release notes.")},
+		{name: "long story phrase", tools: true, run: turn("Tell me a long story.")},
+		{name: "model hand-off", tools: true, route: "spawn", run: turn("Look into the build failure.")},
+		{name: "model story route", tools: true, route: "narrate", run: turn("Tell me a story about a lighthouse.")},
+		{name: "promise repair", tools: true, reply: "I am invoking the tool now to retrieve only those records.", run: turn("Check the records for me.")},
+		{name: "tiered proposal", tools: true, run: route(RouteSpawn, "Tidy the notes.", "decision")},
+		{name: "spawn route", tools: true, run: route(RouteSpawn, "Tidy the notes.", "router")},
+		{name: "moved reply hand-off", tools: true, run: func(t *testing.T, w *workPipeline) bool {
+			_, err := w.p.Agency.admitSpawn(t.Context(), "", w.p.Agency.workerSource())
+			return err == nil
+		}},
+		{name: "agent_delegate", tools: true, run: func(t *testing.T, w *workPipeline) bool {
+			if err := w.p.RunTurnTextMode(t.Context(), "Hello."); err != nil {
+				t.Fatal(err)
+			}
+			return !w.b.opts[0].InlineWork
+		}},
+	} {
+		for _, work := range []string{config.WorkInline, config.WorkWorker} {
+			t.Run(tc.name+"/"+work, func(t *testing.T) {
+				cfg := workPersona(work, tc.tools)
+				cfg.WorkDir = t.TempDir()
+				w := newWorkPipeline(t, cfg, cmp.Or(tc.reply, "Sure."))
+				w.b.route = tc.route
+				if started := tc.run(t, w); started != (work == config.WorkWorker) {
+					t.Fatalf("job started %v; jobs %+v", started, w.jobs.Status())
+				}
+				// The story writer writes into the work directory.
+				for deadline := time.Now().Add(5 * time.Second); w.jobs.Active() && time.Now().Before(deadline); {
+					time.Sleep(5 * time.Millisecond)
+				}
+			})
+		}
+	}
+}
+
+// jobStarted reports a job admitted to the table or a spawn route accepted.
+func (w *workPipeline) jobStarted() bool {
+	accepted := false
+	for len(w.routes) > 0 {
+		if r := <-w.routes; r.State == "accepted" {
+			accepted = true
+		}
+	}
+	return accepted || len(w.jobs.Status()) > 0
+}
+
+// A worker policy saved mid-session reaches the next turn: a persona the
+// strict policy held to the tiers works inline once the policy is advisory,
+// and its brain is told so rather than relying on the settings it was built
+// with.
+func TestASavedPolicyReachesTheInlineGateOnTheNextTurn(t *testing.T) {
+	cfg := strictPolicy(tieredPersona("ollama", config.WorkInline, true))
+	w := newWorkPipeline(t, cfg, "Sure.")
+	if err := w.p.RunTurnTextMode(t.Context(), "Hello."); err != nil {
+		t.Fatal(err)
+	}
+	advisory := cfg.VoiceWorkers.Clone()
+	advisory.Policy.ChargePolicy, advisory.Revision = "advisory", cfg.VoiceWorkers.Revision+1
+	if err := w.p.Agency.ApplyWorkerSettings(advisory); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.p.RunTurnTextMode(t.Context(), "Hello again."); err != nil {
+		t.Fatal(err)
+	}
+	strict, inline := w.b.opts[0], w.b.opts[1]
+	if strict.InlineWork || strict.RouterToolsPolicy != brain.RouterToolsRouteOnly {
+		t.Fatalf("strict turn: inline %v, policy %q", strict.InlineWork, strict.RouterToolsPolicy)
+	}
+	if !inline.InlineWork || inline.RouterToolsPolicy != brain.RouterToolsDirect || inline.WorkerTiers != nil {
+		t.Fatalf("advisory turn: inline %v, policy %q, tiers %+v", inline.InlineWork, inline.RouterToolsPolicy, inline.WorkerTiers)
 	}
 }
