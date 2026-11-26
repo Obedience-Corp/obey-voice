@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
@@ -492,7 +493,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
 			}
 		}
-		wireCompact(p, cfg, sess, bus)
+		wireCompact(p, cfg, selector.Config, sess, bus)
 
 		// Capture the bind id (StartDefaultsID or a persona id) so Settings →
 		// ReloadVoice cannot swap this conversation onto a different identity's
@@ -639,16 +640,42 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 	}
 }
 
-// wireCompact equips the pipeline for /compact: the resolved summarize
-// instruction and a pre-compact session backup. A prompt-resolution failure
-// disables /compact with a visible error instead of blocking startup.
-func wireCompact(p *pipeline.Pipeline, cfg *config.Config, sess *session.Session, bus *events.Bus) {
-	prompt, err := brain.CompactInstruction(cfg)
-	if err != nil {
-		bus.Emit(events.Error{Stage: "compact", Message: fmt.Sprintf("compact prompt: %v (/compact disabled)", err)})
-		return
+// wireCompact equips the pipeline for /compact: the summarize instruction,
+// resolved from bound() each time compaction runs so it names the persona
+// then bound, and a pre-compact session backup. A prompt-resolution failure
+// at startup is reported without blocking startup or turning compaction off;
+// each later compaction resolves again and reports its own failure, naming
+// the persona and falling back to the last instruction that persona
+// resolved, never another persona's.
+func wireCompact(p *pipeline.Pipeline, cfg *config.Config, bound func() *config.Config, sess *session.Session, bus *events.Bus) {
+	var mu sync.Mutex
+	lastGood := map[string]string{}
+	resolve := func() (string, error) {
+		current := bound()
+		prompt, err := brain.CompactInstruction(current)
+		key, name := "", ""
+		if current != nil {
+			key = current.ActivePersona + "\x00" + current.AgentName
+			name = strings.TrimSpace(current.AgentName)
+			if name == "" {
+				name = current.ActivePersona
+			}
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			if name != "" {
+				err = fmt.Errorf("%s: %w", name, err)
+			}
+			return lastGood[key], err
+		}
+		lastGood[key] = prompt
+		return prompt, nil
 	}
-	p.CompactPrompt = prompt
+	if _, err := resolve(); err != nil {
+		bus.Emit(events.Error{Stage: "compact", Message: fmt.Sprintf("compact prompt: %v (compaction will retry when it next runs)", err)})
+	}
+	p.ResolveCompactPrompt = resolve
 	if cfg != nil && cfg.MaxHistory > 0 {
 		p.AutoCompactAfter = cfg.MaxHistory * 2
 	}

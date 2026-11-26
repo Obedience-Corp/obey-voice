@@ -71,7 +71,7 @@ func (p *Pipeline) autoCompactIfNeeded(ctx context.Context) error {
 // prepareTurn checks both incoming prompt size and the historical count. All
 // prepare work is bounded by the normal brain timeout, including filler speech.
 func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnMetrics, turn *turnConductor) error {
-	if p.Brain == nil || p.CompactPrompt == "" {
+	if p.Brain == nil || !p.compactConfigured() {
 		return nil
 	}
 	history := p.Brain.History()
@@ -85,6 +85,10 @@ func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnM
 	if !compact {
 		return nil
 	}
+	prompt, ok := p.usableCompactPrompt()
+	if !ok {
+		return nil
+	}
 	ctx, cancel := p.withBrainTimeout(ctx)
 	defer cancel()
 	p.emit(events.Info{Message: "compact: starting"})
@@ -95,20 +99,34 @@ func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnM
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return p.compactConversation(ctx, input, true)
+	return p.compactConversation(ctx, input, prompt)
 }
 
 func (p *Pipeline) CompactConversation(ctx context.Context) error {
-	return p.compactConversation(ctx, "", false)
+	return p.compactConversation(ctx, "", "")
 }
 
-func (p *Pipeline) compactConversation(ctx context.Context, input string, automatic bool) (resultErr error) {
-	if p.Brain == nil || p.CompactPrompt == "" {
+// compactConversation runs automatically when prompt holds the instruction
+// prepareTurn resolved; manual /compact passes "" and resolves it here.
+func (p *Pipeline) compactConversation(ctx context.Context, input, prompt string) (resultErr error) {
+	automatic := prompt != ""
+	if p.Brain == nil || !p.compactConfigured() {
 		return errors.New("compact prompt not configured")
 	}
 	if err := p.awaitProvider(ctx); err != nil {
 		return err
 	}
+	if !automatic {
+		resolved, err := p.compactPrompt()
+		if resolved == "" {
+			return err
+		}
+		if err != nil {
+			p.emitCompactPromptError(err, "using the last instruction that loaded")
+		}
+		prompt = resolved
+	}
+	instruction := p.compactionInstruction(prompt)
 	history := p.Brain.History()
 	turnsBefore := len(history)
 	if turnsBefore < 2 {
@@ -144,7 +162,7 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 	}
 	stage("trim")
 	if prep, ok := p.Brain.(interface{ PrepareCompact(string) }); ok {
-		prep.PrepareCompact(p.compactionInstruction())
+		prep.PrepareCompact(instruction)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -184,7 +202,7 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 			summarized = func() { _ = t.AppendSeen(epoch, id, covered) }
 		}
 	}
-	summary, err := p.Brain.ThinkFull(ctx, p.compactionInstruction(), opts)
+	summary, err := p.Brain.ThinkFull(ctx, instruction, opts)
 	if err == nil && strings.TrimSpace(summary) == "" {
 		err = errors.New("empty summary")
 	}
@@ -231,7 +249,7 @@ func (p *Pipeline) compactConversation(ctx context.Context, input string, automa
 // Attribution is part of the shared conversation contract even when a user
 // customizes the compact document. Keep these instructions out of ordinary
 // legacy compaction where no historical identities are known.
-func (p *Pipeline) compactionInstruction() string {
+func (p *Pipeline) compactionInstruction(prompt string) string {
 	var turns []brain.Turn
 	if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
 		turns = canonical.CanonicalHistory()
@@ -240,8 +258,73 @@ func (p *Pipeline) compactionInstruction() string {
 	}
 	for _, turn := range turns {
 		if turn.PersonaID != "" || turn.PersonaDisplayName != "" {
-			return p.CompactPrompt + "\n\nHistorical attribution requirements: This is a continuity summary of a shared conversation, not a new reply by the current persona. Preserve the historical persona name for each retained fact or decision from an assistant. Keep user-provided facts attributed to the user. Preserve different personas separately, including their disagreements. Do not imitate historical assistant labels in the summary or present internal metadata as user-facing text."
+			return prompt + "\n\nHistorical attribution requirements: This is a continuity summary of a shared conversation, not a new reply by the current persona. Preserve the historical persona name for each retained fact or decision from an assistant. Keep user-provided facts attributed to the user. Preserve different personas separately, including their disagreements. Do not imitate historical assistant labels in the summary or present internal metadata as user-facing text."
 		}
 	}
-	return p.CompactPrompt
+	return prompt
+}
+
+func (p *Pipeline) compactConfigured() bool {
+	return p.ResolveCompactPrompt != nil || p.CompactPrompt != ""
+}
+
+func (p *Pipeline) compactPrompt() (string, error) {
+	if p.ResolveCompactPrompt == nil {
+		return p.CompactPrompt, nil
+	}
+	prompt, err := p.ResolveCompactPrompt()
+	if strings.TrimSpace(prompt) == "" {
+		prompt = ""
+		if err == nil {
+			err = errors.New("resolved to empty text")
+		}
+	}
+	if err != nil {
+		return prompt, fmt.Errorf("compact prompt: %w", err)
+	}
+	p.compactSkipMu.Lock()
+	p.compactSkipsShown = nil
+	p.compactSkipMu.Unlock()
+	return prompt, nil
+}
+
+// usableCompactPrompt reports a resolution failure, and whether a fallback
+// instruction still lets automatic compaction run.
+func (p *Pipeline) usableCompactPrompt() (string, bool) {
+	prompt, err := p.compactPrompt()
+	if err == nil {
+		return prompt, true
+	}
+	if prompt == "" {
+		p.emitCompactSkip(err)
+		return "", false
+	}
+	p.emitCompactPromptError(err, "using the last instruction that loaded")
+	return prompt, true
+}
+
+// emitCompactSkip reports a skipped automatic compaction once per message;
+// the resolver names the persona, so each persona's failure is shown.
+func (p *Pipeline) emitCompactSkip(err error) {
+	message := compactPromptErrorMessage(err, "compaction skipped; it retries each turn and this is reported once")
+	p.compactSkipMu.Lock()
+	shown := p.compactSkipsShown[message]
+	if !shown {
+		if p.compactSkipsShown == nil {
+			p.compactSkipsShown = map[string]bool{}
+		}
+		p.compactSkipsShown[message] = true
+	}
+	p.compactSkipMu.Unlock()
+	if !shown {
+		p.emit(events.Error{Stage: "compact", Message: message})
+	}
+}
+
+func (p *Pipeline) emitCompactPromptError(err error, outcome string) {
+	p.emit(events.Error{Stage: "compact", Message: compactPromptErrorMessage(err, outcome)})
+}
+
+func compactPromptErrorMessage(err error, outcome string) string {
+	return err.Error() + " (" + outcome + ")"
 }

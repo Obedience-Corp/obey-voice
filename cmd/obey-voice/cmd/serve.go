@@ -299,7 +299,6 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 			bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
 		}
 	}
-	wireCompact(p, cfg, ref.sess, bus)
 	defer func() {
 		if err := ref.save(ref.history(p)); err != nil {
 			state.saveErr = err
@@ -319,6 +318,7 @@ func runServe(ctx context.Context, cfg *config.Config, state *serveRestartState)
 		return err
 	}
 	defer switcher.selector.Close()
+	wireCompact(p, cfg, switcher.boundConfig, ref.sess, bus)
 	if state.sessionID != "" {
 		if err := switcher.resume(ctx, state.sessionID); err != nil {
 			return fmt.Errorf("restore conversation after restart: %w", err)
@@ -660,6 +660,14 @@ func (s *servePersonaSwitcher) initialize() error {
 	return nil
 }
 
+// boundConfig is the configuration of the persona currently answering.
+func (s *servePersonaSwitcher) boundConfig() *config.Config {
+	if s.selector != nil {
+		return s.selector.Config()
+	}
+	return s.cfg
+}
+
 func (s *servePersonaSwitcher) apply(id string) (netapi.PersonaAck, error) {
 	return s.applyContext(context.Background(), id)
 }
@@ -775,7 +783,7 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	s.sessions.mu.Lock()
 	restored := *s.sessions.sess
 	s.sessions.mu.Unlock()
-	wireCompact(s.pipeline, cfg, s.sessions.sess, s.pipeline.Events)
+	wireCompact(s.pipeline, cfg, s.boundConfig, s.sessions.sess, s.pipeline.Events)
 	if s.selector == nil {
 		return nil
 	}
