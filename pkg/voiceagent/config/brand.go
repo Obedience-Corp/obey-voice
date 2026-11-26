@@ -17,6 +17,10 @@ import (
 // share the same documented layout and migrations stay a simple rename.
 const AppSlug = "obey-voice"
 
+// AppName is the product's name as people say and write it; AppSlug spells it
+// for paths.
+const AppName = "Obey Voice"
+
 // DefaultConfigDir returns the default on-disk config root for this install.
 func DefaultConfigDir() string {
 	return filepath.Join(homeDir(), ".obey", "agents", "voice", AppSlug)

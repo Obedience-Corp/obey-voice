@@ -3,21 +3,19 @@ package summon
 import (
 	"regexp"
 	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-// ProductName is the application's name. A persona name heard only inside it,
-// as "Obey" in "a test of Obey Voice", is talk about the app, not an address.
-const ProductName = "Obey Voice"
-
 // productNamePattern also accepts the transcriber spellings "Obey-Voice",
-// "Obey - Voice", "Obey—Voice", "Obey_Voice" and "ObeyVoice". A comma or
-// period never joins the words.
+// "Obey - Voice", "Obey—Voice", "Obey_Voice" and "ObeyVoice". A comma, period
+// or line break never joins the words.
 var productNamePattern = func() *regexp.Regexp {
-	words := strings.Fields(ProductName)
+	words := strings.Fields(config.AppName)
 	for i, word := range words {
 		words[i] = regexp.QuoteMeta(word)
 	}
-	return regexp.MustCompile(`(?i)\b` + strings.Join(words, `(?:\s*[-_‐‑–—]\s*|\s*)`) + `\b`)
+	return regexp.MustCompile(`(?i)\b` + strings.Join(words, `(?:[ \t]*[-_‐‑–—][ \t]*|[ \t]*)`) + `\b`)
 }()
 
 // productNameCovers reports whether text opens with the product name and the
@@ -52,11 +50,11 @@ func (r *Roster) NamedOnlyInProductName(text, personaID string) bool {
 		}
 		return false
 	}
-	canonical := productNamePattern.ReplaceAllLiteralString(text, ProductName)
+	canonical := productNamePattern.ReplaceAllLiteralString(text, config.AppName)
 	if !mentioned(canonical) {
 		return false
 	}
-	product, haystack := mentionWords(ProductName), mentionWords(canonical)
+	product, haystack := mentionWords(config.AppName), mentionWords(canonical)
 	for _, name := range names {
 		if strings.Contains(name, product) && strings.Contains(haystack, name) {
 			return false
