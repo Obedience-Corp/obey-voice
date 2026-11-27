@@ -31,6 +31,7 @@ const (
 	editDecisionKey
 	editStorageMove
 	editSTTModel
+	editImage
 )
 
 // settingsEditor is a one-line value editor for settings a list cannot express
@@ -112,6 +113,9 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 		}
 		if kind == editTalkHotkey {
 			return m.commitTalkHotkey(value)
+		}
+		if kind == editImage {
+			return m.commitImageSetting(m.edit.decisionKey, value)
 		}
 		if kind == editWorkerAssignment {
 			tier := m.edit.workerTier

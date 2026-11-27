@@ -90,6 +90,13 @@ demo-picture-actions:
     go test -c -o bin/chat-media.test ./internal/tui
     vhs demos/picture-actions.tape
 
+# Review the Settings → Tools picture-maker rows in a throwaway HOME.
+[no-cd]
+demo-picture-settings:
+    mkdir -p demos/frames
+    go build -o bin/obey-voice ./cmd/obey-voice
+    vhs demos/picture-settings.tape
+
 # Review worker image/GIF replies using the real TUI with silent fixtures.
 [no-cd]
 demo-agent-images:

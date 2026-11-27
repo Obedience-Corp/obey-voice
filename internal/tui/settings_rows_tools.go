@@ -26,7 +26,7 @@ func (m settingsModel) toolRows() []settingRow {
 	}
 	modes := talkhotkey.Modes()
 	mode := string(config.TalkHotkeyModeOf(cfg))
-	return []settingRow{
+	rows := []settingRow{
 		{
 			key: "voice_tools_enabled", name: "Local tools", kind: rowToggle,
 			value: onOff(cfg.VoiceToolsEnabled), applies: appliesNextConversation,
@@ -78,4 +78,5 @@ func (m settingsModel) toolRows() []settingRow {
 			run:  func(m *settingsModel) tea.Cmd { return m.beginTalkComboEdit() },
 		},
 	}
+	return append(rows, m.imageRows()...)
 }
