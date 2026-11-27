@@ -2,6 +2,7 @@ package stt
 
 import (
 	"context"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/kws"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"strings"
 	"time"
@@ -48,7 +49,7 @@ type offlineLoopDeps struct {
 	seg          segmenter
 	policy       endpoint.Policy
 	transcribe   transcribeFunc
-	acousticName func(context.Context, []float32) (string, error)
+	acousticName func(context.Context, []float32) (kws.Hit, error)
 	pause        *pauseController
 	native       *nativeFinalizer
 }
@@ -151,9 +152,9 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 				return true
 			}
 			if text != "" {
-				var name string
+				var heard kws.Hit
 				if deps.acousticName != nil {
-					name, err = deps.acousticName(ctx, samples)
+					heard, err = deps.acousticName(ctx, samples)
 					if err != nil {
 						sendEvent(ctx, events, Failure{Err: err})
 						return true
@@ -162,7 +163,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 				if ctx.Err() != nil {
 					return true
 				}
-				sendEvent(ctx, events, FinalTranscript{Text: text, AcousticName: name})
+				sendEvent(ctx, events, FinalTranscript{Text: text, AcousticName: heard.Name, AcousticNameBy: heard.By})
 				return true
 			}
 		}

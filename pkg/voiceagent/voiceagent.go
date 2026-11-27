@@ -129,6 +129,20 @@ type Options struct {
 	// is measured. Rejected when New would install no gate.
 	NameSummonFollowUp time.Duration
 
+	// NameSummonAcousticWindow applies when acoustic_name_enabled is set next
+	// to name_summon_enabled. The keyword spotter then listens for the name
+	// summon names, and the gate admits an utterance whose opening name the
+	// recogniser misspelled if the spotter heard the name this early in it.
+	// Raise it if your users put a long filler before the name.
+	// Zero means summon.DefaultAcousticWindow, moved by the difference between
+	// vad_pre_roll_ms and its default when New builds the recogniser, because
+	// the hit time counts from the start of the pre-roll. A positive value is
+	// used as given. A negative value keeps the gate on the transcript alone.
+	// See summon.WithAcousticEvidence for the rule and what it can let
+	// through. With the window in force, Pipeline.AcousticAddressGate is set
+	// and is consulted instead of AddressGate.
+	NameSummonAcousticWindow time.Duration
+
 	// Env describes the machine the agent tells the model it is running on. A
 	// zero Env falls back to the host, which is what the CLI wants. A server
 	// answering for many users should set it: telling the model it is running as
@@ -493,7 +507,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 			// pipeline can finalize, so a talk key can end a turn the way
 			// serve's voice_end ends a network one.
 			endable := audio.NewFinalizable(localCapture)
-			sttProvider, sttCleanup, err := stt.NewProvider(cfg, endable, sttVAD)
+			sttProvider, sttCleanup, err := stt.NewProvider(withAcousticNames(cfg, nameGate, logf), endable, sttVAD)
 			if err != nil {
 				cleanup()
 				return nil, nil, fmt.Errorf("init STT: %w", err)
@@ -541,7 +555,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	cleanups = append(cleanups, func() { _ = agency.CloseWork() })
 
 	if nameGate != nil {
-		cleanups = append(cleanups, installNameSummon(p, opts.Events, nameGate, opts.NameSummonFollowUp))
+		cleanups = append(cleanups, installNameSummon(p, opts.Events, nameGate, opts.NameSummonFollowUp, acousticWindow(cfg, opts) > 0))
 	}
 
 	return &Agent{Pipeline: p, nameSummon: nameGate}, cleanup, nil

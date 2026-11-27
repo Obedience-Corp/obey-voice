@@ -2,6 +2,9 @@ package voiceagent
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -10,7 +13,9 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/kws"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/summon"
 )
 
 const unaddressed = "what's for dinner tonight?"
@@ -172,12 +177,16 @@ func TestNameSummonGatesVoiceTurnsEndToEnd(t *testing.T) {
 }
 
 // scriptedSTT hands the pipeline one finished transcript per turn.
-type scriptedSTT struct{ next string }
+type scriptedSTT struct {
+	next    string
+	heard   string
+	heardBy time.Duration
+}
 
 func (s *scriptedSTT) Available() bool { return true }
 func (s *scriptedSTT) Start(context.Context) (stt.Session, error) {
 	ch := make(chan stt.Event, 1)
-	ch <- stt.FinalTranscript{Text: s.next}
+	ch <- stt.FinalTranscript{Text: s.next, AcousticName: s.heard, AcousticNameBy: s.heardBy}
 	close(ch)
 	return scriptedSession(ch), nil
 }
@@ -217,4 +226,146 @@ func (b *countingBrain) ThinkFull(context.Context, string, brain.StreamOptions) 
 	b.calls++
 	b.mu.Unlock()
 	return "Half past nine.", nil
+}
+
+// A recogniser that misspells the name is rescued by the keyword spotter's
+// hit, but only at the start of the utterance and only when the config asks.
+func TestNameSummonAcousticEvidenceEndToEnd(t *testing.T) {
+	const misheard = "Juneau, what's the weather?"
+	for _, tc := range []struct {
+		why      string
+		acoustic bool
+		window   time.Duration
+		text     string
+		heard    string
+		by       time.Duration
+		answered bool
+	}{
+		{"hit at the start", true, 0, misheard, "Juno", time.Second, true},
+		{"no hit", true, 0, misheard, "", 0, false},
+		{"hit late in the utterance", true, 0, "Yesterday we talked about Juneau.", "Juno", 4 * time.Second, false},
+		{"spelled mention", true, 0, "Tell me about Juno.", "Juno", time.Second, false},
+		{"acoustic_name_enabled off", false, 0, misheard, "Juno", time.Second, false},
+		{"window switched off by the host", true, -1, misheard, "Juno", time.Second, false},
+		{"host window too short for this hit", true, 500 * time.Millisecond, misheard, "Juno", time.Second, false},
+	} {
+		t.Run(tc.why, func(t *testing.T) {
+			heard := &scriptedSTT{next: tc.text, heard: tc.heard, heardBy: tc.by}
+			answering := &countingBrain{}
+			opts := summonOptions(&config.Config{AgentName: "Juno", NameSummonEnabled: true, AcousticNameEnabled: tc.acoustic})
+			opts.STT, opts.Brain = heard, answering
+			opts.NameSummonAcousticWindow = tc.window
+			agent, cleanup, err := New(context.Background(), opts)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			defer cleanup()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, err := agent.RunTurn(ctx); err != nil {
+				t.Fatalf("RunTurn: %v", err)
+			}
+			if got := answering.count() > 0; got != tc.answered {
+				t.Fatalf("answered=%v, want %v", got, tc.answered)
+			}
+		})
+	}
+}
+
+func TestAcousticNamesFollowTheGate(t *testing.T) {
+	cfg := &config.Config{AgentName: "Juno", NameSummonAliases: []string{"R2D2", "the computer"}, NameSummonEnabled: true, AcousticNameEnabled: true}
+	gate, err := buildNameSummonGate(cfg, summonOptions(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logged string
+	got := withAcousticNames(cfg, gate, func(format string, args ...any) { logged = fmt.Sprintf(format, args...) })
+	if !slices.Equal(got.AcousticNames, []string{"the computer", "juno"}) {
+		t.Fatalf("spotter names = %q", got.AcousticNames)
+	}
+	if cfg.AcousticNames != nil {
+		t.Fatal("the caller's config was changed")
+	}
+	if !strings.Contains(logged, `cannot spell ["r2d2"]`) {
+		t.Fatalf("the skipped alias was not reported: %q", logged)
+	}
+	// No gate, or the detector off: the recogniser's config is the caller's own.
+	if withAcousticNames(cfg, nil, nil) != cfg {
+		t.Fatal("a config without a gate was copied")
+	}
+	off := &config.Config{AgentName: "Juno", NameSummonEnabled: true}
+	if withAcousticNames(off, gate, nil) != off {
+		t.Fatal("a config without acoustic_name_enabled was copied")
+	}
+}
+
+func TestNewRefusesAcousticNamesItCannotSpell(t *testing.T) {
+	cfg := &config.Config{AgentName: "R2D2", NameSummonEnabled: true, AcousticNameEnabled: true}
+	_, _, err := New(context.Background(), summonOptions(cfg))
+	if !errors.Is(err, kws.ErrUnspellable) {
+		t.Fatalf("New = %v, want ErrUnspellable", err)
+	}
+}
+
+func TestAcousticHookIsInstalledOnlyWhenInForce(t *testing.T) {
+	for _, tc := range []struct {
+		why      string
+		acoustic bool
+		window   time.Duration
+		hook     bool
+	}{
+		{"acoustic_name_enabled", true, 0, true},
+		{"acoustic_name_enabled off", false, 0, false},
+		{"switched off by the host", true, -1, false},
+	} {
+		opts := summonOptions(&config.Config{AgentName: "Juno", NameSummonEnabled: true, AcousticNameEnabled: tc.acoustic})
+		opts.NameSummonAcousticWindow = tc.window
+		agent, cleanup, err := New(context.Background(), opts)
+		if err != nil {
+			t.Fatalf("%s: New: %v", tc.why, err)
+		}
+		if got := agent.AcousticAddressGate != nil; got != tc.hook || agent.AddressGate == nil {
+			t.Errorf("%s: acoustic hook installed=%v, want %v", tc.why, got, tc.hook)
+		}
+		cleanup()
+	}
+}
+
+func TestNewRejectsAnAcousticWindowThatCannotApply(t *testing.T) {
+	for why, cfg := range map[string]*config.Config{
+		"acoustic_name_enabled off": {AgentName: "Juno", NameSummonEnabled: true},
+		"name summon off":           {AgentName: "Juno", AcousticNameEnabled: true},
+	} {
+		opts := summonOptions(cfg)
+		opts.NameSummonAcousticWindow = time.Second
+		if _, _, err := New(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "NameSummonAcousticWindow") {
+			t.Errorf("%s: New = %v", why, err)
+		}
+	}
+}
+
+// The hit time counts from the start of the pre-roll, so the default window
+// has to move with it when New builds the recogniser.
+func TestAcousticWindowFollowsPreRoll(t *testing.T) {
+	cfg := &config.Config{AcousticNameEnabled: true, VADPreRollMS: 500}
+	if got, want := acousticWindow(cfg, Options{}), summon.DefaultAcousticWindow+200*time.Millisecond; got != want {
+		t.Errorf("New's own recogniser, 500 ms pre-roll: %s, want %s", got, want)
+	}
+	cfg.VADPreRollMS = 300
+	if got := acousticWindow(cfg, Options{}); got != summon.DefaultAcousticWindow {
+		t.Errorf("default pre-roll: %s", got)
+	}
+	cfg.VADPreRollMS = 500
+	if got := acousticWindow(cfg, Options{STT: &stubSTT{}}); got != summon.DefaultAcousticWindow {
+		t.Errorf("an injected recogniser segments its own audio: %s", got)
+	}
+	if got := acousticWindow(cfg, Options{NameSummonAcousticWindow: time.Second}); got != time.Second {
+		t.Errorf("a host's own window was changed: %s", got)
+	}
+	if got := acousticWindow(cfg, Options{NameSummonAcousticWindow: -1}); got != 0 {
+		t.Errorf("switched off: %s", got)
+	}
+	if got := acousticWindow(&config.Config{}, Options{}); got != 0 {
+		t.Errorf("acoustic_name_enabled off: %s", got)
+	}
 }
