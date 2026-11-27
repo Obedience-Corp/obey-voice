@@ -157,8 +157,15 @@ type conversationModel struct {
 	pendingText    string
 	// pendingMoved is set when the turn was moved for pendingText, which
 	// then runs before any captured speech.
-	pendingMoved              bool
-	pendingBackground         bool
+	pendingMoved      bool
+	pendingBackground bool
+	// backgroundTurn marks the running turn as a result delivery.
+	backgroundTurn bool
+	// backgroundHeld keeps a result stopped with Esc from being delivered
+	// again until the user's next turn.
+	backgroundHeld bool
+	// escStatus is the stop notice to restore once the stopped turn has drained.
+	escStatus                 string
 	pendingPause              bool
 	backgroundPauseGeneration uint64
 	// backgroundPauseAcknowledged keeps recovery from requesting the same

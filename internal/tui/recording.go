@@ -58,6 +58,7 @@ func (m *conversationModel) finishRecording(msg recordingDoneMsg) tea.Cmd {
 	m.turnCancel = nil
 	m.turnState = turnIdle
 	m.reviewingRecording = false
+	m.escStatus = ""
 	switch {
 	case errors.Is(msg.err, context.Canceled):
 		m.setStatus("Recording review stopped", false)

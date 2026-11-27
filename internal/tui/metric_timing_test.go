@@ -52,6 +52,7 @@ func TestMetricsLineSaysWhatStoppedTheSpeech(t *testing.T) {
 		"keystroke":   "speech stopped by typing",
 		"text_submit": "interrupted by your message",
 		"talk_key":    "interrupted by the talk key",
+		"escape":      "stopped with Esc",
 		"unspecified": "speech stopped",
 	}
 	for source, want := range cases {

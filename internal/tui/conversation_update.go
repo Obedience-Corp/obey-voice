@@ -310,6 +310,10 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 				m.refreshActivity()
 				return m, nil
 			}
+			if m.escStopsTurn() {
+				m.stopTurnFromEsc()
+				return m, nil
+			}
 		case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 			return m.updateScroll(msg)
 		case "ctrl+home":

@@ -426,8 +426,9 @@ const StopSourceKeystroke = "keystroke"
 
 // StopSource names the caller of a stop for the turn's metrics, so a reply
 // that went unspoken can be traced to what silenced it. Name is one of
-// keystroke, text_submit, talk_key, desktop, narration or replay. KeyRunes
-// and KeyPaste describe a keystroke's message; its text is never recorded.
+// keystroke, text_submit, talk_key, escape, desktop, narration or replay.
+// KeyRunes and KeyPaste describe a keystroke's message; its text is never
+// recorded.
 type StopSource struct {
 	Name     string
 	KeyRunes int

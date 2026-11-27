@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/internal/app"
+	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -125,6 +126,58 @@ func (m *conversationModel) beginTextBargeIn(text string) tea.Cmd {
 func (m *conversationModel) moveTurn(text string) bool {
 	mover, ok := m.deps.runner.(interface{ MoveTurnToBackground(string) bool })
 	return ok && mover.MoveTurnToBackground(text)
+}
+
+// cancelTurn cancels the running turn now; its done message decides what runs next.
+func (m *conversationModel) cancelTurn(source pipeline.StopSource) {
+	m.turnState = turnVoiceCanceling
+	if m.canCancelVoice != nil {
+		m.canCancelVoice.Store(false)
+	}
+	if m.turnCancel != nil {
+		m.turnCancel()
+	}
+	m.stopRunnerPlayback(source)
+}
+
+// escStopsTurn leaves vim's own Esc meanings (leave INSERT, clear a pending key) first.
+func (m conversationModel) escStopsTurn() bool {
+	if m.turnState != turnVoiceResponding && m.turnState != turnTextRunning {
+		return false
+	}
+	// An open command or persona list is what Esc is aimed at.
+	if m.mentionsShowing() || len(matchingSlashCommands(m.input.Value())) > 0 {
+		return false
+	}
+	return !m.vim.enabled || m.vim.mode == vimNormal && m.vim.pending.kind == vimPendingNone
+}
+
+func (m *conversationModel) stopTurnFromEsc() {
+	m.cancelTurn(pipeline.StopSource{Name: "escape"})
+	m.appendActivity("turn", "stopped with Esc", 0)
+	m.escStatus = "Stopped with Esc"
+	if m.backgroundTurn {
+		// The result stays pending; without the hold it would start again at once.
+		m.backgroundHeld = true
+		m.escStatus = "Stopped with Esc. The result waits for your next message."
+	}
+	m.settleEscStop()
+}
+
+// settleEscStop shows the stop and ends the thinking indicator: nothing follows
+// an Esc stop to clear them, and the stopped turn's last events can undo both.
+func (m *conversationModel) settleEscStop() {
+	if m.escStatus == "" {
+		return
+	}
+	m.setVoiceMode(anim.ModeIdle)
+	m.setStatus(m.escStatus, false)
+}
+
+// finishEscStop runs when the stopped work has drained, on every way it can end.
+func (m *conversationModel) finishEscStop() {
+	m.settleEscStop()
+	m.escStatus = ""
 }
 
 // stopRunnerPlayback names the caller when the runner records it. A runner
@@ -278,6 +331,7 @@ func (m *conversationModel) submitText(text string) tea.Cmd {
 
 func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
+	m.finishEscStop()
 	m.pendingPause = false
 	m.backgroundPauseGeneration++
 	m.backgroundPauseAcknowledged = false
@@ -398,6 +452,8 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 
 func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
+	m.backgroundTurn = false
+	m.finishEscStop()
 	m.keyOwnsTurn(false)
 	held := m.holdRefusedDraft(msg)
 	// Barge-in during a text turn (agent speaking after a prior typed message)
@@ -524,6 +580,7 @@ func (m *conversationModel) handleCompactDone(msg compactDoneMsg) tea.Cmd {
 	m.turnCancel = nil
 	m.turnState = turnIdle
 	m.setStatus("", false)
+	m.finishEscStop()
 	if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
 		m.emit(events.Error{Stage: "compact", Message: msg.err.Error()})
 	}
