@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
-	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/summon"
 )
 
 func classifyAdmissionFailure(ctx context.Context, operation string, err error) error {

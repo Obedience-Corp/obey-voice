@@ -7,11 +7,11 @@ import (
 	"slices"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
-	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/summon"
 )
 
 // Route is the shared finalized-input operation for text and spoken requests.

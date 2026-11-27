@@ -182,7 +182,7 @@ type Config struct {
 	// Name summon: a second way to open a hands-free turn, off by default
 	// (D5). The gate is STT-side — a finalized transcript that does not start
 	// with the agent's name is dropped before the brain sees it — so it costs
-	// nothing until it is switched on. See internal/summon for the matching
+	// nothing until it is switched on. See pkg/voiceagent/summon for the matching
 	// rules and name_summon.go for the front-end it depends on.
 	NameSummonEnabled bool `mapstructure:"name_summon_enabled"`
 	// AcousticNameEnabled adds experimental Obey keyword evidence to Parakeet

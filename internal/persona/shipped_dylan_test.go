@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/summon"
 )
 
 const (

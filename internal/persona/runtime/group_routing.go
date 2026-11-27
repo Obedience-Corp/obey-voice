@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/summon"
 )
 
 func (s *Selector) conversationRoster() (*summon.Roster, []brain.GroupParticipant, error) {

@@ -209,7 +209,7 @@ func isTerminalControlPunctuation(r rune) bool {
 }
 
 func cutExactGreeting(text string) (string, bool) {
-	for _, filler := range Fillers {
+	for _, filler := range defaultFillers {
 		consumed, ok := matchPrefix(text, normalizeName(filler))
 		if !ok || consumed >= len(text) {
 			continue

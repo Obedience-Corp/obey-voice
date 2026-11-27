@@ -246,7 +246,7 @@ func (r *Roster) matchOpening(text string) (rosterName, string, bool) {
 }
 
 func cutFillerOriginal(text string) (string, bool) {
-	for _, filler := range Fillers {
+	for _, filler := range defaultFillers {
 		consumed, ok := matchPrefix(text, normalizeName(filler))
 		if !ok {
 			continue

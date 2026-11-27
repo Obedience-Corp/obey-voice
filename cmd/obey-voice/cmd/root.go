@@ -732,7 +732,11 @@ func buildPipeline(ctx context.Context, cfg *config.Config, bus *events.Bus, tex
 		Silent:   silent,
 		LiveTTS:  liveTTS,
 		Stage:    stage,
-		Logf:     func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) },
+		// The terminal app installs name summon per session, after it knows
+		// whether persona selection owns addressing, and runs without the
+		// gate (saying so) where the library would refuse to start.
+		ExternalAddressing: true,
+		Logf:               func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) },
 	})
 	if err != nil {
 		return nil, nil, err
