@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/ollama/ollama/api"
@@ -24,12 +26,12 @@ func viewImageTool() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        viewImageToolName,
-			Description: "Look at a PNG, JPEG or GIF file inside your work directory. The picture is attached to the user's latest message for your next step; a GIF shows its first frame. read_file cannot show pictures.",
+			Description: "Look at a PNG, JPEG or GIF file inside your work directory, or bring back a picture already on the conversation by its id. Pictures the user attached are already on their message: do not call this to see them. The picture is attached to the user's latest message for your next step; a GIF shows its first frame. read_file cannot show pictures.",
 			Parameters: api.ToolFunctionParameters{
 				Type:     "object",
 				Required: []string{"path"},
 				Properties: orderedProps(map[string]api.ToolProperty{
-					"path": {Type: api.PropertyType{"string"}, Description: "Image file path."},
+					"path": {Type: api.PropertyType{"string"}, Description: "Image file path, or a picture id."},
 				}),
 			},
 		},
@@ -105,7 +107,11 @@ func (o *OllamaBrain) viewImage(ctx context.Context, path string) (string, bool,
 	}
 	ref, err := chatmedia.DefaultStore().ImportWorkFile(path, o.workDir)
 	if err != nil {
-		return viewFailed(err.Error())
+		found, ok := o.conversationPicture(path)
+		if !ok {
+			return viewFailed(err.Error() + o.conversationPicturesHint())
+		}
+		ref = found
 	}
 	if _, err := storeImageLimit.load(ref); err != nil {
 		return viewFailed(err.Error())
@@ -199,6 +205,82 @@ func openedLast(refs []chatmedia.Ref, ref chatmedia.Ref) []chatmedia.Ref {
 	}
 	return append(out, ref)
 }
+
+// conversationPicture finds a picture already on the conversation that path
+// names by id or file name. Models given a picture the user pasted often call
+// view_image with its label or name, and that file is never in the work
+// directory. The newest match wins; an id match beats a name match.
+func (o *OllamaBrain) conversationPicture(path string) (chatmedia.Ref, bool) {
+	want := pictureKey(path)
+	if want == "" {
+		return chatmedia.Ref{}, false
+	}
+	var byName chatmedia.Ref
+	named := false
+	for i := len(o.working) - 1; i >= 0; i-- {
+		for _, refs := range [][]chatmedia.Ref{o.working[i].Attachments, o.working[i].OpenedImages} {
+			for _, ref := range refs {
+				if id := pictureKey(ref.ID); id != "" && strings.Contains(want, id) {
+					return ref, true
+				}
+				if name := pictureKey(ref.Name); !named && name != "" && containsWord(want, name) {
+					byName, named = ref, true
+				}
+			}
+		}
+	}
+	return byName, named
+}
+
+// conversationPicturesHint names the pictures already on the conversation,
+// so a failed view_image does not read as the model being unable to see.
+func (o *OllamaBrain) conversationPicturesHint() string {
+	var labels []string
+	seen := map[string]bool{}
+	for i := len(o.working) - 1; i >= 0 && len(labels) < chatmedia.MaxAttachments; i-- {
+		for _, ref := range o.working[i].Attachments {
+			if !seen[ref.ID] && len(labels) < chatmedia.MaxAttachments {
+				seen[ref.ID] = true
+				labels = append(labels, pictureLabel(ref))
+			}
+		}
+	}
+	if len(labels) == 0 {
+		return ""
+	}
+	return ". Pictures the user attached are already on their messages, not in your work directory: " + strings.Join(labels, ", ") + ". Look at those directly, or pass a picture's id to view_image"
+}
+
+// pictureKey folds case and drops spaces, which models and screenshot names
+// (narrow no-break spaces) render differently.
+func pictureKey(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, s)
+}
+
+// containsWord reports whether s holds sub with no letter or digit directly
+// before or after it, so "a.png" is not found in "data.png".
+func containsWord(s, sub string) bool {
+	for from := 0; ; {
+		i := strings.Index(s[from:], sub)
+		if i < 0 {
+			return false
+		}
+		start, end := from+i, from+i+len(sub)
+		before, _ := utf8.DecodeLastRuneInString(s[:start])
+		after, _ := utf8.DecodeRuneInString(s[end:])
+		if (start == 0 || !isWordRune(before)) && (end == len(s) || !isWordRune(after)) {
+			return true
+		}
+		from = start + 1
+	}
+}
+
+func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
 func pictureLabel(ref chatmedia.Ref) string {
 	return "Picture " + ref.ID + " (" + singleLine(ref.Name) + ")"
