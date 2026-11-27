@@ -1,6 +1,6 @@
 # embed — a host application for the samantha voice agent
 
-A ~120 line program that imports `pkg/voiceagent` and runs a turn.
+A small program that imports `pkg/voiceagent` and runs a turn.
 
 It is a **separate Go module** with a `replace` directive pointing at a local
 checkout. That is deliberate and load-bearing: compiling in-tree would still
@@ -55,6 +55,70 @@ written to it.
 Re-run this after any change to config resolution, provider construction or path
 lookups. A failure here is a global reach-in, and the failure message will point
 at the directory it wanted.
+
+## Name summon
+
+An agent with a name that answers only what is said to it, the way a
+single-purpose voice assistant does:
+
+```go
+agent, cleanup, err := voiceagent.New(ctx, voiceagent.Options{
+    Config: &config.Config{
+        AgentName:         "Juno",
+        NameSummonEnabled: true,
+        NameSummonAliases: []string{"computer"},
+        VoiceFrontend:     config.VoiceFrontendWebRTC,
+        // ... brain, speech recognition and voice settings
+    },
+    Events:             events.NewBus(),
+    NameSummonFollowUp: 10 * time.Second,
+})
+// ...
+for ctx.Err() == nil {
+    if _, err := agent.RunTurn(ctx); err != nil { /* ... */ }
+}
+```
+
+With the microphone open, a turn runs only when the utterance **starts** with
+the name, its first word when it has several, or an alias, optionally after one
+of `hey`, `ok`, `okay`, `hi`, `hello`, `yo`. Everything else is dropped before
+the model sees it, with an `events.Info` naming what was ignored. The matching
+rules are the ones described under
+[Name summon](../../docs/usage.md#name-summon) and live in
+`pkg/voiceagent/summon`.
+
+```sh
+go run . -summon      # scripted, no microphone, no models
+```
+
+| You need | Use |
+|---|---|
+| The gate | Set `name_summon_enabled`. `New` installs it; `agent.NameSummon()` returns it, or nil when it is off |
+| A button, a tap or a held key to count as addressing the agent | `agent.NameSummon().SetBypass(true)` for that turn, then `false` |
+| "yes" after the agent asks a question to count without the name | `Options.NameSummonFollowUp`. Off unless set. While the window is open, anything heard is answered, whoever said it. It is measured to the moment the follow-up has been transcribed, so allow for the sentence itself |
+| Other words in front of the name, or none | Build the gate yourself: `summon.NewGate(name, aliases, summon.WithFillers(...))`, set `Options.ExternalAddressing`, assign `agent.AddressGate = gate.Veto`, and call `gate.ReplyEnded()` if you use a follow-up window |
+| Your own rule entirely | Set `Options.ExternalAddressing` and assign `agent.AddressGate` |
+
+`New` refuses to start, rather than start without the gate, when:
+
+- **Nothing cancels echo.** `New` opens the microphone and plays audio itself
+  and `voice_frontend` is `off`. The agent would hear its own name in its own
+  voice and summon itself. If you inject `Options.Capture`, the audio path is
+  yours and so is this check.
+- **There is no name.** `agent_name` and `name_summon_aliases` are both empty.
+
+Limits to know before building on it:
+
+- The gate reads the finished transcript. The agent decides whether it was
+  addressed after the speaker stops, and recognition runs on everything the
+  microphone hears. It is not an acoustic wake word.
+- A name the recogniser misspells is not matched. Pick a name it transcribes
+  reliably, and add the misspellings you see as aliases.
+- Typed turns (`SendText`) are never gated.
+- A native-audio conversation model as the input path is not gated: the model
+  receives the audio, not a transcript.
+- If you set `AdmitInput` to route between personas, that owns addressing; set
+  `Options.ExternalAddressing` and do not use both.
 
 ## Known limits
 

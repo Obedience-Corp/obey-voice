@@ -29,8 +29,15 @@ import (
 
 func main() {
 	hermetic := flag.Bool("hermetic", false, "build config in code and inject every provider; no disk, no home directory")
+	summon := flag.Bool("summon", false, "show name summon: an agent that answers only what is said to it (hermetic, no microphone)")
 	flag.Parse()
-	if err := run(*hermetic); err != nil {
+	err := error(nil)
+	if *summon {
+		err = runSummon()
+	} else {
+		err = run(*hermetic)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -99,9 +106,13 @@ func run(hermetic bool) error {
 }
 
 // echoBrain stands in for a model so the hermetic run needs no weights.
-type echoBrain struct{ turns []brain.Turn }
+type echoBrain struct {
+	turns []brain.Turn
+	calls int
+}
 
 func (b *echoBrain) ThinkStream(ctx context.Context, input string, _ brain.StreamOptions) (*brain.Stream, error) {
+	b.calls++
 	chunks := make(chan string, 1)
 	done := make(chan brain.StreamResult, 1)
 	chunks <- "Hello there friend."
@@ -112,6 +123,7 @@ func (b *echoBrain) ThinkStream(ctx context.Context, input string, _ brain.Strea
 }
 
 func (b *echoBrain) ThinkFull(context.Context, string, brain.StreamOptions) (string, error) {
+	b.calls++
 	return "Hello there friend.", nil
 }
 func (b *echoBrain) ClearHistory()              { b.turns = nil }

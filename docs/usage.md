@@ -469,6 +469,9 @@ talking. Recognition still runs on every utterance; the saving is in what gets
 answered, not in what gets heard. A wake-word model that reacts to the name
 itself is a later step — this is the version that needs no new model.
 
+**In your own application.** A Go program that embeds the voice agent gets the
+same gate. See [Name summon in the embedding example](../examples/embed/README.md#name-summon).
+
 ### Mouse, editing and Settings
 
 Select transcript text with the mouse and copy it the way you would anywhere
