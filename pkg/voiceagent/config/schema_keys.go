@@ -559,6 +559,22 @@ func toolKeys() []KeySpec {
 			Help: "How long one command may run before it is killed. Long builds need a bigger number.",
 		},
 		{
+			Key: "image_generation", Type: TypeEnum, Default: ImageGenerationOff, Enum: ImageGenerationValues(),
+			EnumLabels: map[string]string{ImageGenerationOff: "Off", ImageGenerationComfyUI: "ComfyUI"},
+			Group:      GroupTools, Title: "Picture maker",
+			Help: "What Ollama models' generate_image tool makes pictures with. ComfyUI must already be installed and running with the picture model; Obey Voice does not install it. Off, the tool tells the model picture making is off and how to turn it on.",
+		},
+		{
+			Key: "comfyui_url", Type: TypeString, Default: DefaultComfyUIURL,
+			Group: GroupTools, Title: "ComfyUI address",
+			Help: "Where ComfyUI is running, when it is the picture maker.",
+		},
+		{
+			Key: "image_workflow", Type: TypeString, Default: "",
+			Group: GroupTools, Title: "Picture workflow",
+			Help: "A ComfyUI workflow saved in API format for generate_image, with {{prompt}}, {{width}}, {{height}} and {{seed}} where those go. Empty uses Z-Image Turbo.",
+		},
+		{
 			Key: "skills_enabled", Type: TypeBool, Default: true,
 			Group: GroupTools, Title: "Skills",
 			Help: "Loads SKILL.md instruction packs into her prompt. Ollama only.",

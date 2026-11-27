@@ -1806,6 +1806,20 @@
       "editable": true
     },
     {
+      "key": "comfyui_url",
+      "type": "string",
+      "default": "http://127.0.0.1:8188",
+      "allows_empty": true,
+      "group": "tools",
+      "title": "ComfyUI address",
+      "help": "Where ComfyUI is running, when it is the picture maker.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "COMFYUI_URL",
+      "editable": true
+    },
+    {
       "key": "delegation_enabled",
       "type": "bool",
       "default": false,
@@ -1816,6 +1830,42 @@
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "image_generation",
+      "type": "enum",
+      "default": "off",
+      "enum": [
+        "off",
+        "comfyui"
+      ],
+      "enum_labels": {
+        "comfyui": "ComfyUI",
+        "off": "Off"
+      },
+      "allows_empty": false,
+      "group": "tools",
+      "title": "Picture maker",
+      "help": "What Ollama models' generate_image tool makes pictures with. ComfyUI must already be installed and running with the picture model; Obey Voice does not install it. Off, the tool tells the model picture making is off and how to turn it on.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "IMAGE_GENERATION",
+      "editable": true
+    },
+    {
+      "key": "image_workflow",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "tools",
+      "title": "Picture workflow",
+      "help": "A ComfyUI workflow saved in API format for generate_image, with {{prompt}}, {{width}}, {{height}} and {{seed}} where those go. Empty uses Z-Image Turbo.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "IMAGE_WORKFLOW",
       "editable": true
     },
     {

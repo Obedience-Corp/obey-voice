@@ -82,6 +82,10 @@
       "value": "",
       "source": "default"
     },
+    "comfyui_url": {
+      "value": "http://127.0.0.1:8188",
+      "source": "default"
+    },
     "compact_prompt": {
       "value": null,
       "source": "default"
@@ -216,6 +220,14 @@
     },
     "hosted_persona_sharing": {
       "value": "from_invite",
+      "source": "default"
+    },
+    "image_generation": {
+      "value": "off",
+      "source": "default"
+    },
+    "image_workflow": {
+      "value": "",
       "source": "default"
     },
     "input_device": {

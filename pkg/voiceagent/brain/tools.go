@@ -15,6 +15,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/imagegen"
 	"github.com/ollama/ollama/api"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
@@ -60,6 +61,8 @@ type toolSession struct {
 	viewImage func(context.Context, string) (string, bool, toolEnd)
 	// viewed is set once a view_image call of this turn recorded a picture.
 	viewed bool
+	// imageGen runs generate_image; nil where no picture maker is configured.
+	imageGen imagegen.Generator
 	// jobControl offers job_control. The stream loop handles the call; it
 	// never runs here.
 	jobControl bool
@@ -130,6 +133,9 @@ func (s *toolSession) tools() api.Tools {
 	tools := routerToolsForSession(s.routerPolicy, s.catalog, s.workerTiers, s.singleCall)
 	if s.viewImage != nil && s.routerPolicy != RouterToolsRouteOnly {
 		tools = append(tools, viewImageTool())
+	}
+	if s.imageGen != nil && s.routerPolicy != RouterToolsRouteOnly {
+		tools = append(tools, generateImageTool())
 	}
 	if s.jobControl && s.routerPolicy != RouterToolsRouteOnly {
 		tools = append(tools, jobControlTool())
@@ -229,6 +235,14 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 		s.viewed = s.viewed || recorded
 		observed = end.outcome(call, text)
 		return text
+	case generateImageToolName:
+		if s.imageGen == nil {
+			observed = failedToolOutcome(started.Summary, "generate_image is not available in this turn")
+			return "error: generate_image is not available in this turn"
+		}
+		text, end := generateImage(ctx, s.imageGen, workDir, call.Function.Arguments.ToMap())
+		observed = end.outcome(call, text)
+		return text
 	case "read_file":
 		text, end := toolReadFileFor(workDir, call.Function.Arguments.ToMap(), s.viewImage != nil)
 		observed = end.outcome(call, text)
@@ -259,6 +273,10 @@ func toolArgSummary(call api.ToolCall) string {
 	case "web_search":
 		if q, _ := args["query"].(string); q != "" {
 			return q
+		}
+	case generateImageToolName:
+		if p, _ := args["prompt"].(string); p != "" {
+			return p
 		}
 	case "fetch_url":
 		if u, _ := args["url"].(string); u != "" {

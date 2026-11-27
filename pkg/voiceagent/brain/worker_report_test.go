@@ -337,7 +337,7 @@ func TestReportDuringTheSaveBeforeACallKeepsItFromRunning(t *testing.T) {
 // Once a job reports, no summary is asked for: the next request is the
 // answer, sized against the prompt limit as it stands.
 func TestReportSkipsTheContextSummary(t *testing.T) {
-	payload := "Finding: " + strings.Repeat("tool detail ", 550)
+	payload := "Finding: " + strings.Repeat("tool detail ", 530)
 	h := newSteerHarness(t, nil, func(h *steerHarness, n int, req api.ChatRequest) (api.ChatResponse, int) {
 		if n <= 3 {
 			return toolResponse([]api.ToolCall{readCallID("call", "big-"+string(rune('0'+n))+".txt")}), 0
@@ -453,7 +453,7 @@ func TestReportedJobAnswersPastTheSummaryThreshold(t *testing.T) {
 // A summary already sent when the report is accepted that comes back empty
 // does not fail the job: the report round answers.
 func TestEmptySummaryAfterAReportGoesToTheReportRound(t *testing.T) {
-	payload := "Finding: " + strings.Repeat("tool detail ", 550)
+	payload := "Finding: " + strings.Repeat("tool detail ", 530)
 	h := newSteerHarness(t, nil, func(h *steerHarness, n int, req api.ChatRequest) (api.ChatResponse, int) {
 		switch {
 		case n <= 3:
