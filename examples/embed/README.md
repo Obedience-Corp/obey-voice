@@ -113,7 +113,12 @@ Limits to know before building on it:
   addressed after the speaker stops, and recognition runs on everything the
   microphone hears. It is not an acoustic wake word.
 - A name the recogniser misspells is not matched. Pick a name it transcribes
-  reliably, and add the misspellings you see as aliases.
+  reliably, and add the misspellings you see as aliases. With Parakeet you can
+  also set `acoustic_name_enabled`: a keyword model then listens for the same
+  names, and an utterance that opens with a misspelled name is let through.
+  It also lets through what that model mishears at the start of an utterance,
+  so read [the measurements](../../docs/voice/acoustic-obey.md#other-names-for-embedding-programs)
+  and measure your own name first.
 - Typed turns (`SendText`) are never gated.
 - With finalized audio input (`Options.Input` or `InputFactory`) the gate
   depends on the native policy the host binds. In conversation mode it is not
