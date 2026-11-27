@@ -269,6 +269,10 @@ type Config struct {
 	// falls back to the server's model default — which silently truncates
 	// long prompts from the top, eating the system prompt first.
 	OllamaNumCtx int `mapstructure:"ollama_num_ctx"`
+	// OllamaNumParallel is how many requests the Ollama server runs at once
+	// for one model (its OLLAMA_NUM_PARALLEL). A live request takes a slot
+	// from a background job's request only when every slot is in use.
+	OllamaNumParallel int `mapstructure:"ollama_num_parallel"`
 	// OllamaResponseTokens bounds what one round of a foreground response
 	// generates: its request, a repair and any continuation. Each tool round
 	// starts with the full amount. Zero uses the default; workers retain their
