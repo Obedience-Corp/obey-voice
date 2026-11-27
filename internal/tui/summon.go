@@ -14,12 +14,11 @@ import (
 // summon but the machine cannot host it safely (D5 fails closed).
 const nameSummonOffMessage = "Name summon is on but the voice front end is off — leaving it off this session so playback cannot summon the agent. See obey-voice doctor."
 
-// summonGate is this session's name summon: the wake words a finalized
-// transcript must open with, and the flag that stands the whole thing down
-// while the talk key owns the turn.
+// summonGate is this session's name summon: the library gate that matches the
+// wake words, and the flag that stands it down while the talk key owns the
+// turn.
 type summonGate struct {
-	matcher summon.Matcher
-	agent   string
+	gate *summon.Gate
 	// keyTurn is shared with the pipeline goroutine that evaluates the gate,
 	// which is why it is atomic and not a plain bool on the model.
 	keyTurn *atomic.Bool
@@ -27,29 +26,29 @@ type summonGate struct {
 
 // veto is the pipeline's AddressGate. An empty string lets the turn run.
 func (g *summonGate) veto(text string) string {
-	if g.keyTurn.Load() || g.matcher.Addressed(text) {
+	if g.keyTurn.Load() {
 		return ""
 	}
-	return "Not addressed to " + g.agent + " — ignored: “" + excerpt(text, 48) + "”"
+	return g.gate.Veto(text)
 }
 
 // names renders the wake words for the activity panel.
 func (g *summonGate) names() string {
-	return strings.Join(g.matcher.Names(), ", ")
+	return strings.Join(g.gate.Names(), ", ")
 }
 
 // addressGate builds this session's name summon and returns the pipeline hook.
 // Nil when the persona has no name to answer to: a matcher with no wake words
 // matches nothing, and installing it would silently swallow every utterance.
 func (m *conversationModel) addressGate(cfg *config.Config) func(string) string {
-	matcher := summon.NewMatcher(m.agentName, cfg.NameSummonAliases)
-	if len(matcher.Names()) == 0 {
+	gate, err := summon.NewGate(m.agentName, cfg.NameSummonAliases)
+	if err != nil {
 		return nil
 	}
 	if m.talkKeyTurn == nil {
 		m.talkKeyTurn = new(atomic.Bool)
 	}
-	m.nameSummon = &summonGate{matcher: matcher, agent: m.agentName, keyTurn: m.talkKeyTurn}
+	m.nameSummon = &summonGate{gate: gate, keyTurn: m.talkKeyTurn}
 	return m.nameSummon.veto
 }
 
@@ -88,14 +87,4 @@ func (a *App) installNameSummon(rt *ConversationRuntime) {
 	}
 	rt.Pipeline.AddressGate = gate
 	a.conversation.appendActivity("name summon", a.conversation.nameSummon.names(), 0)
-}
-
-// excerpt shortens text for a one-line message, counting runes so a multi-byte
-// transcript is not cut mid-character.
-func excerpt(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
-		return text
-	}
-	return string(runes[:limit-1]) + "…"
 }

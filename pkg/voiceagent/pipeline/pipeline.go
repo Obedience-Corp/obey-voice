@@ -281,8 +281,13 @@ type Pipeline struct {
 	// AddressGate, when set, may veto a voice turn after transcription because
 	// the utterance was not addressed to the agent. Evaluated before
 	// SpeakerGate. A non-empty reason drops the turn the same way SpeakerGate
-	// does. Installed per session by the TUI, never by serve: a remote client
+	// does. voiceagent.New installs summon.Gate here for name_summon_enabled
+	// unless Options.ExternalAddressing is set. The TUI sets that and installs
+	// its own per session; serve sets it and installs none: a remote client
 	// that sent voice_start addressed the agent by definition.
+	//
+	// Not consulted for handoffs between agents within one message, nor for a
+	// native-audio conversation.
 	AddressGate func(text string) (rejectReason string)
 	// CurrentSpeaker returns the stable live speaker id (speaker-1) for the
 	// in-flight user turn when live labels are active. Optional; nil/empty

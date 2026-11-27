@@ -92,7 +92,7 @@ func TestNamesIsACopy(t *testing.T) {
 // Every documented filler has to work, or the docs are lying about the list.
 func TestEveryFillerIsAccepted(t *testing.T) {
 	m := NewMatcher("Obey", nil)
-	for _, filler := range Fillers {
+	for _, filler := range defaultFillers {
 		if !m.Addressed(filler + " obey, status") {
 			t.Errorf("filler %q was not accepted", filler)
 		}

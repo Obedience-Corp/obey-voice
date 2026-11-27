@@ -859,6 +859,9 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 		TTSFallback: ttsSet.Fallback,
 		Player:      fanout,
 		Logf:        func(format string, args ...any) { fmt.Fprintf(diag, format+"\n", args...) },
+		// A remote client that sent voice_start addressed the agent by
+		// definition, so serve never gates on the name.
+		ExternalAddressing: true,
 	}
 
 	var ingress *audio.Ingress

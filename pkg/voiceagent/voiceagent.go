@@ -29,6 +29,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 )
@@ -48,6 +49,9 @@ type Agent struct {
 	mu         sync.Mutex
 	cancelTurn context.CancelFunc
 	turnSeq    uint64
+
+	// nameSummon is the gate New installed; nil when name summon is off.
+	nameSummon *summon.Gate
 }
 
 // Options configures New. Every provider field is optional: nil means "build it
@@ -107,6 +111,22 @@ type Options struct {
 	// speak. Both are false for a full voice agent.
 	TextOnly bool
 	Silent   bool
+
+	// ExternalAddressing says the host decides which utterances are meant for
+	// the agent, so New must not act on name_summon_enabled. Set it when the
+	// host installs its own AddressGate or AdmitInput after New, or when every
+	// utterance that reaches the agent is an address by construction, as with
+	// a remote client that has to press a button to send speech.
+	//
+	// Left false, a config with name_summon_enabled gets the gate installed
+	// (see Agent.NameSummon), and New fails if it cannot be installed safely.
+	ExternalAddressing bool
+
+	// NameSummonFollowUp keeps the name summon gate open this long after each
+	// reply, so the answer to a question the agent just asked does not need
+	// the name again. Zero is off. See summon.WithFollowUp for how the window
+	// is measured. Rejected when New would install no gate.
+	NameSummonFollowUp time.Duration
 
 	// Env describes the machine the agent tells the model it is running on. A
 	// zero Env falls back to the host, which is what the CLI wants. A server
@@ -203,6 +223,10 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		}
 	}
 	cfg := opts.Config
+	nameGate, err := newNameSummonGate(cfg, opts)
+	if err != nil {
+		return nil, nil, err
+	}
 	logf := opts.Logf
 	if logf == nil {
 		logf = func(string, ...any) {}
@@ -514,5 +538,9 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	cleanups = append(cleanups, jobs.Close)
 	cleanups = append(cleanups, func() { _ = agency.CloseWork() })
 
-	return &Agent{Pipeline: p}, cleanup, nil
+	if nameGate != nil {
+		cleanups = append(cleanups, installNameSummon(p, opts.Events, nameGate, opts.NameSummonFollowUp))
+	}
+
+	return &Agent{Pipeline: p, nameSummon: nameGate}, cleanup, nil
 }

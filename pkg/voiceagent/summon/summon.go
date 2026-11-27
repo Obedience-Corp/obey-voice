@@ -13,9 +13,15 @@ import (
 	"unicode/utf8"
 )
 
-// Fillers are the throwaway words people put in front of a name. Exported so
-// the docs, the tests and the matcher all quote one list.
-var Fillers = []string{"hey", "ok", "okay", "hi", "hello", "yo"}
+// defaultFillers are the throwaway words people put in front of a name.
+var defaultFillers = []string{"hey", "ok", "okay", "hi", "hello", "yo"}
+
+// DefaultFillers returns the fillers a matcher accepts unless it is given its
+// own. It is a copy: another package cannot change what every matcher in the
+// process answers to.
+func DefaultFillers() []string {
+	return slices.Clone(defaultFillers)
+}
 
 // nameBoundary is the punctuation that may close a name. Anything else glued to
 // it is a different word: "obeying the rules" is not an address.
@@ -28,6 +34,8 @@ type Matcher struct {
 	// names is normalized and sorted longest first, so "uncle fu" is tried
 	// before the "uncle" that is also derived from it.
 	names []string
+	// fillers replaces defaultFillers when set, normalized like names.
+	fillers []string
 }
 
 // NewMatcher builds the table for agentName plus aliases. A multi-word display
@@ -54,6 +62,19 @@ func NewMatcher(agentName string, aliases []string) Matcher {
 		return cmp.Or(cmp.Compare(len(b), len(a)), cmp.Compare(a, b))
 	})
 	return Matcher{names: names}
+}
+
+// WithFillers returns a copy of m that accepts these words in front of a name
+// instead of the default list, for a product in another language or one that
+// wants none. An empty list means a name must open the utterance bare.
+func (m Matcher) WithFillers(fillers []string) Matcher {
+	m.fillers = make([]string, 0, len(fillers))
+	for _, filler := range fillers {
+		if word := normalizeName(filler); word != "" && !slices.Contains(m.fillers, word) {
+			m.fillers = append(m.fillers, word)
+		}
+	}
+	return m
 }
 
 // normalizeName is the spelling used by both the single-persona matcher and
@@ -85,7 +106,11 @@ func (m Matcher) Addressed(text string) bool {
 	}
 	// Exactly one filler, and nothing else, may stand in front of the name:
 	// "hey obey" addresses the agent, "hey there obey" is talk about it.
-	rest, ok := cutFiller(body)
+	fillers := defaultFillers
+	if m.fillers != nil {
+		fillers = m.fillers
+	}
+	rest, ok := cutFiller(body, fillers)
 	return ok && m.startsWithName(rest)
 }
 
@@ -100,8 +125,8 @@ func (m Matcher) startsWithName(body string) bool {
 
 // cutFiller removes one leading filler and returns what follows. The filler
 // must be a word of its own — "hidden" does not begin with the filler "hi".
-func cutFiller(body string) (string, bool) {
-	for _, filler := range Fillers {
+func cutFiller(body string, fillers []string) (string, bool) {
+	for _, filler := range fillers {
 		consumed, ok := matchPrefix(body, normalizeName(filler))
 		if !ok || consumed == len(body) {
 			continue
