@@ -90,6 +90,8 @@ var envBindings = map[string]string{
 	"voice_work_narration":        "VOICE_WORK_NARRATION",
 	"voice_failed_route_repair":   "VOICE_FAILED_ROUTE_REPAIR",
 	"tool_command_timeout":        "TOOL_COMMAND_TIMEOUT",
+	"comfyui_url":                 "COMFYUI_URL",
+	"image_workflow":              "IMAGE_WORKFLOW",
 	"persona":                     "PERSONA",
 	"compact_prompt":              "COMPACT_PROMPT",
 	"active_persona":              "ACTIVE_PERSONA",

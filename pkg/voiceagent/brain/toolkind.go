@@ -25,7 +25,7 @@ func KindFor(name string) ToolKind {
 		return KindRead
 	case "list_files":
 		return KindListDir
-	case "write_file":
+	case "write_file", generateImageToolName:
 		return KindWrite
 	case "run_command":
 		return KindExecute

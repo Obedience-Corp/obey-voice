@@ -559,6 +559,16 @@ func toolKeys() []KeySpec {
 			Help: "How long one command may run before it is killed. Long builds need a bigger number.",
 		},
 		{
+			Key: "comfyui_url", Type: TypeString, Default: "",
+			Group: GroupTools, Title: "Picture maker",
+			Help: "A ComfyUI server, such as http://127.0.0.1:8188, that local models make pictures on with a generate_image tool. Empty turns the tool off.",
+		},
+		{
+			Key: "image_workflow", Type: TypeString, Default: "",
+			Group: GroupTools, Title: "Picture workflow",
+			Help: "A ComfyUI workflow saved in API format for generate_image, with {{prompt}}, {{width}}, {{height}} and {{seed}} where those go. Empty uses Z-Image Turbo.",
+		},
+		{
 			Key: "skills_enabled", Type: TypeBool, Default: true,
 			Group: GroupTools, Title: "Skills",
 			Help: "Loads SKILL.md instruction packs into her prompt. Ollama only.",

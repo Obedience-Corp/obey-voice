@@ -66,6 +66,7 @@ func (o *OllamaBrain) turnToolSession(ctx context.Context, opts StreamOptions) *
 		s.viewImage = o.viewImage
 	}
 	s.jobControl = o.offersJobControl(opts)
+	s.imageGen = imageGenerator(o.cfg)
 	return s
 }
 

@@ -351,6 +351,12 @@ type Config struct {
 	// ToolCommandTimeout bounds one local run_command invocation in seconds.
 	// The brain turn timeout remains the outer bound for a complete turn.
 	ToolCommandTimeout int `mapstructure:"tool_command_timeout"`
+	// ComfyUIURL is the ComfyUI server generate_image makes pictures on.
+	// Empty offers no generate_image tool.
+	ComfyUIURL string `mapstructure:"comfyui_url"`
+	// ImageWorkflow is a ComfyUI API-format graph file for generate_image.
+	// Empty uses the built-in graph.
+	ImageWorkflow string `mapstructure:"image_workflow"`
 	// RemoteToolsEnabled gates tool calls for turns triggered over the
 	// network (obey-voice serve). Deliberately separate from
 	// voice_tools_enabled: remote turns default-deny tools regardless of
