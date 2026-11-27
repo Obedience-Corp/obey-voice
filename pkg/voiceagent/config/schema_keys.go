@@ -365,6 +365,11 @@ func brainKeys() []KeySpec {
 			Help: "How much of this conversation the talk model sees (8k / 16k / 32k). 32k is a real session. 0 uses the server's size and can drop the persona from the top.",
 		},
 		{
+			Key: "ollama_num_parallel", Type: TypeInt, Default: 1, Unit: "requests", Min: num(1), Max: num(64),
+			Group: GroupBrain, Title: "Requests per model",
+			Help: "How many requests the Ollama server runs at once for one model; match its OLLAMA_NUM_PARALLEL (1 unless set). When background work holds every slot, a reply takes one and the work resumes after it.",
+		},
+		{
 			Key: "ollama_response_tokens", Type: TypeInt, Default: 4096, Unit: "tokens", Min: num(1), Max: num(131072),
 			Group: GroupBrain, Title: "Maximum response size",
 			Help: "Limits what a foreground Ollama model request generates, including reasoning. Each tool round gets the full amount again. Stops runaway generation without automatically continuing. Workers use their own budgets.",

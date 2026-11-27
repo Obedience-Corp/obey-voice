@@ -76,6 +76,7 @@ var envBindings = map[string]string{
 	"ollama_host":                 "OLLAMA_HOST",
 	"ollama_response_tokens":      "OLLAMA_RESPONSE_TOKENS",
 	"ollama_num_ctx":              "OLLAMA_NUM_CTX",
+	"ollama_num_parallel":         "OLLAMA_NUM_PARALLEL",
 	"voice_worker_num_ctx":        "VOICE_WORKER_NUM_CTX",
 	"ollama_num_batch":            "OLLAMA_NUM_BATCH",
 	"ollama_keep_alive":           "OLLAMA_KEEP_ALIVE",
