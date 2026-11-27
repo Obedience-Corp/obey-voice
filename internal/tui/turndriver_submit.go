@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/internal/app"
+	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -154,13 +155,23 @@ func (m conversationModel) escStopsTurn() bool {
 func (m *conversationModel) stopTurnFromEsc() {
 	m.cancelTurn(pipeline.StopSource{Name: "escape"})
 	m.appendActivity("turn", "stopped with Esc", 0)
+	m.escStatus = "Stopped with Esc"
 	if m.backgroundTurn {
 		// The result stays pending; without the hold it would start again at once.
 		m.backgroundHeld = true
-		m.setStatus("Stopped with Esc. The result waits for your next message.", false)
+		m.escStatus = "Stopped with Esc. The result waits for your next message."
+	}
+	m.settleEscStop()
+}
+
+// settleEscStop shows the stop and ends the thinking indicator: nothing follows
+// an Esc stop to clear them, and the stopped turn's last events can undo both.
+func (m *conversationModel) settleEscStop() {
+	if m.escStatus == "" {
 		return
 	}
-	m.setStatus("Stopped with Esc", false)
+	m.setVoiceMode(anim.ModeIdle)
+	m.setStatus(m.escStatus, false)
 }
 
 // stopRunnerPlayback names the caller when the runner records it. A runner
@@ -314,6 +325,8 @@ func (m *conversationModel) submitText(text string) tea.Cmd {
 
 func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
+	m.settleEscStop()
+	m.escStatus = ""
 	m.pendingPause = false
 	m.backgroundPauseGeneration++
 	m.backgroundPauseAcknowledged = false
@@ -435,6 +448,8 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
 	m.backgroundTurn = false
+	m.settleEscStop()
+	m.escStatus = ""
 	m.keyOwnsTurn(false)
 	held := m.holdRefusedDraft(msg)
 	// Barge-in during a text turn (agent speaking after a prior typed message)

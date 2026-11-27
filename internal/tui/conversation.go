@@ -163,7 +163,9 @@ type conversationModel struct {
 	backgroundTurn bool
 	// backgroundHeld keeps a result stopped with Esc from being delivered
 	// again until the user's next turn.
-	backgroundHeld            bool
+	backgroundHeld bool
+	// escStatus is the stop notice to restore once the stopped turn has drained.
+	escStatus                 string
 	pendingPause              bool
 	backgroundPauseGeneration uint64
 	// backgroundPauseAcknowledged keeps recovery from requesting the same

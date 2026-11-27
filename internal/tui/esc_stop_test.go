@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
+	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -372,5 +373,34 @@ func TestEscOnAnOrdinaryTurnDoesNotHoldAPendingResult(t *testing.T) {
 	m, _ = m.Update(textTurnDoneMsg{err: context.Canceled, input: "summarize the notes"})
 	if m.turnState != turnTextRunning || !m.backgroundTurn {
 		t.Fatalf("state=%d delivery=%v; want the pending result delivered", m.turnState, m.backgroundTurn)
+	}
+}
+
+// Nothing follows an Esc stop, so the stop itself ends the thinking indicator,
+// and the stopped turn's last events do not leave it or the notice changed.
+func TestEscStopEndsTheThinkingIndicator(t *testing.T) {
+	m, _, _ := textTurnRunning(t)
+	m.setVoiceMode(anim.ModeThinking)
+
+	m, _ = esc(m)
+	if m.voiceMode != anim.ModeIdle || m.status != "Stopped with Esc" {
+		t.Fatalf("after Esc: mode=%v status=%q", m.voiceMode, m.status)
+	}
+	m.setVoiceMode(anim.ModeThinking)
+	m.handleEvent(events.TurnInterrupted{Reason: "canceled"})
+	m.setVoiceMode(anim.ModeThinking)
+	m, _ = m.Update(textTurnDoneMsg{err: context.Canceled, input: "summarize the notes"})
+	if m.voiceMode != anim.ModeIdle || m.status != "Stopped with Esc" {
+		t.Fatalf("after the drain: mode=%v status=%q", m.voiceMode, m.status)
+	}
+
+	m, cmd := typeAndEnter(m, "next")
+	if cmd == nil {
+		t.Fatal("next turn did not start")
+	}
+	m.setStatus("working", false)
+	m, _ = m.Update(textTurnDoneMsg{input: "next"})
+	if m.status == "Stopped with Esc" {
+		t.Fatal("the stop notice came back after a later turn")
 	}
 }

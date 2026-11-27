@@ -406,6 +406,7 @@ func (m *conversationModel) recoverTurnState() tea.Cmd {
 		m.pendingMoved = false
 		m.pendingCompact = false
 		m.backgroundTurn = false
+		m.escStatus = ""
 		m.turnState = turnIdle
 		if m.canCancelVoice != nil {
 			m.canCancelVoice.Store(false)

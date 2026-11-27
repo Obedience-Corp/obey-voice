@@ -34,6 +34,15 @@ demo-context-meter: build
         TERM=xterm-256color COLORTERM=truecolor vhs demos/context-meter.tape
     just _optimize-demo-gif demos/context-meter.gif
 
+# Esc stops a running reply in the real TUI, using the loopback fixture.
+demo-esc-stop: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env -u NO_COLOR -u CLICOLOR CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor vhs demos/esc-stop.tape
+    just _optimize-demo-gif demos/esc-stop.gif
+    ls -lh demos/esc-stop.gif
+
 # Persona form: inline work and the Job control row, on a disposable persona.
 demo-persona-work-rows: build
     #!/usr/bin/env bash
