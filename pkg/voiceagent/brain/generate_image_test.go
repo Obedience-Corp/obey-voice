@@ -52,17 +52,19 @@ func TestGenerateImageIsOfferedOnlyWhereItCanRun(t *testing.T) {
 	}
 }
 
-func TestTurnsOfferGenerateImageWhenComfyUIIsSet(t *testing.T) {
+func TestTurnsAlwaysOfferGenerateImage(t *testing.T) {
 	direct := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect}
-	off := &OllamaBrain{cfg: &config.Config{}}
-	if hasTool(off.turnToolSession(t.Context(), direct).tools(), generateImageToolName) {
-		t.Fatal("offered with comfyui_url empty")
+	off := &OllamaBrain{cfg: &config.Config{ComfyUIURL: "http://127.0.0.1:1"}}
+	sess := off.turnToolSession(t.Context(), direct)
+	if !hasTool(sess.tools(), generateImageToolName) {
+		t.Fatal("not offered with the picture maker off; the model could not learn why")
 	}
-	cfg := &config.Config{ComfyUIURL: "http://127.0.0.1:1"}
+	result := sess.execute(t.Context(), t.TempDir(), toolCallFor(generateImageToolName, map[string]any{"prompt": "a fox"}))
+	if !strings.HasPrefix(result, "error: ") || !strings.Contains(result, "picture making is off") || !strings.Contains(result, "obey-voice config set image_generation comfyui") {
+		t.Fatalf("result with the picture maker off = %q", result)
+	}
+	cfg := &config.Config{ImageGeneration: config.ImageGenerationComfyUI, ComfyUIURL: "http://127.0.0.1:1"}
 	live := &OllamaBrain{cfg: cfg}
-	if !hasTool(live.turnToolSession(t.Context(), direct).tools(), generateImageToolName) {
-		t.Fatal("not offered to a direct live turn")
-	}
 	if hasTool(live.turnToolSession(t.Context(), StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly}).tools(), generateImageToolName) {
 		t.Fatal("offered to a route-only live turn")
 	}
@@ -73,14 +75,22 @@ func TestTurnsOfferGenerateImageWhenComfyUIIsSet(t *testing.T) {
 }
 
 func TestImageGeneratorFollowsConfig(t *testing.T) {
-	if imageGenerator(&config.Config{}) != nil {
-		t.Fatal("generator built with no ComfyUI address")
+	cases := []struct {
+		name string
+		cfg  *config.Config
+		want string
+	}{
+		{"off", &config.Config{ComfyUIURL: "http://127.0.0.1:1"}, "picture making is off"},
+		{"bad address", &config.Config{ImageGeneration: "comfyui", ComfyUIURL: "not a url"}, "config set comfyui_url"},
 	}
-	if imageGenerator(&config.Config{ComfyUIURL: "not a url"}) != nil {
-		t.Fatal("generator built from an unusable address")
+	for _, tc := range cases {
+		_, err := imageGenerator(tc.cfg).Generate(t.Context(), imagegen.Request{Prompt: "x"})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want it to say %q", tc.name, err, tc.want)
+		}
 	}
-	if imageGenerator(&config.Config{ComfyUIURL: "http://127.0.0.1:1"}) == nil {
-		t.Fatal("no generator for a configured address")
+	if _, ok := imageGenerator(&config.Config{ImageGeneration: "ComfyUI", ComfyUIURL: "http://127.0.0.1:1"}).(*imagegen.ComfyUI); !ok {
+		t.Fatal("no ComfyUI generator with ComfyUI selected")
 	}
 }
 

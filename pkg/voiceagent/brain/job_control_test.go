@@ -157,7 +157,7 @@ func TestJobControlHasAFixedPlaceInTheLiveRequest(t *testing.T) {
 		}
 		lists = append(lists, strings.Join(names, " "))
 	}
-	want := "list_files read_file write_file run_command web_search fetch_url view_image job_control start_background_work"
+	want := "list_files read_file write_file run_command web_search fetch_url view_image generate_image job_control start_background_work"
 	if lists[0] != want || lists[1] != want {
 		t.Fatalf("tool lists = %q, want %q both times", lists, want)
 	}

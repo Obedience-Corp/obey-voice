@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func generateImageTool() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        generateImageToolName,
-			Description: "Create a new picture from a description and save it as a PNG in your work directory. Use it when the user asks you to draw, make, generate or send a picture of something that does not exist as a file. Describe the picture in detail: subject, setting, style, lighting. The result gives the file's path and the exact Markdown line that shows it in the chat; put that line in your reply. A picture can take minutes to make.",
+			Description: "Create a new picture from a description and save it as a PNG in your work directory. Use it when the user asks you to draw, make, generate or send a picture of something that does not exist as a file. Describe the picture in detail: subject, setting, style, lighting. The result gives the file's path and the exact Markdown line that shows it in the chat; put that line in your reply. A picture can take minutes to make. If it fails, tell the user the reason it gives; never claim a picture you did not get.",
 			Parameters: api.ToolFunctionParameters{
 				Type:     "object",
 				Required: []string{"prompt"},
@@ -42,15 +43,31 @@ func generateImageTool() api.Tool {
 	}
 }
 
-// imageGenerator is the picture maker the config names, or nil when none is
-// configured or the address is unusable.
+// pictureMakerOff is what generate_image answers while no picture maker is
+// selected, so the model can tell the user what to set up instead of
+// guessing why it cannot make pictures.
+const pictureMakerOff = "picture making is off in Obey Voice (image_generation: off). " +
+	"It needs a ComfyUI server running with an image model; Obey Voice does not install either. " +
+	"Once ComfyUI is running, turn it on with `obey-voice config set image_generation comfyui` " +
+	"(and `obey-voice config set comfyui_url <address>` if it is not at " + config.DefaultComfyUIURL + "), " +
+	"then start a new conversation"
+
+// unavailable answers every request with why no picture can be made.
+type unavailable struct{ reason string }
+
+func (u unavailable) Generate(context.Context, imagegen.Request) ([]byte, error) {
+	return nil, errors.New(u.reason)
+}
+
+// imageGenerator is the picture maker the config selects. With none selected,
+// or an unusable address, it is one that says why.
 func imageGenerator(cfg *config.Config) imagegen.Generator {
-	if cfg == nil || strings.TrimSpace(cfg.ComfyUIURL) == "" {
-		return nil
+	if config.ImageGenerationOf(cfg) != config.ImageGenerationComfyUI {
+		return unavailable{pictureMakerOff}
 	}
 	gen, err := imagegen.NewComfyUI(cfg.ComfyUIURL, cfg.ImageWorkflow)
 	if err != nil {
-		return nil
+		return unavailable{err.Error() + "; fix it with `obey-voice config set comfyui_url <address>`"}
 	}
 	return gen
 }

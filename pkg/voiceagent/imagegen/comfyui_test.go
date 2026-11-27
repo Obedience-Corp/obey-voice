@@ -180,7 +180,7 @@ func TestGenerateNamesAMissingModelWithoutTheInstalledList(t *testing.T) {
 	f := &fakeComfy{refuse: `{"error":{"type":"prompt_outputs_failed_validation","message":"Prompt outputs failed validation"},"node_errors":{"1":{"class_type":"UNETLoader","errors":[{"type":"value_not_in_list","message":"Value not in list","details":"unet_name: 'fake_model.safetensors' not in ['other_a.safetensors', 'other_b.safetensors']"}]}}}`}
 	c := serve(t, f)
 	_, err := c.Generate(t.Context(), Request{Prompt: "x", Width: 8, Height: 8})
-	if err == nil || !strings.Contains(err.Error(), "'fake_model.safetensors' is not installed") || strings.Contains(err.Error(), "other_a") {
+	if err == nil || !strings.Contains(err.Error(), "'fake_model.safetensors' is not installed (put it in ComfyUI's models/diffusion_models folder)") || strings.Contains(err.Error(), "other_a") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -231,7 +231,7 @@ func TestGenerateSaysWhenComfyUIIsNotRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = c.Generate(t.Context(), Request{Prompt: "x", Width: 8, Height: 8})
-	if err == nil || !strings.Contains(err.Error(), "is not answering") {
+	if err == nil || !strings.Contains(err.Error(), "is not answering") || !strings.Contains(err.Error(), "start ComfyUI there") {
 		t.Fatalf("err = %v", err)
 	}
 }

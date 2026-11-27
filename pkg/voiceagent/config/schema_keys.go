@@ -559,9 +559,15 @@ func toolKeys() []KeySpec {
 			Help: "How long one command may run before it is killed. Long builds need a bigger number.",
 		},
 		{
-			Key: "comfyui_url", Type: TypeString, Default: "",
-			Group: GroupTools, Title: "Picture maker",
-			Help: "A ComfyUI server, such as http://127.0.0.1:8188, that local models make pictures on with a generate_image tool. Empty turns the tool off.",
+			Key: "image_generation", Type: TypeEnum, Default: ImageGenerationOff, Enum: ImageGenerationValues(),
+			EnumLabels: map[string]string{ImageGenerationOff: "Off", ImageGenerationComfyUI: "ComfyUI"},
+			Group:      GroupTools, Title: "Picture maker",
+			Help: "What Ollama models' generate_image tool makes pictures with. ComfyUI must already be installed and running with the picture model; Obey Voice does not install it. Off, the tool tells the model picture making is off and how to turn it on.",
+		},
+		{
+			Key: "comfyui_url", Type: TypeString, Default: DefaultComfyUIURL,
+			Group: GroupTools, Title: "ComfyUI address",
+			Help: "Where ComfyUI is running, when it is the picture maker.",
 		},
 		{
 			Key: "image_workflow", Type: TypeString, Default: "",

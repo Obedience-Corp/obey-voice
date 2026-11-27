@@ -198,7 +198,7 @@ func refusal(status int, reply queueReply, data []byte) error {
 		for _, e := range node.Errors {
 			detail := e.Details
 			if i := strings.Index(detail, " not in ["); i >= 0 {
-				detail = detail[:i] + " is not installed"
+				detail = detail[:i] + " is not installed" + modelFolderHint(detail[:i])
 			}
 			problems = append(problems, strings.TrimSpace(node.ClassType+": "+e.Message+": "+detail))
 		}
@@ -218,6 +218,27 @@ func refusal(status int, reply queueReply, data []byte) error {
 		problems = append(problems, strings.TrimSpace(clip(string(data), 300)))
 	}
 	return fmt.Errorf("ComfyUI refused the image workflow (HTTP %d): %s", status, strings.Join(problems, "; "))
+}
+
+// modelFolders maps a loader input to the ComfyUI models folder its file
+// belongs in.
+var modelFolders = map[string]string{
+	"unet_name":  "diffusion_models",
+	"clip_name":  "text_encoders",
+	"vae_name":   "vae",
+	"ckpt_name":  "checkpoints",
+	"lora_name":  "loras",
+	"clip_name1": "text_encoders",
+	"clip_name2": "text_encoders",
+}
+
+// modelFolderHint names the folder for a "input: 'file'" detail.
+func modelFolderHint(detail string) string {
+	input, _, _ := strings.Cut(detail, ":")
+	if folder, ok := modelFolders[strings.TrimSpace(input)]; ok {
+		return " (put it in ComfyUI's models/" + folder + " folder)"
+	}
+	return ""
 }
 
 type pictureRef struct {
@@ -387,7 +408,7 @@ func (c *ComfyUI) do(ctx context.Context, method, path string, body []byte) ([]b
 		if ctx.Err() != nil {
 			return nil, 0, ctx.Err()
 		}
-		return nil, 0, fmt.Errorf("ComfyUI at %s is not answering: %w", c.base, err)
+		return nil, 0, fmt.Errorf("ComfyUI at %s is not answering (%w); start ComfyUI there, or point comfyui_url at where it runs", c.base, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPictureBytes+1))
