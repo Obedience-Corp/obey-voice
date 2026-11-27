@@ -33,5 +33,8 @@ control; other replacements use `af_heart` at speed 0.95.
 The accuracy benchmark adds deterministic noise at 10 dB SNR and reports all
 cases. The native smoke test checks stable controls plus silence, noise alone,
 cancellation, and silence immediately after each positive.
+`scripts/kws_bench` listens for other names with `-names "Juno,the computer"`;
+a case may then carry `"want_name"`. No clips for other names are checked in.
+
 Acoustic hits alone must never authorize a persona switch. Semantic intent is
 covered separately by the shared router tests and optional live classifier replay.
