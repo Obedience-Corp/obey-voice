@@ -162,7 +162,7 @@ func TestClaudeModelsAreReadOnFirstSettingsOpen(t *testing.T) {
 	}
 	var loaded tea.Msg
 	for _, msg := range flattenCmd(cmd) {
-		if m, ok := msg.(claudeModelsMsg); ok {
+		if m, ok := msg.(providerModelsMsg); ok {
 			loaded = m
 		}
 	}
@@ -179,7 +179,7 @@ func TestClaudeModelsAreReadOnFirstSettingsOpen(t *testing.T) {
 	opened, cmd = app.onSwitchScreen(switchScreenMsg(screenSettings))
 	app = opened.(App)
 	for _, msg := range flattenCmd(cmd) {
-		if _, ok := msg.(claudeModelsMsg); ok {
+		if _, ok := msg.(providerModelsMsg); ok {
 			t.Fatal("reopening Settings read the model list again")
 		}
 	}
