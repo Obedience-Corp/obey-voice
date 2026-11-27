@@ -52,6 +52,26 @@ func TestGenerateImageIsOfferedOnlyWhereItCanRun(t *testing.T) {
 	}
 }
 
+func TestTurnsOfferGenerateImageWhenComfyUIIsSet(t *testing.T) {
+	direct := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect}
+	off := &OllamaBrain{cfg: &config.Config{}}
+	if hasTool(off.turnToolSession(t.Context(), direct).tools(), generateImageToolName) {
+		t.Fatal("offered with comfyui_url empty")
+	}
+	cfg := &config.Config{ComfyUIURL: "http://127.0.0.1:1"}
+	live := &OllamaBrain{cfg: cfg}
+	if !hasTool(live.turnToolSession(t.Context(), direct).tools(), generateImageToolName) {
+		t.Fatal("not offered to a direct live turn")
+	}
+	if hasTool(live.turnToolSession(t.Context(), StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly}).tools(), generateImageToolName) {
+		t.Fatal("offered to a route-only live turn")
+	}
+	worker := &OllamaBrain{cfg: config.WorkerBrainConfig(cfg)}
+	if !hasTool(worker.turnToolSession(t.Context(), StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsLegacy}).tools(), generateImageToolName) {
+		t.Fatal("not offered to a worker brain built from the persona's config")
+	}
+}
+
 func TestImageGeneratorFollowsConfig(t *testing.T) {
 	if imageGenerator(&config.Config{}) != nil {
 		t.Fatal("generator built with no ComfyUI address")
@@ -64,10 +84,14 @@ func TestImageGeneratorFollowsConfig(t *testing.T) {
 	}
 }
 
-var imageLine = regexp.MustCompile(`(?m)^!\[[^\]]*\]\(([^)]+)\)$`)
+var imageLine = regexp.MustCompile(`(?m)^!\[[^\]]*\]\(<([^>]+)>\)$`)
 
 func TestGenerateImageSavesAPictureTheReplyCanAttach(t *testing.T) {
-	workDir := t.TempDir()
+	// A space and parentheses in the path must not break the attach line.
+	workDir := filepath.Join(t.TempDir(), "my work (1)")
+	if err := os.Mkdir(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	gen := &fakeGenerator{}
 	s := &toolSession{routerPolicy: RouterToolsLegacy, imageGen: gen}
 	result := s.execute(t.Context(), workDir, toolCallFor(generateImageToolName, map[string]any{

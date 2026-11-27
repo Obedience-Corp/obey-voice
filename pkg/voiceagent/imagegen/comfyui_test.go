@@ -24,6 +24,8 @@ type fakeComfy struct {
 	finishAfter int
 	failWith    string
 	refuse      string
+	// vanish leaves the graph out of the queue as well as the history.
+	vanish bool
 
 	mu       sync.Mutex
 	graph    map[string]any
@@ -72,6 +74,13 @@ func (f *fakeComfy) handler() http.Handler {
 		f.readFile = r.URL.Query().Get("filename") + "|" + r.URL.Query().Get("type")
 		f.mu.Unlock()
 		_, _ = w.Write(tinyPNG(f.t))
+	})
+	mux.HandleFunc("GET /queue", func(w http.ResponseWriter, r *http.Request) {
+		if f.vanish {
+			_, _ = io.WriteString(w, `{"queue_running":[],"queue_pending":[[2,"other-job",{}]]}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"queue_running":[[1,"job-1",{}]],"queue_pending":[]}`)
 	})
 	mux.HandleFunc("POST /queue", func(w http.ResponseWriter, r *http.Request) {
 		var body struct{ Delete []string }
@@ -251,8 +260,25 @@ func TestWorkflowFile(t *testing.T) {
 	if _, err := c.Generate(t.Context(), Request{Prompt: "a cat"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.graph["1"].(map[string]any)["inputs"].(map[string]any)["text"]; got != "style, a cat" {
+	f.mu.Lock()
+	got := f.graph["1"].(map[string]any)["inputs"].(map[string]any)["text"]
+	f.mu.Unlock()
+	if got != "style, a cat" {
 		t.Fatalf("text = %v", got)
+	}
+}
+
+func TestGenerateStopsWaitingWhenTheGraphIsDropped(t *testing.T) {
+	f := &fakeComfy{finishAfter: -1, vanish: true}
+	c := serve(t, f)
+	_, err := c.Generate(t.Context(), Request{Prompt: "x", Width: 8, Height: 8})
+	if err == nil || !strings.Contains(err.Error(), "dropped the image workflow") {
+		t.Fatalf("err = %v", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.reads != 2 {
+		t.Fatalf("history read %d times, want 2", f.reads)
 	}
 }
 

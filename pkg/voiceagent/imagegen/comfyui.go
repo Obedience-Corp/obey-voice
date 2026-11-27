@@ -240,6 +240,10 @@ type historyEntry struct {
 func (c *ComfyUI) wait(ctx context.Context, id string) (pictureRef, error) {
 	tick := time.NewTicker(pollEvery)
 	defer tick.Stop()
+	// missing counts reads in a row that found the graph neither in history
+	// nor in the queue. One can fall between the two reads as the graph
+	// finishes; two mean it was dropped, by a cleared queue or a restart.
+	missing := 0
 	for {
 		data, status, err := c.do(ctx, http.MethodGet, "/history/"+url.PathEscape(id), nil)
 		if err != nil {
@@ -269,6 +273,16 @@ func (c *ComfyUI) wait(ctx context.Context, id string) (pictureRef, error) {
 				}
 				return pictureRef{}, errors.New("the image workflow finished without producing a picture")
 			}
+		} else {
+			queued, err := c.queued(ctx, id)
+			if err != nil {
+				return pictureRef{}, err
+			}
+			if queued {
+				missing = 0
+			} else if missing++; missing == 2 {
+				return pictureRef{}, errors.New("ComfyUI dropped the image workflow before it finished: its queue was cleared or the server restarted")
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -276,6 +290,32 @@ func (c *ComfyUI) wait(ctx context.Context, id string) (pictureRef, error) {
 		case <-tick.C:
 		}
 	}
+}
+
+// queued reports whether id is running or waiting in ComfyUI's queue, whose
+// entries are [number, prompt_id, ...].
+func (c *ComfyUI) queued(ctx context.Context, id string) (bool, error) {
+	data, status, err := c.do(ctx, http.MethodGet, "/queue", nil)
+	if err != nil {
+		return false, err
+	}
+	if status != http.StatusOK {
+		return false, fmt.Errorf("ComfyUI queue: HTTP %d: %s", status, clip(string(data), 200))
+	}
+	var queue struct {
+		Running [][]json.RawMessage `json:"queue_running"`
+		Pending [][]json.RawMessage `json:"queue_pending"`
+	}
+	if err := json.Unmarshal(data, &queue); err != nil {
+		return false, fmt.Errorf("ComfyUI queue is not JSON: %w", err)
+	}
+	for _, item := range append(queue.Running, queue.Pending...) {
+		var got string
+		if len(item) > 1 && json.Unmarshal(item[1], &got) == nil && got == id {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // executionError is the exception message of an execution_error status

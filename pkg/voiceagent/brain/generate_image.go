@@ -84,7 +84,7 @@ func generateImage(ctx context.Context, gen imagegen.Generator, workDir string, 
 	if err := os.WriteFile(path, png, 0o644); err != nil {
 		return failWith("the picture was made but not saved: " + err.Error())
 	}
-	return fmt.Sprintf("Created %s (%dx%d PNG). To show it in the chat, put this line on its own line in your reply:\n![%s](%s)", path, size[0], size[1], generatedCaption(prompt), path), toolSucceeded()
+	return fmt.Sprintf("Created %s (%dx%d PNG). To show it in the chat, put this line on its own line in your reply:\n![%s](<%s>)", path, size[0], size[1], generatedCaption(prompt), path), toolSucceeded()
 }
 
 // pictureFileName is a short name from the prompt's first words and a random

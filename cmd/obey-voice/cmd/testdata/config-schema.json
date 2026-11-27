@@ -1350,6 +1350,23 @@
       "editable": true
     },
     {
+      "key": "ollama_num_parallel",
+      "type": "int",
+      "default": 1,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Requests per model",
+      "help": "How many requests the Ollama server runs at once for one model; match its OLLAMA_NUM_PARALLEL (1 unless set). When background work holds every slot, a reply takes one and the work resumes after it.",
+      "unit": "requests",
+      "min": 1,
+      "max": 64,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OLLAMA_NUM_PARALLEL",
+      "editable": true
+    },
+    {
       "key": "ollama_response_tokens",
       "type": "int",
       "default": 4096,
@@ -1789,6 +1806,20 @@
       "editable": true
     },
     {
+      "key": "comfyui_url",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "tools",
+      "title": "Picture maker",
+      "help": "A ComfyUI server, such as http://127.0.0.1:8188, that local models make pictures on with a generate_image tool. Empty turns the tool off.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "COMFYUI_URL",
+      "editable": true
+    },
+    {
       "key": "delegation_enabled",
       "type": "bool",
       "default": false,
@@ -1799,6 +1830,20 @@
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "image_workflow",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "tools",
+      "title": "Picture workflow",
+      "help": "A ComfyUI workflow saved in API format for generate_image, with {{prompt}}, {{width}}, {{height}} and {{seed}} where those go. Empty uses Z-Image Turbo.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "IMAGE_WORKFLOW",
       "editable": true
     },
     {

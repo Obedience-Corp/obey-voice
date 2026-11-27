@@ -82,6 +82,10 @@
       "value": "",
       "source": "default"
     },
+    "comfyui_url": {
+      "value": "",
+      "source": "default"
+    },
     "compact_prompt": {
       "value": null,
       "source": "default"
@@ -218,6 +222,10 @@
       "value": "from_invite",
       "source": "default"
     },
+    "image_workflow": {
+      "value": "",
+      "source": "default"
+    },
     "input_device": {
       "value": "",
       "source": "default"
@@ -312,6 +320,10 @@
     },
     "ollama_num_ctx": {
       "value": 32768,
+      "source": "default"
+    },
+    "ollama_num_parallel": {
+      "value": 1,
       "source": "default"
     },
     "ollama_response_tokens": {
