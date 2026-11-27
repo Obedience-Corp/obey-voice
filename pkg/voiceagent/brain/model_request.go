@@ -79,7 +79,7 @@ func (o *OllamaBrain) clientChat(ctx context.Context, req *api.ChatRequest, fn a
 	if modelRequestPurpose(ctx) != PurposeWarmup {
 		o.turnStarted.Store(true)
 	}
-	return observedChat(ctx, &o.requestObserver, o.client, req, fn)
+	return o.gatedChat(ctx, req, fn)
 }
 
 // errRequestPanicked ends the observation of a request whose response
