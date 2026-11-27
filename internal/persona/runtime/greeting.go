@@ -3,9 +3,9 @@ package personaruntime
 import (
 	"strings"
 
-	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/summon"
 )
 
 // A greeting uses the existing exact-control selection/revalidation boundary.
