@@ -99,8 +99,14 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	nativeConversation := metrics.input != nil && p.Native != nil && p.Native.Controls == "conversation"
 	// Name summon (D5). Ahead of the backchannel on purpose: speech meant for
 	// someone else in the room must not even get an "mm-hm" back.
-	if !isContinuation && !nativeConversation && p.AddressGate != nil {
-		if reason := p.AddressGate(text); reason != "" {
+	if !isContinuation && !nativeConversation && (p.AddressGate != nil || p.AcousticAddressGate != nil) {
+		var reason string
+		if p.AcousticAddressGate != nil {
+			reason = p.AcousticAddressGate(text, metrics.acousticName, metrics.acousticNameBy)
+		} else {
+			reason = p.AddressGate(text)
+		}
+		if reason != "" {
 			p.emit(events.Info{Message: reason})
 			turn.finish(TurnTimedOut)
 			return "", nil
@@ -445,6 +451,7 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 			case stt.KindFinalTranscript:
 				metrics.sttFinal = time.Now()
 				metrics.acousticName = te.AcousticName
+				metrics.acousticNameBy = te.AcousticNameBy
 				if fin, ok := event.(stt.FinalTranscript); ok {
 					metrics.recognized = fin.Recognized
 				}

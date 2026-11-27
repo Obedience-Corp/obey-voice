@@ -289,6 +289,15 @@ type Pipeline struct {
 	// Not consulted for handoffs between agents within one message, nor for a
 	// native-audio conversation.
 	AddressGate func(text string) (rejectReason string)
+
+	// AcousticAddressGate is AddressGate with what a keyword spotter heard in
+	// the same utterance: the name it matched, and how far into the utterance
+	// the match arrived (stt.FinalTranscript.AcousticName and AcousticNameBy;
+	// both zero when nothing was heard or the recogniser has no spotter). When
+	// set it is consulted INSTEAD of AddressGate, so a host that replaces or
+	// clears AddressGate must do the same here. summon.Gate.VetoHeard has this
+	// shape.
+	AcousticAddressGate func(text, heardName string, heardBy time.Duration) (rejectReason string)
 	// CurrentSpeaker returns the stable live speaker id (speaker-1) for the
 	// in-flight user turn when live labels are active. Optional; nil/empty
 	// means ordinary single-user attribution.

@@ -53,6 +53,7 @@ type turnMetrics struct {
 	start              time.Time
 	sttFinal           time.Time
 	acousticName       string // current finalized voice input only; never reused across turns
+	acousticNameBy     time.Duration
 	speaker            string // live speaker label of this voice input; typed input has none
 	firstModelChunk    time.Time
 	modelComplete      time.Time

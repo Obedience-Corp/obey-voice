@@ -188,6 +188,11 @@ type Config struct {
 	// AcousticNameEnabled adds experimental Obey keyword evidence to Parakeet
 	// conversation routing. It does not enable a wake gate or rewrite text.
 	AcousticNameEnabled bool `mapstructure:"acoustic_name_enabled"`
+	// AcousticNames is what the detector listens for. It is set by the program,
+	// not read from the file: voiceagent.New fills it with the name summon
+	// names. Empty means "Obey" alone, the detector's behaviour before it could
+	// take names.
+	AcousticNames []string `mapstructure:"-" yaml:"-" json:"-"`
 	// NameSummonAliases are extra wake words beyond the persona display name
 	// and its first word. Config-file only: no Settings row, and no environment
 	// binding, for the same reason skills_disabled has none — a list is not

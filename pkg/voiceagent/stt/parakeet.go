@@ -27,7 +27,7 @@ type ParakeetSTT struct {
 	vad        *audio.VAD
 	capture    audioSource
 	model      config.ParakeetAsset
-	acoustic   *kws.Obey
+	acoustic   *kws.Spotter
 }
 
 // NewParakeetSTT creates a Parakeet STT provider from the configured
@@ -61,9 +61,9 @@ func NewParakeetSTT(cfg *config.Config, capture audioSource, vad *audio.VAD) (*P
 	if recognizer == nil {
 		return nil, fmt.Errorf("failed to create parakeet recognizer (model: %s); run 'obey-voice models ensure'", model.Name)
 	}
-	var acoustic *kws.Obey
+	var acoustic *kws.Spotter
 	if cfg.AcousticNameEnabled {
-		acoustic, err = kws.NewObey(filepath.Join(config.ModelsDirFrom(cfg), config.AcousticNameModelDir))
+		acoustic, err = kws.New(filepath.Join(config.ModelsDirFrom(cfg), config.AcousticNameModelDir), cfg.AcousticNames)
 		if err != nil {
 			sherpa.DeleteOfflineRecognizer(recognizer)
 			return nil, err
@@ -86,7 +86,7 @@ func (s *ParakeetSTT) Start(ctx context.Context) (Session, error) {
 		transcribe: s.transcribe,
 	}
 	if s.acoustic != nil {
-		deps.acousticName = s.acoustic.Detect
+		deps.acousticName = s.acoustic.Observe
 	}
 	go func() {
 		defer session.pause.stop()

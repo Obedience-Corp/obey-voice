@@ -94,7 +94,11 @@ func (e PartialTranscript) sttEvent() string { return "partial_transcript" }
 type FinalTranscript struct {
 	// AcousticName is independent keyword evidence from this utterance only.
 	AcousticName string
-	Text         string
+	// AcousticNameBy is how far into the utterance the keyword spotter had
+	// listened when AcousticName matched: an upper bound on where the name
+	// ended. Zero when there is no hit or the source cannot tell.
+	AcousticNameBy time.Duration
+	Text           string
 	// Recognized is the recognizer's own text when a corrector changed it.
 	Recognized string
 }
