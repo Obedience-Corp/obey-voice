@@ -9,7 +9,7 @@ require github.com/Obedience-Corp/obey-voice v0.0.0
 
 require (
 	github.com/Obedience-Corp/cursor-agent-go v0.0.0-20260903232116-1c77e507477f // indirect
-	github.com/Obedience-Corp/muse-spark-go v0.1.0 // indirect
+	github.com/Obedience-Corp/muse-spark-go v0.2.0 // indirect
 	github.com/Obedience-Corp/obey-go-sdk v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.2.0 // indirect
