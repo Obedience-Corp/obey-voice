@@ -117,6 +117,7 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 	m.backgroundPauseGeneration++
 	m.pendingPause = false
 	m.backgroundPauseAcknowledged = false
+	m.backgroundTurn, m.backgroundHeld, m.escStatus = false, false, ""
 	m.startedAt = time.Now()
 	m.activity = nil
 	m.voiceEnabled = deps.voice

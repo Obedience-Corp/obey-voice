@@ -174,6 +174,12 @@ func (m *conversationModel) settleEscStop() {
 	m.setStatus(m.escStatus, false)
 }
 
+// finishEscStop runs when the stopped work has drained, on every way it can end.
+func (m *conversationModel) finishEscStop() {
+	m.settleEscStop()
+	m.escStatus = ""
+}
+
 // stopRunnerPlayback names the caller when the runner records it. A runner
 // with only StopPlayback still stops.
 func (m *conversationModel) stopRunnerPlayback(source pipeline.StopSource) {
@@ -325,8 +331,7 @@ func (m *conversationModel) submitText(text string) tea.Cmd {
 
 func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
-	m.settleEscStop()
-	m.escStatus = ""
+	m.finishEscStop()
 	m.pendingPause = false
 	m.backgroundPauseGeneration++
 	m.backgroundPauseAcknowledged = false
@@ -448,8 +453,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
 	m.backgroundTurn = false
-	m.settleEscStop()
-	m.escStatus = ""
+	m.finishEscStop()
 	m.keyOwnsTurn(false)
 	held := m.holdRefusedDraft(msg)
 	// Barge-in during a text turn (agent speaking after a prior typed message)
@@ -576,6 +580,7 @@ func (m *conversationModel) handleCompactDone(msg compactDoneMsg) tea.Cmd {
 	m.turnCancel = nil
 	m.turnState = turnIdle
 	m.setStatus("", false)
+	m.finishEscStop()
 	if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
 		m.emit(events.Error{Stage: "compact", Message: msg.err.Error()})
 	}

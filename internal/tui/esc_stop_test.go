@@ -404,3 +404,106 @@ func TestEscStopEndsTheThinkingIndicator(t *testing.T) {
 		t.Fatal("the stop notice came back after a later turn")
 	}
 }
+
+// A compaction or recording review stopped with Esc leaves no notice behind for a later turn.
+func TestEscStopNoticeDoesNotReturnAfterOtherWorkEnds(t *testing.T) {
+	cases := map[string]struct {
+		start func(m *conversationModel)
+		done  func(m conversationModel) tea.Msg
+		want  string
+	}{
+		"compaction": {
+			start: func(m *conversationModel) { m.dispatchCompact() },
+			done:  func(conversationModel) tea.Msg { return compactDoneMsg{err: context.Canceled} },
+			want:  "Stopped with Esc",
+		},
+		"recording review": {
+			start: func(m *conversationModel) {
+				_, cancel := context.WithCancel(m.deps.ctx)
+				m.turnCancel, m.turnState, m.reviewingRecording = cancel, turnTextRunning, true
+			},
+			done: func(m conversationModel) tea.Msg {
+				return recordingDoneMsg{lifetime: m.deps.ctx, err: context.Canceled}
+			},
+			want: "Recording review stopped",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := sizedConversation(t, 100, 30)
+			m.startConversation(conversationDeps{
+				runner:  &escRunner{},
+				bus:     events.NewBus(),
+				ctx:     t.Context(),
+				compact: func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() },
+			})
+			tc.start(&m)
+			if m.turnState != turnTextRunning {
+				t.Fatalf("setup: state=%d", m.turnState)
+			}
+			m, _ = esc(m)
+			if m.turnState != turnVoiceCanceling {
+				t.Fatalf("after Esc: state=%d, want canceling", m.turnState)
+			}
+			m, _ = m.Update(tc.done(m))
+			if m.turnState != turnIdle || m.status != tc.want {
+				t.Fatalf("after the drain: state=%d status=%q, want idle and %q", m.turnState, m.status, tc.want)
+			}
+
+			m, cmd := typeAndEnter(m, "next")
+			if cmd == nil {
+				t.Fatal("next turn did not start")
+			}
+			m.setVoiceMode(anim.ModeThinking)
+			m.setStatus("working", false)
+			m, _ = m.Update(textTurnDoneMsg{input: "next"})
+			if m.status != "working" || m.voiceMode != anim.ModeThinking {
+				t.Fatalf("a later turn's end changed status=%q mode=%v", m.status, m.voiceMode)
+			}
+		})
+	}
+}
+
+// A spoken turn releases a held result the same way a typed one does.
+func TestSpokenTurnReleasesAResultHeldByEsc(t *testing.T) {
+	runner := &pendingResultRunner{}
+	runner.voiceQueue = []voiceScript{{block: true}}
+	m := sizedConversation(t, 100, 30)
+	m.startConversation(conversationDeps{runner: runner, bus: events.NewBus(), voice: true, ctx: t.Context()})
+	m.turnState = turnIdle
+	if cmd := m.resumeListening(); cmd == nil || !m.backgroundTurn {
+		t.Fatalf("setup: state=%d delivery=%v, want the pending result being delivered", m.turnState, m.backgroundTurn)
+	}
+
+	m, _ = esc(m)
+	m, _ = m.Update(textTurnDoneMsg{err: context.Canceled})
+	if m.turnState != turnVoiceListening {
+		t.Fatalf("after the drain: state=%d, want the mic listening and the result held", m.turnState)
+	}
+	m, _ = m.Update(backgroundReadyMsg{})
+	if m.turnState != turnVoiceListening || m.pendingPause {
+		t.Fatalf("state=%d pause=%v; a held result asked the mic to yield", m.turnState, m.pendingPause)
+	}
+
+	m = recogniserEnded(t, m, "thanks")
+	m, _ = m.Update(voiceTurnDoneMsg{text: "thanks"})
+	if m.turnState != turnTextRunning || !m.backgroundTurn {
+		t.Fatalf("state=%d delivery=%v; the held result was not delivered after the spoken turn", m.turnState, m.backgroundTurn)
+	}
+}
+
+// A new conversation does not inherit a hold or a stop notice from the last one.
+func TestNewConversationDropsAnEscHold(t *testing.T) {
+	runner := &pendingResultRunner{}
+	m := sizedConversation(t, 100, 30)
+	m.startConversation(conversationDeps{runner: runner, bus: events.NewBus(), ctx: t.Context()})
+	m.resumeListening()
+	m, _ = esc(m)
+	if !m.backgroundHeld || m.escStatus == "" {
+		t.Fatalf("setup: held=%v notice=%q", m.backgroundHeld, m.escStatus)
+	}
+	m.startConversation(conversationDeps{runner: runner, bus: events.NewBus(), ctx: t.Context()})
+	if m.backgroundHeld || m.backgroundTurn || m.escStatus != "" {
+		t.Fatalf("held=%v delivery=%v notice=%q carried into the new conversation", m.backgroundHeld, m.backgroundTurn, m.escStatus)
+	}
+}
