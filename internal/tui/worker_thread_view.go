@@ -52,6 +52,9 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool, prev
 	switch item.State {
 	case "queued":
 		status = "◌ Queued"
+		if item.Waiting != "" {
+			status += " · " + compactWorkerText(item.Waiting)
+		}
 	case "running":
 		status = "● Working…"
 		if item.Report == "reporting" {
@@ -130,7 +133,11 @@ func renderWorkerTool(tool *workerThreadTool, width int, expanded bool) string {
 
 func workerDetailMeta(item pipeline.WorkerInfo) string {
 	meta := workerStateStyle(item.State).Render(safeWorkerText(item.State)) + " · " + metaStyle.Render(safeWorkerText(workerProvider(item)))
-	meta += dimStyle.Render(" · " + roundSeconds(item.Elapsed))
+	if item.State == "queued" && item.Waiting != "" {
+		meta += dimStyle.Render(" · " + compactWorkerText(item.Waiting))
+	} else {
+		meta += dimStyle.Render(" · " + roundSeconds(item.Elapsed))
+	}
 	if item.PersonaName != "" {
 		meta += dimStyle.Render(" · " + compactWorkerText(item.PersonaName))
 	}

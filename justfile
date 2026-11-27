@@ -157,7 +157,7 @@ demo-workers: build
         TERM=xterm-256color COLORTERM=truecolor \
         vhs demos/workers.tape
     just _optimize-demo-gif demos/workers.gif
-    ls -lh demos/workers.gif demos/frames/workers-detail.png
+    ls -lh demos/workers.gif demos/frames/workers-list.png demos/frames/workers-detail.png
 
 # Workers manager: stop a task whose fixture worker is slow to return (real job table, no model).
 demo-workers-stopping: build

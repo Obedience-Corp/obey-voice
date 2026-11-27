@@ -111,16 +111,23 @@ func demoWorkers(inner workerController) workerController {
 	if v := demoWorkCueVariant(); v == demoWorkCueCutShort || v == demoWorkCueTell || v == demoWorkCueReport {
 		return &demoWorkerController{inner: inner}
 	}
-	return &demoWorkerController{
-		inner: inner,
-		items: []pipeline.WorkerInfo{{
-			ID:       "job-1",
-			Task:     task,
-			State:    "running",
-			Provider: "ollama",
-			Model:    "orcarouter/Qwen3.8-27B-Uncensored:q4_K_M",
-			Activity: activity,
-			Elapsed:  39 * time.Second,
-		}},
+	items := []pipeline.WorkerInfo{{
+		ID:       "job-1",
+		Task:     task,
+		State:    "running",
+		Provider: "ollama",
+		Model:    "local-model-a",
+		Activity: activity,
+		Elapsed:  39 * time.Second,
+	}}
+	if !demoWorkCueEnabled() {
+		// Jobs on different models run side by side; the queued ones say why
+		// they wait.
+		items = append(items,
+			pipeline.WorkerInfo{ID: "job-2", Task: "Summarize the release notes", State: "running", Provider: "ollama", Model: "local-model-b", Activity: "read 2 files", Elapsed: 21 * time.Second},
+			pipeline.WorkerInfo{ID: "job-3", Task: "Draft the weekly update", State: "queued", Provider: "ollama", Model: "local-model-a", Waiting: "same model busy"},
+			pipeline.WorkerInfo{ID: "job-4", Task: "Review the test plan", State: "queued", Provider: "ollama", Model: "local-model-c", Waiting: "waiting for memory (needs about 30 GB, 16 GB free)"},
+		)
 	}
+	return &demoWorkerController{inner: inner, items: items}
 }

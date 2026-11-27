@@ -1438,11 +1438,11 @@
     {
       "key": "voice_worker_max_concurrent",
       "type": "int",
-      "default": 1,
+      "default": 4,
       "allows_empty": false,
       "group": "brain",
       "title": "Jobs at once",
-      "help": "How many spawned jobs run at the same time; the rest wait in order. Each is its own model session, so more than one on a local Ollama shares the machine.",
+      "help": "The most spawned jobs that run at the same time; the rest wait in order. Jobs on the same local Ollama model run one at a time, and one whose model would not fit in free memory waits.",
       "min": 1,
       "max": 8,
       "restart_required": true,

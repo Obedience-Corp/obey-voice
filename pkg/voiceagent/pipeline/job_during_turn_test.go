@@ -333,6 +333,10 @@ func TestJobFinishingMidSpeechDoesNotCutTheReply(t *testing.T) {
 func TestTwoJobsFinishingDuringOneTurnAreBothDeliveredAfterIt(t *testing.T) {
 	r := newJobTurnRig(t, true, time.Millisecond)
 	first := r.spawn(t, "weather in Denver")
+	// Jobs on one local model run one at a time; on two, side by side.
+	r.p.Agency.mu.Lock()
+	r.p.Agency.cfg.VoiceWorkerModel = "second-worker"
+	r.p.Agency.mu.Unlock()
 	second := r.spawn(t, "weather in Boulder")
 	done := r.startTurn(t)
 	r.reportTools(first, 1)

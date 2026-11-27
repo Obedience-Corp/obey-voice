@@ -90,7 +90,7 @@ func defaultWorkerTier() WorkerTier {
 
 // DefaultVoiceWorkers is safe for new installs: no tier is enabled or assigned.
 func DefaultVoiceWorkers() *VoiceWorkers {
-	w := &VoiceWorkers{SchemaVersion: 1, Mode: WorkerModeLegacy, Policy: WorkerPolicy{PaidEnabled: false, ChargePolicy: "advisory", Timezone: "UTC", ConcurrentWorkers: 1, QueuedWorkers: 32, Escalation: "never"}}
+	w := &VoiceWorkers{SchemaVersion: 1, Mode: WorkerModeLegacy, Policy: WorkerPolicy{PaidEnabled: false, ChargePolicy: "advisory", Timezone: "UTC", ConcurrentWorkers: 4, QueuedWorkers: 32, Escalation: "never"}}
 	w.Tiers.Simple, w.Tiers.Medium, w.Tiers.Complex = defaultWorkerTier(), defaultWorkerTier(), defaultWorkerTier()
 	return w
 }

@@ -99,7 +99,7 @@ when you select it.
 | `tool_command_timeout` | `30` (clamped 1–120) | `TOOL_COMMAND_TIMEOUT` | Maximum seconds for one local `run_command` invocation. The whole brain turn has its own timeout. |
 | `voice_work_enabled` | `false` | `VOICE_WORK_ENABLED` | Opt into the experimental conversation work inbox. Saves pending background results with the conversation; paid tiers require explicit advisory uncapped consent in Workers Settings; story-writing narration is unavailable. Restored updates remain held until explicitly resumed. Reading existing files aloud remains available. |
 | `voice_work_narration` | `status_only` | `VOICE_WORK_NARRATION` | How much a spawned worker narrates itself. `status_only` stays quiet until you ask what's happening; `milestones` speaks one short line each time the worker moves from one kind of work to another (a closed fold row), gated on the mic being idle. Never one line per tool call. See [delegation](delegation.md#what-the-worker-is-doing). |
-| `voice_worker_max_concurrent` | `1` (1–8) | `VOICE_WORKER_MAX_CONCURRENT` | **Legacy mode only.** How many spawned jobs run at the same time; the rest wait in order. Tiered Workers Settings use `voice_workers.policy.concurrent_workers` instead. |
+| `voice_worker_max_concurrent` | `4` (1–8) | `VOICE_WORKER_MAX_CONCURRENT` | **Legacy mode only.** The most spawned jobs that run at the same time. Jobs on different models run side by side; jobs on the same local Ollama model run one at a time, and a local job whose model would not fit in free memory waits while another job runs (an estimate that fails open). A saved value is kept as written. Tiered Workers Settings use `voice_workers.policy.concurrent_workers` instead. See [delegation](delegation.md#which-jobs-run-together). |
 | `voice_worker_job_budget` | `0` (-1 to 86400) | `VOICE_WORKER_JOB_BUDGET` | Optional limit, in seconds, on how long a spawned job may run before it is stopped and you are told once. For the configured worker it applies in legacy mode only (tiered Workers Settings use each tier's `runtime_seconds`), and `0`, the default, means no limit: a job runs until it finishes or you cancel it. A job a persona on a hosted backend does itself is held to it in both modes, and with `0` to 15 minutes. `-1` means no limit for either, on purpose, apart from a tier's `runtime_seconds` in tiered mode; `obey-voice doctor` warns about it in legacy mode for every persona on a hosted backend that does its own work. See [delegation](delegation.md#who-does-the-work). |
 | `voice_worker_boundary` | `true` | `VOICE_WORKER_BOUNDARY` | Keeps a spawned worker inside the directory it was launched in, or that directory's campaign root when it is inside one: its prompt says so, and the Ollama worker's file tools and shell refuse paths outside it. No campaign is needed. See [delegation](delegation.md#where-a-worker-may-go). |
 | `remote_tools_enabled` | `false` | | Allow network-triggered turns from `obey-voice serve` to invoke tools; keep off unless remote clients are trusted. |
@@ -999,7 +999,16 @@ reinterpret those explicit singleton values.
 
 Existing saved `queued_workers: 1` remains an explicit one-job queue bound.
 Increase it in Workers Settings if desired; loading an older policy does not
-silently replace that saved value with a newer default.
+silently replace that saved value with a newer default. The same holds for
+`concurrent_workers`: a new policy defaults to `4`, and a saved `1` stays `1`.
+In both modes the concurrency limit is a ceiling. Below it, jobs on different
+models run side by side; jobs on the same model on a local Ollama server run
+one at a time; and a job whose local model would not fit in free system memory
+beside running work waits, rechecked when a job ends and every 10 seconds. The
+memory figure is an estimate, the check applies to an Ollama server on this
+computer only, and it fails open: when anything is unknown the job starts and
+Ollama decides. `/workers` shows why a queued job waits. See
+[delegation](delegation.md#which-jobs-run-together).
 
 Who runs a persona's background work is a persona setting, not a config key:
 `brain.work` in its `persona.yaml` (`own` or `worker`), set with

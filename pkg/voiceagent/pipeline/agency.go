@@ -80,6 +80,8 @@ type Agency struct {
 	// inlineRefusedShown holds the personas told this session that their
 	// inline work is refused.
 	inlineRefusedShown map[string]bool // guarded by mu
+	// memory holds local Ollama jobs back while their model would not fit.
+	memory *localMemory // guarded by mu
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction

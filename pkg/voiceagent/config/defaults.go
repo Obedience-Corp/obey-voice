@@ -13,7 +13,7 @@ import (
 // Worker job limits (WI-41c322 D5). The budget is the guarantee: no spawned
 // job runs longer than it, and the user sets it.
 const (
-	DefaultVoiceWorkerMaxConcurrent = 1
+	DefaultVoiceWorkerMaxConcurrent = 4
 	DefaultVoiceWorkerJobBudget     = 0
 	// DefaultHostedOwnJobBudget is the seconds a persona on a hosted backend
 	// may spend on a job it does itself while voice_worker_job_budget is 0.

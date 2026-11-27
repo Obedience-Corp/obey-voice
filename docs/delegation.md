@@ -665,14 +665,15 @@ files.") each time a row closes, through the same idle gate as a job summary.
 Never one line per call.
 
 In legacy mode, two singleton limits bound spawned work.
-`voice_worker_max_concurrent` (default `1`) is how many jobs run at once; the
-rest wait in order, and "what's happening" names the running job first, then
-counts the others ("Also 1 more running and 1 queued.").
+`voice_worker_max_concurrent` (default `4`) is the most jobs that run at once;
+"what's happening" names the running job first, then counts the others ("Also
+1 more running and 1 queued."). See [Which jobs run together](#which-jobs-run-together)
+for what makes a job wait below that limit.
 `voice_worker_job_budget` (default `0`, no limit) optionally caps how long any
 one job may run; a job a persona on a hosted backend does itself has a
 15-minute default instead (see [Who does the work](#who-does-the-work)), and
 `-1` lifts both. With no limit a job runs until it finishes or you cancel it,
-and with one job at a time a stuck job holds the queue until then. When a
+and a stuck job holds its slot, and its model, until then. When a
 limit is set and a job passes it, the job is stopped, `job_aborted` carries
 `reason: budget`, and she says so once — "I stopped {task} after 10 minutes.
 It ran past its budget." A job you cancel yourself carries `reason: cancelled`; the cancel
@@ -785,14 +786,51 @@ The original seed's one-tool restriction is revised: explicit cancellation and
 cached status need model-callable controls. All three names already belong to
 Obey's vocabulary; no blocking wait is exposed.
 
+### Which jobs run together
+
+Jobs on different models run side by side, up to the concurrency limit
+(`voice_worker_max_concurrent`, or `voice_workers.policy.concurrent_workers` in
+tiered mode). A queued job waits only for one of three reasons, and `/workers`
+shows it on the job's line:
+
+- **same model busy** — another job is running on the same model on the same
+  local Ollama server. Jobs on one local model run one at a time, in the order
+  they were started, whatever the limit; a saved limit above 1 no longer runs
+  two of them at once. `localhost`, `127.0.0.1` and an empty host are the same
+  server. A job that continues a reply in the background holds its persona's
+  model the same way.
+- **N jobs already running** — the concurrency limit is reached.
+- **waiting for memory (needs about 30 GB, 16 GB free)** — the job's model is
+  not loaded on the local Ollama server and would not fit in free system
+  memory beside the jobs already running.
+
+The memory check applies only to Ollama on this computer (a loopback host) and
+only while another job is running: when nothing runs, the oldest queued job
+starts whatever the estimate says. The figure is an estimate. A model's need is
+the largest size Ollama reported it loaded at during this session, else its
+size on disk, which is a lower bound because its context adds to it. Free
+memory is read the way Ollama reads it (on macOS, total memory minus active,
+inactive, wired and compressed pages; on Linux, `MemAvailable`). The check
+fails open: when Ollama cannot be read, the host is remote, the model is not
+listed or the system is not macOS or Linux, the job starts and Ollama decides
+whether it fits. A job held back is rechecked when another job ends and every
+10 seconds while it waits. The check only reads Ollama's lists of loaded and
+installed models; it never loads anything.
+
+Hosted, CLI and Obey workers are bounded by the concurrency limit only.
+
 
 ## Tiered worker limits and accounting
 
 Workers Settings can save separate Simple, Medium and Complex assignments.
 Queued jobs retain the assignment and limits they were admitted with. Tiered
 mode uses the shared concurrency and queue limits in `voice_workers.policy`
-(defaults: one running, 32 queued) and each tier's runtime limit (120 seconds by
-default), instead of the legacy singleton limits above. Switching to tiered
+(defaults: four running, 32 queued) and each tier's runtime limit (120 seconds by
+default), instead of the legacy singleton limits above. Jobs on the same local
+model still run one at a time, and a local job can wait for memory; see
+[Which jobs run together](#which-jobs-run-together). A saved
+`concurrent_workers` value is kept as written: a policy saved with `1` still
+runs one job at a time. Switching to tiered
 mode does not silently migrate or reinterpret the legacy singleton keys; use
 the explicit migration preview in Settings if you want to copy the current
 worker into all three tiers.
