@@ -2,9 +2,12 @@ package summon
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 )
 
 // ErrNoName is returned when a gate is asked for with nothing to answer to.
@@ -19,7 +22,8 @@ var ErrNoName = errors.New("summon: the agent has no name or alias to answer to"
 // A turn is let through when the utterance opens with one of the agent's
 // names, when the host has declared the turn addressed some other way
 // (SetBypass), or, if a follow-up window was asked for, when the agent has
-// just finished replying.
+// just finished replying. With WithAcousticEvidence, VetoHeard also lets
+// through an utterance whose opening name the transcript got wrong.
 //
 // A Gate is safe for concurrent use and must not be copied after first use.
 // Every method accepts a nil *Gate, which is name summon switched off: nothing
@@ -29,6 +33,7 @@ type Gate struct {
 	matcher  Matcher
 	agent    string
 	followUp time.Duration
+	acoustic time.Duration
 	now      func() time.Time
 
 	bypass atomic.Bool
@@ -57,6 +62,39 @@ func WithFillers(fillers ...string) GateOption {
 // room is let through while it is open.
 func WithFollowUp(window time.Duration) GateOption {
 	return func(g *Gate) { g.followUp = window }
+}
+
+// DefaultAcousticWindow is how far into an utterance a keyword spotter's hit
+// may arrive and still count as the utterance opening with the name. A
+// spotter reports a name some tenths of a second after it was spoken, in
+// steps of about a third of a second, so the window has to cover one filler,
+// the name and that lag, and no more. Measured on synthesized speech through
+// voice detection with 300 ms of pre-roll: "Juno, ..." and "Hey Juno, ..."
+// report by 0.8 to 1.2 s; a name that is the third word or later ("Okay then
+// Juno", "We flew to Juneau") reports by 1.5 s or later. The default errs
+// toward ignoring: a missed address costs a repeat, a false one makes the
+// agent answer talk that was not meant for it.
+const DefaultAcousticWindow = 1300 * time.Millisecond
+
+// WithAcousticEvidence lets VetoHeard admit an utterance on the word of a
+// keyword spotter when the transcript does not open with the name. It exists
+// for names a recogniser misspells ("Juneau, what's the weather" for Juno).
+// window is how early in the utterance the hit must arrive; pass
+// DefaultAcousticWindow unless measurement says otherwise. Zero, the default,
+// turns it off.
+//
+// A hit proves the name was said, not that the agent was addressed, so two
+// more things must hold: the hit came inside window, and the transcript does
+// not spell the name anywhere. A transcript that spells the name correctly was
+// already judged by where the name stands, and "tell me about Juno" stays
+// vetoed.
+//
+// What this lets through is whatever the spotter wrongly hears in the first
+// word or two of an utterance, which includes a sentence that names the agent
+// there while the recogniser misspells it ("Juneau is lovely in June").
+// Measure the name before relying on it.
+func WithAcousticEvidence(window time.Duration) GateOption {
+	return func(g *Gate) { g.acoustic = window }
 }
 
 // withClock is the test seam for the follow-up window.
@@ -106,10 +144,18 @@ func (g *Gate) Addressed(text string) bool {
 // Veto reports why a transcribed utterance must not open a turn. An empty
 // string lets the turn run.
 func (g *Gate) Veto(text string) string {
+	return g.VetoHeard(text, "", 0)
+}
+
+// VetoHeard is Veto with what a keyword spotter heard in the same utterance:
+// the name it matched and how far into the utterance the match arrived. It has
+// the shape of pipeline.Pipeline.AcousticAddressGate. With no hit, or without
+// WithAcousticEvidence, it decides exactly as Veto does.
+func (g *Gate) VetoHeard(text, heardName string, heardBy time.Duration) string {
 	if g == nil {
 		return ""
 	}
-	if g.bypass.Load() || g.matcher.Addressed(text) || g.inFollowUp() {
+	if g.bypass.Load() || g.matcher.Addressed(text) || g.inFollowUp() || g.heardAtStart(text, heardName, heardBy) {
 		return ""
 	}
 	return "Not addressed to " + g.agent + " — ignored: “" + excerpt(text, 48) + "”"
@@ -137,6 +183,39 @@ func (g *Gate) ReplyEnded() {
 	defer g.mu.Unlock()
 	g.repliedAt = g.now()
 	g.hasReplied = true
+}
+
+// heardAtStart is the acoustic rule documented on WithAcousticEvidence.
+func (g *Gate) heardAtStart(text, heardName string, heardBy time.Duration) bool {
+	if g.acoustic <= 0 || heardBy <= 0 || heardBy > g.acoustic {
+		return false
+	}
+	heard := normalizeName(heardName)
+	if heard == "" || strings.TrimSpace(text) == "" {
+		return false
+	}
+	names := g.matcher.Names()
+	known := false
+	for _, name := range names {
+		known = known || name == heard
+	}
+	return known && !mentions(strings.ToLower(text), names)
+}
+
+// mentions reports whether body holds one of names as whole words anywhere.
+// A possessive counts: "Juno's orbit" is talk about Juno.
+func mentions(body string, names []string) bool {
+	notWord := func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }
+	words := strings.FieldsFunc(body, notWord)
+	for _, name := range names {
+		want := strings.FieldsFunc(name, notWord)
+		for i := 0; len(want) > 0 && i+len(want) <= len(words); i++ {
+			if slices.Equal(words[i:i+len(want)], want) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (g *Gate) inFollowUp() bool {

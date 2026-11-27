@@ -144,3 +144,51 @@ func TestGateIsSafeForConcurrentUse(t *testing.T) {
 	}
 	<-done
 }
+
+func TestGateAcousticEvidence(t *testing.T) {
+	gate, err := NewGate("Juno", []string{"the computer"}, WithAcousticEvidence(DefaultAcousticWindow))
+	if err != nil {
+		t.Fatal(err)
+	}
+	early, late := 1100*time.Millisecond, 3*time.Second
+	for _, tc := range []struct {
+		why, text, heard string
+		by               time.Duration
+		admitted         bool
+	}{
+		{"misspelled opening name", "Juneau, what's the weather?", "Juno", early, true},
+		{"name heard as two words", "You know, set a timer.", "juno", early, true},
+		{"alias misheard", "The commuter, lights off.", "The Computer", early, true},
+		{"hit exactly at the window", "Juneau, hello.", "Juno", DefaultAcousticWindow, true},
+		{"spelled mention, hit early", "Tell me about Juno.", "Juno", early, false},
+		{"spelled possessive", "I think Juno's orbit is odd.", "Juno", early, false},
+		{"spelled alias mention", "I bought the computer yesterday.", "the computer", early, false},
+		{"misspelled name late in the utterance", "Yesterday my sister asked about Juneau.", "Juno", late, false},
+		{"no hit", "Juneau, what's the weather?", "", 0, false},
+		{"hit without a time", "Juneau, what's the weather?", "Juno", 0, false},
+		{"hit for a name that is not ours", "Oh bay, what's the weather?", "Obey", early, false},
+		{"empty transcript", "  ", "Juno", early, false},
+		{"transcript opens with the name anyway", "Juno, what's the weather?", "", 0, true},
+	} {
+		if got := gate.VetoHeard(tc.text, tc.heard, tc.by) == ""; got != tc.admitted {
+			t.Errorf("%s: %q heard %q by %s: admitted=%v, want %v", tc.why, tc.text, tc.heard, tc.by, got, tc.admitted)
+		}
+	}
+}
+
+func TestGateIgnoresAcousticEvidenceByDefault(t *testing.T) {
+	gate, err := NewGate("Juno", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gate.VetoHeard("Juneau, what's the weather?", "Juno", time.Second) == "" {
+		t.Fatal("a gate without WithAcousticEvidence admitted on a spotter hit")
+	}
+	if gate.VetoHeard("Juno, what's the weather?", "", 0) != "" || gate.Veto("Juno, hi") != "" {
+		t.Fatal("VetoHeard must decide as Veto does when the transcript opens with the name")
+	}
+	var none *Gate
+	if none.VetoHeard("anything", "Juno", time.Second) != "" {
+		t.Fatal("a nil gate vetoed")
+	}
+}

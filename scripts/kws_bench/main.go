@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -21,12 +22,17 @@ type clip struct {
 	File   string `json:"file"`
 	Spoken string `json:"spoken"`
 	Want   bool   `json:"want_keyword"`
+	// Name is which of -names the clip should report. Empty accepts any.
+	Name string `json:"want_name,omitempty"`
 }
 type result struct {
 	clip
-	Condition string  `json:"condition"`
-	Keyword   string  `json:"keyword"`
-	Millis    float64 `json:"detector_ms"`
+	Condition string `json:"condition"`
+	Keyword   string `json:"keyword"`
+	// HeardBy is how far into the clip the hit arrived, the figure the name
+	// summon gate compares with its acoustic window.
+	HeardBy float64 `json:"heard_by_s,omitempty"`
+	Millis  float64 `json:"detector_ms"`
 }
 type counts struct {
 	Hits             int `json:"hits"`
@@ -44,6 +50,7 @@ func main() {
 func run() error {
 	dir := flag.String("model-dir", "", "explicit extracted KWS model directory")
 	manifest := flag.String("cases", "testdata/kws/cases.json", "labeled WAV cases, relative to this manifest")
+	names := flag.String("names", "", "comma-separated names to listen for (default: Obey)")
 	flag.Parse()
 	if *dir == "" {
 		return fmt.Errorf("-model-dir is required")
@@ -56,7 +63,13 @@ func run() error {
 	if err := json.Unmarshal(raw, &cases); err != nil {
 		return err
 	}
-	d, err := kws.NewObey(*dir)
+	var listen []string
+	for _, name := range strings.Split(*names, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			listen = append(listen, name)
+		}
+	}
+	d, err := kws.New(*dir, listen)
 	if err != nil {
 		return err
 	}
@@ -84,11 +97,15 @@ func run() error {
 		for i, pcm := range [][]float32{samples, noisy} {
 			condition := []string{"clean", "10dB white noise"}[i]
 			start := time.Now()
-			name, err := d.Detect(context.Background(), pcm)
+			hit, err := d.Observe(context.Background(), pcm)
 			if err != nil {
 				return err
 			}
-			rows = append(rows, result{clip: c, Condition: condition, Keyword: name, Millis: float64(time.Since(start).Microseconds()) / 1000})
+			name := hit.Name
+			if c.Want && c.Name != "" && !strings.EqualFold(name, c.Name) {
+				name = "" // the wrong name is a miss for this clip
+			}
+			rows = append(rows, result{clip: c, Condition: condition, Keyword: hit.Name, HeardBy: hit.By.Seconds(), Millis: float64(time.Since(start).Microseconds()) / 1000})
 			count := totals[condition]
 			switch {
 			case c.Want && name != "":

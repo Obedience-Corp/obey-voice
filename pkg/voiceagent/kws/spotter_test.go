@@ -79,3 +79,56 @@ func TestObeyNativeReplay(t *testing.T) {
 		t.Fatal("closed detector accepted audio")
 	}
 }
+
+// More names in one spotter must not change what it reports for each, and the
+// hit time must tell the opening of an utterance from its end.
+func TestSpotterListensForSeveralNames(t *testing.T) {
+	dir := os.Getenv("OBEY_KWS_MODEL_DIR")
+	if dir == "" {
+		t.Skip("set OBEY_KWS_MODEL_DIR to the extracted keyword model")
+	}
+	spotter, err := New(dir, []string{"Juno", "the computer", "Obey", " obey ", "Mary-Jane"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer spotter.Close()
+	if got := spotter.Names(); !reflect.DeepEqual(got, []string{"Juno", "the computer", "Obey", "Mary-Jane"}) {
+		t.Fatalf("names = %q", got)
+	}
+	observe := func(file string) Hit {
+		t.Helper()
+		samples, _, err := audio.ReadWAVFloat32(filepath.Join("../../../testdata/kws", file+".wav"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		hit, err := spotter.Observe(t.Context(), samples)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%s: %+v", file, hit)
+		return hit
+	}
+	opening := observe("british") // "Obey, can you help me?"
+	closing := observe("mention") // "Tell me about Obey."
+	if opening.Name != "Obey" || closing.Name != "Obey" {
+		t.Fatalf("opening=%+v closing=%+v", opening, closing)
+	}
+	if opening.By <= 0 || opening.By >= closing.By {
+		t.Fatalf("a name that opens an utterance was not heard before one that ends it: %s vs %s", opening.By, closing.By)
+	}
+	for _, file := range []string{"negative", "other-keyword"} {
+		if hit := observe(file); hit != (Hit{}) {
+			t.Fatalf("%s: %+v", file, hit)
+		}
+	}
+}
+
+func TestNewRejectsNamesItCannotSpell(t *testing.T) {
+	dir := os.Getenv("OBEY_KWS_MODEL_DIR")
+	if dir == "" {
+		t.Skip("set OBEY_KWS_MODEL_DIR to the extracted keyword model")
+	}
+	if _, err := New(dir, []string{"Juno", "R2D2"}); !errors.Is(err, ErrUnspellable) {
+		t.Fatalf("New = %v", err)
+	}
+}
