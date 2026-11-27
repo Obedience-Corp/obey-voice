@@ -1,6 +1,8 @@
-# Workers manager — pretty JSON activity on a live job.
+# Workers manager — jobs on different models side by side, queued jobs with
+# the reason they wait, and pretty JSON activity on a live job.
 #
-# OBEY_VOICE_DEMO_WORKERS=1 injects a fixture job (no live model).
+# OBEY_VOICE_DEMO_WORKERS=1 injects fixture jobs (no live model). The config
+# points at a port nothing listens on, so no model server is contacted.
 # From repo root after `just build`:
 #   just demo-workers
 
@@ -27,8 +29,8 @@ Type "export OBEY_VOICE_DEMO_ROOT=$(mktemp -d /tmp/obey-voice-demo.XXXXXX)" Ente
 Type "mkdir -p $OBEY_VOICE_DEMO_ROOT/sessions" Enter
 Type "cat > $OBEY_VOICE_DEMO_ROOT/config.yaml <<'EOF'" Enter
 Type "brain_provider: ollama" Enter
-Type "ollama_host: http://localhost:11434" Enter
-Type "ollama_model: gemma4:26b" Enter
+Type "ollama_host: http://127.0.0.1:9" Enter
+Type "ollama_model: example-model:7b" Enter
 Type "tts_provider: kokoro" Enter
 Type "models_dir: /tmp/obey-voice-demo-models" Enter
 Type "agent_name: Samantha" Enter
@@ -51,6 +53,8 @@ Down
 Sleep 400ms
 Enter
 Sleep 1500ms
+Screenshot demos/frames/workers-list.png
+Sleep 2s
 
 # Open the running job detail.
 Down

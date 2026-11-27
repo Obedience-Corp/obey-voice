@@ -50,6 +50,7 @@ func (a *Agency) onJobStarted(id, task string) {
 }
 
 func (a *Agency) onJobDone(id string, state job.State, result string, err error) {
+	a.jobEndedForMemory()
 	// A cancel reports its corrections after it has taken its receipt.
 	if s := a.steerFor(id); s != nil && !errors.Is(err, job.ErrCancelled) {
 		s.decide(state, err)

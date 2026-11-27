@@ -30,6 +30,8 @@ type WorkerInfo struct {
 	// SameOutput is how many tool rounds in a row a running job's tools have
 	// returned the same output, while that is worth showing.
 	SameOutput int
+	// Waiting is why a queued job has not started yet.
+	Waiting string
 }
 
 // abortedState is how an aborted table job shows: stopping until its worker
@@ -146,6 +148,9 @@ func (p *Pipeline) Workers() []WorkerInfo {
 		if item.State == job.StateRunning {
 			info.SameOutput = same
 		}
+		if item.State == job.StateQueued {
+			info.Waiting = item.Waiting
+		}
 		byID[item.ID] = info
 	}
 	a.workMu.RLock()
@@ -205,6 +210,10 @@ func (p *Pipeline) Workers() []WorkerInfo {
 		info.SameOutput = 0
 		if info.State == string(work.JobRunning) {
 			info.SameOutput = same
+		}
+		info.Waiting = ""
+		if local, ok := table[info.ID]; ok && local.State == job.StateQueued && info.State == string(work.JobQueued) {
+			info.Waiting = local.Waiting
 		}
 		byID[info.ID] = info
 	}

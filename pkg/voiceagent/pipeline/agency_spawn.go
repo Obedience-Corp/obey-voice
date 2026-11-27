@@ -103,7 +103,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if jobID == "" {
 		register = func(id string) { a.registerSteer(id, steer) }
 	}
-	acceptedID, err := a.jobs.Start(ctx, job.Spec{
+	spec := job.Spec{
 		RuntimeBudget: runtimeBudget,
 		ID:            jobID,
 		Register:      register,
@@ -121,7 +121,10 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		Provider: providerName(jobCfg),
 		Model:    modelName(jobCfg),
 		Run:      run,
-	})
+	}
+	model, local := workerLocalModel(jobCfg)
+	a.placeJob(ctx, &spec, model, local)
+	acceptedID, err := a.jobs.Start(ctx, spec)
 	if err != nil {
 		origin.releaseVoice()
 		if jobID != "" {

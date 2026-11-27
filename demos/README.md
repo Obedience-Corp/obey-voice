@@ -147,16 +147,18 @@ Still frames: `demos/frames/think-live.png`, `demos/frames/think-hidden.png`, `d
 Full Bubble Tea workers screen:
 
 1. **Launcher → Workers**
-2. **List** — running job with activity *summary* (not a JSON dump)
+2. **List** — two jobs running on different models, each with an activity
+   *summary* (not a JSON dump), and two queued jobs that say why they wait:
+   the same model is busy, or the model would not fit in free memory
 3. **Detail** — indented, syntax-colored tool JSON
 
-`OBEY_VOICE_DEMO_WORKERS=1` injects a fixture search job. No live model.
+`OBEY_VOICE_DEMO_WORKERS=1` injects fixture jobs. No live model.
 
 ```bash
 just demo-workers
 ```
 
-Still frame: `demos/frames/workers-detail.png`
+Still frames: `demos/frames/workers-list.png`, `demos/frames/workers-detail.png`
 
 ## workers-stopping.gif — a stopped task waits for its worker
 

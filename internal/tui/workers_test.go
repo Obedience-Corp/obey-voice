@@ -349,3 +349,37 @@ func TestWorkersCancellationErrorsStayVisible(t *testing.T) {
 		t.Fatal("failed cancellation was reported as success")
 	}
 }
+
+func TestWorkersShowWhyAQueuedJobWaits(t *testing.T) {
+	controller := &testWorkers{enabled: true, items: []pipeline.WorkerInfo{
+		{ID: "a", Task: "first task", State: "running", Provider: "ollama", Model: "local-model-a", Elapsed: 3 * time.Second},
+		{ID: "b", Task: "second task", State: "queued", Provider: "ollama", Model: "local-model-a", Waiting: "same model busy"},
+		{ID: "c", Task: "third task", State: "queued", Provider: "ollama", Model: "local-model-c", Waiting: "waiting for memory (needs about 30 GB, 16 GB free)"},
+	}}
+	m := newWorkers(&config.Config{}, controller)
+	m.width, m.height = 120, 30
+	view := stripANSI(m.View())
+	for _, want := range []string{
+		"ollama / local-model-a · queued · same model busy",
+		"ollama / local-model-c · queued · waiting for memory (needs about 30 GB, 16 GB free)",
+		"1 running · 2 queued",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("workers list lacks %q:\n%s", want, view)
+		}
+	}
+	m.cursor = 4
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if view := stripANSI(m.View()); !strings.Contains(view, "queued · ollama / local-model-c · waiting for memory") || !strings.Contains(view, "Queued · waiting for memory") {
+		t.Fatalf("queued detail lacks the reason:\n%s", view)
+	}
+	for _, width := range []int{40, 80} {
+		m := newWorkers(&config.Config{}, controller)
+		m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+		for _, line := range strings.Split(m.View(), "\n") {
+			if lipgloss.Width(line) > width {
+				t.Fatalf("line overflow at %d: %q", width, line)
+			}
+		}
+	}
+}

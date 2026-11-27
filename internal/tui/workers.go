@@ -412,6 +412,9 @@ func (m workersModel) View() string {
 		for _, item := range m.items {
 			labels = append(labels, item.Task+" · "+item.State)
 			detail := workerProvider(item) + " · " + roundSeconds(item.Elapsed)
+			if item.State == "queued" && item.Waiting != "" {
+				detail = workerProvider(item) + " · queued · " + item.Waiting
+			}
 			if note := brain.SameOutputNote(item.SameOutput); note != "" {
 				detail += " · " + note
 			}

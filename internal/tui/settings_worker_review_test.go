@@ -118,7 +118,7 @@ func TestWorkerSettingsShowCapabilityScopeAndExistingBounds(t *testing.T) {
 	for _, tier := range []config.WorkerTierName{"", config.WorkerTierSimple} {
 		m.workerEditingTier = tier
 		view := stripANSI(m.View())
-		wants := []string{"1 concurrent", "32 queued"}
+		wants := []string{"4 concurrent", "32 queued"}
 		if tier == "" {
 			wants = append(wants, "tiered", "tiered draft; Save applies these limits")
 		}

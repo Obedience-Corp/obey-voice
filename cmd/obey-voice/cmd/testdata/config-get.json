@@ -719,7 +719,7 @@
       "source": "default"
     },
     "voice_worker_max_concurrent": {
-      "value": 1,
+      "value": 4,
       "source": "default"
     },
     "voice_worker_model": {

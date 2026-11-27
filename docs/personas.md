@@ -352,8 +352,9 @@ reply as before:
 Only typed messages move a turn. The talk key and the open microphone still
 stop the reply. Speech the open microphone caught meanwhile is answered after
 the message that moved the turn. A moved reply counts as a running job: it
-starts at once even when `voice_worker_max_concurrent` is reached, and later
-jobs queue behind it. It keeps the limit a live reply has, and no other: it is
+starts at once even when `voice_worker_max_concurrent` is reached and counts
+toward that limit, and a later job on the persona's own local Ollama model
+queues behind it. It keeps the limit a live reply has, and no other: it is
 stopped once the model has sent nothing, no text, thinking or tool activity,
 for three minutes, which is handled like any other failure partway, and
 `voice_worker_job_budget` does not apply to it, so a move never shortens how

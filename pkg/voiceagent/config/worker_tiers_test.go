@@ -199,3 +199,37 @@ func TestWorkerTierRevisionOverflow(t *testing.T) {
 		t.Fatal("tier revision overflow accepted")
 	}
 }
+
+// Raising the defaults never changes a limit someone saved.
+func TestSavedWorkerLimitsOfOneSurviveTheDefaults(t *testing.T) {
+	SetConfigDirForTest(t, t.TempDir())
+	w := validTierWorkers()
+	w.Policy.ConcurrentWorkers = 1
+	if err := SaveVoiceWorkersCAS(w, 0); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadWithoutHooks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.VoiceWorkers.Policy.ConcurrentWorkers != 1 {
+		t.Fatalf("saved concurrent_workers 1 loaded as %d", cfg.VoiceWorkers.Policy.ConcurrentWorkers)
+	}
+	if cfg.VoiceWorkerMaxConcurrent != DefaultVoiceWorkerMaxConcurrent {
+		t.Fatalf("unset voice_worker_max_concurrent = %d, want the default %d", cfg.VoiceWorkerMaxConcurrent, DefaultVoiceWorkerMaxConcurrent)
+	}
+	b, err := os.ReadFile(ConfigFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ConfigFile(), append(b, []byte("\nvoice_worker_max_concurrent: 1\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = LoadWithoutHooks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.VoiceWorkerMaxConcurrent != 1 {
+		t.Fatalf("saved voice_worker_max_concurrent 1 loaded as %d", cfg.VoiceWorkerMaxConcurrent)
+	}
+}

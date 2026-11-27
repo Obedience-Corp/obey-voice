@@ -299,7 +299,7 @@ func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *tra
 	origin.Voices.primary, origin.Voices.fallback = p.responseTTS(ctx)
 	origin.releaseVoice = p.RetainTTS(origin.Voices.primary, origin.Voices.fallback)
 	handOff := a.movedHandOff(context.WithoutCancel(ctx), metrics, task, rec)
-	_, err := a.jobs.Start(ctx, job.Spec{
+	spec := job.Spec{
 		Task:     truncateJobTask(task),
 		Provider: provider,
 		Model:    model,
@@ -317,7 +317,13 @@ func (p *Pipeline) moveToJob(ctx context.Context, metrics *turnMetrics, rec *tra
 			p.emitResponse(metrics, events.ResponseReady{Response: textclean.StripThinkBlocks(kept), ContinuedAs: id})
 		},
 		Run: p.drainMoved(rec, stream, carried, handOff),
-	})
+	}
+	// The reply keeps reading from the persona's own brain.
+	if cfg != nil && cfg.BrainProvider != "" {
+		model, local := brainLocalModel(cfg)
+		a.placeJob(ctx, &spec, model, local)
+	}
+	_, err := a.jobs.Start(ctx, spec)
 	if err != nil {
 		origin.releaseVoice()
 		p.emit(events.Error{Stage: "job", Message: err.Error()})

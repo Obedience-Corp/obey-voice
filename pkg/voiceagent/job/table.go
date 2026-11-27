@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -94,8 +95,30 @@ type Spec struct {
 	OnEnding func(state State, err error)
 	// Immediate is for work already under way: it starts at once, past the
 	// concurrency and queue limits, and holds a running slot like any job.
+	// It holds its Resource too, so a queued job on the same key waits.
 	Immediate bool
+	// Resource serializes jobs: those with the same non-empty key, typically
+	// a local model, run one at a time in the order they were started. An
+	// empty key is never serialized against anything.
+	Resource string
+	// Admit is asked whether the job may start beside the jobs already
+	// running; it is never asked when none is running or completing, so the
+	// oldest startable job always starts. It runs under the table lock: it
+	// must be fast, must not block and must not call the table.
+	Admit func(running []Info) (ok bool, reason string)
 }
+
+// WaitKind is why a queued job has not started.
+type WaitKind string
+
+const (
+	// WaitResource: a job with the same Resource is running or queued ahead.
+	WaitResource WaitKind = "resource"
+	// WaitCeiling: the concurrency limit is reached.
+	WaitCeiling WaitKind = "ceiling"
+	// WaitAdmit: the job's Admit declined; Waiting holds its reason.
+	WaitAdmit WaitKind = "admit"
+)
 
 // Info is a point-in-time job snapshot for status UI.
 type Info struct {
@@ -118,6 +141,10 @@ type Info struct {
 	// running and that function has not returned yet. The job is over and holds
 	// no slot; only the run function's exit is still to be seen.
 	Stopping bool
+	// WaitKind and Waiting say why a queued job has not started, as of the
+	// table's last scheduling pass; both are empty once it starts.
+	WaitKind WaitKind
+	Waiting  string
 }
 
 // Elapsed reports how long the job has been running, or zero if it never started.
@@ -162,7 +189,10 @@ type Table struct {
 	// in the order they started, for status.
 	running map[string]struct{}
 	// completing reserves running slots until their terminal callbacks return.
-	completing    int
+	completing int
+	// held counts, per Resource, the jobs holding a slot (running or
+	// completing); it is released where the slot is.
+	held          map[string]int
 	runOrder      []string
 	maxConcurrent int
 	maxQueued     int
@@ -249,6 +279,7 @@ func NewTable(lifetime context.Context, opts ...Option) *Table {
 		lifetime:      lifetime,
 		jobs:          make(map[string]*entry),
 		running:       make(map[string]struct{}),
+		held:          make(map[string]int),
 		maxConcurrent: 1,
 	}
 	for _, opt := range opts {
@@ -309,8 +340,16 @@ func (t *Table) admit(spec Spec) (string, *entry, QueuedCallback, error) {
 	if t.disabled {
 		return "", nil, nil, ErrDisabled
 	}
-	if !spec.Immediate && t.maxQueued > 0 && len(t.running)+t.completing >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
-		return "", nil, nil, errors.New("worker queue limit reached")
+	if !spec.Immediate && t.maxQueued > 0 && len(t.queue) >= t.maxQueued {
+		blocked := make(map[string]bool, len(t.queue))
+		for _, queued := range t.queue {
+			if key := t.jobs[queued].spec.Resource; key != "" {
+				blocked[key] = true
+			}
+		}
+		if kind, _ := t.waitLocked(&spec, len(t.running)+t.completing, blocked); kind != "" {
+			return "", nil, nil, errors.New("worker queue limit reached")
+		}
 	}
 	id := spec.ID
 	if id == "" {
@@ -553,6 +592,7 @@ type ending struct {
 	cancel   context.CancelFunc
 	done     DoneCallback
 	heldSlot bool
+	resource string
 }
 
 // complete ends a job: terminal state under the lock, the context cancel,
@@ -576,6 +616,7 @@ func (t *Table) endLocked(id string, state State, result string, err error, earl
 	}
 	if e.info.State == StateQueued {
 		t.removeFromQueueLocked(id)
+		e.info.WaitKind, e.info.Waiting = "", ""
 	}
 	_, heldSlot := t.running[id]
 	if heldSlot {
@@ -588,7 +629,7 @@ func (t *Table) endLocked(id string, state State, result string, err error, earl
 	}
 	done := t.finishLocked(id, state, result, err)
 	t.notifyEndingLocked(e, state, err)
-	return ending{id: id, state: state, result: result, err: err, cancel: e.cancel, done: done, heldSlot: heldSlot}, true
+	return ending{id: id, state: state, result: result, err: err, cancel: e.cancel, done: done, heldSlot: heldSlot, resource: e.spec.Resource}, true
 }
 
 // notifyEndingLocked runs the job's OnEnding once, with the cause that won.
@@ -612,6 +653,7 @@ func (t *Table) finishEnding(x ending) {
 		t.mu.Lock()
 		if x.heldSlot {
 			t.completing--
+			t.releaseLocked(x.resource)
 		}
 		e := t.jobs[x.id]
 		e.doneReturned = true
@@ -694,27 +736,112 @@ func (t *Table) Close() {
 	t.closed = true
 }
 
-// pumpLocked launches queued jobs while there is room. The head of the queue
-// is never skipped: if it is not announced yet, its own Start pumps once the
-// queued callback has run.
+// Recheck runs a scheduling pass, for an owner whose Admit answers may have
+// changed.
+func (t *Table) Recheck() {
+	t.mu.Lock()
+	t.pumpLocked()
+	t.mu.Unlock()
+}
+
+// pumpLocked scans the queue in order and launches every job that can start,
+// recording why each other one waits. A waiting job blocks its Resource for
+// the jobs behind it, so within a key they start in order. The scan stops at
+// a job not yet announced: nothing behind it starts first, and its own Start
+// pumps once the queued callback has run.
 func (t *Table) pumpLocked() {
-	for len(t.running)+t.completing < t.maxConcurrent && len(t.queue) > 0 {
-		id := t.queue[0]
+	busy := len(t.running) + t.completing
+	var blocked map[string]bool
+	block := func(key string) {
+		if key == "" {
+			return
+		}
+		if blocked == nil {
+			blocked = make(map[string]bool)
+		}
+		blocked[key] = true
+	}
+	for i := 0; i < len(t.queue); {
+		id := t.queue[i]
 		e := t.jobs[id]
 		if !e.announced {
 			return
 		}
-		t.queue = t.queue[1:]
+		if kind, reason := t.waitLocked(&e.spec, busy, blocked); kind != "" {
+			e.info.WaitKind, e.info.Waiting = kind, reason
+			block(e.spec.Resource)
+			i++
+			continue
+		}
+		t.queue = append(t.queue[:i], t.queue[i+1:]...)
 		t.launchLocked(id, e)
+		busy++
 	}
+}
+
+// waitLocked reports why a job cannot start now beside busy slot holders,
+// with blocked holding the keys of older queued jobs; kind is empty when it
+// can start.
+func (t *Table) waitLocked(spec *Spec, busy int, blocked map[string]bool) (kind WaitKind, reason string) {
+	if key := spec.Resource; key != "" && (t.held[key] > 0 || blocked[key]) {
+		return WaitResource, "same model busy"
+	}
+	if busy >= t.maxConcurrent {
+		if busy == 1 {
+			return WaitCeiling, "1 job already running"
+		}
+		return WaitCeiling, fmt.Sprintf("%d jobs already running", busy)
+	}
+	if busy > 0 && spec.Admit != nil {
+		if ok, reason := t.askAdmitLocked(spec); !ok {
+			if strings.TrimSpace(reason) == "" {
+				reason = "waiting to start"
+			}
+			return WaitAdmit, reason
+		}
+	}
+	return "", ""
+}
+
+// askAdmitLocked calls the job's Admit. A panic in it admits the job: the
+// lock must still be released, and the gate fails open.
+func (t *Table) askAdmitLocked(spec *Spec) (ok bool, reason string) {
+	running := make([]Info, 0, len(t.runOrder))
+	for _, id := range t.runOrder {
+		if e, found := t.jobs[id]; found {
+			running = append(running, e.info)
+		}
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("obey-voice: job admit hook panicked: %v", r)
+			ok, reason = true, ""
+		}
+	}()
+	return spec.Admit(running)
 }
 
 func (t *Table) launchLocked(id string, e *entry) {
 	e.info.State = StateRunning
+	e.info.WaitKind, e.info.Waiting = "", ""
 	e.launched = true
 	t.running[id] = struct{}{}
 	t.runOrder = append(t.runOrder, id)
+	if e.spec.Resource != "" {
+		t.held[e.spec.Resource]++
+	}
 	go t.run(e.ctx, id)
+}
+
+func (t *Table) releaseLocked(key string) {
+	if key == "" {
+		return
+	}
+	if t.held[key] <= 1 {
+		delete(t.held, key)
+		return
+	}
+	t.held[key]--
 }
 
 func (t *Table) run(jobCtx context.Context, id string) {

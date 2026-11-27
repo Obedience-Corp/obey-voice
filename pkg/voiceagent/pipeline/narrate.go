@@ -235,6 +235,12 @@ func (n *Narrator) startStoryJob(ctx context.Context, metrics *turnMetrics, tier
 			accepted(id)
 		}
 	}
+	runsOn := work.own
+	if runsOn == nil {
+		runsOn = n.agency.currentConfig()
+	}
+	model, local := workerLocalModel(runsOn)
+	n.agency.placeJob(ctx, &spec, model, local)
 	if _, err := n.agency.jobs.Start(ctx, spec); err != nil {
 		n.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 		return

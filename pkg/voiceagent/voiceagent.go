@@ -27,6 +27,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/ollamamem"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
@@ -511,6 +512,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	agency := pipeline.NewAgency(p, jobs, worker, cfg, workerErr)
 	agency.UseNotices(config.NewNotices(config.NoticesFile()))
 	agency.Wire()
+	cleanups = append(cleanups, agency.UseLocalMemory(ctx, ollamamem.New()))
 	cleanups = append(cleanups, jobs.Close)
 	cleanups = append(cleanups, func() { _ = agency.CloseWork() })
 
