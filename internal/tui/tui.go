@@ -55,10 +55,10 @@ type App struct {
 	// goroutine that reads config concurrently. See internal/config/config.go.
 	cfg       *config.Config
 	providers []discovery.ProviderInfo
-	// claudeModelsLoading is set while the Claude model list is being read.
-	claudeModelsLoading bool
-	width               int
-	height              int
+	// modelsLoading names the providers whose model lists are being read.
+	modelsLoading []string
+	width         int
+	height        int
 
 	launcher       launcherModel
 	settings       settingsModel
@@ -296,8 +296,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case menuReadyMsg:
 		return a.onMenuReady(msg)
-	case claudeModelsMsg:
-		return a.onClaudeModels(msg)
+	case providerModelsMsg:
+		return a.onProviderModels(msg)
 	case launcherTickMsg:
 		if a.launcherTicking && msg.id == a.launcherTickID {
 			a.launcherTicking = false

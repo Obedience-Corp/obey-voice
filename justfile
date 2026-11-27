@@ -87,6 +87,19 @@ demo-settings-sidebar: build
     just _optimize-demo-gif demos/settings-sidebar.gif
     ls -lh demos/settings-sidebar.gif
 
+# Muse Spark Settings: Model lists the Muse catalog and saves the choice.
+# Stand-in muse with an invented catalog; no inference or audio.
+demo-muse-settings: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/muse-settings.tape
+    grep -q '^muse_spark_model: demo-small-1$' /tmp/obey-muse-settings/config.yaml
+    just _optimize-demo-gif demos/muse-settings.gif
+    ls -lh demos/muse-settings.gif
+
 # Conversation TUI: live thinking, then Ctrl+K to keep it in the thread.
 # Scripts bus events (no live mic/model). Unsets NO_COLOR so VHS paints color.
 # Conversation TUI: /record talk seals events.jsonl (scripted admit error).

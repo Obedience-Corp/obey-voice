@@ -51,16 +51,20 @@ func DiscoverProviders(cfg *config.Config) []ProviderInfo {
 }
 
 // DiscoverProvidersStartup is the scan the TUI runs on launch. It skips the
-// Claude CLI's model listing, which starts the CLI and costs up to a second;
-// the provider is reported with ModelsPending set, and DiscoverProvider reads
-// the list when a screen needs it.
+// model listings that start a CLI and cost up to a second (Claude and Muse);
+// those providers are reported with ModelsPending set, and DiscoverProvider
+// reads the list when a screen needs it.
 func DiscoverProvidersStartup(cfg *config.Config) []ProviderInfo {
 	ctx := context.Background()
 	specs := brain.Providers()
 	out := make([]ProviderInfo, 0, len(specs))
 	for _, spec := range specs {
-		if spec.Name == "claude" {
+		switch spec.Name {
+		case "claude":
 			out = append(out, claudeWithoutModels(cfg))
+			continue
+		case "muse-spark":
+			out = append(out, museSparkWithoutModels(cfg))
 			continue
 		}
 		out = append(out, probeProvider(ctx, cfg, spec.Name))
@@ -90,12 +94,7 @@ func DiscoverProvider(ctx context.Context, cfg *config.Config, name string) Prov
 func probeProvider(ctx context.Context, cfg *config.Config, name string) ProviderInfo {
 	switch name {
 	case "muse-spark":
-		_, err := exec.LookPath("muse")
-		models := []string{"default"}
-		if cfg != nil && strings.TrimSpace(cfg.MuseSparkModel) != "" {
-			models = append(models, cfg.MuseSparkModel)
-		}
-		return ProviderInfo{Name: name, Available: err == nil, Models: models}
+		return discoverMuseSpark(ctx, cfg)
 	case "claude":
 		return discoverClaude(ctx, cfg)
 	case "cursor":
