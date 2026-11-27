@@ -204,6 +204,8 @@ func interruptionLabel(stop *events.SpeechStop) string {
 		return "interrupted by your message"
 	case "talk_key":
 		return "interrupted by the talk key"
+	case "escape":
+		return "stopped with Esc"
 	case "desktop":
 		return "interrupted from the desktop app"
 	case "narration":
@@ -413,17 +415,21 @@ func (m conversationModel) View() string {
 	}
 
 	inputLabel := "Your message"
+	escHint := ""
+	if m.escStopsTurn() {
+		escHint = ", esc to stop"
+	}
 	switch {
 	case m.voiceMode == anim.ModeHearing:
 		inputLabel = hearingStyle.Render("● Hearing you — type to interrupt")
 	case m.voiceMode == anim.ModeListening:
 		inputLabel = headerStyle.Render("◎ Listening — type anytime")
 	case m.voiceMode == anim.ModeSpeaking || m.voiceMode == anim.ModeSynthesizing:
-		inputLabel = speakStyle.Render("◉ Speaking — type to barge in")
+		inputLabel = speakStyle.Render("◉ Speaking — type to barge in" + escHint)
 	case m.turnState == turnVoiceListening:
 		inputLabel = headerStyle.Render("🎙 Listening — type to interrupt")
 	case m.turnState == turnVoiceResponding || m.turnState == turnTextRunning:
-		inputLabel = thinkStyle.Render("✦ Responding — send a message to interrupt")
+		inputLabel = thinkStyle.Render("✦ Responding — send a message to interrupt" + escHint)
 	case m.turnState == turnVoiceCanceling:
 		inputLabel = thinkStyle.Render("✦ Interrupting…")
 	default:

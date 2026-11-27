@@ -285,8 +285,9 @@ done; there is no limit on its number of tool rounds. It gets one final model
 request with tools disabled, to answer from the collected results and explain
 any blockers, when it repeats the same tool call with the same result three
 times with nothing new in between, or when its context window has no room for
-another tool round. Send a new message or press the talk key to stop it: a
-running command is stopped and the rest of that round's tool calls do not run.
+another tool round. Press `Esc`, send a new message or press the talk key to
+stop it: a running command is stopped and the rest of that round's tool calls
+do not run.
 Workers keep their request, runtime and token budgets. A failed or empty final
 answer is reported as a failure rather than a successful result.
 
@@ -309,6 +310,7 @@ session is saved before the menu opens; choose **Continue** to resume it or
 |-----|--------|
 | `Enter` | Send the current draft |
 | `Ctrl+J` | Insert a newline in the draft |
+| `Esc` | Close the open path list, selection, vim VISUAL mode or activity panel. With nothing left to close, stop the running reply or tool loop. Your draft stays, and background workers keep running. `Esc` does nothing while the `/` command list or the `@` persona list is open. A worker's result stopped with `Esc` is read again after your next message |
 | Mouse wheel / trackpad, `Page Up` / `Page Down` | Scroll the transcript or focused activity feed |
 | `Ctrl+T` | Focus/unfocus the activity timeline |
 | `Ctrl+W` | Open the active worker detail, or choose from the worker list |
@@ -340,6 +342,11 @@ outside the conversation; the microphone stays where it is, in the pipeline.
 
 Releasing sends what was heard even if you said nothing; the pipeline reports
 an empty turn and listens again. Pressing over a reply interrupts it first.
+In toggle and automatic modes this takes one press, even when the recogniser
+sent your words before you tapped to send. One exception: if you opened the
+turn with the key, a tap that comes after the recogniser sent your words but
+before the reply shows any text, tool call or speech counts as your send tap.
+It stops nothing.
 
 The key never changes the mute. While the mic is paused with `Ctrl+G`, a press
 is one bounded turn: the mic opens for that press, the release sends, and the
@@ -491,7 +498,8 @@ select — turn on **Settings → Tools → Mouse scroll** (or set
 and footer change with the active mode. In NORMAL mode, use `i`/`a`/`I`/`A` to
 enter INSERT, `h`/`j`/`k`/`l` and `w`/`b` to move, `x`/`D`/`dd` to delete,
 `o`/`O` to open lines, `u` to undo, and `Enter` to send. `Esc` returns from
-INSERT to NORMAL.
+INSERT to NORMAL and clears a pending key such as `d`. In NORMAL with nothing
+pending, `Esc` stops a running reply.
 
 The **Speakers** section holds chat speaker labels, your display name, and
 every enrolled voice — **Register your voice** for you, **Enroll another

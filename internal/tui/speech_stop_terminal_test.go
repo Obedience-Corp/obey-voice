@@ -416,6 +416,9 @@ func TestTerminalStopsNameTheirSource(t *testing.T) {
 			m.talk = &talkState{}
 			m.interruptForTalk()
 		}, pipeline.StopSource{Name: "talk_key"}},
+		{"esc", func(m *conversationModel) {
+			*m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		}, pipeline.StopSource{Name: "escape"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

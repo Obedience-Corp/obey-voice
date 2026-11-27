@@ -349,8 +349,8 @@ reply as before:
   experimental `voice_work_enabled` inbox), and jobs are enabled in
   `/workers`.
 
-Only typed messages move a turn. The talk key and the open microphone still
-stop the reply. Speech the open microphone caught meanwhile is answered after
+Only typed messages move a turn. `Esc`, the talk key and the open microphone
+still stop the reply. Speech the open microphone caught meanwhile is answered after
 the message that moved the turn. A moved reply counts as a running job: it
 starts at once even when `voice_worker_max_concurrent` is reached, and later
 jobs queue behind it. It keeps the limit a live reply has, and no other: it is
@@ -448,7 +448,7 @@ personas still waiting when an invited persona's reply is interrupted or fails
 the persona who just answered runs on a backend that cannot pass the
 conversation on, or when the personas the reply mentions or the persona
 selection change before their turn. Speaking while invited personas are waiting, or stopping the
-turn, ends the invitation without a notice. An invited persona is asked to
+turn (`Esc`, the talk key or a new message), ends the invitation without a notice. An invited persona is asked to
 answer the message that invited it; it may build on the answers given before
 its turn but does not reply to them. A reply that
 names a persona without `@` hands over only when a classifier decides it is

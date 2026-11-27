@@ -345,3 +345,209 @@ func TestTalkControlClosedClearsTheEndpoint(t *testing.T) {
 		t.Fatal("a closed endpoint must not schedule more work")
 	}
 }
+
+// recogniserEnded closes the gate first, then delivers the transcript, as the pipeline does.
+func recogniserEnded(t *testing.T, m conversationModel, text string) conversationModel {
+	t.Helper()
+	m.deps.bus.Emit(events.UserInput{Text: text})
+	m, _ = m.Update(busEventMsg{event: events.UserInput{Text: text}})
+	if m.turnState != turnVoiceResponding {
+		t.Fatalf("setup: turnState=%d after the final transcript, want responding", m.turnState)
+	}
+	return m
+}
+
+func replyStarts(m conversationModel) conversationModel {
+	m, _ = m.Update(busEventMsg{event: events.ResponseDelta{Text: "Sure, one moment."}})
+	return m
+}
+
+// Toggle and automatic: once the recogniser ends the utterance, one press stops the reply.
+func TestTalkFirstPressStopsTheReplyAfterTheRecogniserEnded(t *testing.T) {
+	for _, mode := range []talkhotkey.Mode{talkhotkey.ModeToggle, talkhotkey.ModeAutomatic} {
+		t.Run(string(mode), func(t *testing.T) {
+			runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}}}
+			m, ends := talkConversation(t, runner, mode)
+			cancels := 0
+			m.turnCancel = func() { cancels++ }
+
+			m, _ = m.Update(keyDown()) // adopts the open mic
+			m, _ = m.Update(keyUp(80 * time.Millisecond))
+			m = recogniserEnded(t, m, "what is the weather")
+			m = replyStarts(m)
+
+			m, _ = m.Update(keyDown())
+			if m.turnState != turnVoiceCanceling || cancels != 1 || runner.stopped != 1 {
+				t.Fatalf("first press over the reply: state=%d cancels=%d stopped=%d; want canceling, 1, 1", m.turnState, cancels, runner.stopped)
+			}
+			if *ends != 0 {
+				t.Fatalf("press over the reply called endUtterance %d times, want 0", *ends)
+			}
+		})
+	}
+}
+
+// A late end press stops nothing until the reply shows something; after that it interrupts.
+func TestTalkLateEndPressDoesNotCancelItsOwnTurn(t *testing.T) {
+	runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}}}
+	m, ends := talkConversation(t, runner, talkhotkey.ModeToggle)
+	cancels := 0
+	m.turnCancel = func() { cancels++ }
+
+	m = tap(m) // adopts the open mic
+	m = recogniserEnded(t, m, "open the notes")
+	m = tap(m)
+	if m.turnState != turnVoiceResponding || cancels != 0 || runner.stopped != 0 || *ends != 0 {
+		t.Fatalf("late end press: state=%d cancels=%d stopped=%d ends=%d; want the turn untouched", m.turnState, cancels, runner.stopped, *ends)
+	}
+	if m.talk.driver.Talking() {
+		t.Fatal("the late end press left the driver talking, so the next press would be swallowed too")
+	}
+
+	m = replyStarts(m)
+	m, _ = m.Update(keyDown())
+	if m.turnState != turnVoiceCanceling || cancels != 1 {
+		t.Fatalf("press after the reply started: state=%d cancels=%d; want canceling, 1", m.turnState, cancels)
+	}
+}
+
+// Automatic: a hold released after the endpoint was the end, so the next press interrupts.
+func TestTalkAutomaticHoldThroughTheEndpointLeavesNoLateEnd(t *testing.T) {
+	runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}}}
+	m, _ := talkConversation(t, runner, talkhotkey.ModeAutomatic)
+	cancels := 0
+	m.turnCancel = func() { cancels++ }
+
+	m, _ = m.Update(keyDown()) // adopts the open mic
+	m = recogniserEnded(t, m, "open the notes")
+	m, _ = m.Update(keyUp(600 * time.Millisecond))
+	m = tap(m)
+	if m.turnState != turnVoiceCanceling || cancels != 1 {
+		t.Fatalf("press after a hold release: state=%d cancels=%d; want canceling, 1", m.turnState, cancels)
+	}
+}
+
+// Over a turn the key did not open, the first press interrupts even before any reply.
+func TestTalkPressOverAnUnownedTurnInterruptsBeforeTheReply(t *testing.T) {
+	runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}}}
+	m, _ := talkConversation(t, runner, talkhotkey.ModeToggle)
+	cancels := 0
+	m.turnCancel = func() { cancels++ }
+
+	m = recogniserEnded(t, m, "open the notes")
+	m, _ = m.Update(keyDown())
+	if m.turnState != turnVoiceCanceling || cancels != 1 {
+		t.Fatalf("press over an unowned turn: state=%d cancels=%d; want canceling, 1", m.turnState, cancels)
+	}
+}
+
+// Gate closed but state still listening: a toggle press is the late end and does nothing.
+func TestTalkPressWhileTheTranscriptIsInFlight(t *testing.T) {
+	runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}}}
+	m, ends := talkConversation(t, runner, talkhotkey.ModeToggle)
+	cancels := 0
+	m.turnCancel = func() { cancels++ }
+
+	m = tap(m) // adopts the open mic
+	m.deps.bus.Emit(events.UserInput{Text: "open the notes"})
+	if m.turnState != turnVoiceListening || m.canCancelVoice.Load() {
+		t.Fatalf("setup: state=%d gate=%v, want listening with the gate closed", m.turnState, m.canCancelVoice.Load())
+	}
+	m = tap(m)
+	if cancels != 0 || *ends != 0 || m.turnState != turnVoiceListening {
+		t.Fatalf("press in the window: cancels=%d ends=%d state=%d; want nothing", cancels, *ends, m.turnState)
+	}
+
+	m, _ = m.Update(busEventMsg{event: events.UserInput{Text: "open the notes"}})
+	m = replyStarts(m)
+	m, _ = m.Update(keyDown())
+	if m.turnState != turnVoiceCanceling || cancels != 1 {
+		t.Fatalf("press over the reply: state=%d cancels=%d; want canceling, 1", m.turnState, cancels)
+	}
+}
+
+// Hold: a key held through the endpoint and released during the reply does nothing.
+func TestTalkHoldReleaseDuringTheReplyIsANoOp(t *testing.T) {
+	runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}}}
+	m, ends := talkConversation(t, runner, talkhotkey.ModeHold)
+	cancels := 0
+	m.turnCancel = func() { cancels++ }
+
+	m, _ = m.Update(keyDown()) // adopts the open mic
+	m = recogniserEnded(t, m, "open the notes")
+	m = replyStarts(m)
+	m, _ = m.Update(keyUp(3 * time.Second))
+	if m.turnState != turnVoiceResponding || cancels != 0 || runner.stopped != 0 || *ends != 0 {
+		t.Fatalf("release during the reply: state=%d cancels=%d stopped=%d ends=%d; want the reply untouched", m.turnState, cancels, runner.stopped, *ends)
+	}
+}
+
+// Toggle: after an interrupt the key owns the new turn, so the next press sends it.
+func TestTalkToggleNextPressAfterAnInterruptSends(t *testing.T) {
+	runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}}}
+	m, ends := talkConversation(t, runner, talkhotkey.ModeToggle)
+	cancels := 0
+	m.turnCancel = func() { cancels++ }
+
+	m = tap(m)
+	m = recogniserEnded(t, m, "open the notes")
+	m = replyStarts(m)
+	m = tap(m)
+	m, cmd := m.Update(voiceTurnDoneMsg{})
+	if cmd == nil || m.turnState != turnVoiceListening || !m.talk.driver.Talking() {
+		t.Fatalf("after the drain: cmd=%v state=%d talking=%v; want the key's turn open", cmd != nil, m.turnState, m.talk.driver.Talking())
+	}
+
+	m, _ = m.Update(keyDown())
+	if *ends != 1 || cancels != 1 || m.turnState != turnVoiceListening {
+		t.Fatalf("next press: ends=%d cancels=%d state=%d; want one send and no second interrupt", *ends, cancels, m.turnState)
+	}
+}
+
+// Automatic: after an endpoint and an interrupt, both a tap and a hold send the new turn.
+func TestTalkAutomaticTapAndHoldAfterTheRecogniserEnded(t *testing.T) {
+	for name, tc := range map[string]struct {
+		pressHeld time.Duration
+		sendWith  func(conversationModel) conversationModel
+	}{
+		"tap": {80 * time.Millisecond, func(m conversationModel) conversationModel {
+			m, _ = m.Update(keyDown())
+			return m
+		}},
+		"hold": {0, func(m conversationModel) conversationModel {
+			m, _ = m.Update(keyUp(600 * time.Millisecond))
+			return m
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}}}
+			m, ends := talkConversation(t, runner, talkhotkey.ModeAutomatic)
+			cancels := 0
+			m.turnCancel = func() { cancels++ }
+
+			m, _ = m.Update(keyDown())
+			m, _ = m.Update(keyUp(80 * time.Millisecond))
+			m = recogniserEnded(t, m, "open the notes")
+			m = replyStarts(m)
+
+			m, _ = m.Update(keyDown())
+			if tc.pressHeld > 0 {
+				m, _ = m.Update(keyUp(tc.pressHeld))
+			}
+			m, _ = m.Update(voiceTurnDoneMsg{})
+			if cancels != 1 || m.turnState != turnVoiceListening {
+				t.Fatalf("setup: cancels=%d state=%d; want the reply interrupted and the key's turn open", cancels, m.turnState)
+			}
+			m = tc.sendWith(m)
+			if *ends != 1 || cancels != 1 {
+				t.Fatalf("ends=%d cancels=%d; want one send and no second interrupt", *ends, cancels)
+			}
+		})
+	}
+}
+
+func tap(m conversationModel) conversationModel {
+	m, _ = m.Update(keyDown())
+	m, _ = m.Update(keyUp(80 * time.Millisecond))
+	return m
+}

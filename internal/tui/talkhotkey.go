@@ -182,6 +182,8 @@ type talkState struct {
 	// pendingTurn queues a hotkey turn behind a cancel that is draining: the
 	// key interrupted a reply, and the turn opens once the cancel lands.
 	pendingTurn bool
+	// lateEnd: the next press may be the late end of an utterance the recogniser already sent.
+	lateEnd bool
 }
 
 func (m *conversationModel) attachTalk(combo talkhotkey.Combo, mode talkhotkey.Mode) {
@@ -240,6 +242,10 @@ func (m *conversationModel) handleTalkHotkey(ev talkhotkey.Event) tea.Cmd {
 	case talkhotkey.KindDown:
 		return m.applyTalkAction(m.talk.driver.Down())
 	case talkhotkey.KindUp:
+		// An automatic hold released after the recogniser's endpoint was the end itself.
+		if m.talk.driver.Mode() == talkhotkey.ModeAutomatic && ev.Held() >= talkhotkey.TapThreshold {
+			m.talk.lateEnd = false
+		}
 		return m.applyTalkAction(m.talk.driver.Up(ev.Held()))
 	}
 	return nil
@@ -273,6 +279,11 @@ func (m *conversationModel) applyTalkAction(action talkhotkey.Action) tea.Cmd {
 // because resumeListening never redispatches while voice input is off. A key
 // pressed over a reply interrupts it first, the way a Mac hotkey press does.
 func (m *conversationModel) beginTalkTurn() tea.Cmd {
+	if m.turnState == turnVoiceResponding && m.talk.lateEnd {
+		m.talk.lateEnd = false
+		m.talk.driver.TurnEnded()
+		return nil
+	}
 	if m.deps.runner == nil || !m.deps.voice {
 		m.setStatus("Microphone unavailable", true)
 		m.talk.driver.TurnEnded()
@@ -309,14 +320,7 @@ func (m *conversationModel) beginTalkTurn() tea.Cmd {
 // done message lands.
 func (m *conversationModel) interruptForTalk() tea.Cmd {
 	m.talk.pendingTurn = true
-	m.turnState = turnVoiceCanceling
-	if m.canCancelVoice != nil {
-		m.canCancelVoice.Store(false)
-	}
-	if m.turnCancel != nil {
-		m.turnCancel()
-	}
-	m.stopRunnerPlayback(pipeline.StopSource{Name: "talk_key"})
+	m.cancelTurn(pipeline.StopSource{Name: "talk_key"})
 	return nil
 }
 
@@ -338,11 +342,40 @@ func (m *conversationModel) endTalkTurn() tea.Cmd {
 	return nil
 }
 
+// talkUtteranceClosed makes the next toggle or automatic press over the reply interrupt it.
+func (m *conversationModel) talkUtteranceClosed() {
+	if m.talk == nil {
+		return
+	}
+	m.talk.lateEnd = m.talk.driver.Talking() && m.talk.driver.Mode() != talkhotkey.ModeHold
+	m.talk.driver.TurnEnded()
+}
+
+func (m *conversationModel) talkReplyStarted() {
+	if m.talk != nil {
+		m.talk.lateEnd = false
+	}
+}
+
+// replyVisible reports the turn's own text, tool calls or speech; worker tool calls do not count.
+func replyVisible(e events.Event) bool {
+	switch e := e.(type) {
+	case events.ResponseDelta:
+		return e.Text != ""
+	case events.ToolCallStarted:
+		return e.JobID == ""
+	case events.SpeakingStarted, events.ResponseReady, events.ReplyImagesReady:
+		return true
+	}
+	return false
+}
+
 // talkTurnEnded tells the driver a turn closed on its own, so a key still held
 // does not end a turn that is already over, and a toggle starts fresh.
 func (m *conversationModel) talkTurnEnded() {
 	if m.talk != nil {
 		m.talk.driver.TurnEnded()
+		m.talk.lateEnd = false
 	}
 }
 

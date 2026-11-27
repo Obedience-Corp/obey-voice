@@ -39,6 +39,11 @@ func (m *conversationModel) handleEvent(e events.Event) {
 	// past this point would kill a response in flight, so Enter waits.
 	if _, ok := e.(events.UserInput); ok && m.turnState == turnVoiceListening {
 		m.turnState = turnVoiceResponding
+		m.backgroundHeld = false
+		m.talkUtteranceClosed()
+	}
+	if replyVisible(e) {
+		m.talkReplyStarted()
 	}
 
 	switch e := e.(type) {

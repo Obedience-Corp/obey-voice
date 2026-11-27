@@ -119,7 +119,7 @@ Custom config roots and debug-audio runs place the log under their own directory
 response/session identifiers, interruption reason and terminal outcome.
 A turn silenced by an explicit stop carries `speech_stop` on its
 `turn_metrics` line: the first stop's source (`keystroke`, `text_submit`,
-`talk_key`, `desktop`, `narration`, `replay` or `unspecified`), how many stops
+`talk_key`, `escape`, `desktop`, `narration`, `replay` or `unspecified`), how many stops
 landed, whether the first came before playback began, and for a keystroke how many
 runes its key message carried. A typed key is usually one rune and a paste is
 flagged; several runes without the flag arrived in one terminal read (fast

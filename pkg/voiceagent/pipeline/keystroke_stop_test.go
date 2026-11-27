@@ -50,7 +50,7 @@ func TestKeystrokeBeforeSpeechLeavesReplySpoken(t *testing.T) {
 }
 
 func TestDeliberateStopsBeforeSpeechStillSilenceReply(t *testing.T) {
-	for _, source := range []string{"text_submit", "talk_key", "desktop", "unspecified"} {
+	for _, source := range []string{"text_submit", "talk_key", "escape", "desktop", "unspecified"} {
 		t.Run(source, func(t *testing.T) {
 			p, engine, metrics := newStopTestPipeline(t, &fakeTTS{})
 			ctx := audio.BindPlaybackContext(t.Context(), engine)

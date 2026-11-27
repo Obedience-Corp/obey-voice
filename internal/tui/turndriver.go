@@ -300,6 +300,7 @@ func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
 	ctx, cancel := context.WithCancel(m.deps.ctx)
 	m.turnCancel = cancel
 	m.turnState = turnTextRunning
+	m.backgroundHeld = false
 
 	runner, wg := m.deps.runner, m.deps.wg
 	done := textTurnDoneMsg{lifetime: m.deps.ctx, input: text, refs: refs, media: m.media.token, noticeEpoch: m.noticeEpoch}
@@ -343,7 +344,7 @@ func (m *conversationModel) resumeListening() tea.Cmd {
 	// inbox level so a lost edge, or a stale edge after another claimant, cannot
 	// strand or replay work.
 	if runner, ok := m.deps.runner.(backgroundRunner); ok {
-		m.pendingBackground = runner.BackgroundPending()
+		m.pendingBackground = runner.BackgroundPending() && !m.backgroundHeld
 	}
 	if m.turnState == turnVoiceListening {
 		// A canceled turn may have queued typed input or a talk-key turn. Its
@@ -404,6 +405,7 @@ func (m *conversationModel) recoverTurnState() tea.Cmd {
 		m.pendingText = ""
 		m.pendingMoved = false
 		m.pendingCompact = false
+		m.backgroundTurn = false
 		m.turnState = turnIdle
 		if m.canCancelVoice != nil {
 			m.canCancelVoice.Store(false)
