@@ -12,7 +12,8 @@ import (
 
 // NameSummon returns the gate New installed for name_summon_enabled, or nil
 // when name summon is off for this agent. A host uses it to stand the gate
-// down for a turn the user opened another way:
+// down for a turn the user opened another way; the methods of a nil gate do
+// nothing, so this needs no check:
 //
 //	agent.NameSummon().SetBypass(true) // button held
 func (a *Agent) NameSummon() *summon.Gate {

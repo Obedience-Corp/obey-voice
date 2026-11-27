@@ -67,7 +67,7 @@ agent, cleanup, err := voiceagent.New(ctx, voiceagent.Options{
         AgentName:         "Juno",
         NameSummonEnabled: true,
         NameSummonAliases: []string{"computer"},
-        VoiceFrontend:     config.VoiceFrontendWebRTC,
+        VoiceFrontend:     config.VoiceFrontendWebRTC, // needs a build with -tags apm; nlms does not
         // ... brain, speech recognition and voice settings
     },
     Events:             events.NewBus(),
@@ -94,8 +94,8 @@ go run . -summon      # scripted, no microphone, no models
 | You need | Use |
 |---|---|
 | The gate | Set `name_summon_enabled`. `New` installs it; `agent.NameSummon()` returns it, or nil when it is off |
-| A button, a tap or a held key to count as addressing the agent | `agent.NameSummon().SetBypass(true)` for that turn, then `false` |
-| "yes" after the agent asks a question to count without the name | `Options.NameSummonFollowUp`. Off unless set. While the window is open, anything heard is answered, whoever said it. It is measured to the moment the follow-up has been transcribed, so allow for the sentence itself |
+| A button, a tap or a held key to count as addressing the agent | `agent.NameSummon().SetBypass(true)` for that turn, then `false`. Safe to call when name summon is off |
+| "yes" after the agent asks a question to count without the name | `Options.NameSummonFollowUp`. Off unless set. While the window is open, anything heard is answered, whoever said it, and each answer opens it again. It is measured to the moment the follow-up has been transcribed, so allow for the sentence itself |
 | Other words in front of the name, or none | Build the gate yourself: `summon.NewGate(name, aliases, summon.WithFillers(...))`, set `Options.ExternalAddressing`, assign `agent.AddressGate = gate.Veto`, and call `gate.ReplyEnded()` if you use a follow-up window |
 | Your own rule entirely | Set `Options.ExternalAddressing` and assign `agent.AddressGate` |
 
@@ -115,8 +115,11 @@ Limits to know before building on it:
 - A name the recogniser misspells is not matched. Pick a name it transcribes
   reliably, and add the misspellings you see as aliases.
 - Typed turns (`SendText`) are never gated.
-- A native-audio conversation model as the input path is not gated: the model
-  receives the audio, not a transcript.
+- With finalized audio input (`Options.Input` or `InputFactory`) the gate
+  depends on the native policy the host binds. In conversation mode it is not
+  consulted at all: the model receives the audio and name summon does nothing.
+  In standard mode it reads the transcript made for spoken controls. This path
+  has no test with name summon yet.
 - If you set `AdmitInput` to route between personas, that owns addressing; set
   `Options.ExternalAddressing` and do not use both.
 

@@ -22,6 +22,9 @@ var ErrNoName = errors.New("summon: the agent has no name or alias to answer to"
 // just finished replying.
 //
 // A Gate is safe for concurrent use and must not be copied after first use.
+// Every method accepts a nil *Gate, which is name summon switched off: nothing
+// is vetoed and the setters do nothing. A host can therefore call
+// agent.NameSummon().SetBypass(true) without asking first whether it is on.
 type Gate struct {
 	matcher  Matcher
 	agent    string
@@ -85,18 +88,27 @@ func NewGate(agentName string, aliases []string, opts ...GateOption) (*Gate, err
 
 // Names reports the wake words, longest first.
 func (g *Gate) Names() []string {
+	if g == nil {
+		return nil
+	}
 	return g.matcher.Names()
 }
 
 // Addressed reports whether text opens with one of the agent's names. It is
 // the matching rule alone: bypass and the follow-up window are not consulted.
 func (g *Gate) Addressed(text string) bool {
+	if g == nil {
+		return false
+	}
 	return g.matcher.Addressed(text)
 }
 
 // Veto reports why a transcribed utterance must not open a turn. An empty
 // string lets the turn run.
 func (g *Gate) Veto(text string) string {
+	if g == nil {
+		return ""
+	}
 	if g.bypass.Load() || g.matcher.Addressed(text) || g.inFollowUp() {
 		return ""
 	}
@@ -107,6 +119,9 @@ func (g *Gate) Veto(text string) string {
 // the user opened by some other deliberate act: a held talk key, a button, a
 // tap on the microphone. It stays set until cleared.
 func (g *Gate) SetBypass(on bool) {
+	if g == nil {
+		return
+	}
 	g.bypass.Store(on)
 }
 
@@ -115,6 +130,9 @@ func (g *Gate) SetBypass(on bool) {
 // voiceagent.New calls it from the event bus; a host that installs the gate by
 // hand calls it itself.
 func (g *Gate) ReplyEnded() {
+	if g == nil {
+		return
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.repliedAt = g.now()

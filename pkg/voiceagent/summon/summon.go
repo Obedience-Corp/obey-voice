@@ -3,6 +3,12 @@
 // table over the persona's display name and its aliases, never a model. The
 // cost of that choice is honest — the decision lands only after the sentence is
 // over, and a wake-word model is the follow-up, not this.
+//
+// Gate and Matcher are the part meant for programs that embed the voice
+// agent: one agent, one set of names. Roster, ExactControl and the mention
+// resolvers serve obey-voice's own routing between several personas; they are
+// exported because that routing lives in other packages of this module, not
+// as a surface for other modules to build on.
 package summon
 
 import (

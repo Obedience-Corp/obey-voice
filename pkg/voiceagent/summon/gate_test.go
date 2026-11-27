@@ -117,3 +117,30 @@ func TestGateRejectionExcerptCountsRunes(t *testing.T) {
 		t.Errorf("rejection = %q", reason)
 	}
 }
+
+// agent.NameSummon() is nil when name summon is off, and a host wired to a
+// button must not have to check before every press.
+func TestNilGateIsNameSummonSwitchedOff(t *testing.T) {
+	var gate *Gate
+	gate.SetBypass(true)
+	gate.ReplyEnded()
+	if gate.Veto("anything at all") != "" || gate.Addressed("Juno") || gate.Names() != nil {
+		t.Fatal("a nil gate did something")
+	}
+}
+
+func TestGateIsSafeForConcurrentUse(t *testing.T) {
+	gate, _ := NewGate("Juno", nil, WithFollowUp(time.Second))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 200 {
+			gate.ReplyEnded()
+			gate.SetBypass(false)
+		}
+	}()
+	for range 200 {
+		gate.Veto("yes")
+	}
+	<-done
+}

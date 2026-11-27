@@ -31,7 +31,7 @@ func main() {
 	hermetic := flag.Bool("hermetic", false, "build config in code and inject every provider; no disk, no home directory")
 	summon := flag.Bool("summon", false, "show name summon: an agent that answers only what is said to it (hermetic, no microphone)")
 	flag.Parse()
-	err := error(nil)
+	var err error
 	if *summon {
 		err = runSummon()
 	} else {
