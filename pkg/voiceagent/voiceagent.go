@@ -143,6 +143,31 @@ type Options struct {
 	// and is consulted instead of AddressGate.
 	NameSummonAcousticWindow time.Duration
 
+	// NameSummonLive runs a keyword listener on the microphone for as long as
+	// the agent lives, and emits events.NameHeard the moment one of the name
+	// summon names is heard, before the user has finished speaking. It is the
+	// cue for a chime or a light. By itself it does not change which
+	// utterances are answered: the gate still decides from the transcript,
+	// because a name inside a sentence ("tell me about Juno") fires the
+	// listener too.
+	//
+	// It needs name_summon_enabled with acoustic_name_enabled (whose model it
+	// loads a second copy of), a name the model can spell, and a microphone:
+	// New's own or an injected Capture. Rejected otherwise. Names heard while
+	// the agent is playing a reply are dropped, so its own voice gives no cue.
+	// See kws.Listener for cost and accuracy.
+	NameSummonLive bool
+
+	// NameSummonWake, with NameSummonLive, opens the gate for this long each
+	// time the name is heard live, for the pattern of a wake word, a pause and
+	// then the request. Zero is off. See summon.WithWake for what it gives up:
+	// every mention of the name, and every word the listener mistakes for it,
+	// lets the room through for that long.
+	NameSummonWake time.Duration
+
+	// nameListener replaces the keyword model behind NameSummonLive in tests.
+	nameListener func(names []string) (nameListener, error)
+
 	// Env describes the machine the agent tells the model it is running on. A
 	// zero Env falls back to the host, which is what the CLI wants. A server
 	// answering for many users should set it: telling the model it is running as
@@ -556,6 +581,23 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 
 	if nameGate != nil {
 		cleanups = append(cleanups, installNameSummon(p, opts.Events, nameGate, opts.NameSummonFollowUp, acousticWindow(cfg, opts) > 0))
+	}
+	if opts.NameSummonLive {
+		open := opts.nameListener
+		if open == nil {
+			open = func(names []string) (nameListener, error) { return openNameListener(cfg, names) }
+		}
+		listener, err := open(spellableNames(nameGate))
+		if err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("voiceagent: Options.NameSummonLive: %w", err)
+		}
+		stopListening, err := installLiveWake(p, opts.Events, nameGate, listener, logf)
+		if err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("voiceagent: Options.NameSummonLive: %w", err)
+		}
+		cleanups = append(cleanups, stopListening)
 	}
 
 	return &Agent{Pipeline: p, nameSummon: nameGate}, cleanup, nil
