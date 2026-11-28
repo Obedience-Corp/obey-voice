@@ -97,6 +97,8 @@ go run . -summon      # scripted, no microphone, no models
 | A button, a tap or a held key to count as addressing the agent | `agent.NameSummon().SetBypass(true)` for that turn, then `false`. Safe to call when name summon is off |
 | "yes" after the agent asks a question to count without the name | `Options.NameSummonFollowUp`. Off unless set. While the window is open, anything heard is answered, whoever said it, and each answer opens it again. It is measured to the moment the follow-up has been transcribed, so allow for the sentence itself |
 | Other words in front of the name, or none | Build the gate yourself: `summon.NewGate(name, aliases, summon.WithFillers(...))`, set `Options.ExternalAddressing`, assign `agent.AddressGate = gate.Veto`, and call `gate.ReplyEnded()` if you use a follow-up window |
+| A chime or a light the moment the name is spoken | `Options.NameSummonLive` with `acoustic_name_enabled`, then subscribe to `events.NameHeard`. A cue only: it does not change what is answered |
+| "Juno", a pause, then the request | Add `Options.NameSummonWake`. Every mention of the name and every false match then opens the gate for that long |
 | Your own rule entirely | Set `Options.ExternalAddressing` and assign `agent.AddressGate` |
 
 `New` refuses to start, rather than start without the gate, when:
@@ -111,7 +113,12 @@ Limits to know before building on it:
 
 - The gate reads the finished transcript. The agent decides whether it was
   addressed after the speaker stops, and recognition runs on everything the
-  microphone hears. It is not an acoustic wake word.
+  microphone hears. For a cue the moment the name is spoken, set
+  `Options.NameSummonLive` and subscribe to `events.NameHeard`; for "name,
+  pause, request", add `Options.NameSummonWake`. Both need
+  `acoustic_name_enabled`, and the wake window answers more than the
+  transcript gate would: see
+  [a live wake word](../../docs/voice/acoustic-obey.md#a-live-wake-word-for-embedding-programs).
 - A name the recogniser misspells is not matched. Pick a name it transcribes
   reliably, and add the misspellings you see as aliases. With Parakeet you can
   also set `acoustic_name_enabled`: a keyword model then listens for the same

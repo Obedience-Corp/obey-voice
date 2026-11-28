@@ -174,9 +174,128 @@ OBEY_KWS_STT_MODELS=/path/to/models OBEY_KWS_NAMES="Juno" \
 
 Not covered: a recogniser other than Parakeet (a host that injects its own
 recogniser gets the rule only if that recogniser fills
-`stt.FinalTranscript.AcousticName` and `AcousticNameBy`), and a wake word that
-fires while the user is still speaking. Detection still runs once per finished
-utterance.
+`stt.FinalTranscript.AcousticName` and `AcousticNameBy`). This rule runs once
+per finished utterance; the next section is the detector on the live
+microphone.
+
+## A live wake word, for embedding programs
+
+`Options.NameSummonLive` runs a second copy of the detector on the microphone
+for as long as the agent lives. When it hears one of the name summon names it
+emits `events.NameHeard`, a few tenths of a second after the name and before
+the user has finished the sentence. That is the moment to chime or light up.
+
+```go
+agent, cleanup, err := voiceagent.New(ctx, voiceagent.Options{
+    Config:         cfg, // name_summon_enabled and acoustic_name_enabled
+    Events:         bus,
+    NameSummonLive: true,
+})
+events.Subscribe(bus, func(e events.NameHeard) { chime() })
+```
+
+By default the cue changes nothing about which utterances are answered. The
+gate still decides from the transcript and the per-utterance rule above. That
+is deliberate: the live detector fires on the name wherever it stands ("tell me
+about Juno") and on words that sound like it, so letting it open the gate would
+answer all of those.
+
+`Options.NameSummonWake` is the opt-in for the other behaviour: a wake word, a
+pause, then the request. Each time the name is heard live the gate stays open
+for that long, measured to the moment the request has been transcribed, so it
+has to cover the pause and the sentence.
+
+```go
+NameSummonLive: true,
+NameSummonWake: 8 * time.Second, // "Juno" ... "what's the weather"
+```
+
+With a wake window, the name said by itself ("Juno.", "Hey Juno?") is no
+longer sent to the model. It opens the window, whether or not the live detector
+caught it, so the request that follows is not spoken over a reply to the name.
+A bare name the recogniser misspells is not recognised as one and is answered
+as before. A request in the same breath ("Juno, what's the weather") is
+answered as it always was.
+
+What a wake window gives up: every mention of the name and every false match
+opens the gate to that utterance and to anything anyone says for the rest of
+the window. Without it the same sounds give a wrong chime and nothing else.
+
+Limits:
+
+- It needs `name_summon_enabled`, `acoustic_name_enabled`, a name the model can
+  spell and a microphone (`New`'s own or an injected `Capture`). `New` returns
+  an error otherwise, and when the keyword model is not in the models
+  directory. `obey-voice models ensure --stt` installs that model only for
+  `stt_provider: parakeet`. The live detector itself does not use the
+  recogniser, but it has only been run next to Parakeet and next to an
+  injected one.
+- Names heard while the agent is playing a reply, and for one second after, are
+  dropped, so the agent's own voice cannot cue or wake it. Saying the name over
+  a reply therefore gives no cue; the recogniser still hears it.
+- A conversation with a native-audio model (finalized audio input with
+  conversation controls) does not consult the gate, so a wake window does
+  nothing there, and native candidates refuse `acoustic_name_enabled`
+  altogether. A program on that path can run `kws.Listener` itself, as below.
+- The terminal app, the desktop app and `obey-voice serve` do not use it.
+
+A program with its own audio loop can use the detector without `New`:
+
+```go
+listener, err := kws.NewListener(modelDir, []string{"Juno"})
+defer listener.Close()
+for samples := range microphone { // mono 16 kHz float32, off the audio callback
+    hits, _ := listener.Write(samples)
+    if len(hits) > 0 {
+        chime()
+        gate.Woke() // a summon.Gate built with summon.WithWake(8 * time.Second)
+    }
+}
+// before sending a recording to a model that takes audio directly:
+if gate.Awake() { ... }
+```
+
+Call `listener.Reset()` when audio was lost or the device changed.
+
+Measured on Linux x86-64 (Ryzen 9 3900X) with synthesized speech only, through
+`kws.Listener` in 20 ms chunks on one stream that was never reset:
+
+| | Result |
+|---|---:|
+| "Juno" heard, 24 clips that say it (the set above, 2 s of quiet between clips) | 22 / 24 |
+| The same 24 clips with a fresh stream per clip, for comparison | 24 / 24 |
+| False matches in the 24 clips that do not say it | 3, all "Juneau" |
+| False matches in 36.7 minutes of other speech, listening for "Juno" | 0 |
+| False matches in the same speech, listening for "Obey" | 0 |
+| Processor time per second of audio, one thread | about 2% |
+
+The two misses were "Juno." by itself and a name in the middle of a long
+sentence. A name that opens an utterance was reported 0.9 to 1.7 s after the
+utterance began. Memory did not grow over 20 minutes of audio, and the stream
+still heard the name afterwards.
+
+The 36.7 minutes are 420 sentences of technical prose from this repository's
+documentation in three Kokoro voices, with half a second between sentences.
+No match in that much speech does not show a low rate: it is consistent with
+anything up to about five false matches per hour of speech, and it says
+nothing about names that resemble common words, about television, or about a
+real room.
+
+On a real microphone on the same machine the listener was run for ten seconds
+in a quiet room: every callback was taken (10.03 s of audio, none dropped), it
+gave no hit and it shut down cleanly. Nobody has spoken a name to it through a
+microphone yet, on any machine.
+
+To measure a name the same way, mark clips that should not match with
+`"want_keyword": false`; they may be any length:
+
+```sh
+go run ./scripts/kws_bench -model-dir /path/to/keyword-model \
+  -names "Juno" -cases /path/to/cases.json -live -gap 500ms
+```
+
+The report gives hits and misses, each hit's time from the start of its clip,
+and `false_matches_per_speech_hour`.
 
 ## Reproduce without microphone or playback
 
