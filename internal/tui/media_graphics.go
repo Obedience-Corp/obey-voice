@@ -33,10 +33,21 @@ type mediaGraphics struct {
 	issued       atomic.Uint64
 
 	mu      sync.Mutex
-	applied uint64
+	applied [mediaOwners]uint64
+	wants   [mediaOwners]map[mediaBox]bool
 	next    int
 	sent    map[mediaBox]int
 }
+
+// mediaOwner is a screen that shows pictures. Each keeps its own want set, so
+// one screen's sync never frees what another still shows.
+type mediaOwner int
+
+const (
+	mediaOwnerConversation mediaOwner = iota
+	mediaOwnerWorkers
+	mediaOwners
+)
 
 // mediaBox is one image at one size in cells; a resize makes a new one.
 type mediaBox struct {
@@ -47,6 +58,12 @@ type mediaBox struct {
 type mediaWant struct {
 	box mediaBox
 	ref chatmedia.Ref
+}
+
+// mediaPlacement is a picture and the cells it is drawn in.
+type mediaPlacement struct {
+	ref           chatmedia.Ref
+	width, height int
 }
 
 type mediaPlaced struct {
@@ -127,22 +144,24 @@ func (g *mediaGraphics) box(r chatmedia.Ref, width, height int) mediaBox {
 
 func (g *mediaGraphics) nextSync() uint64 { return g.issued.Add(1) }
 
-// sync makes the terminal hold exactly the wanted images and reports what it
-// holds. An older request that runs after a newer one does nothing.
-func (g *mediaGraphics) sync(seq uint64, want []mediaWant, store chatmedia.Store) (map[mediaBox]int, bool) {
+// sync makes the terminal hold owner's wanted images, frees images no owner
+// wants, and reports the ones owner asked for. An older request for owner
+// that runs after a newer one does nothing.
+func (g *mediaGraphics) sync(owner mediaOwner, seq uint64, want []mediaWant, store chatmedia.Store) (map[mediaBox]int, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if seq < g.applied {
+	if seq < g.applied[owner] {
 		return nil, false
 	}
-	g.applied = seq
+	g.applied[owner] = seq
 	wanted := make(map[mediaBox]bool, len(want))
 	for _, w := range want {
 		wanted[w.box] = true
 	}
+	g.wants[owner] = wanted
 	var out bytes.Buffer
 	for box, id := range g.sent {
-		if !wanted[box] {
+		if !g.wanted(box) {
 			writeImageDelete(&out, id)
 			delete(g.sent, box)
 		}
@@ -179,13 +198,22 @@ func (g *mediaGraphics) sync(seq uint64, want []mediaWant, store chatmedia.Store
 			clear(g.sent)
 		}
 	}
-	placed := make(map[mediaBox]int, len(g.sent))
-	for box, id := range g.sent {
-		if id != 0 {
+	placed := make(map[mediaBox]int, len(wanted))
+	for box := range wanted {
+		if id := g.sent[box]; id != 0 {
 			placed[box] = id
 		}
 	}
 	return placed, true
+}
+
+func (g *mediaGraphics) wanted(box mediaBox) bool {
+	for _, set := range g.wants {
+		if set[box] {
+			return true
+		}
+	}
+	return false
 }
 
 // close frees what the terminal still holds; image data outlives the program
@@ -196,7 +224,11 @@ func (g *mediaGraphics) close() {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.applied = g.issued.Add(1)
+	seq := g.issued.Add(1)
+	for owner := range g.applied {
+		g.applied[owner] = seq
+		g.wants[owner] = nil
+	}
 	var out bytes.Buffer
 	for box, id := range g.sent {
 		writeImageDelete(&out, id)
@@ -262,44 +294,60 @@ func (m conversationModel) nativeImage(r chatmedia.Ref, width, height int) (stri
 }
 
 func (m conversationModel) threadPreviewRows(attachments int) int {
-	if m.graphics != nil {
-		// Real pixels reward height: a screenshot is readable at most of the pane.
-		return max(10, min(32, m.viewport.Height*3/4/attachments))
-	}
-	return max(10, min(24, m.viewport.Height/(2*attachments)))
+	return previewRows(m.graphics != nil, m.viewport.Height, attachments)
 }
 
-// syncGraphics asks for the images the screen shows now and nothing else.
-func (m *conversationModel) syncGraphics(keep map[string]bool) tea.Cmd {
-	g := m.graphics
-	if g == nil {
-		return nil
+// previewRows is the height a thread gives each of a message's pictures.
+func previewRows(native bool, paneHeight, attachments int) int {
+	attachments = max(1, attachments)
+	if native {
+		// Real pixels reward height: a screenshot is readable at most of the pane.
+		return max(10, min(32, paneHeight*3/4/attachments))
 	}
-	var want []mediaWant
-	seen := make(map[mediaBox]bool)
-	add := func(r chatmedia.Ref, width, height int) {
-		box := g.box(r, width, height)
-		if box.id == "" || !keep[r.ID] || seen[box] {
-			return
-		}
-		seen[box] = true
-		want = append(want, mediaWant{box, r})
-	}
+	return max(10, min(24, paneHeight/(2*attachments)))
+}
+
+func (m conversationModel) graphicsPlacements() []mediaPlacement {
+	var places []mediaPlacement
 	for _, item := range m.items {
 		for _, r := range item.attachments {
-			add(r, max(1, m.viewport.Width-4), m.threadPreviewRows(len(item.attachments)))
+			places = append(places, mediaPlacement{r, max(1, m.viewport.Width-4), m.threadPreviewRows(len(item.attachments))})
 		}
 	}
 	if len(m.media.draft) > 0 {
 		w, h := m.draftPreviewSize()
 		for _, r := range m.media.draft {
-			add(r, w, h)
+			places = append(places, mediaPlacement{r, w, h})
 		}
 	}
 	if m.pictures.open {
 		if p := m.picturePanelGeometry(); p.previewH > 0 {
-			add(m.pictures.spot.ref, p.previewW, p.previewH)
+			places = append(places, mediaPlacement{m.pictures.spot.ref, p.previewW, p.previewH})
 		}
+	}
+	return places
+}
+
+// syncGraphics asks for the images the screen shows now and nothing else.
+func (m *conversationModel) syncGraphics(keep map[string]bool) tea.Cmd {
+	if m.graphics == nil {
+		return nil
+	}
+	return m.graphics.syncCommand(mediaOwnerConversation, &m.media, m.graphicsPlacements(), keep)
+}
+
+// syncCommand asks for owner's placements of the pictures in keep, unless
+// that is what owner asked for last.
+func (g *mediaGraphics) syncCommand(owner mediaOwner, media *mediaState, places []mediaPlacement, keep map[string]bool) tea.Cmd {
+	var want []mediaWant
+	seen := make(map[mediaBox]bool)
+	for _, p := range places {
+		box := g.box(p.ref, p.width, p.height)
+		if box.id == "" || !keep[p.ref.ID] || seen[box] {
+			continue
+		}
+		seen[box] = true
+		want = append(want, mediaWant{box, p.ref})
 	}
 	keys := make([]string, 0, len(want))
 	for _, w := range want {
@@ -307,13 +355,13 @@ func (m *conversationModel) syncGraphics(keep map[string]bool) tea.Cmd {
 	}
 	sort.Strings(keys)
 	signature := strings.Join(keys, "\n")
-	if signature == m.media.wantSignature {
+	if signature == media.wantSignature {
 		return nil
 	}
-	m.media.wantSignature = signature
-	token, seq, store := m.media.token, g.nextSync(), chatmedia.DefaultStore()
+	media.wantSignature = signature
+	token, seq, store := media.token, g.nextSync(), chatmedia.DefaultStore()
 	return func() tea.Msg {
-		placed, ok := g.sync(seq, want, store)
+		placed, ok := g.sync(owner, seq, want, store)
 		if !ok {
 			return nil
 		}

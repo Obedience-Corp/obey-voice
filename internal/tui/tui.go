@@ -313,7 +313,10 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a = next
 	case tea.WindowSizeMsg:
-		a = a.onWindowSize(msg)
+		var resize tea.Cmd
+		a, resize = a.onWindowSize(msg)
+		model, cmd := a.delegate(msg)
+		return model, tea.Batch(resize, cmd)
 	case switchScreenMsg:
 		return a.onSwitchScreen(msg)
 	case tellWorkerMsg:

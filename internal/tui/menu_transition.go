@@ -63,6 +63,6 @@ func (a App) onMenuReady(msg menuReadyMsg) (tea.Model, tea.Cmd) {
 	next.wg = &sync.WaitGroup{}
 	next.progress = newEventBridge(16)
 	next.slot, next.meetingSlot = newConversationSlot(), newMeetingSlot()
-	next = next.onWindowSize(tea.WindowSizeMsg{Width: a.width, Height: a.height})
-	return next, next.conversation.capturePollCmd()
+	next, resize := next.onWindowSize(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+	return next, tea.Batch(resize, next.conversation.capturePollCmd())
 }

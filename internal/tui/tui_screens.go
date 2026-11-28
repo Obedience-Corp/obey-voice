@@ -59,7 +59,7 @@ func (a App) onKey(msg tea.KeyMsg) (App, tea.Cmd, bool) {
 	return a, nil, false
 }
 
-func (a App) onWindowSize(msg tea.WindowSizeMsg) App {
+func (a App) onWindowSize(msg tea.WindowSizeMsg) (App, tea.Cmd) {
 	a.width, a.height = msg.Width, msg.Height
 	// Keep every screen's geometry current so switching into Sessions /
 	// Settings / etc. does not render with height=0 (which capped the
@@ -72,15 +72,31 @@ func (a App) onWindowSize(msg tea.WindowSizeMsg) App {
 	a.library, _ = a.library.Update(msg)
 	a.remote, _ = a.remote.Update(msg)
 	a.personas, _ = a.personas.Update(msg)
-	a.workers, _ = a.workers.Update(msg)
+	// The active screen gets the resize from delegate. A second update here
+	// would record the new size and drop its picture sync.
+	if a.screen != screenWorkers {
+		a.workers, _ = a.workers.Update(msg)
+	}
+	var cmd tea.Cmd
 	if a.screen != screenConversation {
-		a.conversation, _ = a.conversation.Update(msg)
+		a.conversation, cmd = a.conversation.Update(msg)
 	}
 	// Meeting is updated via the fall-through delegate (typed tea.Model).
-	return a
+	return a, cmd
 }
 
+// Leaving the Workers screen stops its refresh, so its pictures are freed
+// here on every path out.
 func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
+	var release tea.Cmd
+	if a.screen == screenWorkers && screen(msg) != screenWorkers {
+		release = a.workers.releaseGraphics()
+	}
+	model, cmd := a.switchScreen(msg)
+	return model, tea.Batch(release, cmd)
+}
+
+func (a App) switchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 	target := screen(msg)
 	if target == screenSettings && a.conversation.selectionPending() && (a.screen == screenConversation || a.screen == screenPersonas) {
 		a.conversation.setStatus("Persona selection in progress", true)
@@ -209,6 +225,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 			controller = demoWorkers(controller)
 		}
 		a.workers = newWorkers(a.cfg, controller)
+		a.workers.adoptGraphics(a.conversation.graphics)
 		a.workers.returnScreen = prev
 		a.workers.width, a.workers.height = a.width, a.height
 		a.workers.refresh()
@@ -392,7 +409,7 @@ func (a App) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Conversation ticks belong to the conversation even while hidden.
 		// Dropping one leaves voiceTicking set but no timer scheduled.
 		// Meeting animation uses the separate meetingTickMsg lifecycle.
-		case mediaImported, mediaLoaded, mediaTick, mediaValidated, mediaOpenError, pictureActionDone, capturePollMsg, voiceTickMsg, voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
+		case mediaImported, mediaLoaded, mediaPlaced, mediaTick, mediaValidated, mediaOpenError, pictureActionDone, capturePollMsg, voiceTickMsg, voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
 			compactDoneMsg, backgroundReadyMsg, backgroundRecoveryMsg, backgroundPauseDoneMsg:
 			var convCmd tea.Cmd
 			a.conversation, convCmd = a.conversation.Update(msg)

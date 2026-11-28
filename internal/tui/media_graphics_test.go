@@ -170,7 +170,7 @@ func TestGraphicsSyncSendsOnceResizesAndFrees(t *testing.T) {
 	if box.id == "" {
 		t.Fatalf("fixture %dx%d got no box", ref.Width, ref.Height)
 	}
-	placed, ok := g.sync(g.nextSync(), []mediaWant{{box, ref}}, store)
+	placed, ok := g.sync(mediaOwnerConversation, g.nextSync(), []mediaWant{{box, ref}}, store)
 	if !ok || placed[box] == 0 {
 		t.Fatalf("image was not placed: %v", placed)
 	}
@@ -189,7 +189,7 @@ func TestGraphicsSyncSendsOnceResizesAndFrees(t *testing.T) {
 	}
 
 	sent := len(out.String())
-	again, _ := g.sync(g.nextSync(), []mediaWant{{box, ref}}, store)
+	again, _ := g.sync(mediaOwnerConversation, g.nextSync(), []mediaWant{{box, ref}}, store)
 	if len(out.String()) != sent || again[box] != placed[box] {
 		t.Fatal("an image the terminal already holds was sent again")
 	}
@@ -199,14 +199,14 @@ func TestGraphicsSyncSendsOnceResizesAndFrees(t *testing.T) {
 	if smaller == box {
 		t.Fatal("fixture too small to exercise a resize")
 	}
-	resized, _ := g.sync(g.nextSync(), []mediaWant{{smaller, ref}}, store)
+	resized, _ := g.sync(mediaOwnerConversation, g.nextSync(), []mediaWant{{smaller, ref}}, store)
 	if resized[smaller] == 0 || resized[box] != 0 {
 		t.Fatalf("resize kept the old box: %v", resized)
 	}
 	if !strings.Contains(out.String()[sent:], "a=d,d=I,i="+itoa(placed[box])+",") {
 		t.Fatal("the replaced image was not freed")
 	}
-	if _, ok := g.sync(stale, []mediaWant{{box, ref}}, store); ok {
+	if _, ok := g.sync(mediaOwnerConversation, stale, []mediaWant{{box, ref}}, store); ok {
 		t.Fatal("an older request overwrote a newer one")
 	}
 
@@ -222,7 +222,7 @@ func TestGraphicsSyncKeepsHalfBlocksForAnUnreadableImage(t *testing.T) {
 	g, out := testGraphics(4, 8)
 	missing := chatmedia.Ref{ID: "gone", Name: "gone.png", Format: "png", Width: 64, Height: 64}
 	box := g.box(missing, 40, 10)
-	placed, ok := g.sync(g.nextSync(), []mediaWant{{box, missing}}, chatmedia.DefaultStore())
+	placed, ok := g.sync(mediaOwnerConversation, g.nextSync(), []mediaWant{{box, missing}}, chatmedia.DefaultStore())
 	if !ok || len(placed) != 0 || out.String() != "" {
 		t.Fatalf("unreadable image was placed: %v %q", placed, out.String())
 	}
