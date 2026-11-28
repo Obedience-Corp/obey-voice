@@ -12,7 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
-func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool, previews ...func([]chatmedia.Ref, int, int) string) string {
+func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool, previews ...func([]chatmedia.Ref) string) string {
 	width = max(1, width)
 	var blocks []string
 	hasReply := false
@@ -29,7 +29,7 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool, prev
 			hasReply = true
 		}
 		if len(entry.attachments) > 0 && len(previews) > 0 {
-			blocks = append(blocks, previews[0](entry.attachments, width, 8))
+			blocks = append(blocks, previews[0](entry.attachments))
 		}
 	}
 	if item.Activity != "" && len(item.Tools) == 0 {

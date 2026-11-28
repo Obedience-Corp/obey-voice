@@ -64,7 +64,7 @@ func TestWorkerInspectorRendersInputAndResultImages(t *testing.T) {
 	if len(projection["worker"]) != 2 || len(projection["worker"][1].Attachments) != 1 || projection["worker"][1].Attachments[0].Path == "" {
 		t.Fatal("native worker thread missing media")
 	}
-	view := stripANSI(formatWorkerDetail(item, 80, false, m.renderMedia))
+	view := stripANSI(formatWorkerDetail(item, 80, false, func(refs []chatmedia.Ref) string { return m.renderMedia(refs, 80, 8) }))
 	if !strings.Contains(view, "result.gif") || !strings.Contains(view, "▀") {
 		t.Fatal("worker did not render media")
 	}

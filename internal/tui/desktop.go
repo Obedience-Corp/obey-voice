@@ -140,7 +140,7 @@ func StartDesktopController(ctx context.Context, rt *ConversationRuntime, publis
 	a.screen = screenConversation
 	a.runCtx, a.runCancel, a.wg = ctx, cancel, &sync.WaitGroup{}
 	a.width, a.height = 100, 40
-	a = a.onWindowSize(tea.WindowSizeMsg{Width: 100, Height: 40})
+	a, _ = a.onWindowSize(tea.WindowSizeMsg{Width: 100, Height: 40})
 	ready, initial := a.onRuntimeReady(runtimeReadyMsg{rt: rt})
 	model := desktopModel{app: ready.(App), rt: rt, initial: initial, publish: publish}
 	p := tea.NewProgram(model, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer(), tea.WithoutSignalHandler())

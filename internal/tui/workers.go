@@ -35,13 +35,16 @@ type workersModel struct {
 	confirmAll                    bool
 	expandTools                   bool
 	media                         mediaState
+	graphics                      *mediaGraphics
 	detail                        viewport.Model
 	token                         *int
 }
 
 func newWorkers(cfg *config.Config, controller workerController) workersModel {
+	// A token from the start keeps a worker's mediaPlaced from matching a
+	// conversation that has none yet.
 	m := workersModel{cfg: cfg, controller: controller, returnScreen: screenLauncher,
-		detail: viewport.New(80, 12), token: new(int)}
+		detail: viewport.New(80, 12), token: new(int), media: mediaState{token: new(int), started: time.Now()}}
 	m.refresh()
 	return m
 }
@@ -87,7 +90,7 @@ func (m *workersModel) refreshDetail() {
 			continue
 		}
 		offset := m.detail.YOffset
-		m.detail.SetContent(formatWorkerDetail(item, m.detail.Width, m.expandTools, (conversationModel{media: m.media}).renderMedia))
+		m.detail.SetContent(formatWorkerDetail(item, m.detail.Width, m.expandTools, m.renderPreview))
 		m.detail.SetYOffset(offset)
 		if follow {
 			m.detail.GotoBottom()
@@ -121,8 +124,10 @@ func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.graphics.measure()
 		m.ensureVisible()
 		m.refreshDetail()
+		return m, m.syncGraphics()
 	case workersTickMsg:
 		if msg.token != m.token {
 			return m, nil
@@ -148,7 +153,7 @@ func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
 		case "esc", "q":
 			if m.detailID != "" {
 				m.detailID = ""
-				return m, nil
+				return m, m.syncGraphics()
 			}
 			return m, func() tea.Msg { return switchScreenMsg(m.returnScreen) }
 		case "t":
