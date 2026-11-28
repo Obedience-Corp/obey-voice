@@ -20,6 +20,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/ollama/ollama/api"
 )
 
@@ -397,7 +398,8 @@ func TestPictureChoiceSchemaQuotesFileNamesAndAsksForTheSubjectFirst(t *testing.
 }
 
 // A caption that names a different offered file than the one chosen would be
-// said with the wrong picture: the choice is refused.
+// said with the wrong picture: no picture is posted, the refusal is shown,
+// and the picture stays owed.
 func TestPictureChoiceCaptionMustNameTheChosenFile(t *testing.T) {
 	for _, tc := range []struct {
 		caption string
@@ -414,6 +416,8 @@ func TestPictureChoiceCaptionMustNameTheChosenFile(t *testing.T) {
 			choice, _ := json.Marshal(map[string]string{"wanted": "the one most like me", "file": "lion.jpg", "caption": tc.caption})
 			o, _ := pictureServer(t, choiceReply(string(choice)))
 			pictureWorkDir(t, o)
+			var notices []string
+			o.SetInfoSink(func(e events.Info) { notices = append(notices, e.Message) })
 			turn := runRoutedTurn(t, o, lionRequest, liveDirect)
 			if tc.ok {
 				if turn.result.Err != nil || turn.answer != tc.caption+"\n![lion.jpg](<lion.jpg>)" {
@@ -421,8 +425,14 @@ func TestPictureChoiceCaptionMustNameTheChosenFile(t *testing.T) {
 				}
 				return
 			}
-			if turn.answer != noPictureLine || !errors.Is(turn.result.Err, errPictureChoice) || !strings.Contains(turn.result.Err.Error(), "dolphin.jpg") {
+			if turn.answer != noPictureLine || turn.result.Err != nil {
 				t.Fatalf("a caption naming another file was sent with lion.jpg: answer=%q err=%v", turn.answer, turn.result.Err)
+			}
+			if !slices.ContainsFunc(notices, func(m string) bool { return strings.Contains(m, "dolphin.jpg") }) {
+				t.Fatalf("the refusal is not shown: %q", notices)
+			}
+			if _, owed := FindOwedImage(o.History()); !owed {
+				t.Fatal("the picture is no longer owed after a refused choice")
 			}
 		})
 	}
@@ -443,6 +453,11 @@ func TestPictureRetryKeepsTheHandoff(t *testing.T) {
 		{"not in the group", "Lions rule. Ask @home about it.", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)"},
 		{"own name", "Lions rule, says @Obey.", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)"},
 		{"caption hands off", "Lions rule. @Scout, which is yours?", `{"wanted":"a lion","file":"lion.jpg","caption":"Here is a lion, @Scout."}`, "Here is a lion, @Scout.\n![lion.jpg](<lion.jpg>)"},
+		{"file name", "@Scout, do you prefer lion.jpg?", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\n@Scout, do you prefer lion.jpg?"},
+		{"file name before the mention", "I picked lion.jpg and @Scout should answer.", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\nI picked lion.jpg and @Scout should answer."},
+		{"decimal", "Lions rule. @Scout, is the 2.5 metre one yours?", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\n@Scout, is the 2.5 metre one yours?"},
+		{"abbreviation", "@Scout, what would you pick, e.g. a cat?", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\n@Scout, what would you pick, e.g. a cat?"},
+		{"refused choice", "Lions rule. @Scout, which is yours?", `{"wanted":"a lion","file":"lion.jpg","caption":"The dolphin."}`, noPictureLine + "\n@Scout, which is yours?"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o, _ := pictureServer(t, func(n int, _ api.ChatRequest) (int, api.Message) {
@@ -484,5 +499,19 @@ func TestPictureChoiceCaptionMayNameAShorterFileWithinTheChosenOne(t *testing.T)
 				t.Fatalf("answer=%q err=%v, want accepted=%t", turn.answer, turn.result.Err, tc.ok)
 			}
 		})
+	}
+}
+
+// A camera's name for a picture says nothing about it; the model may have
+// seen the picture attached, so a caption about something else is kept.
+func TestPictureChoiceKeepsACameraNamedFile(t *testing.T) {
+	const caption = "A day at the beach."
+	choice, _ := json.Marshal(map[string]string{"wanted": "the one most like me", "file": "IMG_2031.jpg", "caption": caption})
+	o, _ := pictureServer(t, choiceReply(string(choice)))
+	writeJPEG(t, filepath.Join(o.workDir, "IMG_2031.jpg"))
+	writeJPEG(t, filepath.Join(o.workDir, "beach.jpg"))
+	turn := runRoutedTurn(t, o, lionRequest, liveDirect)
+	if turn.result.Err != nil || turn.answer != caption+"\n![IMG_2031.jpg](<IMG_2031.jpg>)" {
+		t.Fatalf("answer=%q err=%v", turn.answer, turn.result.Err)
 	}
 }
