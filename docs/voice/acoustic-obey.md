@@ -270,8 +270,8 @@ Measured on Linux x86-64 (Ryzen 9 3900X) with synthesized speech only, through
 | Processor time per second of audio, one thread | about 2% |
 
 The two misses were "Juno." by itself and a name in the middle of a long
-sentence. A name that opens an utterance was reported 0.9 to 1.7 s after the
-utterance began. Memory did not grow over 20 minutes of audio, and the stream
+sentence. A name in the first few words of a clip was reported 0.9 to 1.7 s
+after the clip began. Memory did not grow over 20 minutes of audio, and the stream
 still heard the name afterwards.
 
 The 36.7 minutes are 420 sentences of technical prose from this repository's
