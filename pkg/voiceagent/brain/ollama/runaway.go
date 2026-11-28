@@ -9,9 +9,9 @@ var ErrResponseRepetition = errors.New("repeating text detected; generation stop
 
 // Hold only the tail of an exceptionally long prose word. This catches a
 // model stuck generating a syllable (e.g. undundund...) without buffering a
-// sentence or mistaking repeated prose, lists or code for a broken generation.
-// What it lets through then goes to lines, which catches a model stuck saying
-// one sentence.
+// sentence or mistaking lists or code for a broken generation. What it lets
+// through then goes to lines, which catches a model stuck saying one sentence
+// over and over.
 type runawayTextGuard struct {
 	lines     lineLoopGuard
 	word      []byte
@@ -27,7 +27,7 @@ func newRunawayTextGuard(input string) runawayTextGuard {
 	// normal output budget instead of guessing that their output is broken.
 	for _, word := range strings.Fields(strings.ToLower(input)) {
 		switch strings.Trim(word, "\"'.,!?;:()") {
-		case "repeat", "reproduce", "recite", "verbatim":
+		case "repeat", "reproduce", "recite", "verbatim", "times", "sing", "song", "lyrics", "chant":
 			return runawayTextGuard{requested: true}
 		}
 	}

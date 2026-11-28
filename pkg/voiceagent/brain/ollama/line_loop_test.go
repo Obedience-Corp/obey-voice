@@ -16,9 +16,10 @@ func TestLineLoopGuard(t *testing.T) {
 	}{
 		{"the reported loop", strings.Repeat(picture+"\n\n", 40), picture + "\n\n", true},
 		{"loop on one line", "Sure thing. " + strings.Repeat(picture+" ", 40), "Sure thing. " + picture + " ", true},
-		{"loop after other text", "Okay.\n\n" + strings.Repeat(picture+"\n", 3) + "Here it is.", "Okay.\n\n" + picture + "\n", true},
-		{"two copies are left alone", picture + "\n" + picture + "\nHere it is.", "", false},
-		{"two copies at the end", picture + " " + picture, "", false},
+		{"loop after other text", "Okay.\n\n" + strings.Repeat(picture+"\n", 5) + "Here it is.", "Okay.\n\n" + picture + "\n", true},
+		{"four copies are left alone", strings.Repeat(picture+"\n", 4) + "Here it is.", "", false},
+		{"four copies at the end", strings.Repeat(picture+" ", 3) + picture, "", false},
+		{"a carol", strings.Repeat("We wish you a merry Christmas,\n", 3) + "And a happy New Year.", "", false},
 		{"a sentence that only starts the same", picture + " " + picture + " Let me make you a picture of a fox.", "", false},
 		{"short repeats", "No. No. No. No. Ho ho ho! Ho ho ho! Ho ho ho!", "", false},
 		{"code block", fence, "", false},
@@ -55,10 +56,12 @@ func TestLineLoopGuard(t *testing.T) {
 
 // A request to repeat something is the task, not a loop.
 func TestRequestedRepetitionPassesTheLoopGuard(t *testing.T) {
-	g := newRunawayTextGuard("Repeat this line five times: let me make you a picture")
-	text := strings.Repeat("Let me make you a picture.\n", 5)
-	sent, err := g.feed(text)
-	if sent += g.flush(); err != nil || sent != text {
-		t.Fatalf("sent %q err %v", sent, err)
+	for _, input := range []string{"Repeat after me: I will not be late.", "Say 'I will not be late.' ten times.", "Sing me a song about being late."} {
+		g := newRunawayTextGuard(input)
+		text := strings.Repeat("I will not be late again.\n", 10)
+		sent, err := g.feed(text)
+		if sent += g.flush(); err != nil || sent != text {
+			t.Fatalf("%q: sent %q err %v", input, sent, err)
+		}
 	}
 }

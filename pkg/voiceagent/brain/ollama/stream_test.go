@@ -118,8 +118,8 @@ func TestALoopingHeldReplyStopsWhileItIsWritten(t *testing.T) {
 			err = receive(api.ChatResponse{Message: api.Message{Role: "assistant", Content: "Let me make you a picture.\n\n"}})
 			chunks++
 		}
-		if !errors.Is(err, ErrResponseRepetition) || chunks != 3 {
-			t.Fatalf("hold %v: stopped after %d chunks with %v, want the third copy to stop it", hold, chunks, err)
+		if !errors.Is(err, ErrResponseRepetition) || chunks != loopCopies {
+			t.Fatalf("hold %v: stopped after %d chunks with %v, want copy %d to stop it", hold, chunks, err, loopCopies)
 		}
 		err = round.FinishSpeech(round.ReleaseHeld(false, err))
 		want := "Let me make you a picture.\n\n"

@@ -7,17 +7,18 @@ import (
 )
 
 // A model can fall into saying one sentence over and over ("Let me make you
-// a picture." until its output cap). Three copies in a row of a sentence this
-// long is a loop, not prose; shorter ones ("No. No. No.") can be either.
+// a picture." until its output cap). Five copies in a row of a sentence this
+// long is a loop; a song can sing a line three or four times, and shorter
+// sentences ("No. No. No.") repeat in ordinary speech.
 const (
-	loopCopies   = 3
+	loopCopies   = 5
 	loopMinRunes = 16
 )
 
 // lineLoopGuard stops a reply that repeats its last sentence back to back.
 // Text streams as it arrives, except a sentence that so far matches the one
 // before it: that is held until it diverges, which releases it unchanged, or
-// becomes the third copy, which stops the reply with only the first copy
+// becomes the fifth copy, which stops the reply with only the first copy
 // sent. Code is never held or counted: repeated lines are ordinary there.
 type lineLoopGuard struct {
 	last   string // the previous whole sentence, whitespace-normalized
@@ -120,7 +121,7 @@ func (g *lineLoopGuard) complete(out *strings.Builder) bool {
 	return false
 }
 
-// flush sends whatever is held at the end of the reply: fewer than three
+// flush sends whatever is held at the end of the reply: fewer than five
 // copies are left as the model wrote them.
 func (g *lineLoopGuard) flush() string {
 	if g.stopped {
