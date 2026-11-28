@@ -460,3 +460,29 @@ func TestPictureRetryKeepsTheHandoff(t *testing.T) {
 		})
 	}
 }
+
+// A file whose name is part of the chosen file's name does not contradict it:
+// "the dog" can mean dog-at-a-laptop.jpg when dog.jpg is offered too.
+func TestPictureChoiceCaptionMayNameAShorterFileWithinTheChosenOne(t *testing.T) {
+	for _, tc := range []struct {
+		caption, file string
+		ok            bool
+	}{
+		{"The dog, sir, the only one working.", "dog-at-a-laptop.jpg", true},
+		{"The dog at a laptop, sir.", "dog-at-a-laptop.jpg", true},
+		{"The dog at a laptop, sir.", "dog.jpg", false},
+		{"The lion, sir.", "dog-at-a-laptop.jpg", false},
+	} {
+		t.Run(tc.caption+" "+tc.file, func(t *testing.T) {
+			choice, _ := json.Marshal(map[string]string{"wanted": "the one most like me", "file": tc.file, "caption": tc.caption})
+			o, _ := pictureServer(t, choiceReply(string(choice)))
+			pictureWorkDir(t, o)
+			writeJPEG(t, filepath.Join(o.workDir, "dog.jpg"))
+			writeJPEG(t, filepath.Join(o.workDir, "dog-at-a-laptop.jpg"))
+			turn := runRoutedTurn(t, o, lionRequest, liveDirect)
+			if got := turn.result.Err == nil && strings.Contains(turn.answer, "](<"+tc.file+">)"); got != tc.ok {
+				t.Fatalf("answer=%q err=%v, want accepted=%t", turn.answer, turn.result.Err, tc.ok)
+			}
+		})
+	}
+}

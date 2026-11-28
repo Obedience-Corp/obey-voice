@@ -226,8 +226,8 @@ func (c *pictureChoice) reply(response api.ChatResponse) (string, error) {
 	if !slices.Contains(c.files, *choice.File) {
 		return "", fmt.Errorf("the picture choice named %q, which was not offered", fmt.Sprintf("%.80s", *choice.File))
 	}
-	if named := c.named(caption); len(named) > 0 && !slices.Contains(named, *choice.File) {
-		return "", fmt.Errorf("the caption names %q, not the chosen %q", named[0], *choice.File)
+	if other := c.contradicts(caption, *choice.File); other != "" {
+		return "", fmt.Errorf("the caption names %q, not the chosen %q", other, *choice.File)
 	}
 	if caption == "" {
 		caption = pictureCaption
@@ -249,27 +249,63 @@ func (c *pictureChoice) withHandoff(reply string) string {
 // using one does not name that file.
 var genericPictureNames = []string{"file", "image", "img", "photo", "pic", "picture", "screenshot"}
 
-// named is the offered files whose names a caption says in words: "the dog"
-// names dog.jpg, "a red fox" names red-fox.png. A picture whose caption names
-// only other files would be said with the wrong picture.
-func (c *pictureChoice) named(caption string) []string {
-	var named []string
+// fileWords is a file's name as lowercase words, or nil for a name that says
+// nothing about the picture.
+func fileWords(file string) []string {
+	base := path.Base(file)
+	words := strings.FieldsFunc(strings.ToLower(strings.TrimSuffix(base, path.Ext(base))), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	if len(words) == 0 || !strings.ContainsFunc(strings.Join(words, ""), unicode.IsLetter) || (len(words) == 1 && slices.Contains(genericPictureNames, words[0])) {
+		return nil
+	}
+	return words
+}
+
+// saysWords reports whether text says words in a row, as whole words.
+func saysWords(text string, words []string) bool {
+	quoted := make([]string, len(words))
+	for i, word := range words {
+		quoted[i] = regexp.QuoteMeta(word)
+	}
+	return regexp.MustCompile(`(?i)(?:^|[^\pL\pN])` + strings.Join(quoted, `[^\pL\pN]+`) + `(?:e?s)?(?:$|[^\pL\pN])`).MatchString(text)
+}
+
+// contradicts names an offered file the caption says instead of the chosen
+// one, or "": "the dog" said with lion.jpg names dog.jpg. The longest name
+// said wins, so "the dog at a laptop" names dog-at-a-laptop.jpg, not dog.jpg,
+// and a name within the chosen one's ("the dog" for dog-at-a-laptop.jpg) is
+// not a contradiction.
+func (c *pictureChoice) contradicts(caption, chosen string) string {
+	var named [][]string
+	var files []string
 	for _, file := range c.files {
-		base := path.Base(file)
-		words := strings.FieldsFunc(strings.ToLower(strings.TrimSuffix(base, path.Ext(base))), func(r rune) bool {
-			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-		})
-		if len(words) == 0 || !strings.ContainsFunc(strings.Join(words, ""), unicode.IsLetter) || (len(words) == 1 && slices.Contains(genericPictureNames, words[0])) {
-			continue
-		}
-		for i, word := range words {
-			words[i] = regexp.QuoteMeta(word)
-		}
-		if regexp.MustCompile(`(?i)(?:^|[^\pL\pN])` + strings.Join(words, `[^\pL\pN]+`) + `(?:e?s)?(?:$|[^\pL\pN])`).MatchString(caption) {
-			named = append(named, file)
+		if words := fileWords(file); words != nil && saysWords(caption, words) {
+			named, files = append(named, words), append(files, file)
 		}
 	}
-	return named
+	var said []string
+	for i, words := range named {
+		longer := false
+		for j, other := range named {
+			if j != i && len(other) > len(words) && saysWords(strings.Join(other, " "), words) {
+				longer = true
+			}
+		}
+		if !longer {
+			said = append(said, files[i])
+		}
+	}
+	if slices.Contains(said, chosen) {
+		return ""
+	}
+	chosenName := strings.Join(fileWords(chosen), " ")
+	for _, file := range said {
+		if !saysWords(chosenName, fileWords(file)) {
+			return file
+		}
+	}
+	return ""
 }
 
 // pictureCaptionText is a caption as one line of prose that cannot itself be
