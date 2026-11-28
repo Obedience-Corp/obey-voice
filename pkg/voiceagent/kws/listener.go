@@ -86,10 +86,17 @@ func (l *Listener) Write(samples []float32) ([]Hit, error) {
 			if err != nil || index < 0 || index >= len(l.spotter.names) {
 				return hits, fmt.Errorf("acoustic name detector reported unknown keyword %q", tag)
 			}
-			hits = append(hits, Hit{Name: l.spotter.names[index], By: time.Duration(l.fed) * time.Second / sampleRate})
+			hits = append(hits, Hit{Name: l.spotter.names[index], By: streamTime(l.fed)})
 		}
 	}
 	return hits, nil
+}
+
+// streamTime is how much audio n samples are. Whole seconds are taken first:
+// n times a second in nanoseconds overflows after about 160 hours of audio,
+// and a listener runs for as long as the device is on.
+func streamTime(n int64) time.Duration {
+	return time.Duration(n/sampleRate)*time.Second + time.Duration(n%sampleRate)*time.Second/sampleRate
 }
 
 // Reset forgets the audio heard so far without moving the clock Hit.By reads.

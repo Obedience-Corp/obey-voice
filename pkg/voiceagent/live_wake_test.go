@@ -203,6 +203,34 @@ func TestLiveNameOpensTheGateForAWakeWindow(t *testing.T) {
 	}
 }
 
+// The wake word as an utterance of its own, which is what a pause after it
+// produces: the model must not answer the name and then the request.
+func TestWakeWordSpokenAloneIsNotAnswered(t *testing.T) {
+	heard, answering := &scriptedSTT{}, &countingBrain{}
+	opts := liveOptions(&micCapture{}, &fakeListener{})
+	opts.STT, opts.Brain = heard, answering
+	opts.NameSummonWake = time.Minute
+	agent, cleanup, err := New(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer cleanup()
+	for _, step := range []struct {
+		say   string
+		calls int
+	}{{"Juno.", 0}, {unaddressed, 1}} {
+		heard.next = step.say
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if _, err := agent.RunTurn(ctx); err != nil {
+			t.Fatalf("RunTurn(%q): %v", step.say, err)
+		}
+		cancel()
+		if got := answering.count(); got != step.calls {
+			t.Fatalf("after %q: %d brain calls, want %d", step.say, got, step.calls)
+		}
+	}
+}
+
 func TestNewRejectsALiveWakeThatCannotRun(t *testing.T) {
 	change := func(edit func(*Options)) Options {
 		opts := liveOptions(&micCapture{}, &fakeListener{})
@@ -272,19 +300,23 @@ func (c *frameMic) Unsubscribe(id int) {
 }
 
 func TestLiveWakeStartsAfreshAfterLostAudio(t *testing.T) {
-	mic := &frameMic{frames: make(chan audio.Frame, 4)}
+	mic := &frameMic{frames: make(chan audio.Frame, 8)}
 	listener := &fakeListener{}
 	var cues int
 	stop := startLiveWake(mic, &liveWake{listener: listener, logf: t.Logf, heard: func(kws.Hit, time.Time) { cues++ }})
 
 	mic.frames <- audio.Frame{Samples: []float32{0}}
 	mic.frames <- audio.Frame{Samples: []float32{nameSample}, CaptureGap: audio.CaptureGap{SubscriptionDroppedSamples: 320, SubscriptionDroppedCallbacks: 1}}
-	mic.frames <- audio.Frame{Samples: []float32{0}, CaptureGap: audio.CaptureGap{DeviceDiscontinuity: true}}
+	// A reopened microphone, as audio.Capture reports it: on the callback's
+	// own span when it was delivered, on the gap when it was dropped.
+	mic.frames <- audio.Frame{Samples: []float32{0}, CaptureSpans: []audio.CaptureSpan{{SampleCount: 1, DeviceDiscontinuity: true}}}
+	mic.frames <- audio.Frame{Samples: []float32{0}, CaptureGap: audio.CaptureGap{SubscriptionDeviceDiscontinuity: true}}
+	mic.frames <- audio.Frame{Samples: []float32{0}, CaptureSpans: []audio.CaptureSpan{{SampleCount: 1}}}
 	stop()
 	stop()
 	chunks, resets, closed := listener.state()
-	if chunks != 3 || resets != 2 || !closed || cues != 1 {
-		t.Fatalf("chunks=%d resets=%d closed=%v cues=%d, want 3, 2, true, 1", chunks, resets, closed, cues)
+	if chunks != 5 || resets != 3 || !closed || cues != 1 {
+		t.Fatalf("chunks=%d resets=%d closed=%v cues=%d, want 5, 3, true, 1", chunks, resets, closed, cues)
 	}
 	if mic.listeners() != 0 {
 		t.Fatal("a capture that reports gaps was also subscribed the plain way")

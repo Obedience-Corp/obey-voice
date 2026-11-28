@@ -233,3 +233,41 @@ func TestGateWakeIsOffByDefault(t *testing.T) {
 		t.Fatal("a nil gate reported a wake")
 	}
 }
+
+// "Juno" ... "what's the weather": the name by itself opens the window and is
+// not sent to the model, so the request does not land on top of a reply.
+func TestGateWakeWindowTakesTheBareNameAsAWake(t *testing.T) {
+	now := time.Unix(1000, 0)
+	gate, _ := NewGate("Juno", []string{"the computer"}, WithWake(6*time.Second), withClock(func() time.Time { return now }))
+
+	for _, alone := range []string{"Juno.", "juno", "Hey Juno?", "  \"Juno!\"", "The computer."} {
+		gate.wokeAt, gate.hasWoken = time.Time{}, false
+		reason := gate.Veto(alone)
+		if !strings.Contains(reason, "waiting for the request") || !gate.Awake() {
+			t.Errorf("%q: reason %q, awake %v; want a veto that opens the window", alone, reason, gate.Awake())
+		}
+	}
+	if gate.Veto("what's the weather") != "" {
+		t.Fatal("the request after the bare name was vetoed")
+	}
+	// A request in the same breath is answered as before.
+	now = now.Add(time.Hour)
+	for _, request := range []string{"Juno, what's the weather", "Hey Juno stop", "Juno's orbit is long"} {
+		if reason := gate.Veto(request); strings.Contains(reason, "waiting") {
+			t.Errorf("%q was taken for the bare name", request)
+		}
+	}
+	if gate.Veto("Juno, what's the weather") != "" {
+		t.Fatal("an addressed request was vetoed")
+	}
+	// A held talk key means the turn is addressed, whatever it says.
+	gate.SetBypass(true)
+	if gate.Veto("Juno.") != "" {
+		t.Fatal("bypass did not let the bare name through")
+	}
+	// And with no wake window the bare name is an ordinary addressed utterance.
+	plain, _ := NewGate("Juno", nil)
+	if plain.Veto("Juno.") != "" {
+		t.Fatal("a gate with no wake window stopped answering its name")
+	}
+}

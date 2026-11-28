@@ -110,6 +110,12 @@ func WithAcousticEvidence(window time.Duration) GateOption {
 // consulted, after the request has been spoken and transcribed, so it has to
 // cover the pause and the sentence. Several seconds is typical.
 //
+// With a wake window, an utterance that is the name and nothing else ("Juno.",
+// "Hey Juno?") is no longer answered: it is vetoed and opens the window, as a
+// live hit does. Without one, the bare name is an addressed utterance like any
+// other and the agent replies to it. A name-only utterance the recogniser
+// misspelled is not recognised as one.
+//
 // Know what this gives up. A live keyword hit proves only that the name, or
 // something that sounds like it, was said. With a wake window every mention
 // ("tell me about Juno") and every false match opens the gate to that
@@ -177,6 +183,13 @@ func (g *Gate) Veto(text string) string {
 func (g *Gate) VetoHeard(text, heardName string, heardBy time.Duration) string {
 	if g == nil {
 		return ""
+	}
+	if g.wake > 0 && !g.bypass.Load() && g.matcher.onlyName(text) {
+		// The wake word by itself is not a request. Answering it would put a
+		// reply on top of the request the speaker is about to make, so it
+		// opens the window instead, whether or not a live listener heard it.
+		g.Woke()
+		return g.agent + " heard its name and is waiting for the request"
 	}
 	if g.bypass.Load() || g.matcher.Addressed(text) || g.inFollowUp() || g.awake() || g.heardAtStart(text, heardName, heardBy) {
 		return ""

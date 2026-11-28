@@ -15,6 +15,20 @@ func TestListenerNeedsTheModel(t *testing.T) {
 	}
 }
 
+func TestStreamTimeOutlastsAnAlwaysOnDevice(t *testing.T) {
+	const year = 365 * 24 * time.Hour
+	for samples, want := range map[int64]time.Duration{
+		0:                               0,
+		sampleRate / 2:                  500 * time.Millisecond,
+		sampleRate*3600*160 + 1600:      160*time.Hour + 100*time.Millisecond, // n * 1e9 no longer fits in an int64
+		int64(year/time.Second) * 16000: year,
+	} {
+		if got := streamTime(samples); got != want {
+			t.Errorf("streamTime(%d) = %s, want %s", samples, got, want)
+		}
+	}
+}
+
 // One stream, fed the way a microphone feeds it: small chunks, utterances
 // separated by quiet, nothing reset between them.
 func TestListenerHearsNamesInOneContinuousStream(t *testing.T) {

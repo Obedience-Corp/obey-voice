@@ -214,21 +214,24 @@ func runLive(dir, manifest string, cases []clip, names []string, gap time.Durati
 			if len(row.Hits) == 0 {
 				total.CorrectNegatives++
 			}
-			unwantedAudio += float64(len(samples))/sampleRate + gap.Seconds()
+			// The quiet between clips is left out, so the hourly rate is per
+			// hour of speech and does not improve with a longer -gap.
+			unwantedAudio += float64(len(samples)) / sampleRate
 		}
 	}
 	audioSeconds := float64(written) / sampleRate
 	summary := struct {
 		Counts counts `json:"counts"`
-		// AudioSeconds is everything played; UnwantedAudioSeconds is the part
-		// that should not have matched, which the hourly rate is taken over.
-		AudioSeconds         float64 `json:"audio_s"`
-		UnwantedAudioSeconds float64 `json:"unwanted_audio_s"`
-		FalseMatchesPerHour  float64 `json:"false_matches_per_hour"`
+		// AudioSeconds is everything played, quiet included.
+		// UnwantedSpeechSeconds is the clips that should not have matched,
+		// without the quiet, which the hourly rate is taken over.
+		AudioSeconds          float64 `json:"audio_s"`
+		UnwantedSpeechSeconds float64 `json:"unwanted_speech_s"`
+		FalseMatchesPerHour   float64 `json:"false_matches_per_speech_hour"`
 		// ProcessorShare is listener time over audio time, for one thread.
 		ProcessorShare float64      `json:"processor_share"`
 		Results        []liveResult `json:"results"`
-	}{Counts: total, AudioSeconds: audioSeconds, UnwantedAudioSeconds: unwantedAudio, ProcessorShare: spent.Seconds() / audioSeconds, Results: rows}
+	}{Counts: total, AudioSeconds: audioSeconds, UnwantedSpeechSeconds: unwantedAudio, ProcessorShare: spent.Seconds() / audioSeconds, Results: rows}
 	if unwantedAudio > 0 {
 		summary.FalseMatchesPerHour = float64(total.FalseMatches) / unwantedAudio * 3600
 	}

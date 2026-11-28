@@ -120,6 +120,30 @@ func (m Matcher) Addressed(text string) bool {
 	return ok && m.startsWithName(rest)
 }
 
+// onlyName reports whether text is one of the names and nothing more, with at
+// most one filler in front: "Juno.", "Hey Juno?". It is the wake word said by
+// itself, with the request still to come.
+func (m Matcher) onlyName(text string) bool {
+	body := trimLead(strings.ToLower(text))
+	alone := func(body string) bool {
+		for _, name := range m.names {
+			if consumed, ok := matchPrefix(body, name); ok && trimLead(body[consumed:]) == "" {
+				return true
+			}
+		}
+		return false
+	}
+	if alone(body) {
+		return true
+	}
+	fillers := defaultFillers
+	if m.fillers != nil {
+		fillers = m.fillers
+	}
+	rest, ok := cutFiller(body, fillers)
+	return ok && alone(rest)
+}
+
 func (m Matcher) startsWithName(body string) bool {
 	for _, name := range m.names {
 		if _, ok := matchPrefix(body, name); ok {

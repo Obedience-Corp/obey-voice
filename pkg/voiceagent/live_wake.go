@@ -1,6 +1,7 @@
 package voiceagent
 
 import (
+	"errors"
 	"path/filepath"
 	"sync"
 	"time"
@@ -73,8 +74,7 @@ func startLiveWake(capture pipeline.CaptureMonitor, w *liveWake) (stop func()) {
 		go func() {
 			defer close(done)
 			for frame := range ch {
-				gap := frame.CaptureGap
-				if gap.SubscriptionDroppedSamples > 0 || gap.SubscriptionDeviceDiscontinuity || gap.DeviceDiscontinuity {
+				if lostAudio(frame) {
 					// The audio on either side of a hole is not one sound.
 					w.listener.Reset()
 				}
@@ -98,6 +98,24 @@ func startLiveWake(capture pipeline.CaptureMonitor, w *liveWake) (stop func()) {
 			w.listener.Close()
 		})
 	}
+}
+
+// lostAudio reports whether frame does not follow on from the one before:
+// callbacks this subscriber was too slow to take, or a microphone that was
+// reopened or changed. audio.Capture marks the first callback of a new device
+// on the frame's span, and a transition lost with a dropped callback on the
+// gap.
+func lostAudio(frame audio.Frame) bool {
+	gap := frame.CaptureGap
+	if gap.SubscriptionDroppedSamples > 0 || gap.SubscriptionDeviceDiscontinuity || gap.DeviceDiscontinuity {
+		return true
+	}
+	for _, span := range frame.CaptureSpans {
+		if span.DeviceDiscontinuity {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *liveWake) write(samples []float32) {
@@ -129,7 +147,11 @@ func (w *liveWake) write(samples []float32) {
 // installLiveWake starts the live listener for Options.NameSummonLive: each
 // name heard becomes an events.NameHeard, and opens the gate's wake window
 // when one was asked for.
-func installLiveWake(p *pipeline.Pipeline, bus *events.Bus, gate *summon.Gate, listener nameListener, logf func(string, ...any)) (stop func()) {
+func installLiveWake(p *pipeline.Pipeline, bus *events.Bus, gate *summon.Gate, listener nameListener, logf func(string, ...any)) (stop func(), err error) {
+	if p.Capture == nil {
+		listener.Close()
+		return nil, errors.New("the agent has no microphone to listen on")
+	}
 	w := &liveWake{listener: listener, logf: logf}
 	if p.Player != nil {
 		w.playing = p.Player.IsPlaying
@@ -138,5 +160,5 @@ func installLiveWake(p *pipeline.Pipeline, bus *events.Bus, gate *summon.Gate, l
 		gate.Woke()
 		bus.Emit(events.NameHeard{Name: hit.Name, At: at})
 	}
-	return startLiveWake(p.Capture, w)
+	return startLiveWake(p.Capture, w), nil
 }

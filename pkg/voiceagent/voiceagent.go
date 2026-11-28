@@ -592,7 +592,12 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 			cleanup()
 			return nil, nil, fmt.Errorf("voiceagent: Options.NameSummonLive: %w", err)
 		}
-		cleanups = append(cleanups, installLiveWake(p, opts.Events, nameGate, listener, logf))
+		stopListening, err := installLiveWake(p, opts.Events, nameGate, listener, logf)
+		if err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("voiceagent: Options.NameSummonLive: %w", err)
+		}
+		cleanups = append(cleanups, stopListening)
 	}
 
 	return &Agent{Pipeline: p, nameSummon: nameGate}, cleanup, nil
