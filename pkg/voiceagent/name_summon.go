@@ -41,6 +41,12 @@ func newNameSummonGate(cfg *config.Config, opts Options) (*summon.Gate, error) {
 	if opts.NameSummonAcousticWindow > 0 && (gate == nil || !cfg.AcousticNameEnabled) {
 		return nil, fmt.Errorf("voiceagent: Options.NameSummonAcousticWindow needs acoustic_name_enabled and an agent that name summon applies to (name_summon_enabled, voice input, ExternalAddressing unset)")
 	}
+	if opts.NameSummonLive && (gate == nil || !cfg.AcousticNameEnabled || opts.TextOnly) {
+		return nil, fmt.Errorf("voiceagent: Options.NameSummonLive needs acoustic_name_enabled, a microphone (TextOnly unset) and an agent that name summon applies to (name_summon_enabled, ExternalAddressing unset)")
+	}
+	if opts.NameSummonWake < 0 || (opts.NameSummonWake > 0 && !opts.NameSummonLive) {
+		return nil, fmt.Errorf("voiceagent: Options.NameSummonWake needs a positive duration and Options.NameSummonLive")
+	}
 	return gate, nil
 }
 
@@ -63,7 +69,8 @@ func buildNameSummonGate(cfg *config.Config, opts Options) (*summon.Gate, error)
 			config.VoiceFrontendWebRTC, config.VoiceFrontendNLMS)
 	}
 	gate, err := summon.NewGate(cfg.AgentName, cfg.NameSummonAliases,
-		summon.WithFollowUp(opts.NameSummonFollowUp), summon.WithAcousticEvidence(acousticWindow(cfg, opts)))
+		summon.WithFollowUp(opts.NameSummonFollowUp), summon.WithAcousticEvidence(acousticWindow(cfg, opts)),
+		summon.WithWake(opts.NameSummonWake))
 	if err != nil {
 		return nil, fmt.Errorf("voiceagent: name_summon_enabled needs agent_name or name_summon_aliases: %w", err)
 	}

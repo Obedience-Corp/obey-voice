@@ -23,7 +23,8 @@ var ErrNoName = errors.New("summon: the agent has no name or alias to answer to"
 // names, when the host has declared the turn addressed some other way
 // (SetBypass), or, if a follow-up window was asked for, when the agent has
 // just finished replying. With WithAcousticEvidence, VetoHeard also lets
-// through an utterance whose opening name the transcript got wrong.
+// through an utterance whose opening name the transcript got wrong. With
+// WithWake, a wake word heard on the live microphone opens it for a while.
 //
 // A Gate is safe for concurrent use and must not be copied after first use.
 // Every method accepts a nil *Gate, which is name summon switched off: nothing
@@ -34,6 +35,7 @@ type Gate struct {
 	agent    string
 	followUp time.Duration
 	acoustic time.Duration
+	wake     time.Duration
 	now      func() time.Time
 
 	bypass atomic.Bool
@@ -41,6 +43,8 @@ type Gate struct {
 	mu         sync.Mutex
 	repliedAt  time.Time
 	hasReplied bool
+	wokeAt     time.Time
+	hasWoken   bool
 }
 
 // GateOption adjusts a Gate at construction.
@@ -97,7 +101,26 @@ func WithAcousticEvidence(window time.Duration) GateOption {
 	return func(g *Gate) { g.acoustic = window }
 }
 
-// withClock is the test seam for the follow-up window.
+// WithWake keeps the gate open for window after each Woke, for the pattern of
+// a wake word, a pause, and then the request: "Juno" ... "what's the weather".
+// Zero, the default, turns it off, and the gate then pays no attention to
+// Woke.
+//
+// Like the follow-up window it is measured to the moment the gate is
+// consulted, after the request has been spoken and transcribed, so it has to
+// cover the pause and the sentence. Several seconds is typical.
+//
+// Know what this gives up. A live keyword hit proves only that the name, or
+// something that sounds like it, was said. With a wake window every mention
+// ("tell me about Juno") and every false match opens the gate to that
+// utterance and to whatever anyone says in the next window. Without it those
+// are judged by the transcript and ignored. Measure the name's false matches
+// per hour before turning this on.
+func WithWake(window time.Duration) GateOption {
+	return func(g *Gate) { g.wake = window }
+}
+
+// withClock is the test seam for the follow-up and wake windows.
 func withClock(now func() time.Time) GateOption {
 	return func(g *Gate) { g.now = now }
 }
@@ -155,7 +178,7 @@ func (g *Gate) VetoHeard(text, heardName string, heardBy time.Duration) string {
 	if g == nil {
 		return ""
 	}
-	if g.bypass.Load() || g.matcher.Addressed(text) || g.inFollowUp() || g.heardAtStart(text, heardName, heardBy) {
+	if g.bypass.Load() || g.matcher.Addressed(text) || g.inFollowUp() || g.awake() || g.heardAtStart(text, heardName, heardBy) {
 		return ""
 	}
 	return "Not addressed to " + g.agent + " — ignored: “" + excerpt(text, 48) + "”"
@@ -183,6 +206,36 @@ func (g *Gate) ReplyEnded() {
 	defer g.mu.Unlock()
 	g.repliedAt = g.now()
 	g.hasReplied = true
+}
+
+// Woke records that the wake word was just heard on the live microphone,
+// which opens the wake window. It does nothing without WithWake.
+// voiceagent.New calls it for Options.NameSummonWake; a host that runs its own
+// kws.Listener calls it on a hit.
+func (g *Gate) Woke() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.wokeAt = g.now()
+	g.hasWoken = true
+}
+
+// Awake reports whether the wake window is open: a wake word was heard no
+// longer ago than WithWake allows. A host with no transcript to show the gate
+// (its model takes audio directly) can gate on this alone.
+func (g *Gate) Awake() bool {
+	return g != nil && g.awake()
+}
+
+func (g *Gate) awake() bool {
+	if g.wake <= 0 {
+		return false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.hasWoken && g.now().Sub(g.wokeAt) <= g.wake
 }
 
 // heardAtStart is the acoustic rule documented on WithAcousticEvidence.

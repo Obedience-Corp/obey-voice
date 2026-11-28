@@ -192,3 +192,44 @@ func TestGateIgnoresAcousticEvidenceByDefault(t *testing.T) {
 		t.Fatal("a nil gate vetoed")
 	}
 }
+
+func TestGateWakeWindow(t *testing.T) {
+	now := time.Unix(1000, 0)
+	gate, _ := NewGate("Juno", nil, WithWake(6*time.Second), withClock(func() time.Time { return now }))
+
+	if gate.Awake() || gate.Veto("what's the weather") == "" {
+		t.Fatal("the gate was open before any wake word")
+	}
+	gate.Woke()
+	now = now.Add(6 * time.Second)
+	if reason := gate.Veto("what's the weather"); reason != "" || !gate.Awake() {
+		t.Fatalf("a request inside the wake window was vetoed: %q", reason)
+	}
+	// The window is time, not a count: a second sentence inside it passes too.
+	if gate.VetoHeard("and tomorrow", "", 0) != "" {
+		t.Fatal("the wake window closed after one utterance")
+	}
+	now = now.Add(time.Millisecond)
+	if gate.Awake() || gate.Veto("what's the weather") == "" {
+		t.Fatal("the wake window never closed")
+	}
+	gate.Woke()
+	if gate.Veto("what's the weather") != "" {
+		t.Fatal("a later wake word did not reopen the window")
+	}
+}
+
+func TestGateWakeIsOffByDefault(t *testing.T) {
+	// A frozen clock: with no window, not even the instant of the wake counts.
+	now := time.Unix(1000, 0)
+	gate, _ := NewGate("Juno", nil, withClock(func() time.Time { return now }))
+	gate.Woke()
+	if gate.Awake() || gate.Veto("what's the weather") == "" {
+		t.Fatal("a gate with no wake window was opened by Woke")
+	}
+	var none *Gate
+	none.Woke()
+	if none.Awake() {
+		t.Fatal("a nil gate reported a wake")
+	}
+}
