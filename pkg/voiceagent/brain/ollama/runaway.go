@@ -10,7 +10,10 @@ var ErrResponseRepetition = errors.New("repeating text detected; generation stop
 // Hold only the tail of an exceptionally long prose word. This catches a
 // model stuck generating a syllable (e.g. undundund...) without buffering a
 // sentence or mistaking repeated prose, lists or code for a broken generation.
+// What it lets through then goes to lines, which catches a model stuck saying
+// one sentence.
 type runawayTextGuard struct {
+	lines     lineLoopGuard
 	word      []byte
 	sent      int
 	codeTicks int
@@ -38,11 +41,32 @@ func (g *runawayTextGuard) feed(text string) (string, error) {
 	if g.stopped {
 		return "", ErrResponseRepetition
 	}
+	out, err := g.words(text)
+	sent, loopErr := g.lines.feed(out)
+	if err == nil {
+		err = loopErr
+	}
+	return sent, err
+}
+
+// flush sends what is held at the end of the reply.
+func (g *runawayTextGuard) flush() string {
+	if g.requested {
+		return ""
+	}
+	var text string
+	if !g.stopped {
+		text, _ = g.lines.feed(g.flushWord())
+	}
+	return text + g.lines.flush()
+}
+
+func (g *runawayTextGuard) words(text string) (string, error) {
 	var out strings.Builder
 	for i := 0; i < len(text); i++ {
 		b := text[i]
 		if b == '`' {
-			out.WriteString(g.flush())
+			out.WriteString(g.flushWord())
 			g.ticks++
 			out.WriteByte(b)
 			continue
@@ -91,13 +115,13 @@ func (g *runawayTextGuard) feed(text string) (string, error) {
 			}
 			continue
 		}
-		out.WriteString(g.flush())
+		out.WriteString(g.flushWord())
 		out.WriteByte(b)
 	}
 	return out.String(), nil
 }
 
-func (g *runawayTextGuard) flush() string {
+func (g *runawayTextGuard) flushWord() string {
 	text := string(g.word[g.sent:])
 	g.word = nil
 	g.sent = 0

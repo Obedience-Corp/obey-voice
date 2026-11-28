@@ -16,7 +16,8 @@ func TestRunawayTextGuardAcrossDeltaBoundaries(t *testing.T) {
 			}{
 				{"Here is the status. camp" + strings.Repeat("und", 1000), true},
 				{"A longer cycle " + strings.Repeat("abcdefghijklmnop", 40), true},
-				{strings.Repeat("Repeated headings are ordinary prose. ", 50), false},
+				{strings.Repeat("The same sentence fifty times is a loop. ", 50), true},
+				{headings(50), false},
 				{"A long identifier " + strings.Repeat("abcdefghijklmnopqrstuvwxyz", 30), false},
 				{"A literal: `" + strings.Repeat("und", 500) + "`.", false},
 				{"A literal containing ticks: `` `" + strings.Repeat("und", 500) + "` ``.", false},
@@ -44,4 +45,12 @@ func TestRunawayTextGuardAcrossDeltaBoundaries(t *testing.T) {
 			}
 		})
 	}
+}
+
+func headings(n int) string {
+	var b strings.Builder
+	for i := range n {
+		b.WriteString("Repeated heading " + strconv.Itoa(i) + " is ordinary prose. ")
+	}
+	return b.String()
 }

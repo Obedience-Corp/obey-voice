@@ -72,8 +72,11 @@ type Round struct {
 	gate          replyPrefixGate
 	runaway       runawayTextGuard
 	held          []string
-	ToolCalls     []api.ToolCall
-	Usage         Usage
+	// heldRunaway watches held text as it arrives, so a reply stuck
+	// repeating is stopped while it is still being written, not at its cap.
+	heldRunaway runawayTextGuard
+	ToolCalls   []api.ToolCall
+	Usage       Usage
 	// ended is set once the EndAtTool call arrived.
 	ended bool
 	// earlier is what the turn's previous rounds said; a round may restate
@@ -83,7 +86,7 @@ type Round struct {
 
 // NewRound starts the next model request in this turn.
 func (s *Stream) NewRound(ctx context.Context, options RoundOptions) *Round {
-	r := &Round{stream: s, ctx: ctx, options: options, runaway: newRunawayTextGuard(options.Input), earlier: s.spoken.String()}
+	r := &Round{stream: s, ctx: ctx, options: options, runaway: newRunawayTextGuard(options.Input), heldRunaway: newRunawayTextGuard(options.Input), earlier: s.spoken.String()}
 	if s.spoken.Len() == 0 {
 		r.gate.prior = options.PreviousReply
 	}
@@ -139,7 +142,8 @@ func (r *Round) forward(text string) error {
 func (r *Round) emitText(text string) error {
 	if r.options.Hold {
 		r.held = append(r.held, text)
-		return nil
+		_, err := r.heldRunaway.feed(text)
+		return err
 	}
 	return r.forward(r.gate.feed(text))
 }

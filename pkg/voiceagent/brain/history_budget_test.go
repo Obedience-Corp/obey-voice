@@ -79,7 +79,18 @@ func assertWorkingAligned(t *testing.T, o *OllamaBrain) {
 
 // spokenReply is a realistic spoken answer, long enough that one archive note
 // cannot hold every turn a trim evicts.
-var spokenReply = strings.Repeat("That sounds like a good plan, and here is one more thought on it. ", 5)
+var spokenReply = alternate("That sounds like a good plan, and here is one more thought on it. ", "This sounds like a good plan, and here is one more thought on it. ", 5)
+
+// alternate is n sentences taking turns between a and b, which are the same
+// length: a long reply whose sentences never repeat back to back, which the
+// stream would stop as a loop.
+func alternate(a, b string, n int) string {
+	var s strings.Builder
+	for i := range n {
+		s.WriteString([]string{a, b}[i%2])
+	}
+	return s.String()
+}
 
 func TestRoutedChatHistoryIsBudgetedInUserTurns(t *testing.T) {
 	const turns = 26

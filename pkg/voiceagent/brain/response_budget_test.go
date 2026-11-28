@@ -29,8 +29,8 @@ func TestRunawayResponseStopsAndReleasesTransport(t *testing.T) {
 				}
 				// Deliberately ignore num_predict and never send Done. The
 				// client fuse must still end this actively producing response.
-				for {
-					message := api.Message{Role: "assistant", Content: "The next step is to inspect the path. "}
+				for i := 0; ; i++ {
+					message := api.Message{Role: "assistant", Content: []string{"The next step is to inspect the path. ", "The last step is to inspect the path. "}[i%2]}
 					if thinking {
 						message.Thinking, message.Content = message.Content, ""
 					}

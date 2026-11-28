@@ -84,7 +84,7 @@ func TestEveryEvictionArchivesWholeChatTurns(t *testing.T) {
 // Route decisions never take archive entries of their own, so the archive
 // holds hundreds of chat turns before it starts folding notes together.
 func TestArchiveHoldsHundredsOfChatTurnsBeforeFolding(t *testing.T) {
-	reply := strings.Repeat("That sounds like a good plan, and here is one more thought. ", 3)
+	reply := alternate("That sounds like a good plan, and here is one more thought. ", "This sounds like a good plan, and here is one more thought. ", 3)
 	fake := &jsonRouteFake{native: map[string]string{"kind": "chat"}, answer: reply}
 	srv := fake.server(t)
 	base, _ := url.Parse(srv.URL)

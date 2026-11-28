@@ -2,7 +2,6 @@ package brain
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -17,7 +16,7 @@ func TestContextBudgetDisplayIndependentOfIntegrity(t *testing.T) {
 			if mode == "failed full" {
 				reason = "length"
 			}
-			line := fmt.Sprintf(`{"message":{"role":"assistant","content":%q},"done":true,"done_reason":%q}`, strings.Repeat("A complete sentence. ", 100), reason)
+			line := fmt.Sprintf(`{"message":{"role":"assistant","content":%q},"done":true,"done_reason":%q}`, alternate("A complete sentence. ", "A finished sentence. ", 100), reason)
 			o := &OllamaBrain{
 				client: ollamaStreamStub(t, []string{line}), model: "m",
 				cfg:              &config.Config{MaxHistory: 40, OllamaNumCtx: 8192, ContinuityIntegrityEnabled: false},
