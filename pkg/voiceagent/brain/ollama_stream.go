@@ -297,6 +297,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				routeRetried = true
 				if invalidImage != nil {
 					if picking = o.choosePicture(ctx, input, directImage, opts); picking != nil {
+						picking.keepHandoff(o, output.HeldText())
 						imageRepair = picking.prompt(o)
 					} else {
 						imageRepair = o.imageRepairPrompt(ctx, directImage, owedImage, invalidImage)
