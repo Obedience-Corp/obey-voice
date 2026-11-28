@@ -59,9 +59,13 @@ func TestTurnsAlwaysOfferGenerateImage(t *testing.T) {
 	if !hasTool(sess.tools(), generateImageToolName) {
 		t.Fatal("not offered with the picture maker off; the model could not learn why")
 	}
-	result := sess.execute(t.Context(), t.TempDir(), toolCallFor(generateImageToolName, map[string]any{"prompt": "a fox"}))
-	if !strings.HasPrefix(result, "error: ") || !strings.Contains(result, "picture making is off") || !strings.Contains(result, "obey-voice config set image_generation comfyui") {
-		t.Fatalf("result with the picture maker off = %q", result)
+	// A call without a prompt still learns that picture making is off, rather
+	// than fixing the prompt only to be refused again.
+	for _, args := range []map[string]any{{"prompt": "a fox"}, {}} {
+		result := sess.execute(t.Context(), t.TempDir(), toolCallFor(generateImageToolName, args))
+		if !strings.HasPrefix(result, "error: ") || !strings.Contains(result, "picture making is off") || !strings.Contains(result, "obey-voice config set image_generation comfyui") {
+			t.Fatalf("result with the picture maker off for %v = %q", args, result)
+		}
 	}
 	cfg := &config.Config{ImageGeneration: config.ImageGenerationComfyUI, ComfyUIURL: "http://127.0.0.1:1"}
 	live := &OllamaBrain{cfg: cfg}

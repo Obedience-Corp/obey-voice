@@ -38,7 +38,7 @@ func TestContextMeterReceivesLivePipelineUsage(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"role": "assistant", "content": strings.Repeat("A traveler told a story. ", 64)}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"role": "assistant", "content": strings.Repeat("A traveler told a story. A traveler sang a story. ", 32)}})
 		w.(http.Flusher).Flush()
 		select {
 		case <-finish:

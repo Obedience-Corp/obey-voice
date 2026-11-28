@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,8 +30,8 @@ func TestRunawayResponseStopsAndReleasesTransport(t *testing.T) {
 				}
 				// Deliberately ignore num_predict and never send Done. The
 				// client fuse must still end this actively producing response.
-				for {
-					message := api.Message{Role: "assistant", Content: "The next step is to inspect the path. "}
+				for i := 0; ; i++ {
+					message := api.Message{Role: "assistant", Content: []string{"The next step is to inspect the path. ", "The last step is to inspect the path. "}[i%2]}
 					if thinking {
 						message.Thinking, message.Content = message.Content, ""
 					}
@@ -246,4 +247,61 @@ func TestResponseBudgetRefillsAfterEachToolRound(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A picture request holds the reply for checking. A model that loops on one
+// sentence there is stopped mid-generation: one request, cancelled, nothing
+// spoken, and no repair or continuation request after it.
+func TestALoopingHeldReplyStopsTheRequest(t *testing.T) {
+	var hits atomic.Int32
+	stopped := make(chan struct{})
+	o := repetitionBrain(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion", "vision", "tools"}})
+			return
+		}
+		var req api.ChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+			return
+		}
+		if hits.Add(1) > 1 {
+			t.Error("a second request followed the stopped loop")
+			return
+		}
+		defer close(stopped)
+		for {
+			if err := json.NewEncoder(w).Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: "Let me make you a picture.\n\n"}}); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(time.Millisecond):
+			}
+		}
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	stream, err := o.ThinkStream(ctx, "Send me a picture of a fox.", StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsDirect})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := drainStream(t, stream)
+	result := <-stream.Done
+	if !errors.Is(result.Err, ErrResponseRepetition) || !result.Recovered || ctx.Err() != nil {
+		t.Fatalf("loop not stopped as repetition: %+v", result)
+	}
+	if strings.TrimSpace(text) != "" {
+		t.Fatalf("a held loop was spoken: %q", text)
+	}
+	select {
+	case <-stopped:
+	case <-ctx.Done():
+		t.Fatal("the looping request was never cancelled")
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("requests = %d, want 1", hits.Load())
+	}
 }

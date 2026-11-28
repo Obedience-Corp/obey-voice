@@ -2,6 +2,7 @@ package ollama
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -99,5 +100,34 @@ func TestAContinuationBreakCountsTowardTheBlankLine(t *testing.T) {
 	says("Here it is.").play(t, stream)
 	if want := "Let me look.\n\nHere it is."; heard.String() != want {
 		t.Fatalf("listener got %q, want %q", heard.String(), want)
+	}
+}
+
+// A reply held for checking is stopped while the model is still writing the
+// loop, not after it reaches its output cap, and none of it is spoken.
+func TestALoopingHeldReplyStopsWhileItIsWritten(t *testing.T) {
+	var spoken strings.Builder
+	stream := &Stream{Speak: func(s string) error { spoken.WriteString(s); return nil }, Think: func(string) error { return nil }}
+	for _, hold := range []bool{true, false} {
+		spoken.Reset()
+		round := stream.NewRound(context.Background(), RoundOptions{Labels: passThrough{}, Markers: passThrough{}, Hold: hold})
+		receive := round.Receiver(0, func(api.ChatResponse) error { return nil }, func(int) {})
+		var err error
+		chunks := 0
+		for chunks < 400 && err == nil {
+			err = receive(api.ChatResponse{Message: api.Message{Role: "assistant", Content: "Let me make you a picture.\n\n"}})
+			chunks++
+		}
+		if !errors.Is(err, ErrResponseRepetition) || chunks != loopCopies {
+			t.Fatalf("hold %v: stopped after %d chunks with %v, want copy %d to stop it", hold, chunks, err, loopCopies)
+		}
+		err = round.FinishSpeech(round.ReleaseHeld(false, err))
+		want := "Let me make you a picture.\n\n"
+		if hold {
+			want = ""
+		}
+		if !errors.Is(err, ErrResponseRepetition) || spoken.String() != want {
+			t.Fatalf("hold %v: spoke %q with %v, want %q", hold, spoken.String(), err, want)
+		}
 	}
 }

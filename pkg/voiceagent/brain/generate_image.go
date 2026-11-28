@@ -75,6 +75,11 @@ func imageGenerator(cfg *config.Config) imagegen.Generator {
 // generateImage makes the picture args describe and saves it at the top of
 // workDir, where a reply can attach it and image repair finds it.
 func generateImage(ctx context.Context, gen imagegen.Generator, workDir string, args map[string]any) (string, toolEnd) {
+	// A picture maker that cannot run says so before any argument is checked:
+	// fixing the call would only lead to the same refusal.
+	if off, ok := gen.(unavailable); ok {
+		return failWith("the picture was not made: " + off.reason)
+	}
 	prompt, _ := args["prompt"].(string)
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
