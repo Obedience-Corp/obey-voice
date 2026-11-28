@@ -149,6 +149,23 @@ func TestWorkerDetailShowsGraphicsPictureNatively(t *testing.T) {
 	}
 }
 
+func TestWorkerPictureAsWideAsThePaneKeepsItsRows(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	ref := importPicture(t, testmedia.PNG())
+	g, _ := testGraphics(1, 4)
+	m := openWorkerPicture(t, g, ref)
+
+	w, h := m.previewSize(1)
+	box := g.box(ref, w, h)
+	if box.cols != m.detail.Width {
+		t.Fatalf("box is %d columns in a %d column pane; the picture is not width-limited", box.cols, m.detail.Width)
+	}
+	id := m.media.placed[box]
+	if id == 0 || !showsPlaceholders(m.View(), id, box) {
+		t.Fatalf("a full-width picture lost cells in the worker view (id %d):\n%q", id, m.View())
+	}
+}
+
 func TestWorkerDetailHalfBlocksUseTheChatRowBudget(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	ref := importPicture(t, testmedia.PNG())

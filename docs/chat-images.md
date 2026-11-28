@@ -53,6 +53,10 @@ may use up to three quarters of the conversation pane. An image is never enlarge
 its own pixels. The terminal's copies are freed when the conversation is cleared and
 when Obey Voice exits.
 
+A task's thread on the Workers screen draws its pictures the same way, with the same
+height rule taken from the thread's pane. Its copies are freed when the thread is
+closed or the Workers screen is left; the conversation's stay in place.
+
 Everywhere else, and for animated GIFs in every terminal, inline previews use colored
 half-blocks, so scrolling and tmux work without a terminal image protocol. These are
 low-resolution thumbnails, not native bitmap rendering. Inside tmux, zellij or screen
