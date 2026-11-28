@@ -20,6 +20,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/ollama/ollama/api"
 )
 
@@ -393,5 +394,124 @@ func TestPictureChoiceSchemaQuotesFileNamesAndAsksForTheSubjectFirst(t *testing.
 	wanted, file, caption := bytes.Index(raw, []byte(`"wanted"`)), bytes.Index(raw, []byte(`"file"`)), bytes.Index(raw, []byte(`"caption"`))
 	if !(wanted < file && file < caption) {
 		t.Fatalf("properties out of order: %s", raw)
+	}
+}
+
+// A caption that names a different offered file than the one chosen would be
+// said with the wrong picture: no picture is posted, the refusal is shown,
+// and the picture stays owed.
+func TestPictureChoiceCaptionMustNameTheChosenFile(t *testing.T) {
+	for _, tc := range []struct {
+		caption string
+		ok      bool
+	}{
+		{"The dolphin, as it is the only clever one here.", false},
+		{"Two dolphins, clearly.", false},
+		{"Not the dolphin, the lion.", true},
+		{"A lion, without question.", true},
+		{"This one, without question.", true},
+		{"The diagram is wrong, so the lion.", true},
+	} {
+		t.Run(tc.caption, func(t *testing.T) {
+			choice, _ := json.Marshal(map[string]string{"wanted": "the one most like me", "file": "lion.jpg", "caption": tc.caption})
+			o, _ := pictureServer(t, choiceReply(string(choice)))
+			pictureWorkDir(t, o)
+			var notices []string
+			o.SetInfoSink(func(e events.Info) { notices = append(notices, e.Message) })
+			turn := runRoutedTurn(t, o, lionRequest, liveDirect)
+			if tc.ok {
+				if turn.result.Err != nil || turn.answer != tc.caption+"\n![lion.jpg](<lion.jpg>)" {
+					t.Fatalf("answer=%q err=%v", turn.answer, turn.result.Err)
+				}
+				return
+			}
+			if turn.answer != noPictureLine || turn.result.Err != nil {
+				t.Fatalf("a caption naming another file was sent with lion.jpg: answer=%q err=%v", turn.answer, turn.result.Err)
+			}
+			if !slices.ContainsFunc(notices, func(m string) bool { return strings.Contains(m, "dolphin.jpg") }) {
+				t.Fatalf("the refusal is not shown: %q", notices)
+			}
+			if _, owed := FindOwedImage(o.History()); !owed {
+				t.Fatal("the picture is no longer owed after a refused choice")
+			}
+		})
+	}
+}
+
+// A reply that asked another persona in, but carried no picture, keeps that
+// hand-off when the host writes the reply from the choice.
+func TestPictureRetryKeepsTheHandoff(t *testing.T) {
+	const lion = `{"wanted":"a lion","file":"lion.jpg","caption":"Here is a lion."}`
+	const none = `{"wanted":"a giraffe","file":"none","caption":"I could not find a giraffe here."}`
+	for _, tc := range []struct {
+		name, first, choice, want string
+	}{
+		{"mention", "Lions rule. @Scout, which is yours?", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\n@Scout, which is yours?"},
+		{"alias", "Lions rule.\n@scout-id what about you?", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\n@scout-id what about you?"},
+		{"no file", "No giraffe. @Scout, any luck?", none, "I could not find a giraffe here.\n@Scout, any luck?"},
+		{"no mention", "Lions rule. Scout likes them too.", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)"},
+		{"not in the group", "Lions rule. Ask @home about it.", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)"},
+		{"own name", "Lions rule, says @Obey.", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)"},
+		{"caption hands off", "Lions rule. @Scout, which is yours?", `{"wanted":"a lion","file":"lion.jpg","caption":"Here is a lion, @Scout."}`, "Here is a lion, @Scout.\n![lion.jpg](<lion.jpg>)"},
+		{"file name", "@Scout, do you prefer lion.jpg?", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\n@Scout, do you prefer lion.jpg?"},
+		{"file name before the mention", "I picked lion.jpg and @Scout should answer.", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\nI picked lion.jpg and @Scout should answer."},
+		{"decimal", "Lions rule. @Scout, is the 2.5 metre one yours?", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\n@Scout, is the 2.5 metre one yours?"},
+		{"abbreviation", "@Scout, what would you pick, e.g. a cat?", lion, "Here is a lion.\n![lion.jpg](<lion.jpg>)\n@Scout, what would you pick, e.g. a cat?"},
+		{"refused choice", "Lions rule. @Scout, which is yours?", `{"wanted":"a lion","file":"lion.jpg","caption":"The dolphin."}`, noPictureLine + "\n@Scout, which is yours?"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, _ := pictureServer(t, func(n int, _ api.ChatRequest) (int, api.Message) {
+				if n == 1 {
+					return http.StatusOK, api.Message{Role: "assistant", Content: tc.first}
+				}
+				return http.StatusOK, api.Message{Role: "assistant", Content: tc.choice}
+			})
+			pictureWorkDir(t, o)
+			o.SetGroupParticipants([]GroupParticipant{{Name: "Obey"}, {Name: "Scout", Aliases: []string{"scout-id"}}})
+			turn := runRoutedTurn(t, o, "Show me a picture in the chat, then ask Scout for theirs.", liveDirect)
+			if turn.result.Err != nil || turn.answer != tc.want {
+				t.Fatalf("answer=%q, want %q (err=%v)", turn.answer, tc.want, turn.result.Err)
+			}
+		})
+	}
+}
+
+// A file whose name is part of the chosen file's name does not contradict it:
+// "the dog" can mean dog-at-a-laptop.jpg when dog.jpg is offered too.
+func TestPictureChoiceCaptionMayNameAShorterFileWithinTheChosenOne(t *testing.T) {
+	for _, tc := range []struct {
+		caption, file string
+		ok            bool
+	}{
+		{"The dog, sir, the only one working.", "dog-at-a-laptop.jpg", true},
+		{"The dog at a laptop, sir.", "dog-at-a-laptop.jpg", true},
+		{"The dog at a laptop, sir.", "dog.jpg", false},
+		{"The lion, sir.", "dog-at-a-laptop.jpg", false},
+	} {
+		t.Run(tc.caption+" "+tc.file, func(t *testing.T) {
+			choice, _ := json.Marshal(map[string]string{"wanted": "the one most like me", "file": tc.file, "caption": tc.caption})
+			o, _ := pictureServer(t, choiceReply(string(choice)))
+			pictureWorkDir(t, o)
+			writeJPEG(t, filepath.Join(o.workDir, "dog.jpg"))
+			writeJPEG(t, filepath.Join(o.workDir, "dog-at-a-laptop.jpg"))
+			turn := runRoutedTurn(t, o, lionRequest, liveDirect)
+			if got := turn.result.Err == nil && strings.Contains(turn.answer, "](<"+tc.file+">)"); got != tc.ok {
+				t.Fatalf("answer=%q err=%v, want accepted=%t", turn.answer, turn.result.Err, tc.ok)
+			}
+		})
+	}
+}
+
+// A camera's name for a picture says nothing about it; the model may have
+// seen the picture attached, so a caption about something else is kept.
+func TestPictureChoiceKeepsACameraNamedFile(t *testing.T) {
+	const caption = "A day at the beach."
+	choice, _ := json.Marshal(map[string]string{"wanted": "the one most like me", "file": "IMG_2031.jpg", "caption": caption})
+	o, _ := pictureServer(t, choiceReply(string(choice)))
+	writeJPEG(t, filepath.Join(o.workDir, "IMG_2031.jpg"))
+	writeJPEG(t, filepath.Join(o.workDir, "beach.jpg"))
+	turn := runRoutedTurn(t, o, lionRequest, liveDirect)
+	if turn.result.Err != nil || turn.answer != caption+"\n![IMG_2031.jpg](<IMG_2031.jpg>)" {
+		t.Fatalf("answer=%q err=%v", turn.answer, turn.result.Err)
 	}
 }

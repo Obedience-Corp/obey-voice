@@ -5,12 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/ollama/ollama/api"
 )
 
@@ -38,8 +43,14 @@ var errPictureChoice = errors.New("picture choice rejected")
 // none, as JSON, and the host writes the reply.
 type pictureChoice struct {
 	files []string
-	// none is set when the model chose no file.
+	// handoff is the sentences of the failed reply that hand the floor to
+	// another persona with an @mention. The host's reply ends with them.
+	handoff string
+	// none is set when the model chose no file, or chose one its caption
+	// contradicts.
 	none bool
+	// refused names the offered file a refused choice's caption said.
+	refused string
 }
 
 // choosePicture returns the choice retry for a failed reply, or nil where the
@@ -60,6 +71,59 @@ func (o *OllamaBrain) choosePicture(ctx context.Context, input string, direct im
 		return nil
 	}
 	return &pictureChoice{files: files}
+}
+
+// keepHandoff keeps the sentences of the failed reply that @mention another
+// persona in the group, so a hand-off asked for with the picture survives the
+// retry.
+func (c *pictureChoice) keepHandoff(o *OllamaBrain, failed string) {
+	own := ""
+	if o.cfg != nil {
+		own = strings.TrimSpace(o.cfg.AgentName)
+	}
+	names := map[string]bool{}
+	for _, participant := range o.groupRoster() {
+		if strings.EqualFold(strings.TrimSpace(participant.Name), own) {
+			continue
+		}
+		for _, name := range append([]string{participant.Name}, participant.Aliases...) {
+			if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
+				names[name] = true
+			}
+		}
+	}
+	var kept, mentioned []string
+	for _, line := range strings.Split(chatmedia.ReplyProse(failed), "\n") {
+		for _, sentence := range lineSentences(line) {
+			keep := false
+			for _, mention := range textclean.AgentMentions(sentence) {
+				if names[strings.ToLower(mention.Target)] {
+					keep = true
+					mentioned = append(mentioned, mention.Target)
+				}
+			}
+			if keep {
+				kept = append(kept, strings.TrimSpace(sentence))
+			}
+		}
+	}
+	c.handoff = pictureCaptionText(strings.Join(kept, " "))
+	slog.Info("picture reply had no usable picture", "reply_bytes", len(failed), "handoff_to", mentioned)
+}
+
+// lineSentences splits a line where the speech chunker ends a sentence, so a
+// file name, a decimal or "e.g." stays inside its sentence.
+func lineSentences(line string) []string {
+	var sentences []string
+	at := 0
+	for _, end := range SentenceEnds(line) {
+		sentences = append(sentences, line[at:end])
+		at = end
+	}
+	if strings.TrimSpace(line[at:]) != "" {
+		sentences = append(sentences, line[at:])
+	}
+	return sentences
 }
 
 func (o *OllamaBrain) replyCandidates(ctx context.Context) []string {
@@ -130,6 +194,9 @@ func (c *pictureChoice) chat(o *OllamaBrain) func(context.Context, *api.ChatRequ
 			return fmt.Errorf("%w: %w", errPictureChoice, err)
 		}
 		text, decodeErr := c.reply(response)
+		if c.refused != "" {
+			o.emitInfo(events.Info{Message: "The picture was not posted: its caption names " + c.refused + ", not the file chosen"})
+		}
 		diagnostics := routeDecisionDiagnostics(response)
 		response.Message = api.Message{Role: "assistant", Content: text}
 		if decodeErr == nil && response.DoneReason == "length" {
@@ -172,20 +239,116 @@ func (c *pictureChoice) reply(response api.ChatResponse) (string, error) {
 	}
 	caption := pictureCaptionText(*choice.Caption)
 	if *choice.File == "none" {
+		slog.Info("picture choice", "file", "none")
 		c.none = true
 		if !reportsBlocker.MatchString(caption) || imageResultClaim.MatchString(caption) || imageResultPromise.MatchString(caption) {
 			caption = noPictureLine
 		}
-		return caption, nil
+		return c.withHandoff(caption), nil
 	}
 	if !slices.Contains(c.files, *choice.File) {
 		return "", fmt.Errorf("the picture choice named %q, which was not offered", fmt.Sprintf("%.80s", *choice.File))
+	}
+	other := c.contradicts(caption, *choice.File)
+	slog.Info("picture choice", "file", fmt.Sprintf("%.200s", *choice.File), "caption_names", other)
+	if other != "" {
+		// Treated as no file, so a hand-off asked for with the picture still
+		// happens; the picture stays owed and the refusal is shown.
+		c.none, c.refused = true, other
+		return c.withHandoff(noPictureLine), nil
 	}
 	if caption == "" {
 		caption = pictureCaption
 	}
 	label := strings.NewReplacer("[", "", "]", "").Replace(path.Base(*choice.File))
-	return caption + "\n![" + label + "](<" + *choice.File + ">)", nil
+	return c.withHandoff(caption + "\n![" + label + "](<" + *choice.File + ">)"), nil
+}
+
+// withHandoff ends the host's reply with the failed reply's hand-off, unless
+// the caption already @mentions someone.
+func (c *pictureChoice) withHandoff(reply string) string {
+	if c.handoff == "" || len(textclean.AgentMentions(reply)) > 0 {
+		return reply
+	}
+	return reply + "\n" + c.handoff
+}
+
+// genericPictureNames say nothing about what a picture shows, so a caption
+// using one does not name that file.
+var genericPictureNames = []string{"file", "image", "img", "photo", "pic", "picture", "screenshot"}
+
+// fileWords is a file's name as lowercase words, or nil for a name that says
+// nothing about the picture.
+func fileWords(file string) []string {
+	base := path.Base(file)
+	words := strings.FieldsFunc(strings.ToLower(strings.TrimSuffix(base, path.Ext(base))), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	if len(words) == 0 || !strings.ContainsFunc(strings.Join(words, ""), unicode.IsLetter) || (len(words) == 1 && slices.Contains(genericPictureNames, words[0])) {
+		return nil
+	}
+	return words
+}
+
+// cameraPrefixes start file names that cameras and phones give pictures.
+var cameraPrefixes = []string{"dsc", "dscf", "dscn", "img", "mvimg", "pxl", "scan"}
+
+// opaqueName reports whether a file's name says nothing about the picture,
+// as "IMG_2031.jpg" does. The model may have seen it attached, so a caption
+// about the beach is no reason to refuse it.
+func opaqueName(file string) bool {
+	for _, word := range fileWords(file) {
+		if len(word) > 2 && !strings.ContainsFunc(word, unicode.IsDigit) && !slices.Contains(cameraPrefixes, word) && !slices.Contains(genericPictureNames, word) {
+			return false
+		}
+	}
+	return true
+}
+
+// saysWords reports whether text says words in a row, as whole words.
+func saysWords(text string, words []string) bool {
+	quoted := make([]string, len(words))
+	for i, word := range words {
+		quoted[i] = regexp.QuoteMeta(word)
+	}
+	return regexp.MustCompile(`(?i)(?:^|[^\pL\pN])` + strings.Join(quoted, `[^\pL\pN]+`) + `(?:e?s)?(?:$|[^\pL\pN])`).MatchString(text)
+}
+
+// contradicts names an offered file the caption says instead of the chosen
+// one, or "": "the dog" said with lion.jpg names dog.jpg. The longest name
+// said wins, so "the dog at a laptop" names dog-at-a-laptop.jpg, not dog.jpg,
+// and a name within the chosen one's ("the dog" for dog-at-a-laptop.jpg) is
+// not a contradiction.
+func (c *pictureChoice) contradicts(caption, chosen string) string {
+	var named [][]string
+	var files []string
+	for _, file := range c.files {
+		if words := fileWords(file); words != nil && saysWords(caption, words) {
+			named, files = append(named, words), append(files, file)
+		}
+	}
+	var said []string
+	for i, words := range named {
+		longer := false
+		for j, other := range named {
+			if j != i && len(other) > len(words) && saysWords(strings.Join(other, " "), words) {
+				longer = true
+			}
+		}
+		if !longer {
+			said = append(said, files[i])
+		}
+	}
+	if slices.Contains(said, chosen) || opaqueName(chosen) {
+		return ""
+	}
+	chosenName := strings.Join(fileWords(chosen), " ")
+	for _, file := range said {
+		if !saysWords(chosenName, fileWords(file)) {
+			return file
+		}
+	}
+	return ""
 }
 
 // pictureCaptionText is a caption as one line of prose that cannot itself be
