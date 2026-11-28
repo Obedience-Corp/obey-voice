@@ -128,3 +128,70 @@ func TestNativePersonaSpeaksTheNoPictureLine(t *testing.T) {
 		t.Fatalf("degraded=%t errors=%d", metrics.degraded, errs.Load())
 	}
 }
+
+// typedPictureTurn runs a typed picture request through the real brain: each
+// chat request gets the next reply, the last one repeating.
+func typedPictureTurn(t *testing.T, replies ...string) (spoken []string, reply events.ResponseReady) {
+	t.Helper()
+	root := t.TempDir()
+	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, image.NewGray(image.Rect(0, 0, 24, 16)), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "lion.jpg"), buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_ = json.NewEncoder(w).Encode(map[string]any{"models": []map[string]string{{"name": "live"}}})
+		case "/api/show":
+			_ = json.NewEncoder(w).Encode(map[string]any{"capabilities": []string{"completion", "tools", "vision"}})
+		default:
+			n := min(int(calls.Add(1)), len(replies)) - 1
+			msg := api.Message{Role: "assistant", Content: replies[n]}
+			_ = json.NewEncoder(w).Encode(api.ChatResponse{Message: msg, Done: true, DoneReason: "stop"})
+		}
+	}))
+	defer server.Close()
+	cfg := &config.Config{OllamaHost: server.URL, OllamaModel: "live", VoiceToolsEnabled: true, AgentName: "Obey", MaxHistory: 20, WorkDir: root, PromptsDir: filepath.Join(root, "prompts"), SkillsDir: filepath.Join(root, "skills")}
+	live, err := brain.NewOllama(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &groupingFakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	bus := events.NewBus()
+	events.Subscribe(bus, func(e events.ResponseReady) { reply = e })
+	p := &Pipeline{Brain: live, TTS: provider, Player: player, Events: bus, VoiceToolsEnabled: true, RouterToolsPolicy: brain.RouterToolsDirect}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := p.RunTurnTextMode(ctx, "Show me a picture of a lion in the chat."); err != nil {
+		t.Fatal(err)
+	}
+	return provider.Texts(), reply
+}
+
+// A typed turn says what a spoken one says: the picture's name is shown under
+// the reply, never read aloud.
+func TestTypedPictureReplyDoesNotSpeakTheFileName(t *testing.T) {
+	const caption = "Here is a lion in the grass."
+	for name, replies := range map[string][]string{
+		"chosen by the host":       {"Lions are big cats with golden manes.", `{"wanted":"a lion","file":"lion.jpg","caption":"` + caption + `"}`},
+		"picture after the reply":  {caption + "\n![lion.jpg](lion.jpg)"},
+		"picture before the reply": {"![lion.jpg](lion.jpg)\n" + caption},
+	} {
+		t.Run(name, func(t *testing.T) {
+			spoken, reply := typedPictureTurn(t, replies...)
+			if strings.Join(spoken, " ") != caption {
+				t.Fatalf("spoken = %q, want only %q", spoken, caption)
+			}
+			if len(reply.Attachments) != 1 || reply.Attachments[0].Name != "lion.jpg" {
+				t.Fatalf("the reply lost its picture: %q with %d attachments", reply.Response, len(reply.Attachments))
+			}
+		})
+	}
+}

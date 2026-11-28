@@ -271,6 +271,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 	}
 
+	written := response
 	response = p.publishReplyMedia(metrics, response)
 	metrics.modelComplete = time.Now()
 	p.emitResponse(metrics, events.ThinkingComplete{
@@ -283,14 +284,15 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	// turn would actually speak, so mute never counts phantom leaks.
 	//
 	// gateForSpeech removes structure the listener should not hear (fences,
-	// tool blocks); speakableFromResponse then applies the per-segment cleaning
-	// and predicate the progressive path uses, so a typed turn and a spoken one
-	// say the same thing.
+	// tool blocks, image lines); speakableFromResponse then applies the
+	// per-segment cleaning and predicate the progressive path uses, so a typed
+	// turn and a spoken one say the same thing. It reads the reply as written:
+	// the shown reply has each image line replaced by the picture's name.
 	speakable := ""
 	speechCtx, cancelSpeech := metrics.speechContext(ctx)
 	defer cancelSpeech()
 	if !metrics.speechStopped() && !p.OutputMuted() && p.Player != nil && p.ttsReady() {
-		speakable = speakableFromResponse(p.gateForSpeech(response, metrics), responseMentionName(ctx))
+		speakable = speakableFromResponse(p.gateForSpeech(written, metrics), responseMentionName(ctx))
 	}
 	if speakable != "" {
 		var speech speechPriority
