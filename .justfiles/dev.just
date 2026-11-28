@@ -111,6 +111,14 @@ demo-agent-images-end-of-line:
     go test -c -o bin/chat-media.test ./internal/tui
     vhs demos/agent-images-end-of-line.tape
 
+# Review a task's picture in the worker view using the real TUI.
+[no-cd]
+demo-worker-pictures:
+    mkdir -p bin
+    go test -c -o bin/chat-media.test ./internal/tui
+    vhs demos/worker-pictures.tape
+    just _optimize-demo-gif demos/worker-pictures.gif
+
 # Review @path completion and @path routing with a disposable campaign fixture.
 [no-cd]
 demo-chat-path-completion:

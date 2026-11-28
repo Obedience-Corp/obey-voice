@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"image/png"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -443,13 +444,15 @@ type workerPictureTerminal struct {
 	initial tea.Cmd
 	step    int
 	placed  bool
+	delay   time.Duration
+	record  bool
 }
 
 type workerPictureStep struct{}
 
 func (h *workerPictureTerminal) Init() tea.Cmd { return tea.Batch(h.initial, h.next()) }
 func (h *workerPictureTerminal) next() tea.Cmd {
-	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return workerPictureStep{} })
+	return tea.Tick(h.delay, func(time.Time) tea.Msg { return workerPictureStep{} })
 }
 func (h *workerPictureTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var next tea.Cmd
@@ -460,7 +463,9 @@ func (h *workerPictureTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg = tea.KeyMsg{Type: tea.KeyDown}
 		case h.step == 3:
 			msg = tea.KeyMsg{Type: tea.KeyEnter}
-		case h.placed || h.step > 100:
+		case h.record && h.step < 8:
+			return h, h.next()
+		case h.record || h.placed || h.step > 100:
 			return h, tea.Quit
 		default:
 			// One more frame after the picture is placed, so it is drawn.
@@ -476,13 +481,19 @@ func (h *workerPictureTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (h *workerPictureTerminal) View() string { return h.app.View() }
 
 // The real App and Bubble Tea renderer carry the worker picture's
-// placeholder rows to the terminal.
+// placeholder rows to the terminal. OBEY_VOICE_WORKER_PICTURE_TERMINAL=record
+// plays it on the real terminal instead, on half-blocks: the recording
+// terminal has no Kitty graphics.
 func TestWorkerPicturePlaceholdersReachTheTerminal(t *testing.T) {
+	record := os.Getenv("OBEY_VOICE_WORKER_PICTURE_TERMINAL") == "record"
 	m, _ := mediaTestModel(t)
 	ref := m.media.draft[0]
 	m.media.draft = nil
 	m.reflow()
 	g, _ := testGraphics(2, 4)
+	if record {
+		g = nil
+	}
 	m.adoptGraphics(g)
 	app := newApp(m.cfg, nil, nil)
 	app.width, app.height = 100, 40
@@ -492,12 +503,22 @@ func TestWorkerPicturePlaceholdersReachTheTerminal(t *testing.T) {
 	app = model.(App)
 	app.workers.controller = &testWorkers{items: []pipeline.WorkerInfo{workerPictureItem(ref)}}
 	app.workers.refresh()
-	h := &workerPictureTerminal{app: app, initial: initial}
+	h := &workerPictureTerminal{app: app, initial: initial, delay: 50 * time.Millisecond, record: record}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	var output bytes.Buffer
-	if _, err := tea.NewProgram(h, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(&output), tea.WithoutSignalHandler()).Run(); err != nil {
+	opts := []tea.ProgramOption{tea.WithContext(ctx), tea.WithoutSignalHandler()}
+	if record {
+		h.delay = 900 * time.Millisecond
+		opts = append(opts, tea.WithAltScreen(), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout))
+	} else {
+		opts = append(opts, tea.WithInput(nil), tea.WithOutput(&output))
+	}
+	if _, err := tea.NewProgram(h, opts...).Run(); err != nil {
 		t.Fatal(err)
+	}
+	if record {
+		return
 	}
 	w, rows := h.app.workers.previewSize(1)
 	box := g.box(ref, w, rows)
