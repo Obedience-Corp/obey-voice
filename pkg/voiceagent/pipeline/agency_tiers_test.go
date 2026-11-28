@@ -57,11 +57,13 @@ func TestTieredQueuePinsPlanAcrossSettingsAndPersonaReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-started
-	plans := make(chan *config.WorkerPlan, 2)
-	origins := make(chan string, 2)
+	type built struct {
+		plan   *config.WorkerPlan
+		origin string
+	}
+	plans := make(chan built, 2)
 	a.planFactory = func(_ context.Context, c *config.Config, plan *config.WorkerPlan) (brain.Provider, error) {
-		plans <- plan
-		origins <- c.ActivePersona + ":" + c.WorkDir
+		plans <- built{plan, c.ActivePersona + ":" + c.WorkDir}
 		return &lifecycleWorker{reply: "finished"}, nil
 	}
 	spawn := func(label string) {
@@ -94,18 +96,22 @@ func TestTieredQueuePinsPlanAcrossSettingsAndPersonaReplacement(t *testing.T) {
 	}
 	spawn("inspect the second task")
 	close(block)
-	for i, want := range []string{"persona-first", "persona-second"} {
+	// The two jobs load different models, so both may start at once; each
+	// must still run on the plan and persona it was queued with.
+	want := map[string]built{
+		"persona-first":  {&config.WorkerPlan{ConfigRevision: 7}, "samantha:/synthetic/persona-a"},
+		"persona-second": {&config.WorkerPlan{ConfigRevision: 8}, "santa:/synthetic/persona-b"},
+	}
+	for range 2 {
 		select {
-		case plan := <-plans:
-			if plan.Assignment.Model != want || plan.ConfigRevision != int64(7+i) {
-				t.Fatalf("plan %d = %+v", i, plan)
+		case got := <-plans:
+			w, ok := want[got.plan.Assignment.Model]
+			if !ok || got.plan.ConfigRevision != w.plan.ConfigRevision || got.origin != w.origin {
+				t.Fatalf("job ran on plan %+v from %q", got.plan, got.origin)
 			}
+			delete(want, got.plan.Assignment.Model)
 		case <-time.After(3 * time.Second):
 			t.Fatal("queued work did not dispatch")
-		}
-		wantPersona := []string{"samantha:/synthetic/persona-a", "santa:/synthetic/persona-b"}[i]
-		if got := <-origins; got != wantPersona {
-			t.Fatalf("origin %q, want %q", got, wantPersona)
 		}
 	}
 }
